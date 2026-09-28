@@ -14,7 +14,15 @@
 
 package grpcsender
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
+
+// ErrResponseTooLarge is the outcome error of a call whose reply arrived and
+// was over Options.MaxResponseBytes: the client refused it, whatever status
+// the target sent after it.
+var ErrResponseTooLarge = errors.New("response larger than the configured limit")
 
 // codecName is unique to this package so it cannot collide with a codec
 // registered elsewhere in the process.
