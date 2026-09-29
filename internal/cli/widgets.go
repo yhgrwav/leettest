@@ -25,8 +25,10 @@ import (
 )
 
 var (
-	spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-	sparkLevels   = []rune("▁▂▃▄▅▆▇█")
+	// Only characters a Windows console draws with its default font: the
+	// braille spinner and the eighth-blocks came out as boxes there.
+	spinnerFrames = []string{"|", "/", "-", `\`}
+	sparkLevels   = []rune{0x2591, 0x2592, 0x2593, 0x2588} // light, medium, dark shade, full block
 )
 
 func spinner(frame int) string {

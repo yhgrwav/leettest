@@ -312,10 +312,10 @@ func TestLatencyRowsShareOneScale(t *testing.T) {
 	chart := m.latencyChart(h.points)
 	p50, p99 := latencyRow(t, chart, "p50"), latencyRow(t, chart, "p99")
 
-	if last := p50[len(p50)-1]; last != '▁' {
+	if last := p50[len(p50)-1]; last != sparkLevels[0] {
 		t.Errorf("p50 cell = %q, want the lowest level", last)
 	}
-	if last := p99[len(p99)-1]; last != '█' {
+	if last := p99[len(p99)-1]; last != sparkLevels[len(sparkLevels)-1] {
 		t.Errorf("p99 cell = %q, want the highest level", last)
 	}
 }

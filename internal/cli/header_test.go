@@ -52,11 +52,11 @@ func TestHeaderReadsStatusServiceTarget(t *testing.T) {
 	}
 }
 
-func TestHeaderSpinnerIsBraille(t *testing.T) {
+func TestHeaderHasTheSpinner(t *testing.T) {
 	m := testModel(t)
 
-	if line := firstLine(m.header(120)); !strings.ContainsAny(line, "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏") {
-		t.Errorf("header %q has no braille spinner", line)
+	if line := firstLine(m.header(120)); !strings.HasPrefix(strings.TrimSpace(ansiEscape.ReplaceAllString(line, "")), spinnerFrames[0]) {
+		t.Errorf("header %q does not start with the spinner", line)
 	}
 }
 

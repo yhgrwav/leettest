@@ -34,9 +34,11 @@ const foreignMethod = "/пкг.Сервис/Метод"
 
 var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
 
-// liveGlyphs are the only non-ASCII characters the live view may draw: each
-// one checked on cmd.exe with Consolas. Nothing else, the frame included.
-var liveGlyphs = []rune{'░', '▒', '▓', '█', '─', '━', '●', '╭', '╮', '╰', '╯', '│'}
+// liveGlyphs are the only non-ASCII characters the live view may draw: shades,
+// full block, light and heavy horizontal, black circle, light vertical. Each
+// was checked on a Windows console with its default font (2026-09-29); the
+// rounded corners were not drawn right there and are not on the list.
+var liveGlyphs = []rune{0x2591, 0x2592, 0x2593, 0x2588, 0x2500, 0x2501, 0x25cf, 0x2502}
 
 // badRunes lists every character of screen outside ASCII and allowed, once
 // each, with the first line it appeared on.

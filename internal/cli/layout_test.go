@@ -440,7 +440,7 @@ func TestNarrowTerminalAsksToWiden(t *testing.T) {
 func TestUnknownWidthKeepsTheFrame(t *testing.T) {
 	m := testModel(t)
 
-	if view := m.View(); !strings.Contains(view, "╭") {
+	if view := m.View(); !strings.Contains(view, frameBorder.TopLeft+frameBorder.Top) {
 		t.Errorf("before the first size message the frame must be drawn, got %q", view)
 	}
 }
@@ -479,7 +479,7 @@ func TestWideningBringsTheFrameBack(t *testing.T) {
 	m.Update(tea.WindowSizeMsg{Width: 30, Height: 40})
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 
-	if view := m.View(); !strings.Contains(view, "╭") {
+	if view := m.View(); !strings.Contains(view, frameBorder.TopLeft+frameBorder.Top) {
 		t.Errorf("after widening to 100 the frame is not back: %q", firstLine(view))
 	}
 }
