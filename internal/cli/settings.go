@@ -64,6 +64,12 @@ func (s *Settings) Configured() bool {
 	return s.Lang != ""
 }
 
+// Deprecations are the warnings for keys the settings file still carries but
+// the tool no longer reads, one line each, for stderr.
+func (s Settings) Deprecations() []string {
+	return nil
+}
+
 // Save writes the settings back to disk.
 func (s *Settings) Save() error {
 	if s.path == "" {
