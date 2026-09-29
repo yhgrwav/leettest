@@ -3,9 +3,13 @@ LINT  := $(GOBIN)/golangci-lint
 # Keep in step with GOLANGCI_LINT_VERSION in .github/workflows/ci.yml.
 LINT_VERSION := v2.14.0
 
-.PHONY: help test race stress lint lint-install fmt check build demo stand run clean
+# CI calls these targets rather than copying their commands: one definition,
+# so a local run and CI cannot drift apart.
+
+.PHONY: help vet test race stress lint lint-install fmt check build demo stand run clean
 
 help:
+	@echo "make vet           go vet"
 	@echo "make test          unit and measurement tests"
 	@echo "make race          tests under -race (needs gcc in PATH)"
 	@echo "make stress        the nightly run: -race -count=20, takes long"
@@ -16,6 +20,9 @@ help:
 	@echo "make demo          a run against the built-in fake target, no server needed"
 	@echo "make stand         start the reference stand on 127.0.0.1:50051 (keep it running)"
 	@echo "make run           a run against the stand, from a second terminal"
+
+vet:
+	go vet ./...
 
 test:
 	go test ./...
@@ -37,9 +44,7 @@ fmt:
 
 check:
 	@test -z "$$(gofmt -l .)" || { echo "gofmt needed:"; gofmt -l .; exit 1; }
-	go vet ./...
-	go test ./...
-	$(LINT) run ./...
+	$(MAKE) vet test lint
 
 build:
 	go build -o bin/leettest ./cmd/leettest
