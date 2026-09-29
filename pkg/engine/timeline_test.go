@@ -577,6 +577,32 @@ func TestStats_LastAnswerIsTheScheduledMomentOfTheLastAnsweredCall(t *testing.T)
 	}
 }
 
+// Ground: contract — the last answer is a moment on the target's side, so it
+// is when the call went out, not when it was due: a generator behind its
+// schedule would otherwise pass its own lag off as the target's silence.
+func TestStats_LastAnswerIsWhenTheCallWentOut(t *testing.T) {
+	stats := NewStats()
+	start := time.Now()
+	stats.Start(start, 0)
+
+	record := func(scheduled, sent time.Duration) {
+		at := start.Add(scheduled)
+		stats.Record(Result{
+			Method: "a", ScheduledAt: at, BegunAt: start.Add(sent), Deadline: at.Add(time.Second),
+			Outcome: Outcome{Category: CategorySuccess, SentAt: start.Add(sent), DoneAt: start.Add(sent + time.Millisecond)},
+		})
+	}
+	// Due at 1s, out at 1.2s; due later at 1.1s, out earlier at 1.15s.
+	record(time.Second, 1200*time.Millisecond)
+	record(1100*time.Millisecond, 1150*time.Millisecond)
+	stats.Finish(start.Add(3 * time.Second))
+
+	got := stats.Report().Methods[0].LastAnswerAt
+	if got == nil || *got != 1200*time.Millisecond {
+		t.Errorf("last answer at %v, want 1.2s: the latest send among the answered calls", got)
+	}
+}
+
 // Ground: contract — any status the target sent back, a refusal or a rejected
 // request included, shows it alive; a call it never answered does not.
 func TestStats_LastAnswerMovesOnlyOnAStatusFromTheTarget(t *testing.T) {

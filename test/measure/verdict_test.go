@@ -683,6 +683,40 @@ func TestReport_OneRejectedMethodAmongServedOnesIsStillAVerdict(t *testing.T) {
 // middle of a second on purpose: a report naming the second instead of the
 // moment would be off by half a second, which this tolerance excludes.
 func TestReport_TheLastAnswerIsWhereTheSilenceBegins(t *testing.T) {
+	checkSilenceBegins(t, func(s engine.Sender) engine.Sender { return s })
+}
+
+// A generator a fixed 200ms behind its schedule: the target still stops at
+// its own moment, and the report must name that moment, not the one the calls
+// were due at 200ms earlier.
+func TestReport_TheLastAnswerIsWhereTheSilenceBeginsBehindSchedule(t *testing.T) {
+	checkSilenceBegins(t, func(s engine.Sender) engine.Sender { return behindSchedule{s, 200 * time.Millisecond} })
+}
+
+// behindSchedule sends every call lag after it was handed over: a generator
+// behind its schedule by exactly lag, not by whatever the machine allows.
+type behindSchedule struct {
+	engine.Sender
+	lag time.Duration
+}
+
+func (b behindSchedule) Send(ctx context.Context, req engine.Request) (engine.Outcome, error) {
+	select {
+	case <-time.After(b.lag):
+	case <-ctx.Done():
+	}
+
+	return b.Sender.Send(ctx, req)
+}
+
+// silenceTolerance is one scheduling interval (20ms at 50 rps), within which
+// the last answered call went out before the freeze, plus as much again for
+// the way from the send to the stand on a loaded machine.
+const silenceTolerance = 40 * time.Millisecond
+
+func checkSilenceBegins(t *testing.T, wrap func(engine.Sender) engine.Sender) {
+	t.Helper()
+
 	const freezeAt = 1500 * time.Millisecond
 
 	// Frozen for a minute from 1.5s after its first call: every later call
@@ -701,7 +735,7 @@ func TestReport_TheLastAnswerIsWhereTheSilenceBegins(t *testing.T) {
 
 	eng, err := engine.New(engine.Options{
 		Calls:       []engine.Call{load(target.Method(), silentRPS, silentRun, silentTimeout)},
-		Sender:      sender,
+		Sender:      wrap(sender),
 		MaxInFlight: 1000,
 	})
 	if err != nil {
@@ -730,11 +764,11 @@ func TestReport_TheLastAnswerIsWhereTheSilenceBegins(t *testing.T) {
 
 	// The stand counts from its own first arrival, which lands after the run
 	// starts; that offset is measured here instead of being covered by a wider
-	// tolerance. The last answered call is the last one scheduled before the
-	// freeze, so it sits within one scheduling interval (20ms at 50 rps) of it.
+	// tolerance. The last answered call is the last one sent before the
+	// freeze.
 	offset := arrivals[0].Sub(startedAt)
 	want := offset + freezeAt
-	if diff := (*m.LastAnswerAt - want).Abs(); diff > 40*time.Millisecond {
+	if diff := (*m.LastAnswerAt - want).Abs(); diff > silenceTolerance {
 		t.Errorf("last answer at %v, want %v (freeze %v plus the stand's offset %v), off by %v",
 			*m.LastAnswerAt, want, freezeAt, offset, diff)
 	}
