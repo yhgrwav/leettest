@@ -69,6 +69,18 @@ func runOn(t *testing.T, s *stand.Stand, call engine.Call, maxInFlight int,
 ) (engine.Report, error) {
 	t.Helper()
 
+	report, _, err := runOnFrom(t, s, call, maxInFlight, wrap)
+
+	return report, err
+}
+
+// runOnFrom is runOn that also says when the run was started, on the clock
+// the stand stamps its arrivals with.
+func runOnFrom(t *testing.T, s *stand.Stand, call engine.Call, maxInFlight int,
+	wrap func(engine.Sender) engine.Sender,
+) (engine.Report, time.Time, error) {
+	t.Helper()
+
 	sender := grpcsender.New(grpcsender.Options{
 		Target:      s.Target(),
 		DialOptions: []grpc.DialOption{s.DialOption()},
@@ -90,6 +102,7 @@ func runOn(t *testing.T, s *stand.Stand, call engine.Call, maxInFlight int,
 	ctx, cancel := context.WithTimeout(t.Context(), ceiling)
 	defer cancel()
 
+	startedAt := time.Now()
 	err = eng.Run(ctx)
 
 	if n := sender.OpenStreams(); n != 0 {
@@ -99,7 +112,7 @@ func runOn(t *testing.T, s *stand.Stand, call engine.Call, maxInFlight int,
 	report := eng.Report()
 	checkNoSenderDefects(t, report)
 
-	return report, err
+	return report, startedAt, err
 }
 
 // --- the in-flight cap ---------------------------------------------------
@@ -116,8 +129,9 @@ func TestReport_SlotsHeldPastTheAllowanceHitTheCap(t *testing.T) {
 	// 20ms past the allowance at 1000 RPS is 20 slots over the budget: far
 	// above the scheduler's own lateness under -race, a few slots.
 	hold := releaseMargin + 20*time.Millisecond
-	report, err := runOn(t, target, load(target.Method(), capRPS, 2*time.Second, capTimeout),
-		budget(capRPS, capTimeout), func(s engine.Sender) engine.Sender { return holdingPastDeadline{s, hold} })
+	slots := budget(capRPS, capTimeout)
+	report, startedAt, err := runOnFrom(t, target, load(target.Method(), capRPS, 2*time.Second, capTimeout),
+		slots, func(s engine.Sender) engine.Sender { return holdingPastDeadline{s, hold} })
 
 	if !errors.Is(err, engine.ErrInFlightCapExceeded) {
 		t.Fatalf("run = %v, want the cap: slots were held %v past their deadline", err, hold)
@@ -134,22 +148,41 @@ func TestReport_SlotsHeldPastTheAllowanceHitTheCap(t *testing.T) {
 	if report.Planned != 2*time.Second || report.Duration >= report.Planned {
 		t.Errorf("planned %v, ran %v; want 2s and less", report.Planned, report.Duration)
 	}
-	// Arithmetic of this run: the cap is ⌈1000×200ms⌉ + 1 + ⌈1000×100ms⌉ = 301
-	// slots, and the wrapper frees a slot only 120ms past each deadline, so
-	// nothing is released before 320ms. The cap therefore fills at 301ms, and
-	// the calls scheduled in the first 101ms are past their 200ms deadline by
-	// then. Anything far from 101 means the slots were not held the way the
-	// verdict says they were.
-	// 0..101ms inclusive is 102 calls; the band allows only the jitter of a
-	// real run, and an off-by-one in the counting is pinned exactly by
+	// The cap is ⌈1000×200ms⌉ + 1 + ⌈1000×100ms⌉ = 301 slots, and the wrapper
+	// frees a slot only 120ms past each deadline, so nothing is released
+	// before 320ms: the cap is full when the 301st call reaches the target.
+	// That moment is taken from the stand, not from the report, so a wrong
+	// CapHit.At cannot move the expectation with it. On an idle machine it is
+	// 301ms; a generator behind its schedule fills the cap later, and more
+	// calls are past their deadline by then.
+	arrivals := target.Arrivals()
+	if len(arrivals) < slots {
+		t.Fatalf("the stand saw %d calls, want at least the %d slots", len(arrivals), slots)
+	}
+	full := arrivals[slots-1].Sub(startedAt)
+
+	// Calls are scheduled every millisecond from 0; those scheduled up to
+	// full−200ms are past their deadline when the cap is full. The band is the
+	// ±3 of a real run; an off-by-one in the counting is pinned exactly by
 	// TestPoolCountsHeldSlotsExactlyAndDecidesItsEdges.
-	if got := report.CapHit.OverDeadline; got < 95 || got > 110 {
-		t.Errorf("over deadline = %d, want about 102: the slots held past their deadline at the hit\n"+
+	want := int((full-capTimeout)/time.Millisecond) + 1
+	if got := report.CapHit.OverDeadline; got < want-3 || got > want+3 {
+		t.Errorf("over deadline = %d, want %d +/- 3: the slots held past their deadline when the stand saw the cap fill at %v\n"+
 			"start lag max %v, run %v of the planned %v, cap hit at %v, aborted %d, timed out %d",
-			got, report.StartLagMax, report.Duration, report.Planned, report.CapHit.At,
+			got, want, full, report.StartLagMax, report.Duration, report.Planned, report.CapHit.At,
 			report.Aborted, report.Methods[0].TimedOut)
 	}
+	if diff := (report.CapHit.At - full).Abs(); diff > capHitTolerance {
+		t.Errorf("cap hit at %v, the stand saw it fill at %v: off by %v, more than %v",
+			report.CapHit.At, full, diff, capHitTolerance)
+	}
 }
+
+// capHitTolerance is how far the report's cap hit may lie from the moment the
+// stand saw the cap fill: the next call's attempt, one scheduling interval
+// (1ms) later on an idle machine, and the lag between a call's send and its
+// arrival under load.
+const capHitTolerance = 20 * time.Millisecond
 
 func TestReport_SlotsHeldWithinTheAllowanceDoNotHitTheCap(t *testing.T) {
 	target := stand.Start(stand.Hanging())
