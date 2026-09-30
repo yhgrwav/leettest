@@ -379,6 +379,11 @@ func (s *Sender) Send(ctx context.Context, req engine.Request) (engine.Outcome, 
 		err = fmt.Errorf("%w: %d bytes, the limit is %d", ErrResponseTooLarge, call.reply.size, limit)
 		category, code, fromTarget = engine.CategoryBadResponse, codes.ResourceExhausted, false
 	}
+	if echoOfOurDeadline(code, times, req.Deadline) {
+		// The target answered our RST at the deadline with CANCELLED, and its
+		// trailer beat our own handling of the deadline: the call timed out.
+		category, fromTarget = engine.CategoryTimeout, false
+	}
 	sentAt, doneAt, notSent := timestamps(times, category)
 
 	outcome := engine.Outcome{
@@ -401,6 +406,16 @@ func (s *Sender) Send(ctx context.Context, req engine.Request) (engine.Outcome, 
 	}
 
 	return outcome, nil
+}
+
+// echoOfOurDeadline reports whether a CANCELLED from the target is its answer
+// to our own cancel at the deadline: it arrived no earlier than the deadline.
+// The target sends one only after our RST, so no threshold short of the
+// deadline is needed, and one would take the target's own late cancel for an
+// echo. The run stopping is the other cancel of ours; Send has returned by
+// then.
+func echoOfOurDeadline(code codes.Code, times callTimes, deadline time.Time) bool {
+	return code == codes.Canceled && times.answered && !deadline.IsZero() && !times.answeredAt.Before(deadline)
 }
 
 // Conn is the connection calls go through, for resolving method schemas over
