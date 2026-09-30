@@ -3,7 +3,9 @@ package grpcsender
 import (
 	"context"
 	"errors"
+	"math"
 	"net"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -225,6 +227,42 @@ func TestSend_AReplyOverTwiceTheLimitIsRefusedByGRPC(t *testing.T) {
 	}
 	if out.Category != engine.CategoryBadResponse {
 		t.Errorf("category = %v, want %v with the trailer held (%v)", out.Category, engine.CategoryBadResponse, out.Err)
+	}
+}
+
+// Ground: contract — a decode target used again must not carry the refusal
+// of the reply before: an over-limit reply, then one that fits.
+func TestCodec_ARefusalDoesNotCarryOverToTheNextReply(t *testing.T) {
+	codec := rawCodec{limit: 4}
+	var r reply
+
+	if err := codec.Unmarshal(make([]byte, 5), &r); !errors.Is(err, ErrResponseTooLarge) || !r.over {
+		t.Fatalf("5 bytes over a 4-byte limit: err %v, over %v", err, r.over)
+	}
+	if err := codec.Unmarshal(make([]byte, 4), &r); err != nil || r.over {
+		t.Errorf("4 bytes after the refusal: err %v, over %v; want accepted", err, r.over)
+	}
+}
+
+// Ground: contract — Options.MaxResponseBytes is public, and grpc-go holds a
+// limit in an int32: past it Connect refuses rather than let grpc-go's limit
+// fall below ours.
+func TestConnect_AMaxResponseOverInt32IsRefused(t *testing.T) {
+	if strconv.IntSize == 32 {
+		t.Skip("an int cannot exceed math.MaxInt32 here")
+	}
+
+	opts := listen(t, &seeingTarget{})
+	opts.MaxResponseBytes = math.MaxInt32 + 1
+	if err := New(opts).Connect(bounded(t)); !errors.Is(err, ErrMaxResponseOutOfRange) {
+		t.Errorf("Connect = %v, want ErrMaxResponseOutOfRange", err)
+	}
+
+	opts.MaxResponseBytes = math.MaxInt32
+	sender := New(opts)
+	t.Cleanup(func() { _ = sender.Close() })
+	if err := sender.Connect(bounded(t)); err != nil {
+		t.Errorf("Connect at math.MaxInt32 = %v, want accepted", err)
 	}
 }
 
