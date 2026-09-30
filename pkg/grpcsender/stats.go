@@ -54,6 +54,8 @@ type callTimes struct {
 	// both as UNAVAILABLE, and a refused connection carries no latency worth
 	// recording.
 	answered bool
+	// answeredAt is when the trailer arrived.
+	answeredAt time.Time
 }
 
 // callStats is where one call's timings are collected while the transport
@@ -172,7 +174,7 @@ func (h handler) HandleRPC(ctx context.Context, rpc stats.RPCStats) {
 		// scheduler's delay out of the measurement.
 		call.times.sentAt = v.SentTime
 	case *stats.InTrailer:
-		call.times.answered = true
+		call.times.answered, call.times.answeredAt = true, h.now()
 	case *stats.End:
 		// headerAt is this attempt's: a retry clears the one before.
 		if h.streams != nil && !call.times.headerAt.IsZero() {
