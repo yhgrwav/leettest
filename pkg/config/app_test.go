@@ -16,6 +16,7 @@ package config_test
 
 import (
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -208,6 +209,21 @@ func TestMaxResponseSize_Units(t *testing.T) {
 		}
 		if cfg.App.MaxResponseBytes != want {
 			t.Errorf("%s = %d bytes, want %d", raw, cfg.App.MaxResponseBytes, want)
+		}
+	}
+}
+
+// Ground: boundary — grpc-go holds a limit in an int32. Past it grpc-go's
+// limit would sit below ours and refuse replies first, in words that also mean
+// the target refused our request.
+func TestMaxResponseSize_TheInt32LimitIsTheLargest(t *testing.T) {
+	cfg, err := config.Parse(withApp("  max_response_size: 2147483647B\n"))
+	if err != nil || cfg.App.MaxResponseBytes != math.MaxInt32 {
+		t.Errorf("2147483647B: %d bytes, err %v; want accepted as is", cfg.App.MaxResponseBytes, err)
+	}
+	for _, raw := range []string{"2147483648B", "2GiB"} {
+		if _, err := config.Parse(withApp("  max_response_size: " + raw + "\n")); !errors.Is(err, config.ErrInvalidMaxResponseSize) {
+			t.Errorf("%s: err = %v, want ErrInvalidMaxResponseSize", raw, err)
 		}
 	}
 }

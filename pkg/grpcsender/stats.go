@@ -68,6 +68,9 @@ type callTimes struct {
 type callStats struct {
 	mu    sync.Mutex
 	times callTimes
+	// reply is what the codec decodes into. Only the caller's goroutine
+	// touches it, inside and after Invoke, so it is outside the lock.
+	reply reply
 }
 
 // read copies the timings recorded so far. What arrives later is not part of

@@ -20,6 +20,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -33,15 +34,19 @@ import (
 	"github.com/yhgrwav/leettest/pkg/engine"
 )
 
-// rawCall moves bytes through a call untouched. It is set per call, not on the
-// connection: reflection shares the connection and needs the proto codec. A
-// ready slice passed with ... costs no allocation per call, a fresh variadic one
-// escapes to the heap.
+// rawCall moves bytes through a call untouched, with no size check: the
+// connection probe's. Calls of the run use Sender.call. Both are set per call,
+// not on the connection: reflection shares the connection and needs the proto
+// codec. A ready slice passed with ... costs no allocation per call, a fresh
+// variadic one escapes to the heap.
 var rawCall = []grpc.CallOption{grpc.ForceCodec(rawCodec{})}
 
 var (
 	ErrNotConnected = errors.New("sender is not connected, call Connect before the run")
 	ErrClosed       = errors.New("sender is closed")
+	// ErrMaxResponseOutOfRange is a MaxResponseBytes grpc-go cannot hold: its
+	// limits are int32.
+	ErrMaxResponseOutOfRange = errors.New("max response size must be between 0 and 2147483647 bytes")
 	// ErrClosedAfterHandshake is a target that completed the TLS handshake and
 	// closed before its first SETTINGS: under TLS 1.3 that is how a refused
 	// client certificate looks from the client.
@@ -69,8 +74,9 @@ type Options struct {
 	// Keys must already be lowercase; nil adds nothing to a call.
 	Metadata map[string]string
 	// MaxResponseBytes raises or lowers the largest reply a call accepts;
-	// 0 keeps grpc-go's default of 4 MiB. A larger reply fails the call as
-	// the request's fault.
+	// 0 keeps grpc-go's default of 4 MiB, above math.MaxInt32 fails Connect.
+	// A larger reply fails the call as a bad response with
+	// ErrResponseTooLarge. A call in flight may buffer up to twice this.
 	MaxResponseBytes int
 	// DialOptions are passed through for cases the fields above do not cover,
 	// such as custom credentials or an in-process dialer in tests. Custom
@@ -102,7 +108,14 @@ type Sender struct {
 	// stopWatch ends the connection watcher; watched closes when it has.
 	stopWatch context.CancelFunc
 	watched   chan struct{}
+	// limit is the largest reply a call accepts, and call the options that
+	// check it: both set by Connect.
+	limit int
+	call  []grpc.CallOption
 }
+
+// defaultMaxResponse is grpc-go's own default, kept when no limit is given.
+const defaultMaxResponse = 4 << 20
 
 // New prepares a sender. It does not dial: the connection is established by
 // Connect, before the run starts, so a wrong address fails immediately rather
@@ -153,14 +166,28 @@ func (s *Sender) Connect(ctx context.Context) error {
 		// them itself, and a run without metadata has nothing in the send path.
 		dialOpts = append(dialOpts, grpc.WithPerRPCCredentials(staticMetadata(s.opts.Metadata)))
 	}
-	if s.opts.MaxResponseBytes > 0 {
-		dialOpts = append(dialOpts, grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(s.opts.MaxResponseBytes)))
+	limit := s.opts.MaxResponseBytes
+	if limit == 0 {
+		limit = defaultMaxResponse
+	}
+	if limit < 0 || limit > math.MaxInt32 {
+		return fmt.Errorf("%w: %d", ErrMaxResponseOutOfRange, limit)
 	}
 	dialOpts = append(dialOpts, s.opts.DialOptions...)
 
 	conn, err := grpc.NewClient(s.opts.Target, dialOpts...)
 	if err != nil {
 		return fmt.Errorf("connect to %s: %w", s.opts.Target, err)
+	}
+	s.limit = limit
+	// Our codec refuses a reply over the limit; grpc-go's own limit is set
+	// twice as high, so it only bounds the memory a reply can take. Past it
+	// grpc-go refuses first, in words that also mean the target refused our
+	// request. Per call rather than as the connection's default: a default
+	// costs grpc-go an allocation per call to merge with these.
+	s.call = []grpc.CallOption{
+		grpc.ForceCodec(&rawCodec{limit: limit}),
+		grpc.MaxCallRecvMsgSize(int(min(2*int64(limit), math.MaxInt32))),
 	}
 
 	if err := waitReady(ctx, conn); err != nil {
@@ -286,7 +313,7 @@ func (s *Sender) Close() error {
 // category inside the outcome is data about the target.
 func (s *Sender) Send(ctx context.Context, req engine.Request) (engine.Outcome, error) {
 	s.mu.RLock()
-	conn, closed := s.conn, s.closed
+	conn, closed, callOpts, limit := s.conn, s.closed, s.call, s.limit
 	s.mu.RUnlock()
 
 	switch {
@@ -327,11 +354,13 @@ func (s *Sender) Send(ctx context.Context, req engine.Request) (engine.Outcome, 
 	}
 
 	payload := req.Payload
-	body, target := responseTarget(req.KeepResponse)
+	if req.KeepResponse {
+		call.reply.body = new([]byte)
+	}
 
 	// Before Invoke: grpc-go waits for the resolver before its first Begin.
 	call.times.invokedAt = time.Now()
-	err := conn.Invoke(callCtx, req.Method, &payload, target, rawCall...)
+	err := conn.Invoke(callCtx, req.Method, &payload, &call.reply, callOpts...)
 
 	// The run was stopped: not a broken sender, but nothing was measured either.
 	// gRPC does not wrap ctx.Err(), so the wrapping happens here — without it the
@@ -343,6 +372,13 @@ func (s *Sender) Send(ctx context.Context, req engine.Request) (engine.Outcome, 
 
 	times := call.read()
 	category := categorize(err, times.answered, !times.sentAt.IsZero())
+	code, fromTarget := status.Code(err), times.answered && !refusedReply(err, times.answered)
+	if err != nil && call.reply.over {
+		// Our codec refused the reply: whatever status the target sent after
+		// it, and whether it had arrived yet, the call is ours to fail.
+		err = fmt.Errorf("%w: %d bytes, the limit is %d", ErrResponseTooLarge, call.reply.size, limit)
+		category, code, fromTarget = engine.CategoryBadResponse, codes.ResourceExhausted, false
+	}
 	sentAt, doneAt, notSent := timestamps(times, category)
 
 	outcome := engine.Outcome{
@@ -352,31 +388,19 @@ func (s *Sender) Send(ctx context.Context, req engine.Request) (engine.Outcome, 
 		ConnWait:   times.connWait,
 		DoneAt:     doneAt,
 		Category:   category,
-		Code:       status.Code(err).String(),
+		Code:       code.String(),
 		Err:        err,
 
-		CodeFromTarget: times.answered && !refusedReply(err, times.answered),
+		CodeFromTarget: fromTarget,
 	}
 	if notSent {
 		outcome.NotSentOn = s.blocker(conn, times)
 	}
-	if body != nil {
-		outcome.Response = *body
+	if call.reply.body != nil {
+		outcome.Response = *call.reply.body
 	}
 
 	return outcome, nil
-}
-
-// responseTarget picks what the codec decodes into: a byte slice when the run
-// needs the body, and a sentinel that copies nothing when it does not.
-func responseTarget(keep bool) (body *[]byte, decodeInto any) {
-	if !keep {
-		return nil, &discarded{}
-	}
-
-	body = new([]byte)
-
-	return body, body
 }
 
 // Conn is the connection calls go through, for resolving method schemas over
