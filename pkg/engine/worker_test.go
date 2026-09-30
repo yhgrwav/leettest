@@ -735,7 +735,7 @@ func TestPoolCountsTheSlotsHeldAtTheHit(t *testing.T) {
 		begun := time.Now()
 		<-ctx.Done()
 		if req.Method == "claims done early" {
-			return Outcome{Category: CategoryTimeout, SentAt: begun, DoneAt: begun}, nil
+			return Outcome{Category: CategoryTimeout, SentAt: begun, DoneAt: past}, nil
 		}
 
 		return Outcome{}, ctx.Err()
