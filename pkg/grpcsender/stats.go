@@ -56,6 +56,10 @@ type callTimes struct {
 	answered bool
 	// answeredAt is when the trailer arrived.
 	answeredAt time.Time
+	// heard is true once the target's headers or a body arrive: headers
+	// followed by a reset are the target alive. A trailer alone counts in
+	// Send, where its status is known.
+	heard bool
 }
 
 // callStats is where one call's timings are collected while the transport
@@ -150,6 +154,7 @@ func (h handler) HandleRPC(ctx context.Context, rpc stats.RPCStats) {
 		// waiting since its start; the wait for a stream starts again here.
 		call.times.pickedAt = v.BeginTime
 		call.times.headerAt = time.Time{}
+		call.times.heard = false
 		call.times.sentAt = time.Time{}
 	case *stats.DelayedPickComplete:
 		// The wait for a stream starts once there is a connection.
@@ -173,6 +178,8 @@ func (h handler) HandleRPC(ctx context.Context, rpc stats.RPCStats) {
 		// Taking it here rather than with time.Now() in the worker keeps the Go
 		// scheduler's delay out of the measurement.
 		call.times.sentAt = v.SentTime
+	case *stats.InHeader, *stats.InPayload:
+		call.times.heard = true
 	case *stats.InTrailer:
 		call.times.answered, call.times.answeredAt = true, h.now()
 	case *stats.End:

@@ -185,9 +185,10 @@ type MethodReport struct {
 	// from which to the end of the schedule no call got an answer: neither a
 	// success nor a status from the target. Nil if there is none.
 	SilentFrom *int
-	// LastAnswerAt is when the last call the target answered was scheduled,
-	// measured from the start of the run: where the silence begins. Nil when
-	// the target answered nothing at all.
+	// LastAnswerAt is when the last call the target was heard on went out
+	// (Outcome.Heard, or a status from the target), measured from the start
+	// of the run: where the silence begins. The send, not the schedule: the
+	// target's moment, not the generator's. Nil when nothing was heard.
 	LastAnswerAt *time.Duration
 	// RPSLow and RPSHigh are the planned rates over the stages the statement
 	// covers: from SilentFrom on if it is set, the whole plan otherwise.
@@ -367,9 +368,20 @@ type methodStats struct {
 	// codes counts failed calls by the transport's code and its source; nil
 	// until one fails.
 	codes map[codeKey]int
-	// lastAnswer is the latest scheduled moment among the calls the target
-	// answered, as an offset from the start of the run; -1 until one is.
+	// lastAnswer is the latest send among the calls the target was heard on,
+	// as an offset from the start of the run; -1 until one is.
 	lastAnswer time.Duration
+}
+
+// heard reports whether anything of the target's came back for r: the
+// sender says so, or the category is a status only the target sends.
+func heard(r Result) bool {
+	switch r.Category {
+	case CategorySuccess, CategoryServerFault, CategoryOverload, CategoryClientFault, CategoryBadResponse:
+		return true
+	}
+
+	return r.Heard
 }
 
 func NewStats() *Stats {
@@ -455,9 +467,10 @@ func (s *Stats) Record(r Result) {
 	// what it should show, and the report says which seconds were warmup.
 	method.timeline.record(s.startedAt, r)
 
-	switch r.Category {
-	case CategorySuccess, CategoryServerFault, CategoryOverload, CategoryClientFault, CategoryBadResponse:
-		method.lastAnswer = max(method.lastAnswer, r.ScheduledAt.Sub(s.startedAt))
+	if heard(r) {
+		// The send, not the schedule: a generator behind its schedule would
+		// otherwise pass its own lag off as the target's silence.
+		method.lastAnswer = max(method.lastAnswer, r.SentAt.Sub(s.startedAt))
 	}
 
 	if r.ScheduledAt.Before(s.startedAt.Add(s.warmup)) {

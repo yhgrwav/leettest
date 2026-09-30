@@ -397,6 +397,7 @@ func (s *Sender) Send(ctx context.Context, req engine.Request) (engine.Outcome, 
 		Err:        err,
 
 		CodeFromTarget: fromTarget,
+		Heard:          times.heard || call.reply.over || (times.answered && !expiredCopy(code, times, req.Deadline)),
 	}
 	if notSent {
 		outcome.NotSentOn = s.blocker(conn, times)
@@ -416,6 +417,21 @@ func (s *Sender) Send(ctx context.Context, req engine.Request) (engine.Outcome, 
 // then.
 func echoOfOurDeadline(code codes.Code, times callTimes, deadline time.Time) bool {
 	return code == codes.Canceled && times.answered && !deadline.IsZero() && !times.answeredAt.Before(deadline)
+}
+
+// expiredCopy reports whether a trailer is only the target's copy of our
+// deadline running out: DEADLINE_EXCEEDED arriving at or after 90% of the
+// budget the call went out with. grpc-go on the target sends it by itself,
+// frozen application or not, so it does not show the target alive. One that
+// came earlier is the target's own answer, such as a dependency timing out.
+func expiredCopy(code codes.Code, times callTimes, deadline time.Time) bool {
+	if code != codes.DeadlineExceeded || deadline.IsZero() || times.sentAt.IsZero() {
+		return code == codes.DeadlineExceeded
+	}
+
+	budget := deadline.Sub(times.sentAt)
+
+	return !times.answeredAt.Before(times.sentAt.Add(budget * 9 / 10))
 }
 
 // Conn is the connection calls go through, for resolving method schemas over
