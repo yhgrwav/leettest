@@ -280,6 +280,9 @@ func (r *poolRun) launch(p *WorkerPool, req Request, out chan<- Result) error {
 		release := func() {
 			p.inFlight.Add(-1)
 			<-r.slots
+			// Held means the slot was still taken, not that Send had not
+			// returned: the cap sees slots, so a call that left Send before
+			// the hit but gave its slot back at or after it did hold one.
 			r.countIfHeldPastDeadline(req, time.Now())
 		}
 

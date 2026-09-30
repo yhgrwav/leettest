@@ -701,6 +701,39 @@ func TestPoolCountsHeldSlotsExactlyAndDecidesItsEdges(t *testing.T) {
 	}
 }
 
+// Ground: boundary — the count is of slots held at the hit T past their
+// deadline, decided on exact moments a nanosecond either side of T. A slot
+// given back exactly at T was held then: its call may have left Send before
+// T, the pool freeing it only at T.
+func TestPoolCountsTheSlotsHeldAtTheHitToTheNanosecond(t *testing.T) {
+	hit := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
+	const ns = time.Nanosecond
+
+	for _, tc := range []struct {
+		name               string
+		released, deadline time.Duration // from the hit
+		counted            bool
+	}{
+		{"held past the hit, deadline just before", ns, -ns, true},
+		{"released exactly at the hit, deadline just before", 0, -ns, true},
+		{"released just before the hit", -ns, -ns, false},
+		{"held, deadline exactly at the hit", ns, 0, false},
+		{"held, deadline just after the hit", ns, ns, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newPoolRun(t.Context(), 1)
+			defer r.close()
+			r.abortedAt.Store(&hit)
+
+			r.countIfHeldPastDeadline(Request{ScheduledAt: hit.Add(-time.Minute), Deadline: hit.Add(tc.deadline)}, hit.Add(tc.released))
+
+			if got, want := r.overDeadline.Load(), map[bool]int64{true: 1, false: 0}[tc.counted]; got != want {
+				t.Errorf("counted %d, want %d", got, want)
+			}
+		})
+	}
+}
+
 // Ground: concurrency — why the cap can never report a moment other than its
 // own: once the caller has aborted, launch refuses on the cancellation and
 // never reaches the cap at all. Pinned so a reordering there does not quietly
