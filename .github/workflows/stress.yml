@@ -31,7 +31,7 @@ jobs:
           go-version: ${{ matrix.go }}
       # 20 runs of the slowest package took ~23 min in Docker on 2 CPUs; the
       # default 10 min per test binary would cut it short.
-      - run: go test -race -count=20 -timeout 90m ./... 2>&1 | tee stress.log
+      - run: make stress 2>&1 | tee stress.log
         shell: bash -o pipefail {0}
       - name: keep the failures
         if: failure()
