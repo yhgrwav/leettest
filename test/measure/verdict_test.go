@@ -17,8 +17,10 @@ package measure
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -718,7 +720,7 @@ type tagging struct {
 	engine.Sender
 	next atomic.Int64
 	mu   sync.Mutex
-	sent map[string]time.Time
+	sent map[string]engine.Outcome
 }
 
 func (g *tagging) Send(ctx context.Context, req engine.Request) (engine.Outcome, error) {
@@ -726,7 +728,7 @@ func (g *tagging) Send(ctx context.Context, req engine.Request) (engine.Outcome,
 	out, err := g.Sender.Send(metadata.AppendToOutgoingContext(ctx, stand.CallIDKey, id), req)
 
 	g.mu.Lock()
-	g.sent[id] = out.SentAt
+	g.sent[id] = out
 	g.mu.Unlock()
 
 	return out, err
@@ -751,7 +753,7 @@ func checkSilenceBegins(t *testing.T, wrap func(engine.Sender) engine.Sender) {
 	}
 	t.Cleanup(func() { _ = sender.Close() })
 
-	tagged := &tagging{Sender: wrap(sender), sent: map[string]time.Time{}}
+	tagged := &tagging{Sender: wrap(sender), sent: map[string]engine.Outcome{}}
 	eng, err := engine.New(engine.Options{
 		Calls:       []engine.Call{load(target.Method(), silentRPS, silentRun, silentTimeout)},
 		Sender:      tagged,
@@ -785,11 +787,30 @@ func checkSilenceBegins(t *testing.T, wrap func(engine.Sender) engine.Sender) {
 	}
 	var last time.Time
 	for _, id := range served {
-		if at := tagged.sent[id]; at.After(last) {
+		if at := tagged.sent[id].SentAt; at.After(last) {
 			last = at
 		}
 	}
 	if want := last.Sub(report.StartedAt); *m.LastAnswerAt != want {
-		t.Errorf("last answer at %v, want %v: when the last call the stand answered went out", *m.LastAnswerAt, want)
+		t.Errorf("last answer at %v, want %v: when the last call the stand answered went out\n%s",
+			*m.LastAnswerAt, want, heardNotServed(tagged.sent, served, report.StartedAt))
 	}
+}
+
+// heardNotServed lists the calls the sender says the target was heard on but
+// the stand never answered: what moved the last answer past the stand's.
+func heardNotServed(sent map[string]engine.Outcome, served []string, start time.Time) string {
+	var b strings.Builder
+	for id, out := range sent {
+		if !out.Heard || slices.Contains(served, id) {
+			continue
+		}
+		fmt.Fprintf(&b, "  call %s sent at %v: %v, code %s from target %v, done after %v: %v\n",
+			id, out.SentAt.Sub(start), out.Category, out.Code, out.CodeFromTarget, out.DoneAt.Sub(out.SentAt), out.Err)
+	}
+	if b.Len() == 0 {
+		return "  no call was heard without the stand answering it"
+	}
+
+	return b.String()
 }

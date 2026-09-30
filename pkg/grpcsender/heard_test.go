@@ -115,6 +115,42 @@ func TestHeard_AnEarlyDeadlineExceededFromTheTargetIsHeard(t *testing.T) {
 	}
 }
 
+// Ground: signal grpc-go v1.84.0 — the target's copy of our deadline runs
+// out first and it answers trailers-only DEADLINE_EXCEEDED before our own
+// timer fires, the order a loaded client sees. The trailers-only answer must
+// not pass for headers: it says the target did not answer in time.
+func TestHeard_ATrailersOnlyDeadlineExceededAtTheEndIsNotHeard(t *testing.T) {
+	answer := grpc.UnknownServiceHandler(func(_ any, stream grpc.ServerStream) error {
+		var in []byte
+		if err := stream.RecvMsg(&in); err != nil {
+			return err
+		}
+		deadline, ok := stream.Context().Deadline()
+		if !ok {
+			return status.Error(codes.InvalidArgument, "no grpc-timeout")
+		}
+		<-time.After(time.Until(deadline) * 95 / 100)
+
+		return status.Error(codes.DeadlineExceeded, "the copy of the caller's deadline ran out")
+	})
+	sender := connected(t, listen(t, &seeingTarget{}, grpc.ForceServerCodec(rawCodec{}), answer))
+
+	req := request(time.Now())
+	req.Method = "/leettest.test.Frozen/Get"
+	req.Deadline = time.Now().Add(time.Second)
+
+	out, err := sender.Send(context.Background(), req)
+	if err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	if out.Code != codes.DeadlineExceeded.String() || !out.CodeFromTarget {
+		t.Fatalf("code %s from target %v: want the target's trailer before our deadline (%v)", out.Code, out.CodeFromTarget, out.Err)
+	}
+	if out.Heard {
+		t.Error("heard = true: a trailers-only DEADLINE_EXCEEDED at 95% of the budget is the target's copy of our deadline")
+	}
+}
+
 // Ground: contract — a success is heard.
 func TestHeard_ASuccessIsHeard(t *testing.T) {
 	if out := sendTo(t, 16, 0); out.Category != engine.CategorySuccess || !out.Heard {
