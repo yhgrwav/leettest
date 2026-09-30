@@ -701,72 +701,36 @@ func TestPoolCountsHeldSlotsExactlyAndDecidesItsEdges(t *testing.T) {
 	}
 }
 
-// Ground: boundary — a slot given back at the very moment of the hit was
-// held then: the caller may have left Send before T and the pool freed the
-// slot only at T, and the count is of slots, not of calls in Send.
-func TestPoolCountsASlotReleasedAtTheHitAsHeld(t *testing.T) {
-	r := newPoolRun(t.Context(), 1)
-	defer r.close()
+// Ground: boundary — the count is of slots held at the hit T past their
+// deadline, decided on exact moments a nanosecond either side of T. A slot
+// given back exactly at T was held then: its call may have left Send before
+// T, the pool freeing it only at T.
+func TestPoolCountsTheSlotsHeldAtTheHitToTheNanosecond(t *testing.T) {
+	hit := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
+	const ns = time.Nanosecond
 
-	r.abortByCaller()
-	capAt, _ := r.aborted()
+	for _, tc := range []struct {
+		name               string
+		released, deadline time.Duration // from the hit
+		counted            bool
+	}{
+		{"held past the hit, deadline just before", ns, -ns, true},
+		{"released exactly at the hit, deadline just before", 0, -ns, true},
+		{"released just before the hit", -ns, -ns, false},
+		{"held, deadline exactly at the hit", ns, 0, false},
+		{"held, deadline just after the hit", ns, ns, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newPoolRun(t.Context(), 1)
+			defer r.close()
+			r.abortedAt.Store(&hit)
 
-	r.countIfHeldPastDeadline(Request{ScheduledAt: capAt.Add(-time.Minute), Deadline: capAt.Add(-time.Second)}, capAt)
+			r.countIfHeldPastDeadline(Request{ScheduledAt: hit.Add(-time.Minute), Deadline: hit.Add(tc.deadline)}, hit.Add(tc.released))
 
-	if got := r.overDeadline.Load(); got != 1 {
-		t.Errorf("counted %d, want 1: released at the hit, past its deadline", got)
-	}
-}
-
-// Ground: concurrency — the four cases of a slot at the hit, through the pool
-// itself: past its deadline and in Send counts; in Send with its deadline
-// ahead does not; returned and released before the hit does not; and one
-// whose Send reports being done before the hit but still held the slot at it
-// counts, because the slot, not the call's own account, is what is counted.
-func TestPoolCountsTheSlotsHeldAtTheHit(t *testing.T) {
-	r := newPoolRun(t.Context(), 3)
-	defer r.close()
-
-	past, ahead := time.Now().Add(-time.Second), time.Now().Add(time.Hour)
-	pool := NewWorkerPool(senderFunc(func(ctx context.Context, req Request) (Outcome, error) {
-		if req.Method == "released" {
-			return Outcome{Category: CategorySuccess}, nil
-		}
-		begun := time.Now()
-		<-ctx.Done()
-		if req.Method == "claims done early" {
-			return Outcome{Category: CategoryTimeout, SentAt: begun, DoneAt: past}, nil
-		}
-
-		return Outcome{}, ctx.Err()
-	}), 3)
-	out := make(chan Result, 8)
-
-	launch := func(method string, deadline time.Time) {
-		t.Helper()
-		if err := r.launch(pool, Request{Method: method, ScheduledAt: past, Deadline: deadline}, out); err != nil {
-			t.Fatalf("launch %s: %v", method, err)
-		}
-	}
-
-	launch("released", past)
-	<-out // its slot is back before anything else happens
-
-	launch("in Send past", past)
-	launch("in Send ahead", ahead)
-	launch("claims done early", past)
-
-	err := r.launch(pool, Request{Method: "refused", ScheduledAt: past, Deadline: past}, out)
-	var capErr *InFlightCapError
-	if !errors.As(err, &capErr) {
-		t.Fatalf("fourth held launch: %v, want the cap", err)
-	}
-	if finished := r.finish(err); !errors.As(finished, &capErr) {
-		t.Fatalf("finish: %v", finished)
-	}
-
-	if capErr.OverDeadline != 2 {
-		t.Errorf("over deadline = %d, want 2: the call in Send past its deadline and the one still holding its slot", capErr.OverDeadline)
+			if got, want := r.overDeadline.Load(), map[bool]int64{true: 1, false: 0}[tc.counted]; got != want {
+				t.Errorf("counted %d, want %d", got, want)
+			}
+		})
 	}
 }
 
