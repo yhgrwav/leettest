@@ -20,7 +20,9 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	"github.com/yhgrwav/leettest/pkg/engine"
 )
@@ -78,6 +80,38 @@ func TestHeard_HeadersBeforeATimeoutAreHeard(t *testing.T) {
 func TestHeard_NothingBeforeATimeoutIsSilence(t *testing.T) {
 	if out := sendHanging(t, false); out.Heard {
 		t.Errorf("heard = true on a call the target never answered (%v, code from target %v)", out.Err, out.CodeFromTarget)
+	}
+}
+
+// Ground: contract — a target whose dependency times out answers
+// DEADLINE_EXCEEDED long before our deadline: that is the target's own
+// answer, and it is alive. Only the status at the end of our budget is the
+// target's copy of our deadline running out.
+func TestHeard_AnEarlyDeadlineExceededFromTheTargetIsHeard(t *testing.T) {
+	answer := grpc.UnknownServiceHandler(func(_ any, stream grpc.ServerStream) error {
+		var in []byte
+		if err := stream.RecvMsg(&in); err != nil {
+			return err
+		}
+		<-time.After(50 * time.Millisecond)
+
+		return status.Error(codes.DeadlineExceeded, "the dependency timed out")
+	})
+	sender := connected(t, listen(t, &seeingTarget{}, grpc.ForceServerCodec(rawCodec{}), answer))
+
+	req := request(time.Now())
+	req.Method = "/leettest.test.Dependency/Get"
+	req.Deadline = time.Now().Add(time.Second)
+
+	out, err := sender.Send(context.Background(), req)
+	if err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	if out.Code != codes.DeadlineExceeded.String() || !out.CodeFromTarget {
+		t.Fatalf("code %s from target %v: want the target's DEADLINE_EXCEEDED (%v)", out.Code, out.CodeFromTarget, out.Err)
+	}
+	if !out.Heard {
+		t.Error("heard = false: the target answered 950ms before our deadline")
 	}
 }
 

@@ -24,6 +24,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
@@ -151,6 +152,20 @@ type Stand struct {
 	client    net.Conn
 	arrivals  []time.Time
 	holds     []time.Duration
+	served    []string
+}
+
+// CallIDKey is the metadata key a test may tag its calls with; Served lists
+// the tags of the calls the stand answered.
+const CallIDKey = "x-leettest-call-id"
+
+// Served reports the CallIDKey tags of the calls the stand answered, in the
+// order it answered them. Untagged calls are not listed.
+func (s *Stand) Served() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return slices.Clone(s.served)
 }
 
 // Start serves a stand on an in-process listener until Stop. A nil answer
@@ -271,6 +286,9 @@ func (s *Stand) Check(ctx context.Context, _ *grpc_health_v1.HealthCheckRequest)
 
 	s.mu.Lock()
 	s.holds = append(s.holds, time.Since(arrivedAt))
+	if md, ok := metadata.FromIncomingContext(ctx); ok && len(md.Get(CallIDKey)) > 0 {
+		s.served = append(s.served, md.Get(CallIDKey)[0])
+	}
 	s.mu.Unlock()
 
 	if behavior.Code != codes.OK {
