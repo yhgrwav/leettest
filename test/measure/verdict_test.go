@@ -128,17 +128,25 @@ func runOnFrom(t *testing.T, s *stand.Stand, call engine.Call, maxInFlight int,
 // were taken: seen from outside the engine and its report.
 type enteringSend struct {
 	engine.Sender
-	mu      *sync.Mutex
-	entered *[]time.Time
+	mu    *sync.Mutex
+	calls *[]inSend
+}
+
+// inSend is one call's stay in Send, as the wrapper saw it.
+type inSend struct {
+	entered, left, deadline time.Time
 }
 
 func (e enteringSend) Send(ctx context.Context, req engine.Request) (engine.Outcome, error) {
-	now := time.Now()
+	entered := time.Now()
+	out, err := e.Sender.Send(ctx, req)
+	left := time.Now()
+
 	e.mu.Lock()
-	*e.entered = append(*e.entered, now)
+	*e.calls = append(*e.calls, inSend{entered: entered, left: left, deadline: req.Deadline})
 	e.mu.Unlock()
 
-	return e.Sender.Send(ctx, req)
+	return out, err
 }
 
 // --- the in-flight cap ---------------------------------------------------
@@ -157,12 +165,12 @@ func TestReport_SlotsHeldPastTheAllowanceHitTheCap(t *testing.T) {
 	hold := releaseMargin + 20*time.Millisecond
 	slots := budget(capRPS, capTimeout)
 	var (
-		mu      sync.Mutex
-		entered []time.Time
+		mu    sync.Mutex
+		calls []inSend
 	)
 	report, span, err := runOnFrom(t, target, load(target.Method(), capRPS, 2*time.Second, capTimeout),
 		slots, func(s engine.Sender) engine.Sender {
-			return enteringSend{holdingPastDeadline{s, hold}, &mu, &entered}
+			return enteringSend{holdingPastDeadline{s, hold}, &mu, &calls}
 		})
 
 	if !errors.Is(err, engine.ErrInFlightCapExceeded) {
@@ -182,42 +190,44 @@ func TestReport_SlotsHeldPastTheAllowanceHitTheCap(t *testing.T) {
 	}
 	// The cap is ⌈1000×200ms⌉ + 1 + ⌈1000×100ms⌉ = 301 slots, and the wrapper
 	// frees a slot only 120ms past each deadline, so nothing is released
-	// before 320ms. The cap refuses the next call the generator takes after
-	// the 301st slot is taken: on an idle machine at 301ms, later when the
-	// generator is behind its schedule, and then more calls are past their
-	// deadline. The moment of the refusal is the pool's own and no one
-	// outside sees it, so the report's CapHit.At is held between two moments
-	// taken outside the engine: the 301st call entering Send, and Run
-	// returning.
-	mu.Lock()
-	stamps := slices.Clone(entered)
-	mu.Unlock()
-	slices.SortFunc(stamps, time.Time.Compare)
-	if len(stamps) < slots {
-		t.Fatalf("%d calls entered Send, want at least the %d slots", len(stamps), slots)
-	}
-	full, returned, hit := stamps[slots-1].Sub(span.started), span.returned.Sub(span.started), report.CapHit.At
-	if hit < full || hit > returned {
-		t.Errorf("cap hit at %v, want between the %dth call entering Send at %v and Run returning at %v",
-			hit, slots, full, returned)
+	// before 320ms. The cap refuses the call the generator takes once all 301
+	// are held: on an idle machine at 301ms, later when the generator is
+	// behind. The refusal is the pool's own moment and nobody outside sees
+	// it; the report's T = CapHit.At is held to what is known without the
+	// engine: not before the 301st call was due, not after Run returned.
+	hit, returned := report.CapHit.At, span.returned.Sub(report.StartedAt)
+	if firstDue := time.Duration(slots-1) * time.Millisecond; hit < firstDue || hit > returned {
+		t.Errorf("cap hit at %v, want between the %dth call being due at %v and Run returning at %v",
+			hit, slots, firstDue, returned)
 	}
 
-	// Calls are scheduled every millisecond from 0: those due by at−200ms are
-	// past their deadline at the moment at. The count in the report lies
-	// between that of the moment the cap filled and that of the refusal; and
-	// it is the count at the report's own moment, give or take the ±3 of a
-	// real run. An off-by-one in the counting is pinned exactly by
-	// TestPoolCountsHeldSlotsExactlyAndDecidesItsEdges.
-	overAt := func(at time.Duration) int { return int((at-capTimeout)/time.Millisecond) + 1 }
-	got := report.CapHit.OverDeadline
-	if low, high := overAt(full)-3, overAt(hit)+3; got < low || got > high {
-		t.Errorf("over deadline = %d, want %d..%d: from the cap filling at %v to its refusal at %v\n"+
-			"start lag max %v, run %v of the planned %v, aborted %d, timed out %d",
-			got, low, high, full, hit, report.StartLagMax, report.Duration, report.Planned,
-			report.Aborted, report.Methods[0].TimedOut)
+	// OverDeadline counts the slots held at T past their deadline. A slot is
+	// held from before Send to just after it, so the calls the wrapper saw
+	// inside Send at T with their deadline passed are all counted: the lower
+	// bound. The slots held by calls not yet in Send can only be calls due
+	// past their deadline that had not entered by T: the schedule says how
+	// many were due (one a millisecond from the start), the wrapper how many
+	// of those had entered. That difference on top is the upper bound.
+	mu.Lock()
+	seen := slices.Clone(calls)
+	mu.Unlock()
+	at := report.StartedAt.Add(hit)
+	inside, enteredDue := 0, 0
+	for _, c := range seen {
+		if c.entered.After(at) || !c.deadline.Before(at) {
+			continue
+		}
+		enteredDue++
+		if !c.left.Before(at) {
+			inside++
+		}
 	}
-	if want := overAt(hit); got < want-3 || got > want+3 {
-		t.Errorf("over deadline = %d, want %d +/- 3: the calls past their deadline at the reported hit %v", got, want, hit)
+	due := max(0, int((hit-capTimeout+time.Millisecond-1)/time.Millisecond))
+	low, high := inside, inside+max(0, due-enteredDue)
+	if got := report.CapHit.OverDeadline; got < low || got > high {
+		t.Errorf("over deadline = %d, want %d..%d at the hit %v: %d in Send past their deadline, "+
+			"%d due by then of which %d had entered\nstart lag max %v, run %v of the planned %v",
+			got, low, high, hit, inside, due, enteredDue, report.StartLagMax, report.Duration, report.Planned)
 	}
 }
 
