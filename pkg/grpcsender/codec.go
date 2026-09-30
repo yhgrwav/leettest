@@ -14,7 +14,15 @@
 
 package grpcsender
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
+
+// ErrResponseTooLarge is the outcome error of a call whose reply arrived and
+// was over Options.MaxResponseBytes: the client refused it, whatever status
+// the target sent after it.
+var ErrResponseTooLarge = errors.New("response larger than the configured limit")
 
 // codecName is unique to this package so it cannot collide with a codec
 // registered elsewhere in the process.
@@ -29,7 +37,25 @@ type discarded struct{}
 // rawCodec moves bytes without touching them. The payload was encoded once
 // before the run started, and responses stay undecoded until something needs
 // their fields.
-type rawCodec struct{}
+//
+// limit, when above 0, is the largest reply a call decoding into a *reply
+// accepts. The check is ours rather than grpc-go's: grpc-go words a reply
+// over its limit like a request over the target's, and whether the target's
+// status had arrived by then is a race. See Sender.Connect.
+type rawCodec struct {
+	limit int
+}
+
+// reply is what a call decodes into when the sender checks the reply's size.
+// body is nil when the reply is not kept.
+type reply struct {
+	body *[]byte
+	// size is the last reply's length and over says it was past the limit.
+	// Both are set by every Unmarshal, so an object used again cannot carry a
+	// refusal over from the call before.
+	size int
+	over bool
+}
 
 func (rawCodec) Marshal(v any) ([]byte, error) {
 	b, ok := v.(*[]byte)
@@ -40,8 +66,18 @@ func (rawCodec) Marshal(v any) ([]byte, error) {
 	return *b, nil
 }
 
-func (rawCodec) Unmarshal(data []byte, v any) error {
+func (c rawCodec) Unmarshal(data []byte, v any) error {
 	switch dst := v.(type) {
+	case *reply:
+		dst.size, dst.over = len(data), c.limit > 0 && len(data) > c.limit
+		if dst.over {
+			return ErrResponseTooLarge
+		}
+		if dst.body != nil {
+			*dst.body = append((*dst.body)[:0], data...)
+		}
+
+		return nil
 	case *discarded:
 		return nil
 	case *[]byte:
