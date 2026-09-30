@@ -801,7 +801,8 @@ func checkSilenceBegins(t *testing.T, wrap func(engine.Sender) engine.Sender) {
 // the stand never answered: what moved the last answer past the stand's.
 func heardNotServed(sent map[string]engine.Outcome, served []string, start time.Time) string {
 	var b strings.Builder
-	for id, out := range sent {
+	for id := range sent {
+		out := sent[id]
 		if !out.Heard || slices.Contains(served, id) {
 			continue
 		}
