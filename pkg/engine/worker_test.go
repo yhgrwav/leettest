@@ -701,6 +701,75 @@ func TestPoolCountsHeldSlotsExactlyAndDecidesItsEdges(t *testing.T) {
 	}
 }
 
+// Ground: boundary — a slot given back at the very moment of the hit was
+// held then: the caller may have left Send before T and the pool freed the
+// slot only at T, and the count is of slots, not of calls in Send.
+func TestPoolCountsASlotReleasedAtTheHitAsHeld(t *testing.T) {
+	r := newPoolRun(t.Context(), 1)
+	defer r.close()
+
+	r.abortByCaller()
+	capAt, _ := r.aborted()
+
+	r.countIfHeldPastDeadline(Request{ScheduledAt: capAt.Add(-time.Minute), Deadline: capAt.Add(-time.Second)}, capAt)
+
+	if got := r.overDeadline.Load(); got != 1 {
+		t.Errorf("counted %d, want 1: released at the hit, past its deadline", got)
+	}
+}
+
+// Ground: concurrency — the four cases of a slot at the hit, through the pool
+// itself: past its deadline and in Send counts; in Send with its deadline
+// ahead does not; returned and released before the hit does not; and one
+// whose Send reports being done before the hit but still held the slot at it
+// counts, because the slot, not the call's own account, is what is counted.
+func TestPoolCountsTheSlotsHeldAtTheHit(t *testing.T) {
+	r := newPoolRun(t.Context(), 3)
+	defer r.close()
+
+	past, ahead := time.Now().Add(-time.Second), time.Now().Add(time.Hour)
+	pool := NewWorkerPool(senderFunc(func(ctx context.Context, req Request) (Outcome, error) {
+		if req.Method == "released" {
+			return Outcome{Category: CategorySuccess}, nil
+		}
+		begun := time.Now()
+		<-ctx.Done()
+		if req.Method == "claims done early" {
+			return Outcome{Category: CategoryTimeout, SentAt: begun, DoneAt: begun}, nil
+		}
+
+		return Outcome{}, ctx.Err()
+	}), 3)
+	out := make(chan Result, 8)
+
+	launch := func(method string, deadline time.Time) {
+		t.Helper()
+		if err := r.launch(pool, Request{Method: method, ScheduledAt: past, Deadline: deadline}, out); err != nil {
+			t.Fatalf("launch %s: %v", method, err)
+		}
+	}
+
+	launch("released", past)
+	<-out // its slot is back before anything else happens
+
+	launch("in Send past", past)
+	launch("in Send ahead", ahead)
+	launch("claims done early", past)
+
+	err := r.launch(pool, Request{Method: "refused", ScheduledAt: past, Deadline: past}, out)
+	var capErr *InFlightCapError
+	if !errors.As(err, &capErr) {
+		t.Fatalf("fourth held launch: %v, want the cap", err)
+	}
+	if finished := r.finish(err); !errors.As(finished, &capErr) {
+		t.Fatalf("finish: %v", finished)
+	}
+
+	if capErr.OverDeadline != 2 {
+		t.Errorf("over deadline = %d, want 2: the call in Send past its deadline and the one still holding its slot", capErr.OverDeadline)
+	}
+}
+
 // Ground: concurrency — why the cap can never report a moment other than its
 // own: once the caller has aborted, launch refuses on the cancellation and
 // never reaches the cap at all. Pinned so a reordering there does not quietly

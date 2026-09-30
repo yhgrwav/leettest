@@ -204,30 +204,27 @@ func TestReport_SlotsHeldPastTheAllowanceHitTheCap(t *testing.T) {
 	// OverDeadline counts the slots held at T past their deadline. A slot is
 	// held from before Send to just after it, so the calls the wrapper saw
 	// inside Send at T with their deadline passed are all counted: the lower
-	// bound. The slots held by calls not yet in Send can only be calls due
-	// past their deadline that had not entered by T: the schedule says how
-	// many were due (one a millisecond from the start), the wrapper how many
-	// of those had entered. That difference on top is the upper bound.
+	// bound. Any call due past its deadline by T may have held a slot then,
+	// one not yet in Send or one out of it with its slot not yet back, and
+	// when a slot goes back is not seen outside the engine: the count of
+	// those due (one a millisecond from the start) is the upper bound. The
+	// count itself is pinned exactly by the engine's own tests,
+	// TestPoolCountsTheSlotsHeldAtTheHit and its neighbours.
 	mu.Lock()
 	seen := slices.Clone(calls)
 	mu.Unlock()
 	at := report.StartedAt.Add(hit)
-	inside, enteredDue := 0, 0
+	inside := 0
 	for _, c := range seen {
-		if c.entered.After(at) || !c.deadline.Before(at) {
-			continue
-		}
-		enteredDue++
-		if !c.left.Before(at) {
+		if !c.entered.After(at) && c.deadline.Before(at) && !c.left.Before(at) {
 			inside++
 		}
 	}
 	due := max(0, int((hit-capTimeout+time.Millisecond-1)/time.Millisecond))
-	low, high := inside, inside+max(0, due-enteredDue)
-	if got := report.CapHit.OverDeadline; got < low || got > high {
-		t.Errorf("over deadline = %d, want %d..%d at the hit %v: %d in Send past their deadline, "+
-			"%d due by then of which %d had entered\nstart lag max %v, run %v of the planned %v",
-			got, low, high, hit, inside, due, enteredDue, report.StartLagMax, report.Duration, report.Planned)
+	if got := report.CapHit.OverDeadline; got < inside || got > due {
+		t.Errorf("over deadline = %d, want %d..%d at the hit %v: %d in Send past their deadline, %d due by then\n"+
+			"start lag max %v, run %v of the planned %v",
+			got, inside, due, hit, inside, due, report.StartLagMax, report.Duration, report.Planned)
 	}
 }
 
