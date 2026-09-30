@@ -83,9 +83,10 @@ type Text struct {
 	lang Lang
 }
 
-// NewText builds the translator for a language.
-func NewText(lang Lang) Text {
-	return Text{lang: lang}
+// NewText builds the interface text. The screen is English whatever lang
+// says: other languages drew glyphs a Windows console could not show.
+func NewText(Lang) Text {
+	return Text{lang: LangEN}
 }
 
 func (t Text) Lang() Lang { return t.lang }

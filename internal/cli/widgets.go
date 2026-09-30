@@ -156,19 +156,21 @@ func keyHint(s styles, hints ...string) string {
 	return strings.Join(parts, s.faint.Render("   "))
 }
 
+// formatCount writes n exactly, digits grouped by three with commas.
 func formatCount(n int) string {
-	text := fmt.Sprintf("%d", n)
-	if len(text) <= 4 {
-		return text
-	}
+	digits := strconv.Itoa(n)
 
 	var b strings.Builder
+	if n < 0 {
+		b.WriteByte('-')
+		digits = digits[1:]
+	}
 
-	for i, r := range text {
-		if i > 0 && (len(text)-i)%3 == 0 {
-			b.WriteRune(' ')
+	for i := range len(digits) {
+		if i > 0 && (len(digits)-i)%3 == 0 {
+			b.WriteByte(',')
 		}
-		b.WriteRune(r)
+		b.WriteByte(digits[i])
 	}
 
 	return b.String()
@@ -252,5 +254,5 @@ func countField(label string, n, drop int) statField {
 		return statField{label: label, value: strconv.Itoa(n), drop: drop}
 	}
 
-	return statField{label: label, value: formatCount(n), compact: compactCount(uint64(n)), drop: drop}
+	return statField{label: label, value: formatCount(n), drop: drop}
 }

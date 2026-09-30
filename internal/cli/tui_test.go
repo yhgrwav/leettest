@@ -329,13 +329,17 @@ func TestSettingsKeysChangeValuesOnlyWhileEditing(t *testing.T) {
 
 	press(m, "j", "l")
 
-	if m.settings.Mode != before || m.row != rowLang {
+	if m.settings.Mode != before || m.row != rowMode {
 		t.Error("settings changed without entering them")
 	}
 
 	m.active = m.settingsTab()
 	pressKey(m, tea.KeyEnter)
 	press(m, "j")
+	if m.row != rowPalette {
+		t.Errorf("row = %d after j, want the palette row", m.row)
+	}
+	press(m, "k")
 	pressKey(m, tea.KeyRight)
 
 	if m.row != rowMode {

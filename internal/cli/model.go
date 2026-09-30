@@ -85,8 +85,7 @@ func appendCapped(values []float64, v float64) []float64 {
 type settingsRow int
 
 const (
-	rowLang settingsRow = iota
-	rowMode
+	rowMode settingsRow = iota
 	rowPalette
 	settingsRows
 )
@@ -341,20 +340,6 @@ func (m *model) onSettingsKey(key string) bool {
 
 func (m *model) cycleSetting(step int) {
 	switch m.row {
-	case rowLang:
-		langs := Languages()
-		index := 0
-
-		for i, option := range langs {
-			if string(option.Lang) == m.settings.Lang {
-				index = i
-
-				break
-			}
-		}
-
-		m.settings.Lang = string(langs[wrap(index+step, len(langs))].Lang)
-
 	case rowMode:
 		if Mode(m.settings.Mode) == ModeLight {
 			m.settings.Mode = string(ModeDark)
@@ -407,11 +392,13 @@ func tick() tea.Cmd {
 	})
 }
 
+// shortMethod is the method's name without its service, escaped to ASCII as
+// the report prints it.
 func shortMethod(method string) string {
 	_, name, found := strings.Cut(displayMethod(method), "/")
 	if !found {
-		return displayMethod(method)
+		return asciiText(displayMethod(method))
 	}
 
-	return name
+	return asciiText(name)
 }

@@ -108,6 +108,8 @@ func TestEnglish_ARussianSettingDrawsTheEnglishScreen(t *testing.T) {
 	ru.settings.Lang = string(LangRU)
 	ru.applySettings()
 	en := testModel(t)
+	// The settings tab prints the file's path; each model has its own.
+	ru.settings.path = en.settings.path
 
 	for tab := range en.tabs {
 		ru.active, en.active = tab, tab
@@ -154,7 +156,8 @@ func TestEnglish_ForeignTextIsPrintedAsEscapes(t *testing.T) {
 	var out bytes.Buffer
 	PrintReport(&out, "localhost:50051", reportScenarios()["foreign"])
 
-	if want := "/" + escapesOf("пкг") + "."; !strings.Contains(out.String(), want) {
+	// The report names a method without its leading slash, as for ASCII names.
+	if want := "\n" + escapesOf("пкг") + "." + escapesOf("Сервис") + "/" + escapesOf("Метод") + " "; !strings.Contains(out.String(), want) {
 		t.Errorf("report does not print the method as %s...:\n%s", want, out.String())
 	}
 }
@@ -170,6 +173,47 @@ func TestEnglish_JSONNotesCarryTheEscapedText(t *testing.T) {
 		}
 	}
 	t.Errorf("no note carries the method as escapes: %q", notes)
+}
+
+// The writer keeps the report ASCII; our own words must not lean on it. With
+// ASCII data in, no escape comes out, so a non-ASCII character typed into the
+// report's text fails here instead of printing as an escape.
+func TestEnglish_OurOwnReportTextNeedsNoEscapes(t *testing.T) {
+	escape := string(rune(backslash)) + "u"
+	for name, run := range reportScenarios() {
+		if name == "foreign" {
+			continue
+		}
+		var out bytes.Buffer
+		PrintReport(&out, "localhost:50051", run)
+		if i := strings.Index(out.String(), escape); i >= 0 {
+			t.Errorf("%s report escapes its own text: %q", name, out.String()[max(0, i-40):min(out.Len(), i+20)])
+		}
+		for _, note := range append(reportNotes(run.Report, ""), runNotes(run)...) {
+			if bad := badRunes(note, nil); len(bad) > 0 {
+				t.Errorf("%s note is not ASCII: %s", name, strings.Join(bad, "; "))
+			}
+		}
+	}
+}
+
+// Ground: boundary — characters past U+FFFF and control bytes, which no
+// report scenario carries.
+func TestEnglish_EscapesCoverControlAndAstralCharacters(t *testing.T) {
+	esc := func(units ...int) string {
+		var b strings.Builder
+		for _, u := range units {
+			fmt.Fprintf(&b, "%cu%04x", backslash, u)
+		}
+
+		return b.String()
+	}
+	in := "a" + string(rune(0x1b)) + "[31m" + string(rune(0x1f600)) + "\tb\n" + string(rune(0x7f))
+	want := "a" + esc(0x1b) + "[31m" + esc(0xd83d, 0xde00) + "\tb\n" + esc(0x7f)
+
+	if got := asciiText(in); got != want {
+		t.Errorf("asciiText(%q) = %q, want %q", in, got, want)
+	}
 }
 
 // D: the live view draws only glyphs checked on cmd.exe, in every state.

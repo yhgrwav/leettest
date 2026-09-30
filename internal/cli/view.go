@@ -356,7 +356,7 @@ func (m *model) method(width, index int) string {
 
 	var b strings.Builder
 
-	b.WriteString(m.styles.value.Render(displayMethod(method.Method)))
+	b.WriteString(m.styles.value.Render(asciiText(displayMethod(method.Method))))
 	b.WriteString("\n\n")
 
 	b.WriteString(fitStatLine(m.styles, width,
@@ -485,7 +485,7 @@ func (m *model) footerHints() string {
 		// Fades by stepping down the text colours: a terminal has no opacity.
 		fade := []lipgloss.Style{m.styles.value, m.styles.muted, m.styles.faint}
 
-		return fade[stage].Render(m.text.UnknownKey(m.hintKey))
+		return fade[stage].Render(m.text.UnknownKey(asciiText(m.hintKey)))
 	}
 
 	width := contentWidth(m.viewWidth())
@@ -522,7 +522,6 @@ func (m *model) settingsView(width int) string {
 		label   string
 		options []string
 	}{
-		{label: m.text.LanguageRow(), options: m.langOptions()},
 		{label: m.text.ModeRow(), options: m.modeOptions()},
 		{label: m.text.PaletteRow(), options: m.paletteOptions()},
 	}
@@ -610,17 +609,6 @@ func (m *model) optionText(text string, selected bool) string {
 	}
 
 	return m.styles.pick.Render(text)
-}
-
-func (m *model) langOptions() []string {
-	options := make([]string, 0, len(Languages()))
-
-	for _, lang := range Languages() {
-		selected := string(lang.Lang) == m.settings.Lang
-		options = append(options, m.option(m.optionText(lang.Title, selected), selected))
-	}
-
-	return options
 }
 
 func (m *model) modeOptions() []string {
