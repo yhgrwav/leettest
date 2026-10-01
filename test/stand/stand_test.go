@@ -187,6 +187,36 @@ func TestStand_FailEveryRarerThanTheRunFailsNothing(t *testing.T) {
 	}
 }
 
+// Ground: boundary — the stand of known capacity is the outside source the
+// breaking-point search is checked against (v0.2): at and below n nothing
+// waits, above n the queue grows by exactly 1/n − 1/rate a call.
+func TestCapacity_QueuesOnlyAboveItsRate(t *testing.T) {
+	const delay = 20 * time.Millisecond
+	at := func(rate, i int) stand.Call {
+		return stand.Call{N: i + 1, Since: time.Duration(i) * time.Second / time.Duration(rate)}
+	}
+
+	below := stand.Capacity(100, delay)
+	for i := range 200 {
+		if got := below(at(100, i)).Delay; got != delay {
+			t.Fatalf("at the capacity, call %d held %v, want %v", i, got, delay)
+		}
+	}
+
+	above := stand.Capacity(100, delay)
+	for i := range 200 {
+		// 200 arrivals a second, 100 served: call i waits i × (10ms − 5ms).
+		want := delay + time.Duration(i)*5*time.Millisecond
+		if got := above(at(200, i)).Delay; got != want {
+			t.Fatalf("at twice the capacity, call %d held %v, want %v", i, got, want)
+		}
+	}
+
+	if got := stand.Capacity(0, delay)(at(1000, 500)).Delay; got != delay {
+		t.Errorf("no limit held %v, want %v", got, delay)
+	}
+}
+
 func TestStand_SlowingHoldsBackOnlyTheCallsAfterTheSwitch(t *testing.T) {
 	const slow = 200 * time.Millisecond
 

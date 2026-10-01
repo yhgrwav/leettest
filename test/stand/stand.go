@@ -130,6 +130,35 @@ func HangingFrom(from, delay time.Duration) Answer {
 	}
 }
 
+// Capacity serves at most n calls a second, first come first served, and
+// answers each delay after its turn: a target with a known capacity. Below n
+// arrivals spaced evenly never wait; above n each call waits for the ones
+// before it, and the wait grows by 1/n − 1/rate per call. n below 1 is no
+// limit.
+func Capacity(n int, delay time.Duration) Answer {
+	if n < 1 {
+		return Constant(delay)
+	}
+
+	slot := time.Second / time.Duration(n)
+
+	var (
+		mu sync.Mutex
+		// free is when the next call can take its turn, after the first
+		// arrival.
+		free time.Duration
+	)
+
+	return func(c Call) Behavior {
+		mu.Lock()
+		turn := max(c.Since, free)
+		free = turn + slot
+		mu.Unlock()
+
+		return Behavior{Delay: turn - c.Since + delay}
+	}
+}
+
 // Stand serves the gRPC health service and answers the way it was told to.
 type Stand struct {
 	grpc_health_v1.UnimplementedHealthServer

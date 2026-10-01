@@ -45,6 +45,7 @@ type options struct {
 	freezeFor  time.Duration
 	hangFrom   time.Duration
 	failEvery  int
+	capacity   int
 	maxStreams int
 	life       time.Duration
 }
@@ -60,6 +61,7 @@ func parse(args []string, usage io.Writer) (options, error) {
 	fs.DurationVar(&o.freezeFor, "freeze-for", 0, "freeze length: calls arriving in it wait until it ends")
 	fs.DurationVar(&o.hangFrom, "hang-from", -1, "never answer from this long after the first arrival")
 	fs.IntVar(&o.failEvery, "fail-every", 0, "answer every n-th call with RESOURCE_EXHAUSTED")
+	fs.IntVar(&o.capacity, "capacity", 0, "serve at most this many calls a second, first come first served; above it calls queue")
 	fs.IntVar(&o.maxStreams, "max-streams", 0, "announce this many concurrent streams per connection; 0 announces no limit")
 	fs.DurationVar(&o.life, "life", 0, "exit after this long; 0 waits for Ctrl+C")
 
@@ -71,7 +73,7 @@ func parse(args []string, usage io.Writer) (options, error) {
 	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
 
 	var modes []string
-	for _, name := range []string{"freeze-for", "hang-from", "fail-every"} {
+	for _, name := range []string{"freeze-for", "hang-from", "fail-every", "capacity"} {
 		if set[name] {
 			modes = append(modes, "-"+name)
 		}
@@ -83,8 +85,8 @@ func parse(args []string, usage io.Writer) (options, error) {
 	case set["freeze-at"] && !set["freeze-for"]:
 		return o, errors.New("-freeze-at needs -freeze-for")
 	case o.delay < 0, o.freezeAt < 0, o.freezeFor < 0, o.life < 0, o.failEvery < 0, o.maxStreams < 0,
-		set["hang-from"] && o.hangFrom < 0:
-		return o, errors.New("durations, -fail-every and -max-streams must not be negative")
+		o.capacity < 0, set["hang-from"] && o.hangFrom < 0:
+		return o, errors.New("durations, -fail-every, -capacity and -max-streams must not be negative")
 	}
 
 	return o, nil
@@ -98,6 +100,8 @@ func (o options) answer() stand.Answer {
 		return stand.HangingFrom(o.hangFrom, o.delay)
 	case o.failEvery > 0:
 		return stand.FailEvery(o.failEvery, codes.ResourceExhausted, o.delay)
+	case o.capacity > 0:
+		return stand.Capacity(o.capacity, o.delay)
 	default:
 		return stand.Constant(o.delay)
 	}
