@@ -316,14 +316,16 @@ The load goes over one connection. The report prints how many times it reconnect
 concurrent stream limit (`MAX_CONCURRENT_STREAMS`) the target announced, or that it announced none.
 A call counts from its planned moment, and everything it waited on the client side is in its
 latency: the generator running late, waiting for a ready connection, waiting for a free stream. If
-without these waits the printed p99 of at least one method changes, or some calls never went out,
+without these waits the p99 of at least one method drops by 10% or more, or some calls never went out,
 the report gives a verdict and names the cause most common in the p99 tail: the generator ran
 late, there was no connection to the target, the streams ran out. In the last case the target's
 capacity above "limit × connections" calls in flight is not measured. For each affected method it
 prints p99 without the client-side waits — the time the call spent at the target. If a call waited
 for the resolver first, the caller's interceptors land in the connection wait too, so this number
 may come out slightly low. Calls that never went out are split by reason: waited for a stream,
-waited for the connection, generator late.
+waited for the connection, generator late. A shift under 10% is not a verdict but a note with the
+number: "client-side waits added 1.10ms to p99 (5%)"; when p99 is a lower bound the shift is
+unknown and there is no note.
 
 The report goes to stdout, progress and errors to stderr.
 

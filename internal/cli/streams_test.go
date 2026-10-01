@@ -112,6 +112,53 @@ func TestNotes_UnsentForAStreamIsAVerdictEvenWithTheSameP99(t *testing.T) {
 	}
 }
 
+// Ground: boundary — a verdict says the run, not the target, set the tail; a wait that moves
+// p99 by under a tenth says no such thing (the Linux tour: 1.1ms of 21.9ms, 20 of 22ms are the
+// target's). 10% is a hypothesis, docs/decisions.md.
+func TestNotes_AClientWaitUnderATenthOfP99IsANoteNotAVerdict(t *testing.T) {
+	q := func(d time.Duration, exact bool) metrics.Quantile {
+		return metrics.Quantile{Value: d, Exact: exact, Defined: true}
+	}
+	ms := func(f float64) time.Duration { return time.Duration(f * float64(time.Millisecond)) }
+	for _, tc := range []struct {
+		name         string
+		p99, without metrics.Quantile
+		verdict      bool
+		note         string
+	}{
+		{"1.1ms of 21.9ms", q(ms(21.9), true), q(ms(20.8), true), false, "client-side waits added 1.10ms to p99 (5%)"},
+		{"5ms of 20ms", q(ms(20), true), q(ms(15), true), true, ""},
+		{"exactly a tenth", q(ms(20), true), q(ms(18), true), true, ""},
+		{"lower bounds 500 and 499", q(ms(500), false), q(ms(499), false), false, ""},
+	} {
+		report := engine.Report{
+			Duration: 40 * time.Second, Planned: 40 * time.Second, Sent: 11100,
+			GeneratorCauseCalls: 1477, GeneratorTailCalls: 111,
+			Methods: []engine.MethodReport{{
+				Method: "grpc.health.v1.Health/Check", Sent: 11100, Latencies: 11100,
+				Timeout: 500 * time.Millisecond, RPSLow: 300, RPSHigh: 300,
+				P50: q(ms(21.9), true), P90: tc.p99, P95: tc.p99, P99: tc.p99, P99WithoutClientWaits: tc.without,
+			}},
+		}
+		notes := reportNotes(report, "")
+		text := strings.Join(notes, "\n\n")
+		if _, ok := noteStarting(notes, "limited by"); ok != tc.verdict {
+			t.Errorf("%s: verdict %v, want %v:\n%s", tc.name, ok, tc.verdict, text)
+		}
+		if got := tailWaitCause(report) != nil; got != tc.verdict {
+			t.Errorf("%s: tail_wait_cause set %v, want %v", tc.name, got, tc.verdict)
+		}
+		if tc.note != "" && !strings.Contains(text, tc.note) {
+			t.Errorf("%s: no %q in:\n%s", tc.name, tc.note, text)
+		}
+		// A verdict states the move itself; a lower bound moved by an
+		// unknown amount, and no note may say how much or that it did not.
+		if tc.note == "" && (strings.Contains(text, "waits added") || strings.Contains(text, "did not move p99")) {
+			t.Errorf("%s: a note on the p99's shift:\n%s", tc.name, text)
+		}
+	}
+}
+
 // Ground: contract — with no limit announced the wait is not the target's doing, and the
 // verdict must not name the target's limit.
 func TestNotes_WaitingWithNoLimitAnnouncedDoesNotBlameTheTarget(t *testing.T) {
