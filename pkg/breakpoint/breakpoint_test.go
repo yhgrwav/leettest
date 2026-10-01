@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -70,6 +71,12 @@ func TestPlan_RatesAreGeometricByDefault(t *testing.T) {
 	}
 	if want := []int{100, 125, 156, 195, 244, 305, 381}; !slices.Equal(got, want) {
 		t.Errorf("rates %v, want %v", got, want)
+	}
+
+	// Small rates still climb: ×1.25 rounded would repeat 1, 1, 1.
+	low := Plan{From: 1, To: 8, Settle: time.Second, Hold: 5 * time.Second}
+	if got, _ := low.Rates(); !slices.Equal(got, []int{1, 2, 3, 4, 5, 6, 8}) {
+		t.Errorf("from 1: rates %v, want [1 2 3 4 5 6 8]", got)
 	}
 
 	abs := plan
@@ -156,6 +163,58 @@ func TestSearch_TheRunsOwnLimitIsNotTheTargets(t *testing.T) {
 	}
 }
 
+// The knee is measured from the lowest p99 of the steps that held, not the
+// first step's: a slow first step (warm-up of the target) does not raise it.
+// The report names the criterion with its numbers.
+func TestSearch_TheKneeBaselineIsTheLowestHeldP99(t *testing.T) {
+	const ms = time.Millisecond
+	p99 := map[int]time.Duration{100: 90 * ms, 125: 20 * ms, 156: 30 * ms, 195: 70 * ms}
+	target := func(rps int) engine.Report { return report(1000, 0, p99[rps], p99[rps]) }
+
+	var asked []int
+	res, _ := Search(t.Context(), plan, fake(target, &asked))
+	if res.Outcome != BrokeBetween || res.Held != 156 || res.Broke != 195 {
+		t.Fatalf("%v held %d broke %d, want BrokeBetween 156 195: 70ms > 3 × 20ms", res.Outcome, res.Held, res.Broke)
+	}
+	broken := res.Steps[len(res.Steps)-1]
+	if want := "p99 70ms = 3.5× baseline 20ms (no p99_limit set)"; !strings.Contains(broken.Why, want) {
+		t.Errorf("why %q, want it to say %q", broken.Why, want)
+	}
+}
+
+// A repeat waits out the target's queue left from the first try: a cooldown
+// without load of max(timeout, settle). Without it a server that finishes the
+// calls we cancelled confirms the break by its own backlog.
+func TestSearch_ARepeatComesAfterACooldown(t *testing.T) {
+	p := plan
+	p.Settle, p.Hold, p.Timeout = 50*time.Millisecond, 200*time.Millisecond, 150*time.Millisecond
+	if got := p.Cooldown(); got != 150*time.Millisecond {
+		t.Fatalf("cooldown %v, want max(timeout 150ms, settle 50ms)", got)
+	}
+
+	var (
+		returned time.Time
+		gap      time.Duration
+	)
+	run := func(_ context.Context, rps int, _, _ time.Duration) (engine.Report, error) {
+		if rps == 305 && !returned.IsZero() {
+			gap = time.Since(returned)
+		}
+		r := capacity(270)(rps)
+		if rps == 305 {
+			returned = time.Now()
+		}
+
+		return r, nil
+	}
+	if _, err := Search(t.Context(), p, run); err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if gap < p.Cooldown() {
+		t.Errorf("repeated %v after the first try, want at least the %v cooldown", gap, p.Cooldown())
+	}
+}
+
 // A step that breaks once and holds on its repeat was noise: the search goes
 // on up.
 func TestSearch_ABreakTheRepeatDoesNotConfirmGoesOn(t *testing.T) {
@@ -174,6 +233,32 @@ func TestSearch_ABreakTheRepeatDoesNotConfirmGoesOn(t *testing.T) {
 	res, _ := Search(t.Context(), plan, fake(target, &asked))
 	if res.Outcome != BrokeBetween || res.Held != 244 || res.Broke != 305 {
 		t.Errorf("%v held %d broke %d, want BrokeBetween 244 305 past the noise at 195", res.Outcome, res.Held, res.Broke)
+	}
+	if !slices.Contains(res.Notes, "195 broke once, held on repeat") {
+		t.Errorf("notes %q, want the noise named", res.Notes)
+	}
+}
+
+// A single connection's stream limit is the run's limit, named as such: the
+// target above it is untested.
+func TestSearch_AStreamLimitIsTheRunsAndSaysSo(t *testing.T) {
+	var asked []int
+	target := func(rps int) engine.Report {
+		r := capacity(10000)(rps)
+		if rps >= 195 {
+			r.NotSent, r.NotSentStream = 3, 3
+			r.Connections = &engine.Connections{Open: 1, LimitAnnounced: true, FirstLimit: 1, LastLimit: 1}
+		}
+
+		return r
+	}
+	res, _ := Search(t.Context(), plan, fake(target, &asked))
+	if res.Outcome != RunLimit || len(res.Steps) == 0 {
+		t.Fatalf("%v, want RunLimit", res.Outcome)
+	}
+	want := "stream limit 1 of a single connection reached at 195 rps; the target above that is untested"
+	if why := res.Steps[len(res.Steps)-1].Why; why != want {
+		t.Errorf("why %q, want %q", why, want)
 	}
 }
 
