@@ -98,6 +98,39 @@ func TestCancelled_AnEchoOfOurDeadlineIsATimeout(t *testing.T) {
 	}
 }
 
+// Ground: concurrency — the echo is grpc-go on the target answering our RST,
+// frozen application or not: like a DEADLINE_EXCEEDED copy of our deadline,
+// it does not show the target alive, and must not move where the silence
+// begins.
+func TestCancelled_AnEchoOfOurDeadlineIsNotHeard(t *testing.T) {
+	opts := listen(t, &seeingTarget{})
+	opts.DialOptions = append(opts.DialOptions, echoAfterOurDeadline())
+	sender := connected(t, opts)
+
+	out, err := sender.Send(context.Background(), cancelRequest(300*time.Millisecond))
+	if err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	if out.Heard {
+		t.Error("heard = true: the CANCELLED is the target's echo of our deadline")
+	}
+}
+
+// Ground: contract — the inverse: a CANCELLED of the target's own, before our
+// deadline, is the target answering.
+func TestCancelled_AnEarlyCancelFromTheTargetIsHeard(t *testing.T) {
+	wait := func(context.Context) time.Duration { return 50 * time.Millisecond }
+	sender := connected(t, listen(t, &seeingTarget{}, grpc.ForceServerCodec(rawCodec{}), cancelling(wait)))
+
+	out, err := sender.Send(context.Background(), cancelRequest(time.Second))
+	if err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	if !out.Heard {
+		t.Errorf("heard = false on the target's own CANCELLED 950ms before our deadline (%v)", out.Err)
+	}
+}
+
 // Ground: contract — a target that cancels on its own, well before our
 // deadline, failed the call itself.
 func TestCancelled_AnEarlyCancelFromTheTargetIsAFailure(t *testing.T) {
