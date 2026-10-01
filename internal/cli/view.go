@@ -356,7 +356,7 @@ func (m *model) method(width, index int) string {
 
 	var b strings.Builder
 
-	b.WriteString(m.styles.value.Render(asciiText(displayMethod(method.Method))))
+	b.WriteString(m.styles.value.Render(displayMethod(method.Method)))
 	b.WriteString("\n\n")
 
 	b.WriteString(fitStatLine(m.styles, width,
@@ -485,7 +485,7 @@ func (m *model) footerHints() string {
 		// Fades by stepping down the text colours: a terminal has no opacity.
 		fade := []lipgloss.Style{m.styles.value, m.styles.muted, m.styles.faint}
 
-		return fade[stage].Render(m.text.UnknownKey(asciiText(m.hintKey)))
+		return fade[stage].Render(m.text.UnknownKey(m.hintKey))
 	}
 
 	width := contentWidth(m.viewWidth())

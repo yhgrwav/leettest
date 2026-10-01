@@ -392,13 +392,13 @@ func tick() tea.Cmd {
 	})
 }
 
-// shortMethod is the method's name without its service, escaped to ASCII as
-// the report prints it.
+// shortMethod is the method's name without its service. The live view prints
+// it as it is: the console takes Unicode, only stdout is kept ASCII.
 func shortMethod(method string) string {
 	_, name, found := strings.Cut(displayMethod(method), "/")
 	if !found {
-		return asciiText(displayMethod(method))
+		return displayMethod(method)
 	}
 
-	return asciiText(name)
+	return name
 }

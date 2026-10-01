@@ -216,15 +216,33 @@ func TestEnglish_EscapesCoverControlAndAstralCharacters(t *testing.T) {
 	}
 }
 
-// D: the live view draws only glyphs checked on cmd.exe, in every state.
+// C is for stdout only, which goes to files and findstr. The live view is
+// written to the console, which takes Unicode: a method name shows as it is.
+func TestEnglish_TheLiveViewShowsAMethodNameAsItIs(t *testing.T) {
+	if got, want := shortMethod(foreignMethod), "Метод"; got != want {
+		t.Errorf("shortMethod(%q) = %q, want %q", foreignMethod, got, want)
+	}
+}
+
+// D: the live view draws only glyphs checked on cmd.exe, in every state. The
+// list is for our own glyphs: the user's data (a method name, a key pressed)
+// is printed as it is, the console takes Unicode, so it is cut out of the
+// screen before the check. A cut that misses any of it leaves its letters to
+// fail here.
 func TestEnglish_TheLiveViewDrawsOnlyCheckedGlyphs(t *testing.T) {
+	userText := []string{displayMethod(foreignMethod), shortMethod(foreignMethod), "ы"}
+
 	var bad []string
 	collect := func(state string, m *model) {
 		for tab := range m.tabs {
 			m.active = tab
 			for _, width := range []int{40, 80, 160} {
 				m.width, m.height = width, 40
-				for _, r := range badRunes(m.View(), liveGlyphs) {
+				screen := m.View()
+				for _, s := range userText {
+					screen = strings.ReplaceAll(screen, s, "")
+				}
+				for _, r := range badRunes(screen, liveGlyphs) {
 					bad = append(bad, fmt.Sprintf("%s, tab %d, width %d: %s", state, tab, width, r))
 				}
 			}
