@@ -557,12 +557,67 @@ func TestPrintReportNamesTheSentRateOfASilence(t *testing.T) {
 			Duration: 5 * time.Second,
 			Methods: []engine.MethodReport{{
 				Method: "a.B/One", Sent: 600, Failed: 300, TimedOut: 300,
-				SilentFrom: &from, SentRPS: tc.sent, RPSLow: 200, RPSHigh: 200, Timeout: time.Second,
+				SilentFrom: &from, SentRPS: tc.sent, RPSLow: 200, RPSHigh: 200,
+				SilentPlannedLow: 200, SilentPlannedHigh: 200, Timeout: time.Second,
 			}},
 		}})
 		text := out.String()
 		if !strings.Contains(text, tc.want) || strings.Contains(text, tc.not) {
 			t.Errorf("sent %d: want %q and no %q:\n%s", tc.sent, tc.want, tc.not, text)
+		}
+	}
+}
+
+// A ramp in the silence's second is a range: the plan is named only when the
+// sent rate is outside [low × 0.9, high × 1.1].
+func TestPrintReportHoldsASilenceAgainstARampsRange(t *testing.T) {
+	for _, tc := range []struct {
+		sent      int
+		want, not string
+	}{
+		{150, "at 150 rps,", "planned"},
+		{80, "sent at 80 rps (planned 100-200)", "at 100"},
+	} {
+		from := 21
+		var out strings.Builder
+		PrintReport(&out, "localhost:50051", RunReport{Report: engine.Report{
+			Duration: 40 * time.Second,
+			Methods: []engine.MethodReport{{
+				Method: "a.B/One", Sent: 600, Failed: 300, TimedOut: 300,
+				SilentFrom: &from, SentRPS: tc.sent, RPSLow: 100, RPSHigh: 300,
+				SilentPlannedLow: 100, SilentPlannedHigh: 200, Timeout: time.Second,
+			}},
+		}})
+		text := out.String()
+		if !strings.Contains(text, tc.want) || strings.Contains(text, tc.not) {
+			t.Errorf("sent %d: want %q and no %q:\n%s", tc.sent, tc.want, tc.not, text)
+		}
+	}
+}
+
+// The plan a silence is held against is the stage of the second its sent
+// rate counts, not the whole plan: past the plan there is none to name.
+func TestPrintReportNeverSaysPlannedZero(t *testing.T) {
+	for _, tc := range []struct {
+		planned   int
+		want, not string
+	}{
+		{0, "at 33 rps,", "planned"},
+		{300, "sent at 33 rps (planned 300)", "planned 0"},
+	} {
+		from := 41
+		var out strings.Builder
+		PrintReport(&out, "localhost:50051", RunReport{Report: engine.Report{
+			Duration: 41 * time.Second,
+			Methods: []engine.MethodReport{{
+				Method: "a.B/One", Sent: 600, Failed: 300, TimedOut: 300,
+				SilentFrom: &from, SentRPS: 33, RPSLow: 100, RPSHigh: 300,
+				SilentPlannedLow: tc.planned, SilentPlannedHigh: tc.planned, Timeout: time.Second,
+			}},
+		}})
+		text := out.String()
+		if !strings.Contains(text, tc.want) || strings.Contains(text, tc.not) {
+			t.Errorf("planned %d: want %q and no %q:\n%s", tc.planned, tc.want, tc.not, text)
 		}
 	}
 }

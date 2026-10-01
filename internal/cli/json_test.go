@@ -509,3 +509,34 @@ func TestJSON_SilentSentRPSGoesWithTheSilence(t *testing.T) {
 		}
 	}
 }
+
+// Ground: contract — the planned rate of a silence is null when unknown,
+// never 0; planned_rps_* is the whole plan whether or not there is one.
+func TestJSON_SilentPlannedRPSGoesWithTheSilence(t *testing.T) {
+	from := 2
+	for _, tc := range []struct {
+		name    string
+		silent  *int
+		planned int
+		want    any
+	}{
+		{"a silence inside the plan", &from, 300, 300.0},
+		{"a silence past the plan", &from, 0, nil},
+		{"no silence", nil, 0, nil},
+	} {
+		out := writeJSON(t, jsonRun(engine.Report{Methods: []engine.MethodReport{{
+			Method: "a.B/One", Sent: 10, SilentFrom: tc.silent, SentRPS: 33, RPSLow: 100, RPSHigh: 300,
+			SilentPlannedLow: tc.planned, SilentPlannedHigh: tc.planned,
+		}}}))
+		method := field(t, out, "methods").([]any)[0].(map[string]any)
+		for _, key := range []string{"silent_planned_rps_low", "silent_planned_rps_high"} {
+			if got, ok := method[key]; !ok || got != tc.want {
+				t.Errorf("%s: %s = %v (present %v), want %v", tc.name, key, got, ok, tc.want)
+			}
+		}
+		if method["planned_rps_low"] != 100.0 || method["planned_rps_high"] != 300.0 {
+			t.Errorf("%s: planned_rps %v-%v, want the whole plan 100-300",
+				tc.name, method["planned_rps_low"], method["planned_rps_high"])
+		}
+	}
+}
