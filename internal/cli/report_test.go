@@ -513,3 +513,29 @@ func TestPrintReportNamesTheMomentTheAnswersStopped(t *testing.T) {
 		t.Errorf("report does not say the moment is when the call was sent:\n%s", text)
 	}
 }
+
+// The rate in a silence note is what the target was sent; the plan is named
+// beside it only when they differ by more than a tenth.
+func TestPrintReportNamesTheSentRateOfASilence(t *testing.T) {
+	for _, tc := range []struct {
+		sent      int
+		want, not string
+	}{
+		{150, "sent at 150 rps (planned 200)", "at 200 rps"},
+		{190, "at 190 rps,", "planned"},
+	} {
+		from := 2
+		var out strings.Builder
+		PrintReport(&out, "localhost:50051", RunReport{Report: engine.Report{
+			Duration: 5 * time.Second,
+			Methods: []engine.MethodReport{{
+				Method: "a.B/One", Sent: 600, Failed: 300, TimedOut: 300,
+				SilentFrom: &from, SentRPS: tc.sent, RPSLow: 200, RPSHigh: 200, Timeout: time.Second,
+			}},
+		}})
+		text := out.String()
+		if !strings.Contains(text, tc.want) || strings.Contains(text, tc.not) {
+			t.Errorf("sent %d: want %q and no %q:\n%s", tc.sent, tc.want, tc.not, text)
+		}
+	}
+}

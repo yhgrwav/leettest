@@ -813,3 +813,66 @@ func TestTimeline_SilenceStartsAfterTheLastAnswer(t *testing.T) {
 		t.Errorf("last answer at %v, yet silent from second %d", *m.LastAnswerAt, *m.SilentFrom)
 	}
 }
+
+// Ground: boundary — the rate the target saw is what went out, which differs
+// from the plan only under generator lag held to the second.
+func TestTimeline_TheSilentRateIsWhatWentOutTheSecondBefore(t *testing.T) {
+	stats := NewStats()
+	start := time.Now()
+	stats.Reserve(10*time.Second, "a")
+	stats.Start(start, 0)
+
+	// Planned at 200 rps from 0.5s, but only 150 went out in second 1, all
+	// heard; then the calls sent in second 2 timed out.
+	for i := range 150 {
+		at := start.Add(500*time.Millisecond + time.Duration(i)*5*time.Millisecond)
+		out := start.Add(time.Second + time.Duration(i)*6*time.Millisecond)
+		stats.Record(Result{Method: "a", ScheduledAt: at, BegunAt: out, Deadline: at.Add(2 * time.Second),
+			Outcome: Outcome{Category: CategorySuccess, SentAt: out, DoneAt: out.Add(time.Millisecond), Heard: true}})
+	}
+	for i := range 10 {
+		at := start.Add(1300*time.Millisecond + time.Duration(i)*5*time.Millisecond)
+		out := start.Add(2*time.Second + time.Duration(i)*time.Millisecond)
+		stats.Record(Result{Method: "a", ScheduledAt: at, BegunAt: out, Deadline: at.Add(2 * time.Second),
+			Outcome: Outcome{Category: CategoryTimeout, SentAt: out, DoneAt: at.Add(2 * time.Second)}})
+	}
+	stats.Finish(start.Add(5 * time.Second))
+
+	m := stats.Report().Methods[0]
+	if m.SilentFrom == nil || *m.SilentFrom != 2 {
+		t.Fatalf("silent from %v, want second 2", m.SilentFrom)
+	}
+	if m.SentRPS != 150 {
+		t.Errorf("sent rps = %d, want 150: the calls that went out in second 1", m.SentRPS)
+	}
+}
+
+// Ground: boundary — calls cut off by the stop did not time out: the stop
+// is ours, and a last second of them is no silence of the target's.
+func TestTimeline_CallsCutOffByTheStopAreNoSilence(t *testing.T) {
+	stats := NewStats()
+	start := time.Now()
+	stats.Reserve(10*time.Second, "a")
+	stats.Start(start, 0)
+
+	for i := range 20 {
+		out := start.Add(time.Second + time.Duration(i)*50*time.Millisecond)
+		category, heard := CategorySuccess, true
+		if i >= 10 {
+			category, heard = CategoryAborted, false
+		}
+		stats.Record(Result{Method: "a", ScheduledAt: out, BegunAt: out, Deadline: out.Add(time.Second),
+			Outcome: Outcome{Category: category, SentAt: out, DoneAt: start.Add(2 * time.Second), Heard: heard}})
+	}
+	// Sent in the last second, before the stop: cut off, not timed out.
+	for i := range 5 {
+		out := start.Add(2*time.Second + time.Duration(i)*10*time.Millisecond)
+		stats.Record(Result{Method: "a", ScheduledAt: out, BegunAt: out, Deadline: out.Add(time.Second),
+			Outcome: Outcome{Category: CategoryAborted, SentAt: out, DoneAt: start.Add(2100 * time.Millisecond)}})
+	}
+	stats.Finish(start.Add(2100 * time.Millisecond))
+
+	if m := stats.Report().Methods[0]; m.SilentFrom != nil {
+		t.Errorf("silent from second %d: the calls of the last second were cut off by the stop", *m.SilentFrom)
+	}
+}
