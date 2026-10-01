@@ -459,7 +459,7 @@ func TestRun_DefaultTLSFailureSaysHowToTurnItOff(t *testing.T) {
 // A settings file from before English only still runs, and stderr says once
 // that its lang key is ignored; stdout, the report, does not carry it.
 func TestRun_AnOldLangKeyWarnsOnceOnStderr(t *testing.T) {
-	config := writeConfig(t, closedPort(t), checkMethod, plaintext)
+	cfgPath := writeConfig(t, closedPort(t), checkMethod, plaintext)
 
 	dir := t.TempDir()
 	t.Setenv("APPDATA", dir)
@@ -474,7 +474,7 @@ func TestRun_AnOldLangKeyWarnsOnceOnStderr(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 	done := make(chan error, 1)
-	go func() { done <- run(t.Context(), nil, nil, []string{"-fake", "-c", config}, &stdout, &stderr) }()
+	go func() { done <- run(t.Context(), nil, nil, []string{"-fake", "-c", cfgPath}, &stdout, &stderr) }()
 
 	select {
 	case err := <-done:
