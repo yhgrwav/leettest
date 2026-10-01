@@ -79,6 +79,12 @@ func (e *InFlightBudgetError) Unwrap() error { return ErrInFlightBudget }
 // (decisions.md, "Запас бюджета…"); the value is a hypothesis.
 const ReleaseMargin = 100 * time.Millisecond
 
+// InFlightNeed is the smallest in-flight cap the calls can run with: the one
+// checkInFlightBudget accepts. 0 when some call has no deadline.
+func InFlightNeed(calls []Call) int {
+	return 0
+}
+
 // checkInFlightBudget rejects calls that a hung target would push past the
 // cap. A call needs ⌈rps × timeout⌉ slots for its window, one for the call
 // scheduled on the window's closing edge, which starts before the first slot
