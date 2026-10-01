@@ -302,13 +302,16 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		return err
 	}
 
+	for _, warning := range settings.Deprecations() {
+		fmt.Fprintln(stderr, warning)
+	}
+
 	if !settings.Configured() {
 		if interactive {
 			if err := cli.RunSetup(settings); err != nil {
 				return err
 			}
 		} else {
-			settings.Lang = string(cli.DetectLang())
 			settings.Mode = string(cli.ModeDark)
 			settings.Palette = cli.Palettes()[0].Name
 		}

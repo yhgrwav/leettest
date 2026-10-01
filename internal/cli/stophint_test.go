@@ -141,41 +141,34 @@ func TestFinishedRunHasNoStopHint(t *testing.T) {
 func TestStopHintFitsTheNarrowestView(t *testing.T) {
 	width := contentWidth(72) // the floor viewWidth falls back to
 
-	for _, lang := range Languages() {
-		for _, presses := range []int{1, 2} {
-			t.Run(fmt.Sprintf("%s/%d", lang.Lang, presses), func(t *testing.T) {
-				m := stopping(t, presses, 1234)
-				m.settings.Lang = string(lang.Lang)
-				m.applySettings()
-				m.service = "WalletService"
-				m.target = "some-really-long-host.example.internal:50051"
+	for _, presses := range []int{1, 2} {
+		t.Run(fmt.Sprintf("%d", presses), func(t *testing.T) {
+			m := stopping(t, presses, 1234)
+			m.service = "WalletService"
+			m.target = "some-really-long-host.example.internal:50051"
 
-				line := firstLine(m.header(width))
-				if got := lipgloss.Width(line); got > width {
-					t.Errorf("header is %d columns wide in %s at width %d: the frame wraps it",
-						got, lang.Lang, width)
-				}
+			line := firstLine(m.header(width))
+			if got := lipgloss.Width(line); got > width {
+				t.Errorf("header is %d columns wide at width %d: the frame wraps it", got, width)
+			}
 
-				hint := m.text.StopAgainAborts()
-				if presses > 1 {
-					hint = m.text.StopAgainExits()
-				}
-				if !strings.Contains(line, hint) {
-					t.Errorf("header %q dropped the stop hint to fit the address", line)
-				}
-			})
-		}
+			hint := m.text.StopAgainAborts()
+			if presses > 1 {
+				hint = m.text.StopAgainExits()
+			}
+			if !strings.Contains(line, hint) {
+				t.Errorf("header %q dropped the stop hint to fit the address", line)
+			}
+		})
 	}
 }
 
 // A terminal too narrow for both keeps the part that says what to press: a cut
-// «1234 в полёте …» tells the user nothing they can act on.
+// «1234 in flight …» tells the user nothing they can act on.
 func TestNarrowHeaderKeepsTheKeyOverTheCount(t *testing.T) {
 	const width = 45 // a 53-column terminal, too narrow for the count and the key
 
 	m := stopping(t, 1, 1234)
-	m.settings.Lang = string(LangRU)
-	m.applySettings()
 
 	line := firstLine(m.header(width))
 	if !strings.Contains(line, m.text.StopAgainAborts()) {
@@ -193,33 +186,10 @@ func TestNarrowHeaderKeepsTheKeyOverTheCount(t *testing.T) {
 // name belongs reads as a broken layout, not as a shortened name.
 func TestHeaderDropsAPieceItCannotShow(t *testing.T) {
 	m := stopping(t, 1, 1234)
-	m.settings.Lang = string(LangRU)
-	m.applySettings()
 	m.service = "WalletService"
 	m.target = "wallet.prod.internal:50051"
 
 	if line := firstLine(m.header(contentWidth(72))); strings.Contains(line, "W…") {
 		t.Errorf("header %q shows a shard of the service name", line)
-	}
-}
-
-func TestStopHintsTranslated(t *testing.T) {
-	en := NewText(LangEN)
-
-	for _, lang := range Languages() {
-		text := NewText(lang.Lang)
-
-		for name, pair := range map[string][2]string{
-			"StopAgainAborts": {text.StopAgainAborts(), en.StopAgainAborts()},
-			"StopAgainExits":  {text.StopAgainExits(), en.StopAgainExits()},
-			"InFlightCount":   {text.InFlightCount("7"), en.InFlightCount("7")},
-		} {
-			if pair[0] == "" {
-				t.Errorf("%s is empty in %s", name, lang.Lang)
-			}
-			if lang.Lang != LangEN && pair[0] == pair[1] {
-				t.Errorf("%s in %s is the English string: a missing translation", name, lang.Lang)
-			}
-		}
 	}
 }

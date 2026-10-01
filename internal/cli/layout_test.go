@@ -16,7 +16,6 @@ package cli
 
 import (
 	"errors"
-	"math"
 	"strconv"
 	"strings"
 	"testing"
@@ -29,33 +28,12 @@ import (
 	"github.com/yhgrwav/leettest/pkg/metrics"
 )
 
-var allLangs = []Lang{LangRU, LangEN, LangDE, LangZH}
+// allLangs names the sweeps' language: the screen is English only, and the
+// name stays in the subtest names the sweeps were written with.
+var allLangs = []string{"en"}
 
-func TestCompactCount_UnitIsChosenAfterRounding(t *testing.T) {
-	for _, tt := range []struct {
-		n    uint64
-		want string
-	}{
-		{0, "0"},
-		{9_999, "9999"},
-		{10_000, "10.0k"},
-		{999_949, "999.9k"},
-		{999_950, "1.0M"},
-		{999_949_999, "999.9M"},
-		{999_950_000, "1.0G"},
-		{3_600_000_000, "3.6G"},         // 100k rps for 10 hours
-		{3_153_600_000_000, "3153.6G"},  // 100k rps for a year
-		{9_999_949_999_999, "9999.9G"},  // the widest form
-		{9_999_950_000_000, ">9999.9G"}, // past it, a bound
-		{math.MaxUint64, ">9999.9G"},
-	} {
-		if got := compactCount(tt.n); got != tt.want {
-			t.Errorf("compactCount(%d) = %q, want %q", tt.n, got, tt.want)
-		}
-	}
-}
-
-// widestCount is the widest a compact count gets.
+// widestCount is the largest count the sweeps draw: 100k rps for over three
+// years.
 const widestCount = 9_999_950_000_000
 
 // widestBound is the widest percentile the report prints: a bound of hours.
@@ -135,9 +113,9 @@ func TestNothingWrapsInsideTheFrame(t *testing.T) {
 	for _, lang := range allLangs {
 		for width := minWidth; width <= 120; width++ {
 			for _, state := range liveStates {
-				t.Run(string(lang)+"/"+strconv.Itoa(width)+"/"+state.name, func(t *testing.T) {
+				t.Run(lang+"/"+strconv.Itoa(width)+"/"+state.name, func(t *testing.T) {
 					m := testModel(t)
-					m.text = NewText(lang)
+					m.text = NewText()
 					m.Update(tea.WindowSizeMsg{Width: width, Height: 40})
 					tickN(m, 3)
 					state.setup(m)
@@ -193,9 +171,9 @@ const ambiguousInText = "›·—–≥…←→↑↓«»"
 func TestTextLinesUseNoAmbiguousWidthCharacters(t *testing.T) {
 	for _, lang := range allLangs {
 		for _, state := range liveStates {
-			t.Run(string(lang)+"/"+state.name, func(t *testing.T) {
+			t.Run(lang+"/"+state.name, func(t *testing.T) {
 				m := testModel(t)
-				m.text = NewText(lang)
+				m.text = NewText()
 				m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 				tickN(m, 3)
 				state.setup(m)
@@ -218,7 +196,7 @@ func TestTextLinesUseNoAmbiguousWidthCharacters(t *testing.T) {
 				m.stopper.Press()
 				screens = append(screens, m.body(120))
 
-				setup := &setupModel{settings: &Settings{Mode: string(ModeDark), Palette: Palettes()[0].Name}, text: NewText(lang)}
+				setup := &setupModel{settings: &Settings{Mode: string(ModeDark), Palette: Palettes()[0].Name}, text: NewText()}
 				setup.restyle()
 				screens = append(screens, setup.View())
 
@@ -250,9 +228,9 @@ func statLineWith(t *testing.T, body, label string) string {
 
 func TestStatLineNeverDropsInFlightOrErrors(t *testing.T) {
 	for _, lang := range allLangs {
-		t.Run(string(lang), func(t *testing.T) {
+		t.Run(lang, func(t *testing.T) {
 			m := testModel(t)
-			m.text = NewText(lang)
+			m.text = NewText()
 			m.Update(tea.WindowSizeMsg{Width: minWidth, Height: 40})
 			tickN(m, 3)
 			widest(m)
@@ -261,40 +239,43 @@ func TestStatLineNeverDropsInFlightOrErrors(t *testing.T) {
 			if !strings.Contains(line, m.text.Errors()) {
 				t.Errorf("errors dropped from %q", line)
 			}
-			if !strings.Contains(line, ">9999.9G") {
-				t.Errorf("in flight not compact in %q", line)
+			if !strings.Contains(line, formatCount(widestCount)) {
+				t.Errorf("in flight not exact in %q", line)
 			}
 		})
 	}
 }
 
-func TestStatLineCompactsBeforeItDrops(t *testing.T) {
+func TestStatLineDropsAFieldRatherThanShortenACount(t *testing.T) {
 	m := testModel(t)
-	m.text = NewText(LangEN)
+	m.text = NewText()
 	const width = 62
 	m.Update(tea.WindowSizeMsg{Width: width, Height: 40})
 	tickN(m, 3)
 	m.snapshot.Sent, m.snapshot.InFlight = 1_000_000, 1_000_000
 
-	// The frame leaves 54. Exact, "sent 1 000 000  |  rps 0  |  in flight
-	// 1 000 000  |  errors 0.0%" is 64; compact, with 1.0M twice, is 54 and
-	// fits: nothing drops.
+	// The frame leaves 54. "sent 1,000,000  |  rps 0  |  in flight
+	// 1,000,000  |  errors 0.0%" is 64: sent goes, and what stays is exact.
 	line := statLineWith(t, m.body(width), m.text.InFlight())
-	for _, want := range []string{"sent 1.0M", "rps", "in flight 1.0M", "errors"} {
+	for _, want := range []string{"rps", "in flight 1,000,000", "errors"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("%q missing from %q", want, line)
 		}
+	}
+	if strings.Contains(line, m.text.Sent()+" ") || strings.Contains(line, "M") {
+		t.Errorf("a count shortened instead of a field dropped: %q", line)
 	}
 }
 
 func TestStatLineDropsSentFirstThenRate(t *testing.T) {
 	m := testModel(t)
-	m.text = NewText(LangEN)
+	m.text = NewText()
 	m.Update(tea.WindowSizeMsg{Width: minWidth, Height: 40})
 	tickN(m, 3)
 
-	// The frame leaves 52. Compact, "sent 1.0M  |  rps 0  |  in flight 1.0M
-	// |  errors 100.0%" is 56: exactly one field must go, and it is sent.
+	// The frame leaves 52. "sent 1,000,000  |  rps 0  |  in flight 1,000,000
+	// |  errors 100.0%" is 66; without sent it is 49: exactly one field must
+	// go, and it is sent.
 	m.snapshot.Sent, m.snapshot.Failed, m.snapshot.InFlight = 1_000_000, 1_000_000, 1_000_000
 
 	line := statLineWith(t, m.body(minWidth), m.text.InFlight())
@@ -308,21 +289,21 @@ func TestStatLineDropsSentFirstThenRate(t *testing.T) {
 
 func TestStatLineIsExactWhenItFits(t *testing.T) {
 	m := testModel(t)
-	m.text = NewText(LangEN)
+	m.text = NewText()
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	tickN(m, 3)
 	m.snapshot.InFlight = 1_000_000
 
-	if line := statLineWith(t, m.body(120), m.text.InFlight()); !strings.Contains(line, "1 000 000") {
+	if line := statLineWith(t, m.body(120), m.text.InFlight()); !strings.Contains(line, "1,000,000") {
 		t.Errorf("want the exact count where it fits: %q", line)
 	}
 }
 
 func TestNoteFallsBackToTheShortForm(t *testing.T) {
 	for _, lang := range allLangs {
-		t.Run(string(lang), func(t *testing.T) {
+		t.Run(lang, func(t *testing.T) {
 			m := testModel(t)
-			m.text = NewText(lang)
+			m.text = NewText()
 			tickN(m, 3)
 			m.snapshot.InFlight = 1_000_000
 
@@ -351,7 +332,7 @@ func TestShortNotesFitTheNarrowestFrame(t *testing.T) {
 	room := contentWidth(minWidth) - lipgloss.Width("> ")
 
 	for _, lang := range allLangs {
-		text := NewText(lang)
+		text := NewText()
 		for name, note := range map[string]string{
 			"warmup":    text.WarmupNoteShort(9999999), // seven digits: 100k rps for 100s
 			"errors":    text.ErrorsNoteShort(),
@@ -367,9 +348,9 @@ func TestShortNotesFitTheNarrowestFrame(t *testing.T) {
 func TestFinalTableColumnsLineUp(t *testing.T) {
 	for _, lang := range allLangs {
 		for _, width := range []int{minWidth, 80, 120} {
-			t.Run(string(lang)+"/"+strconv.Itoa(width), func(t *testing.T) {
+			t.Run(lang+"/"+strconv.Itoa(width), func(t *testing.T) {
 				m := testModel(t)
-				m.text = NewText(lang)
+				m.text = NewText()
 				m.Update(tea.WindowSizeMsg{Width: width, Height: 40})
 				m.done, m.report = true, widestReport()
 
@@ -440,7 +421,7 @@ func TestNarrowTerminalAsksToWiden(t *testing.T) {
 func TestUnknownWidthKeepsTheFrame(t *testing.T) {
 	m := testModel(t)
 
-	if view := m.View(); !strings.Contains(view, "╭") {
+	if view := m.View(); !strings.Contains(view, frameBorder.TopLeft+frameBorder.Top) {
 		t.Errorf("before the first size message the frame must be drawn, got %q", view)
 	}
 }
@@ -479,7 +460,7 @@ func TestWideningBringsTheFrameBack(t *testing.T) {
 	m.Update(tea.WindowSizeMsg{Width: 30, Height: 40})
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
 
-	if view := m.View(); !strings.Contains(view, "╭") {
+	if view := m.View(); !strings.Contains(view, frameBorder.TopLeft+frameBorder.Top) {
 		t.Errorf("after widening to 100 the frame is not back: %q", firstLine(view))
 	}
 }
@@ -505,9 +486,9 @@ func TestSparkline_NoHistoryStillFillsTheRow(t *testing.T) {
 
 func TestFooterKeepsTheWayOutAtTheNarrowestFrame(t *testing.T) {
 	for _, lang := range allLangs {
-		t.Run(string(lang), func(t *testing.T) {
+		t.Run(lang, func(t *testing.T) {
 			m := testModel(t)
-			m.text = NewText(lang)
+			m.text = NewText()
 			m.Update(tea.WindowSizeMsg{Width: minWidth, Height: 40})
 
 			quit := m.text.HintQuit()

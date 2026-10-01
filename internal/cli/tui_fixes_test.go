@@ -175,17 +175,6 @@ func TestHeaderPutsStatusAndTargetOnOneLine(t *testing.T) {
 	t.Fatal("no header line in the view")
 }
 
-func TestFakeTargetIsNamedInTheInterfaceLanguage(t *testing.T) {
-	m := testModel(t)
-	m.target = FakeTarget
-	m.settings.Lang = string(LangRU)
-	m.applySettings()
-
-	if header := m.header(74); !strings.Contains(header, "заглушка") {
-		t.Errorf("header = %q, want the fake target named in Russian", header)
-	}
-}
-
 // --- contrast -----------------------------------------------------------
 
 // xterm returns the RGB of a 256-colour code, or ok=false for a code this
@@ -312,10 +301,10 @@ func TestLatencyRowsShareOneScale(t *testing.T) {
 	chart := m.latencyChart(h.points)
 	p50, p99 := latencyRow(t, chart, "p50"), latencyRow(t, chart, "p99")
 
-	if last := p50[len(p50)-1]; last != '▁' {
+	if last := p50[len(p50)-1]; last != sparkLevels[0] {
 		t.Errorf("p50 cell = %q, want the lowest level", last)
 	}
-	if last := p99[len(p99)-1]; last != '█' {
+	if last := p99[len(p99)-1]; last != sparkLevels[len(sparkLevels)-1] {
 		t.Errorf("p99 cell = %q, want the highest level", last)
 	}
 }
@@ -415,7 +404,7 @@ func TestRussianLayoutLeavesTheReport(t *testing.T) {
 func TestRussianLayoutLeavesTheSetupWizard(t *testing.T) {
 	settings := &Settings{Mode: string(ModeDark), Palette: Palettes()[0].Name}
 
-	m := &setupModel{settings: settings, text: NewText(LangEN)}
+	m := &setupModel{settings: settings, text: NewText()}
 	m.restyle()
 
 	if _, cmd := m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRunes, Runes: []rune("й")})); cmd == nil {

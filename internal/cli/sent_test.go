@@ -78,12 +78,12 @@ func TestPrintReportNamesTheCallsThatDidNotGoOut(t *testing.T) {
 }
 
 // Ground: contract — the live view and the final screen show the same totals
-// as the text report, in every language.
+// as the text report.
 func TestScreensNameTheCallsThatDidNotGoOut(t *testing.T) {
 	for _, lang := range allLangs {
-		t.Run(string(lang), func(t *testing.T) {
+		t.Run(lang, func(t *testing.T) {
 			m := testModel(t)
-			m.text = NewText(lang)
+			m.text = NewText()
 			m.Update(tea.WindowSizeMsg{Width: minWidth, Height: 40})
 			tickN(m, 3)
 			m.snapshot.Sent, m.snapshot.NotSent = 146, 4

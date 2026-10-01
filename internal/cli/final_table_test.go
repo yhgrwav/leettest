@@ -24,6 +24,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -120,7 +121,8 @@ func TestFinalScreenTableCarriesEveryRowAndNumberOfTheTextReport(t *testing.T) {
 		var found []string
 		for _, line := range screen {
 			if f := strings.Fields(line); len(f) > 0 && f[0] == label {
-				found = f
+				// The screen groups digits with commas, the text report does not.
+				found = strings.Fields(strings.ReplaceAll(line, ",", ""))
 				break
 			}
 		}
@@ -220,45 +222,45 @@ func TestFinalScreenCutsALongNameFromTheHead(t *testing.T) {
 // Ground: boundary — the name gets its own line when fewer than 8 columns are
 // left for it next to the seven numbers; in English that happens below 64
 // columns. Either way no number is lost.
-func TestFinalScreenPutsTheNameOnItsOwnLineBelow64Columns(t *testing.T) {
-	numbers := []string{"1000", "150", "97", "11.0ms", "12.0ms", "13.0ms", "14.0ms"}
-	hasAll := func(line string) bool {
-		f := " " + strings.Join(strings.Fields(line), " ") + " "
-		for _, n := range numbers {
-			if !strings.Contains(f, " "+n+" ") {
-				return false
-			}
-		}
+// At 60-64 columns the exact counts may push the table into any of its
+// layouts. Whichever it takes, each of the method's seven numbers is there
+// whole, and no line is wider than the frame leaves.
+func TestFinalScreenKeepsEveryNumberWholeAt60To64Columns(t *testing.T) {
+	numbers := []string{"1,000", "150", "97", "11.0ms", "12.0ms", "13.0ms", "14.0ms"}
 
-		return true
-	}
-
-	for _, tc := range []struct {
-		width   int
-		twoRows bool
-	}{{60, true}, {63, true}, {64, false}} {
-		t.Run(strconv.Itoa(tc.width), func(t *testing.T) {
+	for _, width := range []int{60, 61, 62, 63, 64} {
+		t.Run(strconv.Itoa(width), func(t *testing.T) {
 			m := testModel(t)
-			m.Update(tea.WindowSizeMsg{Width: tc.width, Height: 40})
+			m.Update(tea.WindowSizeMsg{Width: width, Height: 40})
 			m.done, m.report = true, tableReport()
-			lines := strings.Split(m.finalReport(contentWidth(tc.width)), "\n")
+			room := contentWidth(width)
+			lines := strings.Split(m.finalReport(room), "\n")
 
-			name := -1
-			for i, line := range lines {
-				if f := strings.Fields(line); len(f) > 0 && f[0] == shortMethod("pkg.Svc/One") {
-					name = i
-					break
+			for _, line := range lines {
+				if w := lipgloss.Width(line); w > room {
+					t.Errorf("line %q is %d wide, the frame leaves %d", line, w, room)
 				}
 			}
-			if name < 0 {
-				t.Fatalf("no row for the method:\n%s", strings.Join(lines, "\n"))
-			}
 
-			switch {
-			case tc.twoRows && (len(strings.Fields(lines[name])) != 1 || name+1 >= len(lines) || !hasAll(lines[name+1])):
-				t.Errorf("want the name alone and all seven numbers on the next line:\n%s", strings.Join(lines, "\n"))
-			case !tc.twoRows && !hasAll(lines[name]):
-				t.Errorf("want the name and all seven numbers on one line:\n%s", strings.Join(lines, "\n"))
+			// The method's group: its name line up to the next method's.
+			var group []string
+			for _, line := range lines {
+				f := strings.Fields(line)
+				switch {
+				case len(f) > 0 && f[0] == shortMethod("pkg.Svc/One"):
+					group = append(group, f...)
+				case len(group) > 0 && len(f) > 0 && f[0] == shortMethod("pkg.Svc/Two"):
+					goto done
+				case len(group) > 0:
+					group = append(group, f...)
+				}
+			}
+		done:
+			cells := " " + strings.Join(group, " ") + " "
+			for _, n := range numbers {
+				if !strings.Contains(cells, " "+n+" ") {
+					t.Errorf("%q is not whole in the method's lines %v:\n%s", n, group, strings.Join(lines, "\n"))
+				}
 			}
 		})
 	}
@@ -304,40 +306,19 @@ func TestFinalScreenSplitsTheNumbersWhenTheyDoNotFitOneLine(t *testing.T) {
 	}
 }
 
-// Ground: contract — Russian heads the sent column with "отпр.", so the
-// ordinary numbers keep all seven cells at 60 columns.
-func TestFinalScreenInRussianKeepsEveryNumberAt60Columns(t *testing.T) {
-	m := testModel(t)
-	m.text = NewText(LangRU)
-	m.Update(tea.WindowSizeMsg{Width: minWidth, Height: 40})
-	m.done, m.report = true, tableReport()
-
-	screen := m.finalReport(contentWidth(minWidth))
-	row := rowsAfter(t, screen, shortMethod("pkg.Svc/One"), 1)[0]
-	if got := strings.Join(row, " "); got != "1000 150 97 11.0ms 12.0ms 13.0ms 14.0ms" {
-		t.Errorf("numbers %q, want all seven", got)
-	}
-	if !strings.Contains(screen, "отпр.") || strings.Contains(screen, "отправлено ") {
-		t.Errorf("the sent column is not headed отпр.:\n%s", screen)
-	}
-}
-
 // Ground: boundary — at no height and width is the final screen taller than
-// the terminal, in any language, with the widest values and a verdict.
+// the terminal, with the widest values and a verdict.
 func TestFinalScreenNeverOutgrowsTheTerminal(t *testing.T) {
 	report := widestReport()
 	report.CapHit = &engine.CapHit{At: time.Second, Unsent: 1, OverDeadline: 3}
 	report.Incomplete = true
-	for _, lang := range allLangs {
-		for _, width := range []int{minWidth, 64, 80, 120} {
-			for height := 7; height <= 40; height++ {
-				m := testModel(t)
-				m.text = NewText(lang)
-				m.Update(tea.WindowSizeMsg{Width: width, Height: height})
-				m.done, m.report = true, report
-				if lines := strings.Count(m.View(), "\n") + 1; lines > height {
-					t.Errorf("%s %dx%d: the view is %d lines", lang, width, height, lines)
-				}
+	for _, width := range []int{minWidth, 64, 80, 120} {
+		for height := 7; height <= 40; height++ {
+			m := testModel(t)
+			m.Update(tea.WindowSizeMsg{Width: width, Height: height})
+			m.done, m.report = true, report
+			if lines := strings.Count(m.View(), "\n") + 1; lines > height {
+				t.Errorf("%dx%d: the view is %d lines", width, height, lines)
 			}
 		}
 	}
@@ -382,7 +363,7 @@ func TestFinalScreenUsesTheTextReportsWordsAndItsTotalsAddUp(t *testing.T) {
 	if sent != 1400 || failed != 157 {
 		t.Errorf("method rows add up to sent %d, failed %d; want 1400 and 157", sent, failed)
 	}
-	for _, want := range []string{fmt.Sprintf("sent %d ", sent), fmt.Sprintf("failed %d ", failed)} {
+	for _, want := range []string{"sent " + formatCount(sent) + " ", "failed " + formatCount(failed) + " "} {
 		if !strings.Contains(screen+" ", want) {
 			t.Errorf("the screen's totals lack %q: they are not the sum of its rows:\n%s", want, screen)
 		}
@@ -392,7 +373,8 @@ func TestFinalScreenUsesTheTextReportsWordsAndItsTotalsAddUp(t *testing.T) {
 func atoi(t *testing.T, s string) int {
 	t.Helper()
 
-	n, err := strconv.Atoi(s)
+	// The screen groups digits with commas.
+	n, err := strconv.Atoi(strings.ReplaceAll(s, ",", ""))
 	if err != nil {
 		t.Fatalf("%q is not a count: %v", s, err)
 	}

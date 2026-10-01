@@ -79,7 +79,7 @@ func TestPlainLine_ShowsWarmupCallsGoingOut(t *testing.T) {
 
 // The live view's warm-up note carries the count too.
 func TestLiveNote_ShowsWarmupCallsGoingOut(t *testing.T) {
-	m := &model{warmup: 5 * time.Second, text: Text{lang: LangEN}}
+	m := &model{warmup: 5 * time.Second, text: NewText()}
 	m.snapshot = engine.Snapshot{Elapsed: 2 * time.Second, WarmupSent: 120}
 
 	full, short := m.note()

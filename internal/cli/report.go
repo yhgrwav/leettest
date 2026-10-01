@@ -47,8 +47,11 @@ func ClockTooCoarse(run RunReport) bool {
 	return coarseClockMethod(run) != nil || clockGrew(run)
 }
 
-// PrintReport writes the finished run to w as plain text.
+// PrintReport writes the finished run to w as plain ASCII text: characters
+// from outside, such as a method name or the target's error text, come out as
+// escapes.
 func PrintReport(w io.Writer, target string, run RunReport) {
+	w = asciiWriter{w: w}
 	report := run.Report
 
 	fmt.Fprintf(w, "run finished: %s in %s\n", target, formatDuration(report.Duration))

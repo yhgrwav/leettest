@@ -16,6 +16,7 @@ package cli
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -26,7 +27,8 @@ const settingsDir = "leettest"
 
 // Settings holds what the tool remembers between runs.
 type Settings struct {
-	Lang    string `yaml:"lang"`
+	// Lang is no longer read; it stays so a file that has it round-trips.
+	Lang    string `yaml:"lang,omitempty"`
 	Mode    string `yaml:"mode"`
 	Palette string `yaml:"palette"`
 
@@ -59,9 +61,20 @@ func LoadSettings() (*Settings, error) {
 	return settings, nil
 }
 
-// Configured reports whether the tool has already been set up.
+// Configured reports whether the tool has already been set up. A file from
+// before English only may carry just lang.
 func (s *Settings) Configured() bool {
-	return s.Lang != ""
+	return s.Mode != "" || s.Lang != ""
+}
+
+// Deprecations are the warnings for keys the settings file still carries but
+// the tool no longer reads, one line each, for stderr.
+func (s Settings) Deprecations() []string {
+	if s.Lang == "" {
+		return nil
+	}
+
+	return []string{fmt.Sprintf("warning: settings key lang (%q) is ignored, the interface is English only; remove it from the settings file", s.Lang)}
 }
 
 // Save writes the settings back to disk.

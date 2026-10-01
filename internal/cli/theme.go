@@ -179,6 +179,14 @@ type styles struct {
 	pickOn   lipgloss.Style
 }
 
+// frameBorder is drawn from lines a Windows console shows with its default
+// font; the rounded corners came out broken there, so the corners are ASCII.
+var frameBorder = lipgloss.Border{
+	Top: string(rune(0x2500)), Bottom: string(rune(0x2500)),
+	Left: string(rune(0x2502)), Right: string(rune(0x2502)),
+	TopLeft: "+", TopRight: "+", BottomLeft: "+", BottomRight: "+",
+}
+
 func newStyles(theme Theme) styles {
 	bg := func(style lipgloss.Style) lipgloss.Style {
 		return style.Background(theme.Bg)
@@ -196,7 +204,7 @@ func newStyles(theme Theme) styles {
 		bad:      lipgloss.NewStyle().Foreground(theme.Bad).Bold(true),
 		tab:      lipgloss.NewStyle().Foreground(theme.Muted).Padding(0, 2),
 		tabOn:    bg(lipgloss.NewStyle().Foreground(theme.Accent).Bold(true).Padding(0, 2).Underline(true)),
-		frame:    lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(theme.Border).BorderBackground(theme.Bg).Background(theme.Bg).Foreground(theme.Text).Padding(1, 2),
+		frame:    lipgloss.NewStyle().Border(frameBorder).BorderForeground(theme.Border).BorderBackground(theme.Bg).Background(theme.Bg).Foreground(theme.Text).Padding(1, 2),
 		note:     bg(lipgloss.NewStyle().Foreground(theme.Warn).Italic(true)),
 		barOn:    bg(lipgloss.NewStyle().Foreground(theme.Accent)),
 		barOff:   bg(lipgloss.NewStyle().Foreground(theme.Border)),

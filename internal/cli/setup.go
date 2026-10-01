@@ -24,8 +24,7 @@ import (
 type setupStep int
 
 const (
-	stepLang setupStep = iota
-	stepMode
+	stepMode setupStep = iota
 	stepPalette
 )
 
@@ -38,7 +37,7 @@ type setupModel struct {
 	frame    int
 }
 
-// RunSetup asks for the interface language, mode and palette, then stores them.
+// RunSetup asks for the mode and palette, then stores them.
 func RunSetup(settings *Settings) error {
 	if settings.Mode == "" {
 		settings.Mode = string(ModeDark)
@@ -49,7 +48,7 @@ func RunSetup(settings *Settings) error {
 
 	m := &setupModel{
 		settings: settings,
-		text:     NewText(DetectLang()),
+		text:     NewText(),
 	}
 	m.restyle()
 
@@ -99,8 +98,6 @@ func (m *setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *setupModel) options() int {
 	switch m.step {
-	case stepLang:
-		return len(Languages())
 	case stepMode:
 		return 2
 	case stepPalette:
@@ -112,9 +109,6 @@ func (m *setupModel) options() int {
 
 func (m *setupModel) preview() {
 	switch m.step {
-	case stepLang:
-		m.text = NewText(Languages()[m.cursor].Lang)
-
 	case stepMode:
 		m.settings.Mode = string(m.modeAt(m.cursor))
 		m.restyle()
@@ -135,13 +129,6 @@ func (m *setupModel) modeAt(index int) Mode {
 
 func (m *setupModel) choose() (tea.Model, tea.Cmd) {
 	switch m.step {
-	case stepLang:
-		m.settings.Lang = string(Languages()[m.cursor].Lang)
-		m.text = NewText(Lang(m.settings.Lang))
-		m.step = stepMode
-		m.cursor = 0
-		m.preview()
-
 	case stepMode:
 		m.settings.Mode = string(m.modeAt(m.cursor))
 		m.step = stepPalette
@@ -187,8 +174,6 @@ func (m *setupModel) View() string {
 
 func (m *setupModel) stepTitle() string {
 	switch m.step {
-	case stepLang:
-		return m.text.PickLanguage()
 	case stepMode:
 		return m.text.PickTheme()
 	case stepPalette:
@@ -200,14 +185,6 @@ func (m *setupModel) stepTitle() string {
 
 func (m *setupModel) entries() []string {
 	switch m.step {
-	case stepLang:
-		names := make([]string, 0, len(Languages()))
-		for _, option := range Languages() {
-			names = append(names, option.Title)
-		}
-
-		return names
-
 	case stepMode:
 		return []string{m.text.ModeDark(), m.text.ModeLight()}
 

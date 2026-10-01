@@ -149,8 +149,8 @@ func reportNotes(report engine.Report, maxResponse string) []string {
 
 	if len(rejected) > 0 {
 		add("The \"request error\" rows are calls that fail the same way at any rate. Either\n"+
-			"the request is wrong — no such method, a bad argument, a body that does not match\n"+
-			"the schema — or\n"+
+			"the request is wrong - no such method, a bad argument, a body that does not match\n"+
+			"the schema - or\n"+
 			"a request refused as larger than accepted, by the target or a proxy in front of it.\n"+
 			"Check the config for %s.", strings.Join(rejected, ", "))
 	}

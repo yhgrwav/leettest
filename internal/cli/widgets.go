@@ -15,7 +15,6 @@
 package cli
 
 import (
-	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -25,8 +24,10 @@ import (
 )
 
 var (
-	spinnerFrames = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-	sparkLevels   = []rune("▁▂▃▄▅▆▇█")
+	// Only characters a Windows console draws with its default font: the
+	// braille spinner and the eighth-blocks came out as boxes there.
+	spinnerFrames = []string{"|", "/", "-", `\`}
+	sparkLevels   = []rune{0x2591, 0x2592, 0x2593, 0x2588} // light, medium, dark shade, full block
 )
 
 func spinner(frame int) string {
@@ -154,101 +155,63 @@ func keyHint(s styles, hints ...string) string {
 	return strings.Join(parts, s.faint.Render("   "))
 }
 
+// formatCount writes n exactly, digits grouped by three with commas.
 func formatCount(n int) string {
-	text := fmt.Sprintf("%d", n)
-	if len(text) <= 4 {
-		return text
-	}
+	digits := strconv.Itoa(n)
 
 	var b strings.Builder
+	if n < 0 {
+		b.WriteByte('-')
+		digits = digits[1:]
+	}
 
-	for i, r := range text {
-		if i > 0 && (len(text)-i)%3 == 0 {
-			b.WriteRune(' ')
+	for i := range len(digits) {
+		if i > 0 && (len(digits)-i)%3 == 0 {
+			b.WriteByte(',')
 		}
-		b.WriteRune(r)
+		b.WriteByte(digits[i])
 	}
 
 	return b.String()
 }
 
-// compactCount writes n in tenths of k, M or G, choosing the unit after
-// rounding so 999 950 reads 1.0M, never 1000.0k. Integer arithmetic only: a
-// float of 999.95 is 999.9499… and would round the wrong way. Past 9999.9G it
-// is a bound, which caps the width at eight columns.
-func compactCount(n uint64) string {
-	if n < 10_000 {
-		return strconv.FormatUint(n, 10)
-	}
-
-	for _, u := range []struct {
-		size uint64
-		name string
-	}{{1e3, "k"}, {1e6, "M"}, {1e9, "G"}} {
-		step := u.size / 10
-		tenths := n / step
-		if n%step >= step-n%step {
-			tenths++
-		}
-
-		if tenths < 10_000 || u.name == "G" {
-			if tenths > 99_999 {
-				return ">9999.9G"
-			}
-
-			return fmt.Sprintf("%d.%d%s", tenths/10, tenths%10, u.name)
-		}
-	}
-
-	return ">9999.9G"
-}
-
-// statField is one piece of a stat line. compact is the shorter form of the
-// value, "" if it has none; drop orders what goes when even the compact line
-// does not fit, lowest first, and 0 never goes.
+// statField is one piece of a stat line. drop orders what goes when the line
+// does not fit, lowest first, and 0 never goes. A value is never shortened:
+// a count is exact or not on the line at all.
 type statField struct {
-	label, value, compact string
-	drop                  int
+	label, value string
+	drop         int
 }
 
-// fitStatLine lays the fields out in width: exact values if they fit, else
-// the compact ones, else without the droppable fields in their order.
+// fitStatLine lays the fields out in width, without the droppable fields in
+// their order until the line fits.
 func fitStatLine(s styles, width int, fields ...statField) string {
-	pairs := func(compact bool, dropped int) [][2]string {
+	pairs := func(dropped int) [][2]string {
 		out := make([][2]string, 0, len(fields))
 		for _, f := range fields {
 			if f.drop != 0 && f.drop <= dropped {
 				continue
 			}
-			value := f.value
-			if compact && f.compact != "" {
-				value = f.compact
-			}
-			out = append(out, [2]string{f.label, value})
+			out = append(out, [2]string{f.label, f.value})
 		}
 
 		return out
 	}
 
-	line := statLine(s, pairs(false, 0)...)
-	if lipgloss.Width(line) <= width {
-		return line
-	}
-
 	for dropped := 0; ; dropped++ {
-		line = statLine(s, pairs(true, dropped)...)
+		line := statLine(s, pairs(dropped)...)
 		if lipgloss.Width(line) <= width || dropped > len(fields) {
 			return line
 		}
 	}
 }
 
-// countField is a count shown exactly where it fits and compact where not.
-// A negative count can only come from a bug, and is shown as it is.
+// countField is a count, exact. A negative count can only come from a bug,
+// and is shown as it is.
 func countField(label string, n, drop int) statField {
 	if n < 0 {
 		return statField{label: label, value: strconv.Itoa(n), drop: drop}
 	}
 
-	return statField{label: label, value: formatCount(n), compact: compactCount(uint64(n)), drop: drop}
+	return statField{label: label, value: formatCount(n), drop: drop}
 }

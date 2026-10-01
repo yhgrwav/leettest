@@ -308,6 +308,10 @@ func NewJSONReport(run JSONRun) JSONReport {
 	if note := uncheckedNote(run.Run.Unchecked); note != "" {
 		out.Notes = append(out.Notes, note)
 	}
+	// Notes read as the text report prints them.
+	for i := range out.Notes {
+		out.Notes[i] = asciiText(out.Notes[i])
+	}
 	if r.CapHit != nil {
 		out.InvalidReasons = append(out.InvalidReasons, "in_flight_cap")
 	}

@@ -54,8 +54,15 @@ func keyOf(msg tea.KeyMsg) string {
 // characters get it: a stray arrow or function key says nothing about the
 // layout.
 func (m *model) unknownKey(msg tea.KeyMsg) {
-	if msg.Type != tea.KeyRunes {
+	if msg.Type != tea.KeyRunes || len(msg.Runes) == 0 {
 		return
+	}
+	// A control or invisible character (NUL, ESC, a zero-width space) is not a
+	// letter from another layout: pointing at the layout would mislead.
+	for _, r := range msg.Runes {
+		if !unicode.IsPrint(r) {
+			return
+		}
 	}
 
 	m.hintKey = string(msg.Runes)
