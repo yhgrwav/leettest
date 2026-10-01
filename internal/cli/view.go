@@ -522,7 +522,6 @@ func (m *model) settingsView(width int) string {
 		label   string
 		options []string
 	}{
-		{label: m.text.LanguageRow(), options: m.langOptions()},
 		{label: m.text.ModeRow(), options: m.modeOptions()},
 		{label: m.text.PaletteRow(), options: m.paletteOptions()},
 	}
@@ -610,17 +609,6 @@ func (m *model) optionText(text string, selected bool) string {
 	}
 
 	return m.styles.pick.Render(text)
-}
-
-func (m *model) langOptions() []string {
-	options := make([]string, 0, len(Languages()))
-
-	for _, lang := range Languages() {
-		selected := string(lang.Lang) == m.settings.Lang
-		options = append(options, m.option(m.optionText(lang.Title, selected), selected))
-	}
-
-	return options
 }
 
 func (m *model) modeOptions() []string {

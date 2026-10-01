@@ -456,6 +456,43 @@ func TestRun_DefaultTLSFailureSaysHowToTurnItOff(t *testing.T) {
 	}
 }
 
+// A settings file from before English only still runs, and stderr says once
+// that its lang key is ignored; stdout, the report, does not carry it.
+func TestRun_AnOldLangKeyWarnsOnceOnStderr(t *testing.T) {
+	cfgPath := writeConfig(t, closedPort(t), checkMethod, plaintext)
+
+	dir := t.TempDir()
+	t.Setenv("APPDATA", dir)
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	if err := os.MkdirAll(filepath.Join(dir, "leettest"), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	settings := "lang: ru\nmode: dark\npalette: aurora\n"
+	if err := os.WriteFile(filepath.Join(dir, "leettest", "settings.yaml"), []byte(settings), 0o600); err != nil {
+		t.Fatalf("write settings: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	done := make(chan error, 1)
+	go func() { done <- run(t.Context(), nil, nil, []string{"-fake", "-c", cfgPath}, &stdout, &stderr) }()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("run: %v, want a settings file with lang to still run", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("run has not returned after 10s")
+	}
+
+	if n := strings.Count(stderr.String(), "settings key lang"); n != 1 {
+		t.Errorf("stderr names the lang key %d times, want once:\n%s", n, stderr.String())
+	}
+	if strings.Contains(stdout.String(), "lang") {
+		t.Errorf("stdout carries the warning:\n%s", stdout.String())
+	}
+}
+
 // --- the fake target ----------------------------------------------------
 
 func TestRun_FakeDoesNotConnect(t *testing.T) {

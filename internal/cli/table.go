@@ -68,11 +68,7 @@ func screenRows(report engine.Report) []tableRow {
 }
 
 func countCell(n int) string {
-	if n < 0 {
-		return fmt.Sprint(n)
-	}
-
-	return compactCount(uint64(n))
+	return formatCount(n)
 }
 
 // finalTable lays the table out in one of three ways, the same for every row:

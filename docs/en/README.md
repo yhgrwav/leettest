@@ -396,6 +396,10 @@ the target answered none of the calls sent, `methods[].silent_sent_rps` how many
 the second before it (in the first second, if the silence starts there). Without a silence both are
 `null`. The planned rate is in the config's stages.
 
+The text report is printed in ASCII only, so a console on any code page shows it as written.
+Characters from outside ASCII, in a method name or in the target's error text, are printed as
+`\uXXXX` (past U+FFFF as a surrogate pair, as in JSON). `notes` in JSON carry the same escaped text.
+
 ## Not yet
 
 Ramp-up from zero to the target RPS, pass/fail thresholds for CI, export to
