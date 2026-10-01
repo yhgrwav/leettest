@@ -739,3 +739,77 @@ func TestTimeline_ATimeoutThatNeverWentOutIsNotTheTargetsSilence(t *testing.T) {
 		t.Errorf("unsent timeouts = %d, want 3", m.UnsentTimedOut)
 	}
 }
+
+// silenceOf records calls given as (scheduled, sent, heard) and returns the
+// method's SilentFrom. Unheard calls time out; heard ones succeed.
+func silenceOf(t *testing.T, calls ...[3]any) *int {
+	t.Helper()
+
+	stats := NewStats()
+	start := time.Now()
+	stats.Reserve(10*time.Second, "a")
+	stats.Start(start, 0)
+
+	for _, c := range calls {
+		at, out := start.Add(c[0].(time.Duration)), start.Add(c[1].(time.Duration))
+		outcome := Outcome{Category: CategorySuccess, SentAt: out, DoneAt: out.Add(time.Millisecond), Heard: true}
+		if !c[2].(bool) {
+			outcome = Outcome{Category: CategoryTimeout, SentAt: out, DoneAt: at.Add(time.Second)}
+		}
+		stats.Record(Result{Method: "a", ScheduledAt: at, BegunAt: out, Deadline: at.Add(time.Second), Outcome: outcome})
+	}
+	stats.Finish(start.Add(8 * time.Second))
+
+	return stats.Report().Methods[0].SilentFrom
+}
+
+// Ground: boundary — which axis a second is counted on shows only when the
+// generator lags, which end to end would need lag held to the second.
+// SilentFrom says the target answered nothing from here on: a statement about
+// the target, so its seconds are by when the call went out.
+func TestTimeline_SilenceIsCountedByWhenTheCallWentOut(t *testing.T) {
+	ms := time.Millisecond
+
+	// Due at 1.1s but out at 3.2s, and heard; due 2.5s, out 2.6s, silent.
+	// By the schedule: answered in second 1, silent from 2. By the send:
+	// silent in second 2, then heard in 3 — the target never went quiet.
+	if got := silenceOf(t, [3]any{1100 * ms, 3200 * ms, true}, [3]any{2500 * ms, 2600 * ms, false}); got != nil {
+		t.Errorf("silent from second %d, want none: the target answered a call sent after the silent one", *got)
+	}
+
+	// Due 2.2s, out 2.3s, heard; due 1.9s but out 3.4s, silent. By the
+	// schedule the silent call comes first and the answer ends it: none. By
+	// the send the target went quiet in second 3.
+	got := silenceOf(t, [3]any{2200 * ms, 2300 * ms, true}, [3]any{1900 * ms, 3400 * ms, false})
+	if got == nil || *got != 3 {
+		t.Errorf("silent from %v, want second 3: nothing sent from then on was heard", got)
+	}
+}
+
+// Ground: boundary — the two statements about one silence must agree: the
+// last call heard went out before the first silent second.
+func TestTimeline_SilenceStartsAfterTheLastAnswer(t *testing.T) {
+	ms := time.Millisecond
+
+	stats := NewStats()
+	start := time.Now()
+	stats.Reserve(10*time.Second, "a")
+	stats.Start(start, 0)
+	for _, c := range [][2]time.Duration{{1100 * ms, 2900 * ms}, {2050 * ms, 2100 * ms}} {
+		at, out := start.Add(c[0]), start.Add(c[1])
+		stats.Record(Result{Method: "a", ScheduledAt: at, BegunAt: out, Deadline: at.Add(time.Second),
+			Outcome: Outcome{Category: CategorySuccess, SentAt: out, DoneAt: out.Add(ms), Heard: true}})
+	}
+	silent := start.Add(3100 * ms)
+	stats.Record(Result{Method: "a", ScheduledAt: start.Add(2200 * ms), BegunAt: silent, Deadline: silent.Add(time.Second),
+		Outcome: Outcome{Category: CategoryTimeout, SentAt: silent, DoneAt: silent.Add(time.Second)}})
+	stats.Finish(start.Add(8 * time.Second))
+
+	m := stats.Report().Methods[0]
+	if m.SilentFrom == nil || m.LastAnswerAt == nil {
+		t.Fatalf("silent from %v, last answer %v: want both", m.SilentFrom, m.LastAnswerAt)
+	}
+	if from := time.Duration(*m.SilentFrom) * time.Second; *m.LastAnswerAt >= from {
+		t.Errorf("last answer at %v, yet silent from second %d", *m.LastAnswerAt, *m.SilentFrom)
+	}
+}
