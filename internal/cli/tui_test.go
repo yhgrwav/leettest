@@ -123,9 +123,9 @@ func TestFormatCount(t *testing.T) {
 	tests := map[int]string{
 		0:       "0",
 		999:     "999",
-		1000:    "1000",
-		25600:   "25 600",
-		1234567: "1 234 567",
+		1000:    "1,000",
+		25600:   "25,600",
+		1234567: "1,234,567",
 	}
 
 	for in, want := range tests {

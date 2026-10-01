@@ -120,7 +120,8 @@ func TestFinalScreenTableCarriesEveryRowAndNumberOfTheTextReport(t *testing.T) {
 		var found []string
 		for _, line := range screen {
 			if f := strings.Fields(line); len(f) > 0 && f[0] == label {
-				found = f
+				// The screen groups digits with commas, the text report does not.
+				found = strings.Fields(strings.ReplaceAll(line, ",", ""))
 				break
 			}
 		}
@@ -361,7 +362,7 @@ func TestFinalScreenUsesTheTextReportsWordsAndItsTotalsAddUp(t *testing.T) {
 	if sent != 1400 || failed != 157 {
 		t.Errorf("method rows add up to sent %d, failed %d; want 1400 and 157", sent, failed)
 	}
-	for _, want := range []string{fmt.Sprintf("sent %d ", sent), fmt.Sprintf("failed %d ", failed)} {
+	for _, want := range []string{"sent " + formatCount(sent) + " ", "failed " + formatCount(failed) + " "} {
 		if !strings.Contains(screen+" ", want) {
 			t.Errorf("the screen's totals lack %q: they are not the sum of its rows:\n%s", want, screen)
 		}
@@ -371,7 +372,8 @@ func TestFinalScreenUsesTheTextReportsWordsAndItsTotalsAddUp(t *testing.T) {
 func atoi(t *testing.T, s string) int {
 	t.Helper()
 
-	n, err := strconv.Atoi(s)
+	// The screen groups digits with commas.
+	n, err := strconv.Atoi(strings.ReplaceAll(s, ",", ""))
 	if err != nil {
 		t.Fatalf("%q is not a count: %v", s, err)
 	}
