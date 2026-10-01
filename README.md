@@ -4,8 +4,7 @@
 
 **Нагрузочное тестирование gRPC, которое не врёт.**
 
-[Русский](docs/ru/) · [English](docs/en/) · [Deutsch](docs/de/) · [中文](docs/zh-CN/)
-
+[Русский](docs/ru/) · [English](docs/en/)
 [![CI](https://github.com/yhgrwav/leettest/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/yhgrwav/leettest/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/yhgrwav/leettest.svg)](https://pkg.go.dev/github.com/yhgrwav/leettest)
 [![Go version](https://img.shields.io/github/go-mod/go-version/yhgrwav/leettest)](go.mod)
