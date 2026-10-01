@@ -90,17 +90,16 @@ jobs:
           sleep 1
           rc=0
           bin/leettest -c examples/tour.yaml -output json > tour.json || rc=$?
-          # 1 is the config or the connection. 2 is a verdict on the run,
-          # not on the config: until the clock-step rule is fixed, the
-          # runner's nanosecond clock can end a good run that way.
-          if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ]; then
+          # The runner is native Linux: its start lag and clock are the
+          # reference for the run-side verdicts.
+          if [ -s tour.json ]; then
+            jq -c '{exit: '"$rc"', start_lag, clock_step_ns, invalid_reasons, tail_wait_cause}' tour.json
+          fi
+          if [ "$rc" -ne 0 ]; then
             echo "exit code $rc"
             exit 1
           fi
           grep -q '"sent":11100' tour.json
-          # The runner is native Linux: its start lag and clock are the
-          # reference for the run-side verdicts.
-          jq -c '{exit: '"$rc"', start_lag, clock_step_ns, invalid_reasons, tail_wait_cause}' tour.json
 
   # The release runs only on a tag; building it here keeps a broken
   # .goreleaser.yaml from surfacing first at release time.

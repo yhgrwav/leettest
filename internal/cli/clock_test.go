@@ -46,6 +46,29 @@ func TestClockStep_TheNoteSaysPlusMinusAStep(t *testing.T) {
 	}
 }
 
+// Under 1µs, the threshold of the "+/-" note, a Linux step is the cost of
+// reading the clock (40–60ns), not its tick, and no printed number moves by
+// it: a step that grows there is no invalid run.
+func TestClockStep_AStepGrowingUnderAMicrosecondIsValid(t *testing.T) {
+	for _, tc := range []struct {
+		before, after time.Duration
+		invalid       bool
+	}{
+		{40 * time.Nanosecond, 60 * time.Nanosecond, false},
+		{800 * time.Nanosecond, 1200 * time.Nanosecond, true},
+		{500 * time.Microsecond, 1010 * time.Microsecond, true},
+	} {
+		run := clockRun(max(tc.before, tc.after), 20*time.Millisecond)
+		run.ClockStepBefore = tc.before
+		if got := ClockTooCoarse(run); got != tc.invalid {
+			t.Errorf("%v → %v: ClockTooCoarse = %v, want %v", tc.before, tc.after, got, tc.invalid)
+		}
+		if got := strings.Contains(printedRun(run), "clock step changed during the run"); got != tc.invalid {
+			t.Errorf("%v → %v: change printed = %v, want %v", tc.before, tc.after, got, tc.invalid)
+		}
+	}
+}
+
 // A floor raised by the step changes what counts as waiting: the note names it.
 func TestClockStep_TheNoteNamesARaisedWaitFloor(t *testing.T) {
 	run := clockRun(502*time.Microsecond, 10*time.Millisecond)
