@@ -1,3 +1,5 @@
-## Что сделано
+## What changed
 
-## Как проверено
+## Why
+
+## How it was checked
