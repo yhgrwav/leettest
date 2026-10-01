@@ -741,7 +741,8 @@ func TestTimeline_ATimeoutThatNeverWentOutIsNotTheTargetsSilence(t *testing.T) {
 }
 
 // silenceOf records calls given as (scheduled, sent, heard) and returns the
-// method's SilentFrom. Unheard calls time out; heard ones succeed.
+// method's SilentFrom. Unheard calls time out; heard ones succeed. The
+// timeout is 3s, so every call goes out before its deadline.
 func silenceOf(t *testing.T, calls ...[3]any) *int {
 	t.Helper()
 
@@ -754,9 +755,9 @@ func silenceOf(t *testing.T, calls ...[3]any) *int {
 		at, out := start.Add(c[0].(time.Duration)), start.Add(c[1].(time.Duration))
 		outcome := Outcome{Category: CategorySuccess, SentAt: out, DoneAt: out.Add(time.Millisecond), Heard: true}
 		if !c[2].(bool) {
-			outcome = Outcome{Category: CategoryTimeout, SentAt: out, DoneAt: at.Add(time.Second)}
+			outcome = Outcome{Category: CategoryTimeout, SentAt: out, DoneAt: at.Add(3 * time.Second)}
 		}
-		stats.Record(Result{Method: "a", ScheduledAt: at, BegunAt: out, Deadline: at.Add(time.Second), Outcome: outcome})
+		stats.Record(Result{Method: "a", ScheduledAt: at, BegunAt: out, Deadline: at.Add(3 * time.Second), Outcome: outcome})
 	}
 	stats.Finish(start.Add(8 * time.Second))
 

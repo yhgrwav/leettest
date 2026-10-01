@@ -63,9 +63,18 @@ func reportNotes(report engine.Report, maxResponse string) []string {
 	for i := range report.Methods {
 		m := &report.Methods[i]
 
-		rate := fmt.Sprintf("%d", m.RPSLow)
+		planned := fmt.Sprintf("%d", m.RPSLow)
 		if m.RPSHigh != m.RPSLow {
-			rate = fmt.Sprintf("%d-%d", m.RPSLow, m.RPSHigh)
+			planned = fmt.Sprintf("%d-%d", m.RPSLow, m.RPSHigh)
+		}
+		rate := "at " + planned + " rps"
+		if m.SilentFrom != nil {
+			// The target saw what went out, not the plan; the plan is named
+			// only when the two part by more than a tenth.
+			rate = fmt.Sprintf("at %d rps", m.SentRPS)
+			if m.SentRPS*10 < m.RPSLow*9 || m.SentRPS*10 > m.RPSHigh*11 {
+				rate = fmt.Sprintf("sent at %d rps (planned %s)", m.SentRPS, planned)
+			}
 		}
 
 		// Both facts are about one method, so they make one note.
@@ -80,7 +89,7 @@ func reportNotes(report engine.Report, maxResponse string) []string {
 				silence = ",\nand the target answered nothing at all"
 			}
 
-			lines = append(lines, fmt.Sprintf("%s: at %s rps, %d of %d calls (%.1f%%) got no answer within %s%s.",
+			lines = append(lines, fmt.Sprintf("%s: %s, %d of %d calls (%.1f%%) got no answer within %s%s.",
 				displayMethod(m.Method), rate, m.TimedOut, m.Sent, share(m.TimedOut, m.Sent),
 				formatDuration(m.Timeout), silence))
 			if m.TimedOutAfterWait > 0 {

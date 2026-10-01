@@ -67,10 +67,10 @@ type Second struct {
 type second struct {
 	begun, succeeded, timedOut, requestFailed   int64
 	overload, failure, clientError, badResponse int64
-	// planned, answered and plannedTimedOut count calls by the second they
-	// were scheduled for: how many, how many got a success or a status from
-	// the target, how many went out and got nothing within their timeout.
-	planned, answered, plannedTimedOut int64
+	// sentOut, heardOut and silentOut count calls by the second they went
+	// out: how many, how many the target was heard on, how many got nothing
+	// within their timeout. Silence is the target's, so it is on this axis.
+	sentOut, heardOut, silentOut int64
 
 	notSentGenerator, notSentStream, notSentConnection  int64
 	unanswered, cutOff, aborted, unknown                int64
@@ -122,14 +122,15 @@ func (t *timeline) record(start time.Time, r Result) {
 
 	t.secs[begun].begun++
 
-	p := &t.secs[scheduled]
-	p.planned++
-	switch r.Category {
-	case CategorySuccess, CategoryServerFault, CategoryOverload, CategoryClientFault, CategoryBadResponse:
-		p.answered++
-	case CategoryTimeout:
-		if !r.NotSent {
-			p.plannedTimedOut++
+	// SentAt is no later than DoneAt, so it lands within the used span.
+	if out, ok := t.secondOf(start, r.SentAt); ok && !r.NotSent && !r.SentAt.IsZero() {
+		o := &t.secs[out]
+		o.sentOut++
+		switch {
+		case heard(r):
+			o.heardOut++
+		case r.Category == CategoryTimeout:
+			o.silentOut++
 		}
 	}
 
@@ -266,22 +267,28 @@ func (t *timeline) export() []Second {
 	return out
 }
 
-// silentFrom is the first scheduled second from which to the end no call got
-// an answer while some went out and timed out. Seconds with nothing scheduled,
-// or whose calls all ended on our side (cut off, never sent, unreachable), say
-// nothing about the target and neither break nor start the stretch.
+// silentFrom is the first second, by send, from which to the end the target
+// was heard on no call while some went out and timed out. Seconds with nothing
+// sent, or whose calls all ended on our side (cut off, stopped, unreachable),
+// say nothing about the target and neither break nor start the stretch.
 func (t *timeline) silentFrom() (int, bool) {
 	from, found := 0, false
 
 	for i := t.used - 1; i >= 0; i-- {
 		s := &t.secs[i]
 		switch {
-		case s.answered > 0:
+		case s.heardOut > 0:
 			return from, found
-		case s.plannedTimedOut > 0:
+		case s.silentOut > 0:
 			from, found = i, true
 		}
 	}
 
 	return from, found
+}
+
+// sentRate is how many calls went out in the second before from, or in
+// second 0 when from is 0: there is no second before it.
+func (t *timeline) sentRate(from int) int {
+	return int(t.secs[max(0, from-1)].sentOut)
 }

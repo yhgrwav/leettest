@@ -845,6 +845,7 @@ func (s *Stats) Report() Report {
 		}
 		if from, ok := method.timeline.silentFrom(); ok {
 			entry.SilentFrom = &from
+			entry.SentRPS = method.timeline.sentRate(from)
 		}
 		if method.lastAnswer >= 0 {
 			at := method.lastAnswer
@@ -934,6 +935,7 @@ func (s *Stats) Report() Report {
 			WarmupFailed:      timelines[v.name].WarmupFailed,
 			WarmupNotSent:     timelines[v.name].WarmupNotSent,
 			SilentFrom:        timelines[v.name].SilentFrom,
+			SentRPS:           timelines[v.name].SentRPS,
 			LastAnswerAt:      timelines[v.name].LastAnswerAt,
 		}
 		if measured > 0 {
