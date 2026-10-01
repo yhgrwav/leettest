@@ -104,8 +104,8 @@ more:
 
 ## Docs
 
-The README is written in Russian and translated into English, German and Chinese. A README change
-ships in Russian and English together; the other translations say which version they follow.
+The README is written in Russian and translated into English. A README change ships in Russian and
+English together.
 The README describes what already works — it is not a list of promises.
 
 ## Contributor License Agreement
