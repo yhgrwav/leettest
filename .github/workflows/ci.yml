@@ -104,6 +104,14 @@ jobs:
             exit 1
           fi
           grep -q '"sent":11100' tour.json
+          # The exact schedule (#142): the plain Go timer starts calls up to
+          # 1ms late (p99 ~1.08ms on this runner); the exact one measured
+          # 144µs in this tour. The bound is half the timer's lateness.
+          lag=$(jq '.start_lag.p99.us' tour.json)
+          if [ "$lag" -ge 500 ]; then
+            echo "::error::start lag p99 ${lag}us, want under 500us: the schedule is not exact"
+            exit 1
+          fi
 
   # The release runs only on a tag; building it here keeps a broken
   # .goreleaser.yaml from surfacing first at release time.

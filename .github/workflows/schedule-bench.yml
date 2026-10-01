@@ -1,0 +1,38 @@
+name: Schedule bench
+
+# Start lag p99, p50 latency and CPU of leettest, a base ref against this one,
+# against the reference stand: idle, with one and two CPUs, and with every
+# core busy. Run by hand when a change touches the schedule (#142: the exact
+# schedule must be no worse than the plain timer in any of these).
+on:
+  workflow_dispatch:
+    inputs:
+      base:
+        description: "ref to compare against"
+        default: "origin/main"
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    name: schedule bench
+    runs-on: ubuntu-latest
+    env:
+      RUN: docker run --rm -e GOFLAGS=-buildvcs=false
+      MOUNTS: -v ${{ github.workspace }}/.github/schedule-bench:/bench -v ${{ github.workspace }}/../before:/before -v ${{ github.workspace }}:/after
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - run: git worktree add ../before "$BASE" && nproc
+        env:
+          BASE: ${{ inputs.base }}
+      - name: idle, 100 to 3000 rps and 3 methods
+        run: $RUN $MOUNTS golang:1.27.1 sh /bench/run.sh
+      - name: --cpus=1
+        run: $RUN --cpus=1 -e RATES="300 1000" $MOUNTS golang:1.27.1 sh /bench/run.sh
+      - name: --cpus=2
+        run: $RUN --cpus=2 -e RATES="300 1000" $MOUNTS golang:1.27.1 sh /bench/run.sh
+      - name: every core busy (a yes per core)
+        run: $RUN -e BUSY=1 -e NO3=1 -e RATES="300 1000 3000" $MOUNTS golang:1.27.1 sh /bench/run.sh

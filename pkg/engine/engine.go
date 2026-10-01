@@ -271,7 +271,10 @@ func (e *Engine) Run(ctx context.Context) error {
 		methods = append(methods, call.Method)
 	}
 	e.stats.Reserve(e.plannedDuration()+e.longestTimeout()+timelineSlack, methods...)
+	// Measured before moment zero: on a coarse clock it takes milliseconds.
+	dispatcher := NewDispatcher(e.opts.Calls)
 	e.startedAt = time.Now()
+	dispatcher.start = e.startedAt
 	e.stats.Start(e.startedAt, e.opts.Warmup)
 	// Nothing is scheduled past the plan, so rates never divide by more than
 	// it; a stop reports an earlier moment below.
@@ -296,27 +299,23 @@ func (e *Engine) Run(ctx context.Context) error {
 		scheduleErr error
 	)
 
-	for _, call := range e.opts.Calls {
-		schedulers.Add(1)
+	schedulers.Add(1)
 
-		go func() {
-			defer schedulers.Done()
+	go func() {
+		defer schedulers.Done()
 
-			err := NewScheduler(call).Run(scheduleCtx, requests)
-			if err != nil && ctx.Err() == nil && isStopped(e.stopped) {
-				// Stopped by Stop, not by a failure: the plan was cut short.
-				e.incomplete.Store(true)
-				return
-			}
-			if err != nil {
-				scheduleMu.Lock()
-				if scheduleErr == nil {
-					scheduleErr = fmt.Errorf("%s: %w", call.Method, err)
-				}
-				scheduleMu.Unlock()
-			}
-		}()
-	}
+		err := dispatcher.Run(scheduleCtx, requests)
+		if err != nil && ctx.Err() == nil && isStopped(e.stopped) {
+			// Stopped by Stop, not by a failure: the plan was cut short.
+			e.incomplete.Store(true)
+			return
+		}
+		if err != nil {
+			scheduleMu.Lock()
+			scheduleErr = err
+			scheduleMu.Unlock()
+		}
+	}()
 
 	go func() {
 		schedulers.Wait()
