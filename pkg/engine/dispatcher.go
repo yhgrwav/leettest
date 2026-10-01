@@ -24,10 +24,14 @@ import (
 	"github.com/yhgrwav/leettest/pkg/clock"
 )
 
-// spinWindow is how long before a moment the exact wait stops sleeping and
-// busy-waits: the Go timer on Linux wakes up to 1ms late (the runtime waits in
-// epoll with millisecond timeouts).
-const spinWindow = time.Millisecond
+const (
+	// timerMargin is how long before a moment the exact wait leaves the Go
+	// timer, which wakes up to 1ms late on Linux.
+	timerMargin = 2 * time.Millisecond
+	// spinWindow is how long before a moment it stops sleeping and
+	// busy-waits.
+	spinWindow = 50 * time.Microsecond
+)
 
 // Dispatcher hands out the requests of every call of a run, in the order of
 // their scheduled moments. One goroutine for the whole run: its busy-wait
@@ -135,25 +139,25 @@ func (q *cursors) Pop() any {
 	return last
 }
 
-// exactSchedule says whether the dispatcher may busy-wait the last
-// millisecond to a moment, on this host.
+// exactSchedule says whether the dispatcher waits to each moment exactly, on
+// this host.
 func exactSchedule() bool {
-	return exactScheduleFor(runtime.GOMAXPROCS(0), clock.StepOf(time.Now))
+	return exactScheduleFor(preciseSleep, clock.StepOf(time.Now))
 }
 
-// exactScheduleFor is exactSchedule for procs Ps and a clock of step. The
-// spin takes a whole core: it needs three Ps, so two are left for the
-// senders, the stats and the replies. Not two: under a cgroup CPU limit Go
-// sets at least 2 Ps (runtime/cgroup_linux_test.go), so --cpus=1 shows as 2,
-// and there the spin was measured to raise start lag from 1ms to 44ms. Not on
-// a clock of 1µs or coarser (Windows, ~0.5ms): a spin cannot end closer than
-// a step, and there it was measured worse than the plain timer.
-func exactScheduleFor(procs int, step time.Duration) bool {
-	return procs >= 3 && step < time.Microsecond
+// exactScheduleFor is exactSchedule on a host that can or cannot sleep to a
+// microsecond (Linux, clock_nanosleep) and has a clock of step. Not on a
+// clock of 1µs or coarser (Windows, ~0.5ms): a wait cannot end closer than a
+// step, and there a busy-wait was measured worse than the plain timer.
+func exactScheduleFor(precise bool, step time.Duration) bool {
+	return precise && step < time.Microsecond
 }
 
-// waitUntil returns at at, or when ctx ends with its error. exact sleeps to
-// spinWindow before at and busy-waits the rest; otherwise a plain timer.
+// waitUntil returns at at, or when ctx ends with its error. Not exact: a plain
+// timer, which on Linux wakes up to 1ms late (the runtime waits in epoll with
+// millisecond timeouts). Exact: the Go timer to timerMargin before at, a
+// microsecond sleep to spinWindow before it, a busy-wait for the rest — short,
+// so that a host whose every core is busy does not preempt it for a slice.
 func waitUntil(ctx context.Context, at time.Time, exact bool) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -161,7 +165,7 @@ func waitUntil(ctx context.Context, at time.Time, exact bool) error {
 
 	sleep := time.Until(at)
 	if exact {
-		sleep -= spinWindow
+		sleep -= timerMargin
 	}
 	if sleep > 0 {
 		timer := time.NewTimer(sleep)
@@ -177,6 +181,15 @@ func waitUntil(ctx context.Context, at time.Time, exact bool) error {
 		return nil
 	}
 
+	if err := sleepPrecisely(ctx, at.Add(-spinWindow)); err != nil {
+		return err
+	}
+
+	return spinUntil(ctx, at)
+}
+
+// spinUntil busy-waits to at, or until ctx ends with its error.
+func spinUntil(ctx context.Context, at time.Time) error {
 	for time.Now().Before(at) {
 		select {
 		case <-ctx.Done():

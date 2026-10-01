@@ -18,7 +18,6 @@ import (
 	"context"
 	"math/rand/v2"
 	"runtime"
-	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -40,61 +39,41 @@ func TestWaitUntil_NeverBeforeTheMoment(t *testing.T) {
 	}
 }
 
-// Ground: hot path — every latency counts from scheduledAt, so the wait's
-// lateness is in all of them. The Go timer wakes up to 1ms late on Linux
-// (epoll waits in milliseconds), p99 ~1.08ms; the exact wait must stay under
-// half of that. Unloaded it is ~30µs; under -race next to other packages on
-// the CI runner 470µs was seen, so the bound is the half, not the usual.
-func TestWaitUntil_ExactBeatsTheTimer(t *testing.T) {
-	// Off with too few Ps or a coarse clock (exactScheduleFor); the
-	// dispatcher keeps the plain timer there, and this host cannot check it.
-	if !exactScheduleFor(runtime.GOMAXPROCS(0), clock.StepOf(time.Now)) {
-		t.Skip("the exact wait is off on this host")
-	}
-	if exact := lateness(t, true); exact > 500*time.Microsecond {
-		t.Errorf("p99 lateness %v, want under 500µs, half the timer's 1ms", exact)
-	}
-}
+// Ground: boundary — a stop must not wait out the exact wait. Each part is
+// waited on for 10ms and cancelled after 1ms; it must return within 1ms of
+// the cancel, a tenth of the wait: cut, not waited out. Idle on Linux it
+// returns in ~10µs (busy-wait) and ~100µs (a sleep chunk and a wake-up);
+// with every core busy under -race 180µs was seen, so the bound is the
+// tenth. Whether the exact wait beats the timer is measured in the CI tour,
+// alone, not here next to other packages under -race.
+func TestWaitUntil_CancelCutsTheWait(t *testing.T) {
+	for _, part := range []struct {
+		name string
+		wait func(context.Context, time.Time) error
+	}{
+		{"busy-wait", spinUntil},
+		{"microsecond sleep", sleepPrecisely},
+	} {
+		ctx, cancel := context.WithCancel(t.Context())
+		start := time.Now()
 
-// lateness is the p99 of how late 300 waits return.
-func lateness(t *testing.T, exact bool) time.Duration {
-	t.Helper()
+		// Not a timer: a Go timer is itself up to 1ms late.
+		var cancelledAt atomic.Int64
+		go func() {
+			for time.Since(start) < time.Millisecond {
+				runtime.Gosched()
+			}
+			cancelledAt.Store(time.Now().UnixNano())
+			cancel()
+		}()
 
-	late := make([]time.Duration, 0, 300)
-	for range 300 {
-		at := time.Now().Add(2*time.Millisecond + time.Duration(rand.Int64N(int64(time.Millisecond))))
-		if err := waitUntil(t.Context(), at, exact); err != nil {
-			t.Fatalf("wait: %v", err)
+		if err := part.wait(ctx, start.Add(10*time.Millisecond)); err == nil {
+			t.Fatalf("%s: returned nil, want the context's error", part.name)
 		}
-		late = append(late, time.Since(at))
-	}
-	slices.Sort(late)
-
-	return late[len(late)*99/100]
-}
-
-// Ground: boundary — a stop must not wait out the busy-wait.
-func TestWaitUntil_CancelCutsTheSpin(t *testing.T) {
-	ctx, cancel := context.WithCancel(t.Context())
-	start := time.Now()
-	at := start.Add(5 * time.Millisecond)
-
-	// Inside the last millisecond, where the wait spins. Not a timer: a Go
-	// timer is itself up to 1ms late.
-	var cancelledAt atomic.Int64
-	go func() {
-		for time.Since(start) < 4300*time.Microsecond {
-			runtime.Gosched()
+		took := time.Duration(time.Now().UnixNano() - cancelledAt.Load())
+		if took > time.Millisecond+clock.StepOf(time.Now) {
+			t.Errorf("%s: returned %v after the cancel, want at most 1ms", part.name, took)
 		}
-		cancelledAt.Store(time.Now().UnixNano())
-		cancel()
-	}()
-
-	if err := waitUntil(ctx, at, true); err == nil {
-		t.Fatalf("returned nil, want the context's error")
-	}
-	if took := time.Duration(time.Now().UnixNano() - cancelledAt.Load()); took > 100*time.Microsecond+clock.StepOf(time.Now) {
-		t.Errorf("returned %v after the cancel, want at most 100µs", took)
 	}
 }
 
@@ -109,26 +88,23 @@ func TestWaitUntil_APastMomentReturnsAtOnce(t *testing.T) {
 	}
 }
 
-// Ground: concurrency — with too few Ps a busy-wait keeps the senders, the stats
-// handler and the replies from running until preemption (~10ms): it adds
-// more than it saves. The plain timer stays.
-// A clock of 1µs or coarser (Windows) cannot end a spin closer than a step,
-// and there the spin was measured worse than the timer.
-func TestExactSchedule_NeedsThreeProcsAndAFineClock(t *testing.T) {
+// Ground: boundary — exact only where a microsecond sleep exists (Linux) and
+// the clock is finer than 1µs: on Windows (~0.5ms) a busy-wait was measured
+// worse than the timer.
+func TestExactSchedule_NeedsAPreciseSleepAndAFineClock(t *testing.T) {
 	for _, tc := range []struct {
-		procs int
-		step  time.Duration
-		exact bool
+		precise bool
+		step    time.Duration
+		exact   bool
 	}{
-		{1, 40 * time.Nanosecond, false},
-		{2, 40 * time.Nanosecond, false},
-		{3, 40 * time.Nanosecond, true},
-		{3, 999 * time.Nanosecond, true},
-		{3, time.Microsecond, false},
-		{8, 500 * time.Microsecond, false},
+		{true, 40 * time.Nanosecond, true},
+		{true, 999 * time.Nanosecond, true},
+		{true, time.Microsecond, false},
+		{true, 500 * time.Microsecond, false},
+		{false, 40 * time.Nanosecond, false},
 	} {
-		if got := exactScheduleFor(tc.procs, tc.step); got != tc.exact {
-			t.Errorf("%d Ps, step %v: exact %v, want %v", tc.procs, tc.step, got, tc.exact)
+		if got := exactScheduleFor(tc.precise, tc.step); got != tc.exact {
+			t.Errorf("precise sleep %v, step %v: exact %v, want %v", tc.precise, tc.step, got, tc.exact)
 		}
 	}
 }
