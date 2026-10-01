@@ -327,6 +327,13 @@ waited for the connection, generator late. A shift under 10% is not a verdict bu
 number: "client-side waits added 1.10ms to p99 (5%)"; when p99 is a lower bound the shift is
 unknown and there is no note.
 
+**An exact schedule.** The Go timer on Linux wakes up to 1 ms late, and that lateness would be in
+every latency. So calls go out on schedule to within tens of microseconds: for the last millisecond
+before a call the generator does not sleep but busy-waits. This takes **up to one core for the whole
+run**, however many methods there are. It is on only when Go has three or more cores and the clock
+is finer than 1 µs; otherwise (a container with one or two cores, Windows) a plain timer, and the
+lateness shows in the report as start lag. Not measured on macOS.
+
 The report goes to stdout, progress and errors to stderr.
 
 **Stopping** (`q` in the full-screen view, Ctrl+C without it):

@@ -134,3 +134,18 @@ jobs:
           want="leettest $(jq -r .tag dist/metadata.json)"
           echo "$got"
           [ "$got" = "$want" ] || { echo "::error::-version printed '$got', want '$want'"; exit 1; }
+
+  # TEMPORARY (exact schedule PR): start lag and CPU before/after on the
+  # runner, at full CPUs and at --cpus=1. Removed before merge.
+  start-lag-bench:
+    name: start lag bench (temporary)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - run: git worktree add ../before origin/main && nproc
+      - name: full CPUs
+        run: docker run --rm -v "$PWD/.github/tmp-bench":/bench -v "$PWD/../before":/before -v "$PWD":/after golang:1.27.1 sh /bench/run.sh
+      - name: --cpus=1
+        run: docker run --rm --cpus=1 -e RATES="300 1000" -v "$PWD/.github/tmp-bench":/bench -v "$PWD/../before":/before -v "$PWD":/after golang:1.27.1 sh /bench/run.sh

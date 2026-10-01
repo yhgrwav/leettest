@@ -97,12 +97,8 @@ func (s *Scheduler) runStage(ctx context.Context, out chan<- Request, stage Stag
 
 		scheduledAt := stageStart.Add(offset)
 
-		timer := time.NewTimer(time.Until(scheduledAt))
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return ctx.Err()
-		case <-timer.C:
+		if err := waitUntil(ctx, scheduledAt, exactSchedule()); err != nil {
+			return err
 		}
 
 		select {
