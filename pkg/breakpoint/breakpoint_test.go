@@ -298,6 +298,51 @@ func TestSearch_ARepeatComesAfterACooldown(t *testing.T) {
 	}
 }
 
+// A probe holds max(1s, 500/rate) so its p99 rests on at least 5 tail calls:
+// at 100 rps a 1s probe has 100 calls, and one slow call is its p99. Here a
+// probe of fewer than 500 calls shows that one slow call (10× the baseline);
+// a long enough one does not, and the target counts as recovered.
+func TestSearch_AProbeIsLongEnoughForItsP99(t *testing.T) {
+	var (
+		asked  []int
+		probes []time.Duration
+	)
+	run := func(_ context.Context, rps int, _, hold time.Duration, _ int) (engine.Report, error) {
+		asked = append(asked, rps)
+		if rps == 100 && len(asked) > 6 {
+			probes = append(probes, hold)
+			if calls := float64(rps) * hold.Seconds(); calls < 500 {
+				return report(int(calls), 0, 200*time.Millisecond, 200*time.Millisecond), nil
+			}
+		}
+
+		return capacity(270)(rps), nil
+	}
+	if _, err := Search(t.Context(), plan, run); err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(probes) != 1 || probes[0] != 5*time.Second {
+		t.Errorf("probes held %v, want one of 5s: max(1s, 500 / 100 rps)", probes)
+	}
+	if asked[len(asked)-1] != 305 {
+		t.Errorf("ran %v, want the repeat of 305 after the probe", asked)
+	}
+}
+
+// Without a lower step there is no baseline to check recovery against: the
+// repeat follows the cooldown alone, and the report says the answer is the
+// cautious one.
+func TestSearch_AFirstStepBrokenTwiceSaysToStartLower(t *testing.T) {
+	var asked []int
+	res, _ := Search(t.Context(), plan, fake(capacity(50), &asked))
+	if res.Outcome != BrokeAtFirst || !slices.Equal(asked, []int{100, 100}) {
+		t.Errorf("%v ran %v, want BrokeAtFirst after [100 100]", res.Outcome, asked)
+	}
+	if want := "no lower step to check recovery against; start lower (from) for a reliable result"; !slices.Contains(res.Notes, want) {
+		t.Errorf("notes %q, want %q", res.Notes, want)
+	}
+}
+
 // A step that breaks once and holds on its repeat was noise: the search goes
 // on up.
 func TestSearch_ABreakTheRepeatDoesNotConfirmGoesOn(t *testing.T) {
