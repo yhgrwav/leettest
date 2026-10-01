@@ -8,18 +8,21 @@ LINT_VERSION := v2.14.0
 
 .PHONY: help vet test race stress lint lint-install fmt check build demo stand run clean
 
+# Recipes run in sh (Git Bash, CI) or in cmd.exe (an IDE on Windows, no sh
+# in PATH): every one must mean the same in both. $(info) needs no shell.
 help:
-	@echo "make vet           go vet"
-	@echo "make test          unit and measurement tests"
-	@echo "make race          tests under -race (needs gcc in PATH)"
-	@echo "make stress        the nightly run: -race -count=20, takes long"
-	@echo "make lint          golangci-lint"
-	@echo "make fmt           gofmt the tree"
-	@echo "make check         what must pass before a push: gofmt, vet, test, lint"
-	@echo "make build         bin/leettest"
-	@echo "make demo          a run against the built-in fake target, no server needed"
-	@echo "make stand         start the reference stand on 127.0.0.1:50051 (keep it running)"
-	@echo "make run           a run against the stand, from a second terminal"
+	$(info make vet           go vet)
+	$(info make test          unit and measurement tests)
+	$(info make race          tests under -race (needs gcc in PATH))
+	$(info make stress        the nightly run: -race -count=20, takes long)
+	$(info make lint          golangci-lint, gofmt and goimports included)
+	$(info make fmt           gofmt the tree)
+	$(info make check         what must pass before a push: vet, test, lint)
+	$(info make build         bin/leettest)
+	$(info make demo          a run against the built-in fake target, no server needed)
+	$(info make stand         start the reference stand on 127.0.0.1:50051 (keep it running))
+	$(info make run           a run against the stand, from a second terminal)
+	@:
 
 vet:
 	go vet ./...
@@ -48,8 +51,8 @@ lint-install:
 fmt:
 	gofmt -w .
 
+# gofmt is checked by lint, as one of its formatters.
 check:
-	@test -z "$$(gofmt -l .)" || { echo "gofmt needed:"; gofmt -l .; exit 1; }
 	$(MAKE) vet test lint
 
 build:
@@ -64,5 +67,6 @@ stand:
 run:
 	go run ./cmd/leettest -c examples/stand.yaml
 
+# git, not rm: cmd.exe has no rm. -X removes only ignored files there.
 clean:
-	rm -rf bin dist reports
+	git clean -fdX -- bin dist reports
