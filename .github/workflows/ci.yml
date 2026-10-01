@@ -93,7 +93,11 @@ jobs:
           # The runner is native Linux: its start lag and clock are the
           # reference for the run-side verdicts.
           if [ -s tour.json ]; then
-            jq -c '{exit: '"$rc"', start_lag, clock_step_ns, invalid_reasons, tail_wait_cause}' tour.json
+            jq -c '{exit: '"$rc"', start_lag, clock_step_ns, invalid_reasons, tail_wait_cause,
+              not_sent, not_sent_generator, not_sent_connection, not_sent_stream,
+              generator_tail_calls: .client_waits.generator_tail_calls,
+              p99_us: .methods[0].latency.p99.us,
+              p99_without_client_waits_us: .methods[0].p99_without_client_waits.us}' tour.json
           fi
           if [ "$rc" -ne 0 ]; then
             echo "exit code $rc"
