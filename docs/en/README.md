@@ -45,7 +45,15 @@ unclear error message is as much a defect as a wrong number.
 $ go install github.com/yhgrwav/leettest/cmd/leettest@latest
 ```
 
-Requires Go 1.26 or newer.
+Requires Go 1.26 or newer. Prebuilt binaries are on the releases page.
+
+**Where to run it.** LeetTest is built for Linux and macOS: the generator goes next to the target
+— a server in the same network, a container, a CI runner. Windows is supported but measures worse:
+its clock steps about 0.5 ms, and a run against a fast service will be declared invalid.
+
+**[Quickstart →](quickstart.md)** — a full pass over what it does, on the reference stand: a config
+with every field, reading the report, other target behaviours, CI. Working through an AI agent —
+give it [AGENTS.md](../../AGENTS.md).
 
 ## Config
 
@@ -99,7 +107,7 @@ requests in flight until the timeout fires, plus a margin: one request at the wi
 must not exceed `-max-in-flight` (5000 by default). This is checked before the start, and the
 error names both ways out: which timeout would fit and which cap is needed. So a hung service does
 not hit the cap: the run reaches its end, and the report says how many calls got no reply within
-the timeout and at which planned call the target answered for the last time. If the cap does run
+the timeout and after which sent call the target answered no more. If the cap does run
 out, slots were held past their deadline by more than 100 ms — that is the generator (not enough
 CPU) or the sender, and the report declares the run invalid. Next to it the report prints how many
 slots were held past their deadline at that moment. How many of them went past the margin the
@@ -350,7 +358,7 @@ that did print a report is always `3`.
 |---|---|
 | `0` | The plan ran, the report is complete |
 | `1` | The run did not happen: flags, config, connection. No report |
-| `2` | The run is invalid: it hit the in-flight cap, or every measured call of some method is a `request error`, a `client error` or a `bad response`. There is a report, but its numbers are not about the load |
+| `2` | The run is invalid: it hit the in-flight cap, every measured call of some method is a `request error`, a `client error` or a `bad response`, or the host clock is coarser than a quarter of the p50 (`clock_step`). There is a report, but its numbers are not about the load |
 | `3` | The run stopped before its plan. There is a report, and it covers only what got through |
 | `130` | Aborted without a report after Ctrl+C |
 | `143` | Aborted without a report after SIGTERM |
@@ -422,7 +430,8 @@ Prometheus.
 
 Issues and discussions are welcome. Pull requests are accepted after signing the [CLA](../../CLA.md)
 — one line as a comment in the PR, checked automatically. How to start — in
-[CONTRIBUTING.md](../../CONTRIBUTING.md).
+[CONTRIBUTING.md](../../CONTRIBUTING.md): a path for people and a path with an AI agent, and for
+the agent, [AGENTS.md](../../AGENTS.md).
 
 The CLA is a license, not a transfer of rights: the copyright stays with you.
 
