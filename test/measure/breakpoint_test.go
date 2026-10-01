@@ -62,6 +62,38 @@ func stepsOn(t *testing.T, s *stand.Stand, timeout time.Duration) breakpoint.Run
 	}
 }
 
+// The premise of the cooldown before a repeat: a target keeps working off
+// the calls we gave up on, so a step right after a broken one meets its
+// backlog. 400 rps for 1.5s against 270 leaves (1/270 − 1/400) × 600 ≈ 0.72s
+// queued; 244 rps right after waits it out (p99 far over 20ms). After the
+// search's cooldown, max(timeout, settle) = 500ms, ~0.2s is left, and a step
+// below the capacity works it off at its start: p99 stays near 20ms.
+func TestBreakpoint_ATargetsQueueOutlivesTheStep(t *testing.T) {
+	target := stand.Start(stand.Capacity(270, 20*time.Millisecond))
+	t.Cleanup(target.Stop)
+
+	run := stepsOn(t, target, 500*time.Millisecond)
+	p99 := func(rps int) time.Duration {
+		r, err := run(t.Context(), rps, 0, 1500*time.Millisecond)
+		if err != nil {
+			t.Fatalf("run %d: %v", rps, err)
+		}
+
+		return r.Methods[0].P99.Value
+	}
+
+	p99(400)
+	if got := p99(244); got < 100*time.Millisecond {
+		t.Errorf("right after a broken step, 244 rps p99 %v: no backlog seen", got)
+	}
+
+	p99(400)
+	time.Sleep(500 * time.Millisecond)
+	if got := p99(244); got > 40*time.Millisecond {
+		t.Errorf("after a cooldown, 244 rps p99 %v, want near the 20ms delay", got)
+	}
+}
+
 // A target of known capacity is the outside source for "breaks at": the
 // stand serves 270 calls a second, and the search must name an interval that
 // holds it — held at 244, broke at 305, the steps of ×1.25 from 100 around

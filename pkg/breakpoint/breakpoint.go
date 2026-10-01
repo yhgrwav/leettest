@@ -35,8 +35,13 @@ type Plan struct {
 	Step   int
 	Settle time.Duration
 	Hold   time.Duration
+	// Timeout is the calls' deadline. A broken step is repeated after a
+	// cooldown of max(Timeout, Settle) without load, so the target's queue
+	// left from the first try does not confirm the break.
+	Timeout time.Duration
 	// P99Limit, when set, breaks a step whose p99 is above it. Without it a
-	// step breaks on the knee: p99 over KneeRatio times the first step's.
+	// step breaks on the knee: p99 over KneeRatio times the baseline, the
+	// lowest p99 of the steps that held before it.
 	P99Limit time.Duration
 }
 
@@ -44,12 +49,13 @@ const (
 	// FailShare breaks a step whose failed calls are this share or more of
 	// the sent ones. Hypothesis, docs/decisions.md.
 	FailShare = 0.01
-	// KneeRatio breaks a step whose p99 is over this many times the first
-	// step's, when no P99Limit is set. Hypothesis, docs/decisions.md.
+	// KneeRatio breaks a step whose p99 is over this many times the
+	// baseline, when no P99Limit is set. Hypothesis, docs/decisions.md.
 	KneeRatio = 3
 )
 
-// Rates are the step rates of the plan, rounded to whole rps, none over To.
+// Rates are the step rates of the plan, rounded to whole rps, none over To,
+// each above the last: next = max(prev+1, round(prev×Factor)).
 func (p Plan) Rates() ([]int, error) {
 	return nil, nil
 }
@@ -90,6 +96,14 @@ type Result struct {
 	Outcome     Outcome
 	Held, Broke int
 	Steps       []Step
+	// Notes say what the outcome does not: a step that broke once and held
+	// on its repeat, a knee with no baseline below it.
+	Notes []string
+}
+
+// Cooldown is the pause without load before a broken step is repeated.
+func (p Plan) Cooldown() time.Duration {
+	return 0
 }
 
 // Search runs the plan's steps from the lowest until one breaks and a repeat
