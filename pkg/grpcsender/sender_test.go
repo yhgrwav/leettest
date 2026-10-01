@@ -194,7 +194,10 @@ func TestConnect_UnresolvableNameFailsWithoutADeadline(t *testing.T) {
 	sender := New(Options{Target: addr})
 	t.Cleanup(func() { _ = sender.Close() })
 
-	err := connectWithin(withoutDeadline(t), t, sender, 5*time.Second)
+	// The ceiling only tells "fails" from "hangs forever". Some resolvers take
+	// their time to say no: a Windows host measured 11.2s per lookup of this
+	// name (2026-10-01).
+	err := connectWithin(withoutDeadline(t), t, sender, 30*time.Second)
 	if err == nil {
 		t.Fatal("connect to an unresolvable name succeeded")
 	}
