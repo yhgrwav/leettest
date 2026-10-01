@@ -39,6 +39,10 @@ type Plan struct {
 	// cooldown of max(Timeout, Settle) without load, so the target's queue
 	// left from the first try does not confirm the break.
 	Timeout time.Duration
+	// MaxInFlight is the in-flight cap. Zero: each step gets the smallest it
+	// can run with (engine.InFlightNeed). Set and too low for a step: the
+	// search stops there with RunLimit, keeping what held below.
+	MaxInFlight int
 	// P99Limit, when set, breaks a step whose p99 is above it. Without it a
 	// step breaks on the knee: p99 over KneeRatio times the baseline, the
 	// lowest p99 of the steps that held before it.
@@ -61,8 +65,19 @@ func (p Plan) Rates() ([]int, error) {
 }
 
 // RunStep runs one step: rps for hold, the first settle of it out of the
-// statistics (as warm-up), and returns the run's report.
-type RunStep func(ctx context.Context, rps int, settle, hold time.Duration) (engine.Report, error)
+// statistics (as warm-up), with an in-flight cap of maxInFlight, and returns
+// the run's report.
+type RunStep func(ctx context.Context, rps int, settle, hold time.Duration, maxInFlight int) (engine.Report, error)
+
+const (
+	// ProbeHold is how long a recovery probe runs, at the first step's rate.
+	ProbeHold = time.Second
+	// MaxProbes is how many probes a broken step waits for the target to
+	// recover before its repeat.
+	MaxProbes = 5
+	// Recovered is how close to the baseline a probe's p99 must come.
+	Recovered = 1.5
+)
 
 // Outcome is what the search found.
 type Outcome int
@@ -88,8 +103,10 @@ type Step struct {
 	// Broken says the step broke; Why names the criterion with its numbers.
 	Broken bool
 	Why    string
-	// Repeat marks the run that confirmed a broken step.
+	// Repeat marks the run that confirmed a broken step; Probe a recovery
+	// probe before it.
 	Repeat bool
+	Probe  bool
 }
 
 type Result struct {

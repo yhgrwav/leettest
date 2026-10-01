@@ -52,14 +52,97 @@ func capacity(n int) func(rps int) engine.Report {
 
 // fake runs each step through target and records the rates it was asked for.
 func fake(target func(rps int) engine.Report, asked *[]int) RunStep {
-	return func(_ context.Context, rps int, _, _ time.Duration) (engine.Report, error) {
+	return func(_ context.Context, rps int, _, _ time.Duration, _ int) (engine.Report, error) {
 		*asked = append(*asked, rps)
 
 		return target(rps), nil
 	}
 }
 
-var plan = Plan{From: 100, To: 400, Settle: time.Second, Hold: 5 * time.Second}
+// Ground: boundary — the search sizes the cap for each step (what the engine
+// would accept); a cap the user set that a step cannot run with stops the
+// search there as the run's limit, not as an error, and keeps what held.
+// With a 500ms timeout the engine needs 61, 77 and 95 slots at 100, 125 and
+// 156 rps: ⌈rps × 0.5s⌉ + 1 + ⌈rps × 100ms⌉.
+func TestSearch_TheCapIsSizedPerStepOrStopsTheSearch(t *testing.T) {
+	p := plan
+	p.Timeout = 500 * time.Millisecond
+
+	var caps []int
+	run := func(_ context.Context, rps int, _, _ time.Duration, maxInFlight int) (engine.Report, error) {
+		caps = append(caps, maxInFlight)
+
+		return capacity(10000)(rps), nil
+	}
+	if _, err := Search(t.Context(), p, run); err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(caps) < 3 || caps[0] != 61 || caps[1] != 77 || caps[2] != 95 {
+		t.Errorf("caps %v, want 61 77 95 … sized per step", caps)
+	}
+
+	p.MaxInFlight = 80
+	var asked []int
+	res, err := Search(t.Context(), p, fake(capacity(10000), &asked))
+	if err != nil {
+		t.Fatalf("a cap too low for a step is no error: %v", err)
+	}
+	if res.Outcome != RunLimit || res.Held != 125 || res.Broke != 156 {
+		t.Errorf("%v held %d at %d, want RunLimit 125 156", res.Outcome, res.Held, res.Broke)
+	}
+	if !slices.Equal(asked, []int{100, 125}) {
+		t.Errorf("ran %v, want [100 125]: the step the cap cannot hold is not run", asked)
+	}
+	want := "in-flight cap 80 is too low for 156 rps with timeout 500ms"
+	if len(res.Steps) == 0 || res.Steps[len(res.Steps)-1].Why != want {
+		t.Errorf("steps %+v, want the last to say %q", res.Steps, want)
+	}
+}
+
+// After the cooldown a broken step is repeated only once the target has
+// recovered: a 1s probe at the first step's rate with p99 within 1.5× the
+// baseline, up to 5 probes. The queue left from the first try otherwise tips
+// a repeat below the capacity into a false confirmation.
+func TestSearch_ARepeatWaitsForTheTargetToRecover(t *testing.T) {
+	slowProbes := 2
+	var asked []int
+	target := func(rps int) engine.Report {
+		if rps == 100 && len(asked) > 6 && slowProbes > 0 {
+			slowProbes--
+
+			return report(1000, 0, 80*time.Millisecond, 80*time.Millisecond)
+		}
+
+		return capacity(270)(rps)
+	}
+	res, _ := Search(t.Context(), plan, fake(target, &asked))
+	if want := []int{100, 125, 156, 195, 244, 305, 100, 100, 100, 305}; !slices.Equal(asked, want) {
+		t.Errorf("ran %v, want %v: two slow probes, a third that recovered, then the repeat", asked, want)
+	}
+	if res.Outcome != BrokeBetween || res.Broke != 305 {
+		t.Errorf("%v broke %d, want BrokeBetween 305", res.Outcome, res.Broke)
+	}
+
+	asked = nil
+	never := func(rps int) engine.Report {
+		if rps == 100 && len(asked) > 6 {
+			return report(1000, 0, 80*time.Millisecond, 80*time.Millisecond)
+		}
+
+		return capacity(270)(rps)
+	}
+	res, _ = Search(t.Context(), plan, fake(never, &asked))
+	if want := []int{100, 125, 156, 195, 244, 305, 100, 100, 100, 100, 100}; !slices.Equal(asked, want) {
+		t.Errorf("ran %v, want %v: five probes, no repeat", asked, want)
+	}
+	if res.Outcome != BrokeBetween || res.Broke != 305 ||
+		!slices.ContainsFunc(res.Notes, func(n string) bool { return strings.HasPrefix(n, "305: broke and did not recover within") }) {
+		t.Errorf("%v broke %d notes %q, want BrokeBetween 305 that did not recover", res.Outcome, res.Broke, res.Notes)
+	}
+}
+
+// plan's settle is short: a repeat sleeps its cooldown for real.
+var plan = Plan{From: 100, To: 400, Settle: 10 * time.Millisecond, Hold: 50 * time.Millisecond}
 
 // Ground: contract — the default step is ×1.25: it covers a wide range
 // without knowing the scale, and the interval it names keeps its relative
@@ -115,8 +198,8 @@ func TestSearch_NamesTheIntervalAndRepeatsTheBrokenStep(t *testing.T) {
 	if res.Outcome != BrokeBetween || res.Held != 244 || res.Broke != 305 {
 		t.Errorf("outcome %v held %d broke %d, want BrokeBetween 244 305", res.Outcome, res.Held, res.Broke)
 	}
-	if want := []int{100, 125, 156, 195, 244, 305, 305}; !slices.Equal(asked, want) {
-		t.Errorf("ran %v, want %v: the broken step repeated, nothing above it", asked, want)
+	if want := []int{100, 125, 156, 195, 244, 305, 100, 305}; !slices.Equal(asked, want) {
+		t.Errorf("ran %v, want %v: the broken step repeated after a probe, nothing above it", asked, want)
 	}
 	if len(res.Steps) == 0 {
 		t.Fatalf("no steps in the result")
@@ -196,7 +279,7 @@ func TestSearch_ARepeatComesAfterACooldown(t *testing.T) {
 		returned time.Time
 		gap      time.Duration
 	)
-	run := func(_ context.Context, rps int, _, _ time.Duration) (engine.Report, error) {
+	run := func(_ context.Context, rps int, _, _ time.Duration, _ int) (engine.Report, error) {
 		if rps == 305 && !returned.IsZero() {
 			gap = time.Since(returned)
 		}
@@ -280,7 +363,7 @@ func TestSearch_CriteriaAtTheirEdges(t *testing.T) {
 		{"over a user's limit", 30 * ms, report(1000, 0, 31*ms, 31*ms), true},
 		{"5x, under the user's limit", 200 * ms, report(1000, 0, 100*ms, 100*ms), false},
 	} {
-		p := Plan{From: 100, To: 125, Settle: time.Second, Hold: 5 * time.Second, P99Limit: tc.limit}
+		p := Plan{From: 100, To: 125, Settle: 10 * time.Millisecond, Hold: 50 * time.Millisecond, P99Limit: tc.limit}
 		var asked []int
 		target := func(rps int) engine.Report {
 			if rps == 100 {

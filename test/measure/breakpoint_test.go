@@ -16,6 +16,9 @@ package measure
 
 import (
 	"context"
+	"slices"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -41,14 +44,14 @@ func stepsOn(t *testing.T, s *stand.Stand, timeout time.Duration) breakpoint.Run
 	}
 	t.Cleanup(func() { _ = sender.Close() })
 
-	return func(ctx context.Context, rps int, settle, hold time.Duration) (engine.Report, error) {
+	return func(ctx context.Context, rps int, settle, hold time.Duration, maxInFlight int) (engine.Report, error) {
 		eng, err := engine.New(engine.Options{
 			Calls: []engine.Call{{
 				Method: s.Method(), Timeout: timeout,
 				Stages: []engine.Stage{{StartRPS: rps, TargetRPS: rps, Duration: hold}},
 			}},
 			Sender:      sender,
-			MaxInFlight: 2 * rps,
+			MaxInFlight: maxInFlight,
 			Warmup:      settle,
 		})
 		if err != nil {
@@ -74,7 +77,7 @@ func TestBreakpoint_ATargetsQueueOutlivesTheStep(t *testing.T) {
 
 	run := stepsOn(t, target, 500*time.Millisecond)
 	p99 := func(rps int) time.Duration {
-		r, err := run(t.Context(), rps, 0, 1500*time.Millisecond)
+		r, err := run(t.Context(), rps, 0, 1500*time.Millisecond, 2*rps)
 		if err != nil {
 			t.Fatalf("run %d: %v", rps, err)
 		}
@@ -104,8 +107,11 @@ func TestBreakpoint_FindsTheStandsCapacity(t *testing.T) {
 	target := stand.Start(stand.Capacity(270, 20*time.Millisecond))
 	t.Cleanup(target.Stop)
 
-	plan := breakpoint.Plan{From: 100, To: 400, Settle: 500 * time.Millisecond, Hold: 2500 * time.Millisecond}
-	res, err := breakpoint.Search(t.Context(), plan, stepsOn(t, target, 500*time.Millisecond))
+	plan := breakpoint.Plan{
+		From: 100, To: 400, Settle: 500 * time.Millisecond, Hold: 2500 * time.Millisecond,
+		Timeout: 500 * time.Millisecond,
+	}
+	res, err := breakpoint.Search(t.Context(), plan, stepsOn(t, target, plan.Timeout))
 	if err != nil {
 		t.Fatalf("search: %v", err)
 	}
@@ -114,5 +120,41 @@ func TestBreakpoint_FindsTheStandsCapacity(t *testing.T) {
 	}
 	for _, step := range res.Steps {
 		t.Logf("%d rps: sent %d, failed %d, broken %v (%s)", step.RPS, step.Report.Sent, step.Report.Failed, step.Broken, step.Why)
+	}
+}
+
+// A target that does not come back after its break: once a call has queued
+// over 100ms, it hangs every call from then on. The probes never recover,
+// and the search names the break without a repeat.
+func TestBreakpoint_ATargetThatDoesNotRecoverIsNamedSo(t *testing.T) {
+	var broken atomic.Bool
+	limited := stand.Capacity(270, 20*time.Millisecond)
+	target := stand.Start(func(c stand.Call) stand.Behavior {
+		if broken.Load() {
+			return stand.Behavior{Hang: true}
+		}
+		b := limited(c)
+		if b.Delay > 100*time.Millisecond {
+			broken.Store(true)
+		}
+
+		return b
+	})
+	t.Cleanup(target.Stop)
+
+	plan := breakpoint.Plan{
+		From: 100, To: 400, Settle: 500 * time.Millisecond, Hold: 2500 * time.Millisecond,
+		Timeout: 500 * time.Millisecond,
+	}
+	res, err := breakpoint.Search(t.Context(), plan, stepsOn(t, target, plan.Timeout))
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	recovered := slices.ContainsFunc(res.Notes, func(n string) bool { return strings.Contains(n, "did not recover") })
+	if res.Outcome != breakpoint.BrokeBetween || !recovered {
+		t.Errorf("%v notes %q, want BrokeBetween that did not recover", res.Outcome, res.Notes)
+	}
+	if slices.ContainsFunc(res.Steps, func(s breakpoint.Step) bool { return s.Repeat }) {
+		t.Errorf("a repeat ran against a target that never recovered")
 	}
 }
