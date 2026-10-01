@@ -26,7 +26,11 @@ const (
 	// preciseSleep: clock_nanosleep sleeps to a microsecond.
 	preciseSleep = true
 	// sleepChunk is the longest single microsecond sleep: a cancel waits
-	// for it to end.
+	// for it to end. It also bounds the harm of a RawSyscall here: a raw
+	// call keeps the P for the whole sleep, and at 50µs that barely shows
+	// (measured, #142), so the Syscall that hands the P on would go
+	// unmissed. Raise the chunk and a RawSyscall would hold the P for all of
+	// it; TestSleepChunk_StaysShort keeps it at 50µs.
 	sleepChunk = 50 * time.Microsecond
 )
 

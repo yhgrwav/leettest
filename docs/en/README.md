@@ -330,10 +330,10 @@ unknown and there is no note.
 **An exact schedule.** The Go timer on Linux wakes up to 1 ms late, and that lateness would be in
 every latency. So on Linux the generator sleeps to a call with a precise system sleep
 (`clock_nanosleep`) and busy-waits the last 50 µs: calls go out on schedule to within tens of
-microseconds, in a one-core container and on a host whose every core is busy. The cost is up to
-half a core at 3000 calls a second for the whole run, however many methods there are. On other
-systems and on a clock coarser than 1 µs (Windows), a plain timer, and the lateness shows in the
-report as start lag. Not measured on macOS.
+microseconds, in a one-core container and on a host whose every core is busy. The measured cost is
++3% to +45% of one core at 100–3000 calls a second for the whole run, however many methods there
+are. Where it works: Linux. macOS: the plain timer, not measured. Windows: the plain timer. There
+the lateness shows in the report as start lag.
 
 The report goes to stdout, progress and errors to stderr.
 
