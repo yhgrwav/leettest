@@ -151,6 +151,11 @@ func TestNotes_AClientWaitUnderATenthOfP99IsANoteNotAVerdict(t *testing.T) {
 		if tc.note != "" && !strings.Contains(text, tc.note) {
 			t.Errorf("%s: no %q in:\n%s", tc.name, tc.note, text)
 		}
+		// A verdict states the move itself; a lower bound moved by an
+		// unknown amount, and no note may say how much or that it did not.
+		if tc.note == "" && (strings.Contains(text, "waits added") || strings.Contains(text, "did not move p99")) {
+			t.Errorf("%s: a note on the p99's shift:\n%s", tc.name, text)
+		}
 	}
 }
 
