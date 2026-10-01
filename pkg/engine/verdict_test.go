@@ -128,7 +128,7 @@ func (a answeringIn) Send(ctx context.Context, req Request) (Outcome, error) {
 }
 
 // Ground: contract — SilentFrom counts seconds by planned time with warmup in the numbering,
-// and the rate range covers only the stages from there on.
+// the rate range is the whole plan, and the silence's planned rate is the second before it.
 func TestReport_SilentFromAndItsRates(t *testing.T) {
 	start := time.Now()
 	sender := answeringIn{start: &start, from: 2 * time.Second}
@@ -155,8 +155,12 @@ func TestReport_SilentFromAndItsRates(t *testing.T) {
 	if m.SilentFrom == nil || *m.SilentFrom != 2 {
 		t.Fatalf("silent from %v, want second 2: warmup is second 0 of the numbering", m.SilentFrom)
 	}
-	if m.RPSLow != 40 || m.RPSHigh != 40 {
-		t.Errorf("rates %d-%d, want 40-40: only the second stage is silent", m.RPSLow, m.RPSHigh)
+	if m.RPSLow != 20 || m.RPSHigh != 40 {
+		t.Errorf("rates %d-%d, want 20-40: the whole plan", m.RPSLow, m.RPSHigh)
+	}
+	if m.SilentPlannedLow != 20 || m.SilentPlannedHigh != 20 {
+		t.Errorf("silent planned %d-%d, want 20-20: the stage of second 1, the one before the silence",
+			m.SilentPlannedLow, m.SilentPlannedHigh)
 	}
 }
 

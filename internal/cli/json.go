@@ -367,6 +367,10 @@ func jsonMethodOf(m *engine.MethodReport, warmup time.Duration) jsonMethod {
 	// The rate belongs to a silence: none without one.
 	if m.SilentFrom != nil {
 		out.SilentSentRPS = &m.SentRPS
+		// No stage in that second: unknown, which a 0 would hide.
+		if m.SilentPlannedHigh > 0 {
+			out.SilentPlannedRPSLow, out.SilentPlannedRPSHigh = &m.SilentPlannedLow, &m.SilentPlannedHigh
+		}
 	}
 	// No call, no rate: a zero would read as a target that took none. NaN or
 	// Inf would fail the whole encoding and leave stdout empty.

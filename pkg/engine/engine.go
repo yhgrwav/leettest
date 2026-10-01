@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -213,28 +214,27 @@ func (e *Engine) Report() Report {
 				continue
 			}
 
-			from := time.Duration(0)
-			if m.SilentFrom != nil {
-				from = time.Duration(*m.SilentFrom) * time.Second
-			}
 			m.Timeout = call.Timeout
-			m.RPSLow, m.RPSHigh = ratesFrom(call.Stages, from)
+			m.RPSLow, m.RPSHigh = ratesOver(call.Stages, 0, math.MaxInt64)
+			if m.SilentFrom != nil {
+				m.SilentPlannedLow, m.SilentPlannedHigh = ratesInWindow(call.Stages, *m.SilentFrom)
+			}
 		}
 	}
 
 	return report
 }
 
-// ratesFrom is the lowest and highest planned rate of the stages that run at
-// or after from.
-func ratesFrom(stages []Stage, from time.Duration) (low, high int) {
+// ratesOver is the lowest and highest planned rate of the stages that overlap
+// [from, to).
+func ratesOver(stages []Stage, from, to time.Duration) (low, high int) {
 	var at time.Duration
 
 	first := true
 	for _, stage := range stages {
-		end := at + stage.Duration
+		start, end := at, at+stage.Duration
 		at = end
-		if end <= from {
+		if end <= from || start >= to {
 			continue
 		}
 
@@ -253,7 +253,8 @@ func ratesFrom(stages []Stage, from time.Duration) (low, high int) {
 // ratesInWindow is the lowest and highest planned rate of the stages that
 // overlap second max(0, from-1); 0, 0 when none does or their rate is 0.
 func ratesInWindow(stages []Stage, from int) (low, high int) {
-	return 0, 0
+	second := time.Duration(max(0, from-1)) * time.Second
+	return ratesOver(stages, second, second+time.Second)
 }
 
 // Run executes the plan once; an Engine is not reused. Cancelling ctx aborts

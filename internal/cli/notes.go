@@ -69,10 +69,16 @@ func reportNotes(report engine.Report, maxResponse string) []string {
 		}
 		rate := "at " + planned + " rps"
 		if m.SilentFrom != nil {
-			// The target saw what went out, not the plan; the plan is named
-			// only when the two part by more than a tenth.
+			// The target saw what went out, not the plan; the plan of that
+			// second is named only when the two part by more than a tenth,
+			// and never when no stage ran then.
 			rate = fmt.Sprintf("at %d rps", m.SentRPS)
-			if m.SentRPS*10 < m.RPSLow*9 || m.SentRPS*10 > m.RPSHigh*11 {
+			low, high := m.SilentPlannedLow, m.SilentPlannedHigh
+			if high > 0 && (m.SentRPS*10 < low*9 || m.SentRPS*10 > high*11) {
+				planned = fmt.Sprintf("%d", low)
+				if high != low {
+					planned = fmt.Sprintf("%d-%d", low, high)
+				}
 				rate = fmt.Sprintf("sent at %d rps (planned %s)", m.SentRPS, planned)
 			}
 		}
