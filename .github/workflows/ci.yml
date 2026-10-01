@@ -98,6 +98,9 @@ jobs:
             exit 1
           fi
           grep -q '"sent":11100' tour.json
+          # The runner is native Linux: its start lag and clock are the
+          # reference for the run-side verdicts.
+          jq -c '{exit: '"$rc"', start_lag, clock_step_ns, invalid_reasons, tail_wait_cause}' tour.json
 
   # The release runs only on a tag; building it here keeps a broken
   # .goreleaser.yaml from surfacing first at release time.
