@@ -125,27 +125,28 @@ The report goes to stdout, ASCII only — save it to a file or `grep` it. The to
 
 ```
 run finished: 127.0.0.1:50051 in 40.5s
-sent 11100, failed 4500
+sent 11100, failed 4499
 
 method                                           sent   failed    sent/s       p50       p90       p95       p99
-grpc.health.v1.Health/Check                     11100     4500       300    20.9ms    >500ms    >500ms    >500ms
+grpc.health.v1.Health/Check                     11100     4499       300    21.9ms    >500ms    >500ms    >500ms
 
 warm-up 900 sent, excluded from stats
 
-grpc.health.v1.Health/Check: at 300 rps, 4500 of 11100 calls (40.5%) got no answer within 500ms,
+grpc.health.v1.Health/Check: at 300 rps, 4499 of 11100 calls (40.5%) got no answer within 500ms,
 and nothing after the call sent at 25.0s of the run got one.
 
 failed calls by gRPC code:
-grpc.health.v1.Health/Check codes sent by the target: DeadlineExceeded 67
-grpc.health.v1.Health/Check codes set by the client: DeadlineExceeded 4433
+grpc.health.v1.Health/Check codes sent by the target: DeadlineExceeded 1
+grpc.health.v1.Health/Check codes set by the client: DeadlineExceeded 4498
 ...
-start lag, how late calls began against their schedule: p99 923us, max 1.52ms.
+start lag, how late calls began against their schedule: p99 1.14ms, max 1.27ms.
 ...
-4500 requests were abandoned before answering. A percentile shown as "> value"
+4499 requests were abandoned before answering. A percentile shown as "> value"
 is a lower bound: the real tail lies above it. Raise the timeout to see it.
-
-clock step 525us on this host: every latency and wait is +/- 525us; ...
+...
 ```
+
+(Linux, Docker, 10b99c2.)
 
 What matters here:
 
@@ -161,7 +162,8 @@ What matters here:
 - **`start lag`** — how far the generator fell behind its schedule. If it is large, the bottleneck
   is the generator's machine, not the target; the report says so itself when the latency tail is
   waiting on our side.
-- **`clock step`** — how precise this machine's clock is. Coarser than a quarter of the p50, and
+- **`clock step`** — how precise the machine's clock is; on Linux it is nanoseconds and the line is
+  absent. On Windows (about 0.5 ms) it shows, and coarser than a quarter of the p50,
   the run is invalid: numbers below the clock step mean nothing.
 
 The failure categories (`overload`, `failure`, `request error`, `timed out`, `cut off`,

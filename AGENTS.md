@@ -37,31 +37,25 @@ from outside (a method name, the target's error text) is escaped as `\uXXXX`.
 
 ### Exit codes — decide by these first
 
-| Code | Meaning | What to do |
-|---|---|---|
-| `0` | The plan ran, the report is complete | Read the report |
-| `1` | No run: flags, config, connection. No report | Read stderr: it names the field, the call or the cause |
-| `2` | Invalid run: the in-flight cap was hit, every measured call of a method failed as a request error, client error or bad response, or the host clock is coarser than a quarter of a p50. A report exists, its numbers are not about the load | Read `invalid_reasons`; do not report latency from this run |
-| `3` | Stopped before the plan ended. The report covers what ran | Say the run was partial |
-| `130`, `143` | Killed by Ctrl+C or SIGTERM, no report | Re-run |
+Source of truth: [README, «Run»](docs/en/README.md). What each code asks of an agent:
+
+| Code | What to do |
+|---|---|
+| `0` | Read the report |
+| `1` | No run, no report: read stderr, it names the field, the call or the cause |
+| `2` | Invalid run: read `invalid_reasons`, do not report latency from it |
+| `3` | Partial run: say so |
+| `130`, `143` | Killed, no report: re-run |
 
 ### Reading the JSON
 
-`schema_version` is 1; fields are added, never renamed or retyped within a version. Decisions are
-fields, not text — read these, not `notes`:
+Every field is described in the [README, «Run»](docs/en/README.md). How an agent reads them:
 
-- `invalid_reasons`: `in_flight_cap`, `nothing_measured`, `clock_step`.
-- `methods[].invalid_reason`: `request_error`, `client_error`, `bad_response`, `mixed`, or `null`.
-- `methods[].silent_from_s`: the second (by when calls went out) from which the target answered
-  nothing sent; `methods[].silent_sent_rps`: how many calls went out the second before it;
-  `methods[].last_answer_at_us`: when the last call the target was heard on went out. All `null`
-  without a silence.
-- `tail_wait_cause`: `generator`, `stream`, `connection` or `null` — whether the latency tail is
-  waiting on the client's side. If it is not `null`, the tail is not the target's.
-- Percentiles: `{"us": …, "lower_bound": true}` (shown as `>500ms` in text) is a lower bound —
-  calls that timed out. Never report it as the latency.
-- `clock_step_ns`: the host clock's step; every latency is `±` that.
-- `notes`: human text, reworded freely. Do not parse it.
+- Decisions are fields, not text: read `invalid_reasons`, `methods[].invalid_reason`,
+  `tail_wait_cause`, `methods[].silent_from_s`. Never parse `notes` — it is reworded freely.
+- A percentile with `"lower_bound": true` (`>500ms` in text) is not a latency; never report it as
+  one.
+- `tail_wait_cause` not `null` means the latency tail is the client's, not the target's.
 
 ### Writing a config
 
