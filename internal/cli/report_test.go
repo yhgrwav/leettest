@@ -507,4 +507,9 @@ func TestPrintReportNamesTheMomentTheAnswersStopped(t *testing.T) {
 	if strings.Contains(text, "second 8") || strings.Contains(text, "second 9") {
 		t.Errorf("report still counts buckets:\n%s", text)
 	}
+	// The moment is when the call went out: "scheduled" would put the
+	// generator's lag on the target.
+	if !strings.Contains(text, "sent at 8.0s") || strings.Contains(text, "scheduled at") {
+		t.Errorf("report does not say the moment is when the call was sent:\n%s", text)
+	}
 }

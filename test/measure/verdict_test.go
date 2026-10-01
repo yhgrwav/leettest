@@ -17,7 +17,10 @@ package measure
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -25,6 +28,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 
 	"github.com/yhgrwav/leettest/pkg/engine"
 	"github.com/yhgrwav/leettest/pkg/grpcsender"
@@ -683,6 +687,56 @@ func TestReport_OneRejectedMethodAmongServedOnesIsStillAVerdict(t *testing.T) {
 // middle of a second on purpose: a report naming the second instead of the
 // moment would be off by half a second, which this tolerance excludes.
 func TestReport_TheLastAnswerIsWhereTheSilenceBegins(t *testing.T) {
+	checkSilenceBegins(t, func(s engine.Sender) engine.Sender { return s })
+}
+
+// A generator a fixed 200ms behind its schedule: the target still stops at
+// its own moment, and the report must name that moment, not the one the calls
+// were due at 200ms earlier.
+func TestReport_TheLastAnswerIsWhereTheSilenceBeginsBehindSchedule(t *testing.T) {
+	checkSilenceBegins(t, func(s engine.Sender) engine.Sender { return behindSchedule{s, 200 * time.Millisecond} })
+}
+
+// behindSchedule sends every call lag after it was handed over: a generator
+// behind its schedule by exactly lag, not by whatever the machine allows.
+type behindSchedule struct {
+	engine.Sender
+	lag time.Duration
+}
+
+func (b behindSchedule) Send(ctx context.Context, req engine.Request) (engine.Outcome, error) {
+	select {
+	case <-time.After(b.lag):
+	case <-ctx.Done():
+	}
+
+	return b.Sender.Send(ctx, req)
+}
+
+// tagging numbers every call in its metadata and keeps each one's SentAt,
+// so the stand can say which calls it answered and the test can tell when
+// those went out, without anyone's clock but the sender's.
+type tagging struct {
+	engine.Sender
+	next atomic.Int64
+	mu   sync.Mutex
+	sent map[string]engine.Outcome
+}
+
+func (g *tagging) Send(ctx context.Context, req engine.Request) (engine.Outcome, error) {
+	id := strconv.FormatInt(g.next.Add(1), 10)
+	out, err := g.Sender.Send(metadata.AppendToOutgoingContext(ctx, stand.CallIDKey, id), req)
+
+	g.mu.Lock()
+	g.sent[id] = out
+	g.mu.Unlock()
+
+	return out, err
+}
+
+func checkSilenceBegins(t *testing.T, wrap func(engine.Sender) engine.Sender) {
+	t.Helper()
+
 	const freezeAt = 1500 * time.Millisecond
 
 	// Frozen for a minute from 1.5s after its first call: every later call
@@ -699,9 +753,10 @@ func TestReport_TheLastAnswerIsWhereTheSilenceBegins(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = sender.Close() })
 
+	tagged := &tagging{Sender: wrap(sender), sent: map[string]engine.Outcome{}}
 	eng, err := engine.New(engine.Options{
 		Calls:       []engine.Call{load(target.Method(), silentRPS, silentRun, silentTimeout)},
-		Sender:      sender,
+		Sender:      tagged,
 		MaxInFlight: 1000,
 	})
 	if err != nil {
@@ -711,31 +766,52 @@ func TestReport_TheLastAnswerIsWhereTheSilenceBegins(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), ceiling)
 	defer cancel()
 
-	startedAt := time.Now()
 	if err := eng.Run(ctx); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 
 	report := eng.Report()
 	checkNoSenderDefects(t, report)
-	arrivals := target.Arrivals()
-	if len(arrivals) == 0 {
-		t.Fatal("the stand saw no calls")
-	}
 
 	m := report.Methods[0]
 	if m.LastAnswerAt == nil {
 		t.Fatal("no last answer, yet the target answered before the freeze")
 	}
 
-	// The stand counts from its own first arrival, which lands after the run
-	// starts; that offset is measured here instead of being covered by a wider
-	// tolerance. The last answered call is the last one scheduled before the
-	// freeze, so it sits within one scheduling interval (20ms at 50 rps) of it.
-	offset := arrivals[0].Sub(startedAt)
-	want := offset + freezeAt
-	if diff := (*m.LastAnswerAt - want).Abs(); diff > 40*time.Millisecond {
-		t.Errorf("last answer at %v, want %v (freeze %v plus the stand's offset %v), off by %v",
-			*m.LastAnswerAt, want, freezeAt, offset, diff)
+	// The stand says which calls it answered; the last answer is the latest
+	// send among them. Exact: no clock but the sender's is involved.
+	served := target.Served()
+	if len(served) == 0 || len(served) == int(tagged.next.Load()) {
+		t.Fatalf("the stand answered %d of %d calls: want some, and not all, or the freeze never came",
+			len(served), tagged.next.Load())
 	}
+	var last time.Time
+	for _, id := range served {
+		if at := tagged.sent[id].SentAt; at.After(last) {
+			last = at
+		}
+	}
+	if want := last.Sub(report.StartedAt); *m.LastAnswerAt != want {
+		t.Errorf("last answer at %v, want %v: when the last call the stand answered went out\n%s",
+			*m.LastAnswerAt, want, heardNotServed(tagged.sent, served, report.StartedAt))
+	}
+}
+
+// heardNotServed lists the calls the sender says the target was heard on but
+// the stand never answered: what moved the last answer past the stand's.
+func heardNotServed(sent map[string]engine.Outcome, served []string, start time.Time) string {
+	var b strings.Builder
+	for id := range sent {
+		out := sent[id]
+		if !out.Heard || slices.Contains(served, id) {
+			continue
+		}
+		fmt.Fprintf(&b, "  call %s sent at %v: %v, code %s from target %v, done after %v: %v\n",
+			id, out.SentAt.Sub(start), out.Category, out.Code, out.CodeFromTarget, out.DoneAt.Sub(out.SentAt), out.Err)
+	}
+	if b.Len() == 0 {
+		return "  no call was heard without the stand answering it"
+	}
+
+	return b.String()
 }

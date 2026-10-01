@@ -112,6 +112,12 @@ type Outcome struct {
 	// answered, the stream was reset, our own deadline ran out. The last attempt
 	// of a transparently retried call decides.
 	CodeFromTarget bool
+	// Heard is true when anything of the target's came back for this call:
+	// headers, a body or a trailer, a reply the client then refused included.
+	// It is what tells the target's silence from a call that got nothing. A
+	// sender that does not track it leaves it false, and a category that is
+	// a status from the target counts as heard anyway.
+	Heard bool
 }
 
 // Sender delivers one call to the target and reports what happened to it.

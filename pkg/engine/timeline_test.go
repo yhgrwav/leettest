@@ -577,6 +577,74 @@ func TestStats_LastAnswerIsTheScheduledMomentOfTheLastAnsweredCall(t *testing.T)
 	}
 }
 
+// Ground: contract — the last answer is a moment on the target's side, so it
+// is when the call went out, not when it was due: a generator behind its
+// schedule would otherwise pass its own lag off as the target's silence.
+func TestStats_LastAnswerIsWhenTheCallWentOut(t *testing.T) {
+	stats := NewStats()
+	start := time.Now()
+	stats.Start(start, 0)
+
+	record := func(scheduled, sent time.Duration) {
+		at := start.Add(scheduled)
+		stats.Record(Result{
+			Method: "a", ScheduledAt: at, BegunAt: start.Add(sent), Deadline: at.Add(time.Second),
+			Outcome: Outcome{Category: CategorySuccess, SentAt: start.Add(sent), DoneAt: start.Add(sent + time.Millisecond)},
+		})
+	}
+	// Due at 1s, out at 1.2s; due later at 1.1s, out earlier at 1.15s.
+	record(time.Second, 1200*time.Millisecond)
+	record(1100*time.Millisecond, 1150*time.Millisecond)
+	stats.Finish(start.Add(3 * time.Second))
+
+	got := stats.Report().Methods[0].LastAnswerAt
+	if got == nil || *got != 1200*time.Millisecond {
+		t.Errorf("last answer at %v, want 1.2s: the latest send among the answered calls", got)
+	}
+}
+
+// Ground: contract — silence is the target sending nothing. A reply the
+// client refused came from the target, and so did headers before a reset;
+// a call that got nothing did not.
+func TestStats_LastAnswerIsTheLastCallTheTargetWasHeardOn(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		category Category
+		heard    bool
+		moves    bool
+	}{
+		{"bad response", CategoryBadResponse, true, true},
+		{"cut off after headers", CategoryCutOff, true, true},
+		{"cut off with nothing", CategoryCutOff, false, false},
+		{"timed out with nothing", CategoryTimeout, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stats := NewStats()
+			start := time.Now()
+			stats.Start(start, 0)
+
+			record := func(d time.Duration, category Category, heard bool) {
+				at := start.Add(d)
+				stats.Record(Result{
+					Method: "a", ScheduledAt: at, BegunAt: at, Deadline: at.Add(time.Second),
+					Outcome: Outcome{Category: category, Heard: heard, SentAt: at, DoneAt: at.Add(time.Millisecond)},
+				})
+			}
+			record(time.Second, CategorySuccess, true)
+			record(2*time.Second, tc.category, tc.heard)
+			stats.Finish(start.Add(3 * time.Second))
+
+			want := time.Second
+			if tc.moves {
+				want = 2 * time.Second
+			}
+			if got := stats.Report().Methods[0].LastAnswerAt; got == nil || *got != want {
+				t.Errorf("last answer at %v, want %v", got, want)
+			}
+		})
+	}
+}
+
 // Ground: contract — any status the target sent back, a refusal or a rejected
 // request included, shows it alive; a call it never answered does not.
 func TestStats_LastAnswerMovesOnlyOnAStatusFromTheTarget(t *testing.T) {

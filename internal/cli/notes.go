@@ -74,7 +74,7 @@ func reportNotes(report engine.Report, maxResponse string) []string {
 			silence := ""
 			switch {
 			case m.SilentFrom != nil && m.LastAnswerAt != nil:
-				silence = fmt.Sprintf(",\nand nothing after the call scheduled at %s of the run got one",
+				silence = fmt.Sprintf(",\nand nothing after the call sent at %s of the run got one",
 					formatDuration(*m.LastAnswerAt))
 			case m.SilentFrom != nil:
 				silence = ",\nand the target answered nothing at all"
