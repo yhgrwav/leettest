@@ -295,7 +295,9 @@ func TestEnglish_TheLatencyChartLabelsItsScaleMaximum(t *testing.T) {
 	h.push(1, exact(10), exact(20), exact(30))
 
 	chart := ansiEscape.ReplaceAllString(m.latencyChart(h.points), "")
-	if label := formatLatency(95 * time.Millisecond); !strings.Contains(chart, label) {
+	// The heading carries the scale, low - high, as the values beside the
+	// cells print a duration.
+	if label := "- 95ms\n"; !strings.Contains(chart, label) {
 		t.Errorf("chart does not label its maximum %s: the cells alone have no scale\n%s", label, chart)
 	}
 }
