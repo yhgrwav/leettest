@@ -165,6 +165,7 @@ methods[].failure_codes[].code string
 methods[].failure_codes[].count int
 methods[].failure_codes[].from_target bool
 methods[].silent_from_s int?
+methods[].silent_sent_rps int?
 methods[].last_answer_at_us int?
 methods[].seconds []object
 methods[].seconds[].warmup bool
