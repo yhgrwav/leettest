@@ -30,8 +30,14 @@ test:
 race:
 	go test -race ./...
 
+# Tests whose premise needs an unloaded machine; ordinary CI runs them as is.
+# SlotsHeldWithinTheAllowanceDoNotHitTheCap: a starved scheduler releases the
+# slots 120-160ms past their deadline, beyond the 100ms allowance, so the cap
+# is right to fire and there is nothing to check.
+STRESS_SKIP := ^TestReport_SlotsHeldWithinTheAllowanceDoNotHitTheCap$$
+
 stress:
-	go test -race -count=20 -timeout 90m ./...
+	go test -race -count=20 -timeout 90m -skip "$(STRESS_SKIP)" ./...
 
 lint:
 	$(LINT) run ./...
