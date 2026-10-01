@@ -29,7 +29,9 @@ import (
 	"github.com/yhgrwav/leettest/pkg/metrics"
 )
 
-var allLangs = []Lang{LangRU, LangEN, LangDE, LangZH}
+// allLangs names the sweeps' language: the screen is English only, and the
+// name stays in the subtest names the sweeps were written with.
+var allLangs = []string{"en"}
 
 func TestCompactCount_UnitIsChosenAfterRounding(t *testing.T) {
 	for _, tt := range []struct {
@@ -137,7 +139,7 @@ func TestNothingWrapsInsideTheFrame(t *testing.T) {
 			for _, state := range liveStates {
 				t.Run(string(lang)+"/"+strconv.Itoa(width)+"/"+state.name, func(t *testing.T) {
 					m := testModel(t)
-					m.text = NewText(lang)
+					m.text = NewText()
 					m.Update(tea.WindowSizeMsg{Width: width, Height: 40})
 					tickN(m, 3)
 					state.setup(m)
@@ -195,7 +197,7 @@ func TestTextLinesUseNoAmbiguousWidthCharacters(t *testing.T) {
 		for _, state := range liveStates {
 			t.Run(string(lang)+"/"+state.name, func(t *testing.T) {
 				m := testModel(t)
-				m.text = NewText(lang)
+				m.text = NewText()
 				m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 				tickN(m, 3)
 				state.setup(m)
@@ -218,7 +220,7 @@ func TestTextLinesUseNoAmbiguousWidthCharacters(t *testing.T) {
 				m.stopper.Press()
 				screens = append(screens, m.body(120))
 
-				setup := &setupModel{settings: &Settings{Mode: string(ModeDark), Palette: Palettes()[0].Name}, text: NewText(lang)}
+				setup := &setupModel{settings: &Settings{Mode: string(ModeDark), Palette: Palettes()[0].Name}, text: NewText()}
 				setup.restyle()
 				screens = append(screens, setup.View())
 
@@ -252,7 +254,7 @@ func TestStatLineNeverDropsInFlightOrErrors(t *testing.T) {
 	for _, lang := range allLangs {
 		t.Run(string(lang), func(t *testing.T) {
 			m := testModel(t)
-			m.text = NewText(lang)
+			m.text = NewText()
 			m.Update(tea.WindowSizeMsg{Width: minWidth, Height: 40})
 			tickN(m, 3)
 			widest(m)
@@ -270,7 +272,7 @@ func TestStatLineNeverDropsInFlightOrErrors(t *testing.T) {
 
 func TestStatLineCompactsBeforeItDrops(t *testing.T) {
 	m := testModel(t)
-	m.text = NewText(LangEN)
+	m.text = NewText()
 	const width = 62
 	m.Update(tea.WindowSizeMsg{Width: width, Height: 40})
 	tickN(m, 3)
@@ -289,7 +291,7 @@ func TestStatLineCompactsBeforeItDrops(t *testing.T) {
 
 func TestStatLineDropsSentFirstThenRate(t *testing.T) {
 	m := testModel(t)
-	m.text = NewText(LangEN)
+	m.text = NewText()
 	m.Update(tea.WindowSizeMsg{Width: minWidth, Height: 40})
 	tickN(m, 3)
 
@@ -308,7 +310,7 @@ func TestStatLineDropsSentFirstThenRate(t *testing.T) {
 
 func TestStatLineIsExactWhenItFits(t *testing.T) {
 	m := testModel(t)
-	m.text = NewText(LangEN)
+	m.text = NewText()
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	tickN(m, 3)
 	m.snapshot.InFlight = 1_000_000
@@ -322,7 +324,7 @@ func TestNoteFallsBackToTheShortForm(t *testing.T) {
 	for _, lang := range allLangs {
 		t.Run(string(lang), func(t *testing.T) {
 			m := testModel(t)
-			m.text = NewText(lang)
+			m.text = NewText()
 			tickN(m, 3)
 			m.snapshot.InFlight = 1_000_000
 
@@ -351,7 +353,7 @@ func TestShortNotesFitTheNarrowestFrame(t *testing.T) {
 	room := contentWidth(minWidth) - lipgloss.Width("> ")
 
 	for _, lang := range allLangs {
-		text := NewText(lang)
+		text := NewText()
 		for name, note := range map[string]string{
 			"warmup":    text.WarmupNoteShort(9999999), // seven digits: 100k rps for 100s
 			"errors":    text.ErrorsNoteShort(),
@@ -369,7 +371,7 @@ func TestFinalTableColumnsLineUp(t *testing.T) {
 		for _, width := range []int{minWidth, 80, 120} {
 			t.Run(string(lang)+"/"+strconv.Itoa(width), func(t *testing.T) {
 				m := testModel(t)
-				m.text = NewText(lang)
+				m.text = NewText()
 				m.Update(tea.WindowSizeMsg{Width: width, Height: 40})
 				m.done, m.report = true, widestReport()
 
@@ -507,7 +509,7 @@ func TestFooterKeepsTheWayOutAtTheNarrowestFrame(t *testing.T) {
 	for _, lang := range allLangs {
 		t.Run(string(lang), func(t *testing.T) {
 			m := testModel(t)
-			m.text = NewText(lang)
+			m.text = NewText()
 			m.Update(tea.WindowSizeMsg{Width: minWidth, Height: 40})
 
 			quit := m.text.HintQuit()

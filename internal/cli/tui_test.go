@@ -40,7 +40,8 @@ func TestSettingsRoundTrip(t *testing.T) {
 		t.Fatal("fresh settings report themselves as configured")
 	}
 
-	settings.Lang = string(LangRU)
+	// A file from before English only: lang is no longer read, but survives.
+	settings.Lang = "ru"
 	settings.Mode = string(ModeLight)
 	settings.Palette = "ember"
 
@@ -56,7 +57,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 	if !again.Configured() {
 		t.Error("saved settings do not report themselves as configured")
 	}
-	if again.Lang != string(LangRU) || again.Palette != "ember" || again.Mode != string(ModeLight) {
+	if again.Lang != "ru" || again.Palette != "ember" || again.Mode != string(ModeLight) {
 		t.Errorf("reloaded %q/%q/%q, want ru/light/ember", again.Lang, again.Mode, again.Palette)
 	}
 	if filepath.Dir(again.Path()) == "" {
@@ -64,57 +65,6 @@ func TestSettingsRoundTrip(t *testing.T) {
 	}
 	if _, err := os.Stat(again.Path()); err != nil {
 		t.Errorf("settings file missing: %v", err)
-	}
-}
-
-func TestDetectLang(t *testing.T) {
-	tests := []struct {
-		env  string
-		want Lang
-	}{
-		{env: "ru_RU.UTF-8", want: LangRU},
-		{env: "de_DE.UTF-8", want: LangDE},
-		{env: "zh_CN.UTF-8", want: LangZH},
-		{env: "en_US.UTF-8", want: LangEN},
-		{env: "", want: LangEN},
-	}
-
-	for _, tt := range tests {
-		t.Setenv("LC_ALL", tt.env)
-		t.Setenv("LC_MESSAGES", "")
-		t.Setenv("LANG", "")
-
-		if got := DetectLang(); got != tt.want {
-			t.Errorf("DetectLang() with %q = %q, want %q", tt.env, got, tt.want)
-		}
-	}
-}
-
-func TestTextFallsBackToEnglish(t *testing.T) {
-	text := NewText("xx")
-
-	if got := text.Summary(); got != "summary" {
-		t.Errorf("summary for an unknown language = %q, want the English text", got)
-	}
-}
-
-func TestEveryLanguageTranslatesTheBasics(t *testing.T) {
-	for _, option := range Languages() {
-		text := NewText(option.Lang)
-
-		for name, got := range map[string]string{
-			"summary":  text.Summary(),
-			"running":  text.Running(),
-			"sent":     text.Sent(),
-			"errors":   text.Errors(),
-			"inflight": text.InFlight(),
-			"helptabs": text.HelpTabs(),
-			"helpquit": text.HelpQuit(),
-		} {
-			if got == "" {
-				t.Errorf("%s is empty in %s", name, option.Lang)
-			}
-		}
 	}
 }
 
@@ -227,7 +177,6 @@ func testModel(t *testing.T) *model {
 	if err != nil {
 		t.Fatalf("settings: %v", err)
 	}
-	settings.Lang = string(LangEN)
 	settings.Mode = string(ModeDark)
 	settings.Palette = "aurora"
 
@@ -415,7 +364,7 @@ func TestSetupQuitKeys(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			settings := &Settings{Mode: string(ModeDark), Palette: Palettes()[0].Name}
 
-			m := &setupModel{settings: settings, text: NewText(LangEN)}
+			m := &setupModel{settings: settings, text: NewText()}
 			m.restyle()
 
 			_, cmd := m.Update(tea.KeyMsg(key))

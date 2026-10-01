@@ -304,40 +304,19 @@ func TestFinalScreenSplitsTheNumbersWhenTheyDoNotFitOneLine(t *testing.T) {
 	}
 }
 
-// Ground: contract — Russian heads the sent column with "отпр.", so the
-// ordinary numbers keep all seven cells at 60 columns.
-func TestFinalScreenInRussianKeepsEveryNumberAt60Columns(t *testing.T) {
-	m := testModel(t)
-	m.text = NewText(LangRU)
-	m.Update(tea.WindowSizeMsg{Width: minWidth, Height: 40})
-	m.done, m.report = true, tableReport()
-
-	screen := m.finalReport(contentWidth(minWidth))
-	row := rowsAfter(t, screen, shortMethod("pkg.Svc/One"), 1)[0]
-	if got := strings.Join(row, " "); got != "1000 150 97 11.0ms 12.0ms 13.0ms 14.0ms" {
-		t.Errorf("numbers %q, want all seven", got)
-	}
-	if !strings.Contains(screen, "отпр.") || strings.Contains(screen, "отправлено ") {
-		t.Errorf("the sent column is not headed отпр.:\n%s", screen)
-	}
-}
-
 // Ground: boundary — at no height and width is the final screen taller than
-// the terminal, in any language, with the widest values and a verdict.
+// the terminal, with the widest values and a verdict.
 func TestFinalScreenNeverOutgrowsTheTerminal(t *testing.T) {
 	report := widestReport()
 	report.CapHit = &engine.CapHit{At: time.Second, Unsent: 1, OverDeadline: 3}
 	report.Incomplete = true
-	for _, lang := range allLangs {
-		for _, width := range []int{minWidth, 64, 80, 120} {
-			for height := 7; height <= 40; height++ {
-				m := testModel(t)
-				m.text = NewText(lang)
-				m.Update(tea.WindowSizeMsg{Width: width, Height: height})
-				m.done, m.report = true, report
-				if lines := strings.Count(m.View(), "\n") + 1; lines > height {
-					t.Errorf("%s %dx%d: the view is %d lines", lang, width, height, lines)
-				}
+	for _, width := range []int{minWidth, 64, 80, 120} {
+		for height := 7; height <= 40; height++ {
+			m := testModel(t)
+			m.Update(tea.WindowSizeMsg{Width: width, Height: height})
+			m.done, m.report = true, report
+			if lines := strings.Count(m.View(), "\n") + 1; lines > height {
+				t.Errorf("%dx%d: the view is %d lines", width, height, lines)
 			}
 		}
 	}

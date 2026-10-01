@@ -48,7 +48,7 @@ func RunSetup(settings *Settings) error {
 
 	m := &setupModel{
 		settings: settings,
-		text:     NewText(LangEN),
+		text:     NewText(),
 	}
 	m.restyle()
 

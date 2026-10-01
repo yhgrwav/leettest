@@ -157,7 +157,7 @@ func newModel(target string, eng *engine.Engine, warmup time.Duration, settings 
 }
 
 func (m *model) applySettings() {
-	m.text = NewText(Lang(m.settings.Lang))
+	m.text = NewText()
 	m.styles = newStyles(ThemeFor(m.settings.Palette, Mode(m.settings.Mode)))
 }
 

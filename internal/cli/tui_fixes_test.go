@@ -175,17 +175,6 @@ func TestHeaderPutsStatusAndTargetOnOneLine(t *testing.T) {
 	t.Fatal("no header line in the view")
 }
 
-func TestFakeTargetIsNamedInTheInterfaceLanguage(t *testing.T) {
-	m := testModel(t)
-	m.target = FakeTarget
-	m.settings.Lang = string(LangRU)
-	m.applySettings()
-
-	if header := m.header(74); !strings.Contains(header, "заглушка") {
-		t.Errorf("header = %q, want the fake target named in Russian", header)
-	}
-}
-
 // --- contrast -----------------------------------------------------------
 
 // xterm returns the RGB of a 256-colour code, or ok=false for a code this
@@ -415,7 +404,7 @@ func TestRussianLayoutLeavesTheReport(t *testing.T) {
 func TestRussianLayoutLeavesTheSetupWizard(t *testing.T) {
 	settings := &Settings{Mode: string(ModeDark), Palette: Palettes()[0].Name}
 
-	m := &setupModel{settings: settings, text: NewText(LangEN)}
+	m := &setupModel{settings: settings, text: NewText()}
 	m.restyle()
 
 	if _, cmd := m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRunes, Runes: []rune("й")})); cmd == nil {

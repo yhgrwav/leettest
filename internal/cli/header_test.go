@@ -28,12 +28,6 @@ func firstLine(s string) string {
 	return line
 }
 
-func TestRunningStatusSaysWhatIsHappening(t *testing.T) {
-	if got := NewText(LangRU).Running(); got != "выполняется нагрузочное тестирование" {
-		t.Errorf("Running() = %q", got)
-	}
-}
-
 func TestHeaderReadsStatusServiceTarget(t *testing.T) {
 	m := testModel(t)
 	m.service = "WalletService"

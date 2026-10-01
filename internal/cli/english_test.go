@@ -105,7 +105,7 @@ func TestEnglish_AnOldLangKeyWarnsOnce(t *testing.T) {
 
 func TestEnglish_ARussianSettingDrawsTheEnglishScreen(t *testing.T) {
 	ru := testModel(t)
-	ru.settings.Lang = string(LangRU)
+	ru.settings.Lang = "ru"
 	ru.applySettings()
 	en := testModel(t)
 	// The settings tab prints the file's path; each model has its own.
