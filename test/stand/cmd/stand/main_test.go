@@ -19,6 +19,19 @@ func TestParse_RejectsTwoBehaviorsAtOnce(t *testing.T) {
 	}
 }
 
+func TestParse_CapacityIsABehaviorOfItsOwn(t *testing.T) {
+	if _, err := parse([]string{"-capacity", "300", "-delay", "20ms"}, io.Discard); err != nil {
+		t.Fatalf("capacity with a delay: %v", err)
+	}
+	_, err := parse([]string{"-capacity", "300", "-fail-every", "10"}, io.Discard)
+	if err == nil || !strings.Contains(err.Error(), "-capacity") {
+		t.Fatalf("err = %v, want one naming -capacity", err)
+	}
+	if _, err := parse([]string{"-capacity", "-1"}, io.Discard); err == nil {
+		t.Fatal("want an error for a negative capacity")
+	}
+}
+
 func TestParse_RejectsFreezeAtWithoutLength(t *testing.T) {
 	if _, err := parse([]string{"-freeze-at", "5s"}, io.Discard); err == nil {
 		t.Fatal("want an error: a freeze start without a length freezes nothing")
