@@ -104,6 +104,14 @@ jobs:
             exit 1
           fi
           grep -q '"sent":11100' tour.json
+          # The exact schedule (#142): the plain Go timer starts calls up to
+          # 1ms late (p99 ~1.08ms on this runner); the exact one measured
+          # 144µs in this tour. The bound is half the timer's lateness.
+          lag=$(jq '.start_lag.p99.us' tour.json)
+          if [ "$lag" -ge 500 ]; then
+            echo "::error::start lag p99 ${lag}us, want under 500us: the schedule is not exact"
+            exit 1
+          fi
 
   # The release runs only on a tag; building it here keeps a broken
   # .goreleaser.yaml from surfacing first at release time.
@@ -134,24 +142,3 @@ jobs:
           want="leettest $(jq -r .tag dist/metadata.json)"
           echo "$got"
           [ "$got" = "$want" ] || { echo "::error::-version printed '$got', want '$want'"; exit 1; }
-
-  # TEMPORARY (exact schedule PR): start lag and CPU before/after on the
-  # runner, at full CPUs and at --cpus=1. Removed before merge.
-  start-lag-bench:
-    name: start lag bench (temporary)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-      - run: git worktree add ../before origin/main && nproc
-      - name: full CPUs
-        run: docker run --rm -e GOFLAGS=-buildvcs=false -v "$PWD/.github/tmp-bench":/bench -v "$PWD/../before":/before -v "$PWD":/after golang:1.27.1 sh /bench/run.sh
-      - name: --cpus=1
-        run: docker run --rm --cpus=1 -e GOFLAGS=-buildvcs=false -e RATES="300 1000" -v "$PWD/.github/tmp-bench":/bench -v "$PWD/../before":/before -v "$PWD":/after golang:1.27.1 sh /bench/run.sh
-      - name: --cpus=2
-        run: docker run --rm --cpus=2 -e GOFLAGS=-buildvcs=false -e RATES="300 1000" -v "$PWD/.github/tmp-bench":/bench -v "$PWD/../before":/before -v "$PWD":/after golang:1.27.1 sh /bench/run.sh
-      - name: every CPU busy (a yes per core)
-        run: docker run --rm -e GOFLAGS=-buildvcs=false -e BUSY=1 -e RATES="300 1000 3000" -e NO3=1 -v "$PWD/.github/tmp-bench":/bench -v "$PWD/../before":/before -v "$PWD":/after golang:1.27.1 sh /bench/run.sh
-      - name: every CPU busy, again
-        run: docker run --rm -e GOFLAGS=-buildvcs=false -e BUSY=1 -e RATES="300 1000 3000" -e NO3=1 -v "$PWD/.github/tmp-bench":/bench -v "$PWD/../before":/before -v "$PWD":/after golang:1.27.1 sh /bench/run.sh

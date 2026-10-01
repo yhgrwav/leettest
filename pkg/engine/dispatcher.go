@@ -34,8 +34,8 @@ const (
 )
 
 // Dispatcher hands out the requests of every call of a run, in the order of
-// their scheduled moments. One goroutine for the whole run: its busy-wait
-// costs at most one core however many methods there are.
+// their scheduled moments. One goroutine for the whole run: its wait costs
+// the same however many methods there are.
 type Dispatcher struct {
 	calls []Call
 	// start is the plan's moment zero; zero means when Run begins.

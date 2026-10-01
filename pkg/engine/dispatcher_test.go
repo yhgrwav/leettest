@@ -109,8 +109,8 @@ func TestExactSchedule_NeedsAPreciseSleepAndAFineClock(t *testing.T) {
 	}
 }
 
-// Ground: hot path — one dispatcher for the run: its busy-wait costs at most
-// one core however many methods there are.
+// Ground: hot path — one dispatcher for the run: its wait costs the same
+// however many methods there are.
 func TestDispatcher_OneGoroutineForEveryCall(t *testing.T) {
 	calls := []Call{
 		{Method: "a.B/One", Stages: []Stage{{StartRPS: 100, TargetRPS: 100, Duration: 200 * time.Millisecond}}},
