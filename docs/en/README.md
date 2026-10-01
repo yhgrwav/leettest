@@ -230,9 +230,10 @@ measured Docker's network, not it.
 **Clock.** On Windows time moves in steps of the system timer: 0.5–1 ms, or 15.6 ms when nothing
 raised it. Other programs set the step, and it can change mid-run. The tool measures it before and
 after the run and prints it: `clock step 502us on this host: every latency and wait is +/- 502us`.
-A step over a quarter of any method's p50, or one that grew during the run, makes the run invalid
-(exit 2): at p50 = 2 ms a step of up to 0.5 ms is allowed. Measure from Linux next to the target:
-the step there is tens of nanoseconds and there is no line.
+A step over a quarter of any method's p50, or one that grew during the run to 1 µs or more, makes the
+run invalid (exit 2): at p50 = 2 ms a step of up to 0.5 ms is allowed. Measure from Linux next to the
+target: the step there is tens of nanoseconds, there is no line, and its changes under 1 µs are the
+cost of reading the clock, not its tick.
 
 | Flag | What it does |
 |---|---|
