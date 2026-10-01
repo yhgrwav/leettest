@@ -181,10 +181,15 @@ type MethodReport struct {
 	// NotSent, in UnsentTimedOut.
 	TimedOutAfterWait int
 	UnsentTimedOut    int
-	// SilentFrom is the first second, by planned time and counting warmup,
-	// from which to the end of the schedule no call got an answer: neither a
-	// success nor a status from the target. Nil if there is none.
+	// SilentFrom is the first second, by when calls went out and counting
+	// warmup, from which on the target was heard on no call sent, and at
+	// least one sent then timed out. Calls never sent, or cut off by the
+	// stop, count neither way. Nil if there is none.
 	SilentFrom *int
+	// SentRPS is how many calls went out in the second before SilentFrom, or
+	// in second 0 when the silence starts there: the rate the target was
+	// sent as it fell silent. 0 without SilentFrom.
+	SentRPS int
 	// LastAnswerAt is when the last call the target was heard on went out
 	// (Outcome.Heard, or a status from the target), measured from the start
 	// of the run: where the silence begins. The send, not the schedule: the
@@ -840,6 +845,7 @@ func (s *Stats) Report() Report {
 		}
 		if from, ok := method.timeline.silentFrom(); ok {
 			entry.SilentFrom = &from
+			entry.SentRPS = method.timeline.sentRate(from)
 		}
 		if method.lastAnswer >= 0 {
 			at := method.lastAnswer
@@ -929,6 +935,7 @@ func (s *Stats) Report() Report {
 			WarmupFailed:      timelines[v.name].WarmupFailed,
 			WarmupNotSent:     timelines[v.name].WarmupNotSent,
 			SilentFrom:        timelines[v.name].SilentFrom,
+			SentRPS:           timelines[v.name].SentRPS,
 			LastAnswerAt:      timelines[v.name].LastAnswerAt,
 		}
 		if measured > 0 {

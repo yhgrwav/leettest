@@ -174,6 +174,7 @@ type jsonMethod struct {
 	ClientError           int           `json:"client_error"`
 	FailureCodes          []jsonCode    `json:"failure_codes"`
 	SilentFromS           *int          `json:"silent_from_s"`
+	SilentSentRPS         *int          `json:"silent_sent_rps"`
 	LastAnswerAtUS        *int64        `json:"last_answer_at_us"`
 	Seconds               []jsonSecond  `json:"seconds"`
 }
@@ -356,6 +357,10 @@ func jsonMethodOf(m *engine.MethodReport, warmup time.Duration) jsonMethod {
 		FailureCodes: make([]jsonCode, 0, len(m.FailureCodes)),
 		SilentFromS:  m.SilentFrom,
 		Seconds:      make([]jsonSecond, 0, len(m.Seconds)),
+	}
+	// The rate belongs to a silence: none without one.
+	if m.SilentFrom != nil {
+		out.SilentSentRPS = &m.SentRPS
 	}
 	// No call, no rate: a zero would read as a target that took none. NaN or
 	// Inf would fail the whole encoding and leave stdout empty.
