@@ -350,7 +350,10 @@ func invalidNote(m *engine.MethodReport, maxResponse string) string {
 }
 
 // clockGrew says the step after the run is a quarter or more over the one
-// before, which set the wait floor.
+// before, which set the wait floor. Under 1µs, where the "+/-" note starts,
+// the step is the cost of reading the clock, not its tick: it moves no
+// printed number.
 func clockGrew(run RunReport) bool {
-	return run.ClockStepBefore > 0 && 4*run.ClockStep >= 5*run.ClockStepBefore
+	return run.ClockStepBefore > 0 && run.ClockStep >= time.Microsecond &&
+		4*run.ClockStep >= 5*run.ClockStepBefore
 }
