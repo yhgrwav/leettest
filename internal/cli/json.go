@@ -175,6 +175,8 @@ type jsonMethod struct {
 	FailureCodes          []jsonCode    `json:"failure_codes"`
 	SilentFromS           *int          `json:"silent_from_s"`
 	SilentSentRPS         *int          `json:"silent_sent_rps"`
+	SilentPlannedRPSLow   *int          `json:"silent_planned_rps_low"`
+	SilentPlannedRPSHigh  *int          `json:"silent_planned_rps_high"`
 	LastAnswerAtUS        *int64        `json:"last_answer_at_us"`
 	Seconds               []jsonSecond  `json:"seconds"`
 }
@@ -365,6 +367,10 @@ func jsonMethodOf(m *engine.MethodReport, warmup time.Duration) jsonMethod {
 	// The rate belongs to a silence: none without one.
 	if m.SilentFrom != nil {
 		out.SilentSentRPS = &m.SentRPS
+		// No stage in that second: unknown, which a 0 would hide.
+		if m.SilentPlannedHigh > 0 {
+			out.SilentPlannedRPSLow, out.SilentPlannedRPSHigh = &m.SilentPlannedLow, &m.SilentPlannedHigh
+		}
 	}
 	// No call, no rate: a zero would read as a target that took none. NaN or
 	// Inf would fail the whole encoding and leave stdout empty.

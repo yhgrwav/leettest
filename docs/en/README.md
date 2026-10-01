@@ -400,8 +400,11 @@ reworded freely, do not parse it.
 
 The target's silence is by when calls went out: `methods[].silent_from_s` is the second from which
 the target answered none of the calls sent, `methods[].silent_sent_rps` how many calls went out in
-the second before it (in the first second, if the silence starts there). Without a silence both are
-`null`. The planned rate is in the config's stages.
+the second before it (in the first second, if the silence starts there), and
+`methods[].silent_planned_rps_low` and `_high` the planned rate of the stages in that second. Without
+a silence all are `null`; the planned rate is `null` also when no stage ran in that second (calls
+that waited for a stream went out after the plan ended). `planned_rps_low` and `_high` are the
+whole plan's rate.
 
 The text report is printed in ASCII only, so a console on any code page shows it as written.
 Characters from outside ASCII, in a method name or in the target's error text, are printed as
