@@ -113,7 +113,7 @@ func TestNothingWrapsInsideTheFrame(t *testing.T) {
 	for _, lang := range allLangs {
 		for width := minWidth; width <= 120; width++ {
 			for _, state := range liveStates {
-				t.Run(string(lang)+"/"+strconv.Itoa(width)+"/"+state.name, func(t *testing.T) {
+				t.Run(lang+"/"+strconv.Itoa(width)+"/"+state.name, func(t *testing.T) {
 					m := testModel(t)
 					m.text = NewText()
 					m.Update(tea.WindowSizeMsg{Width: width, Height: 40})
@@ -171,7 +171,7 @@ const ambiguousInText = "›·—–≥…←→↑↓«»"
 func TestTextLinesUseNoAmbiguousWidthCharacters(t *testing.T) {
 	for _, lang := range allLangs {
 		for _, state := range liveStates {
-			t.Run(string(lang)+"/"+state.name, func(t *testing.T) {
+			t.Run(lang+"/"+state.name, func(t *testing.T) {
 				m := testModel(t)
 				m.text = NewText()
 				m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
@@ -228,7 +228,7 @@ func statLineWith(t *testing.T, body, label string) string {
 
 func TestStatLineNeverDropsInFlightOrErrors(t *testing.T) {
 	for _, lang := range allLangs {
-		t.Run(string(lang), func(t *testing.T) {
+		t.Run(lang, func(t *testing.T) {
 			m := testModel(t)
 			m.text = NewText()
 			m.Update(tea.WindowSizeMsg{Width: minWidth, Height: 40})
@@ -301,7 +301,7 @@ func TestStatLineIsExactWhenItFits(t *testing.T) {
 
 func TestNoteFallsBackToTheShortForm(t *testing.T) {
 	for _, lang := range allLangs {
-		t.Run(string(lang), func(t *testing.T) {
+		t.Run(lang, func(t *testing.T) {
 			m := testModel(t)
 			m.text = NewText()
 			tickN(m, 3)
@@ -348,7 +348,7 @@ func TestShortNotesFitTheNarrowestFrame(t *testing.T) {
 func TestFinalTableColumnsLineUp(t *testing.T) {
 	for _, lang := range allLangs {
 		for _, width := range []int{minWidth, 80, 120} {
-			t.Run(string(lang)+"/"+strconv.Itoa(width), func(t *testing.T) {
+			t.Run(lang+"/"+strconv.Itoa(width), func(t *testing.T) {
 				m := testModel(t)
 				m.text = NewText()
 				m.Update(tea.WindowSizeMsg{Width: width, Height: 40})
@@ -486,7 +486,7 @@ func TestSparkline_NoHistoryStillFillsTheRow(t *testing.T) {
 
 func TestFooterKeepsTheWayOutAtTheNarrowestFrame(t *testing.T) {
 	for _, lang := range allLangs {
-		t.Run(string(lang), func(t *testing.T) {
+		t.Run(lang, func(t *testing.T) {
 			m := testModel(t)
 			m.text = NewText()
 			m.Update(tea.WindowSizeMsg{Width: minWidth, Height: 40})

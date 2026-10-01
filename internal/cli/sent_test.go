@@ -81,7 +81,7 @@ func TestPrintReportNamesTheCallsThatDidNotGoOut(t *testing.T) {
 // as the text report.
 func TestScreensNameTheCallsThatDidNotGoOut(t *testing.T) {
 	for _, lang := range allLangs {
-		t.Run(string(lang), func(t *testing.T) {
+		t.Run(lang, func(t *testing.T) {
 			m := testModel(t)
 			m.text = NewText()
 			m.Update(tea.WindowSizeMsg{Width: minWidth, Height: 40})
