@@ -187,6 +187,71 @@ func TestStand_FailEveryRarerThanTheRunFailsNothing(t *testing.T) {
 	}
 }
 
+// Ground: boundary — the stand of known capacity is the outside source the
+// breaking-point search is checked against (v0.2): at and below n nothing
+// waits, above n the queue grows by exactly 1/n − 1/rate a call.
+func TestCapacity_QueuesOnlyAboveItsRate(t *testing.T) {
+	const delay = 20 * time.Millisecond
+	at := func(rate, i int) stand.Call {
+		return stand.Call{N: i + 1, Since: time.Duration(i) * time.Second / time.Duration(rate)}
+	}
+
+	below := stand.Capacity(100, delay)
+	for i := range 200 {
+		if got := below(at(100, i)).Delay; got != delay {
+			t.Fatalf("at the capacity, call %d held %v, want %v", i, got, delay)
+		}
+	}
+
+	above := stand.Capacity(100, delay)
+	for i := range 200 {
+		// 200 arrivals a second, 100 served: call i waits i × (10ms − 5ms).
+		want := delay + time.Duration(i)*5*time.Millisecond
+		if got := above(at(200, i)).Delay; got != want {
+			t.Fatalf("at twice the capacity, call %d held %v, want %v", i, got, want)
+		}
+	}
+
+	if got := stand.Capacity(0, delay)(at(1000, 500)).Delay; got != delay {
+		t.Errorf("no limit held %v, want %v", got, delay)
+	}
+}
+
+// Ground: boundary — exactly at the capacity the queue stays empty only on a
+// perfect schedule. 1s/300 does not divide: the slot is truncated down to
+// 3333333ns and the arrivals land 3333333 or 3333334ns apart, so a perfect
+// schedule never waits. A call that arrives e late lets the next on-time one
+// wait: turn_i = i·slot + max e_j over j ≤ i, so the wait is max e_j − e_i —
+// bounded by the generator's worst lateness, never growing. With the Go timer
+// (up to 1ms late) that is up to 1ms a call; the exact schedule (#142) has
+// to bring it down.
+func TestCapacity_AtItsRateWaitsOnlyForTheGeneratorsJitter(t *testing.T) {
+	const delay = 20 * time.Millisecond
+
+	perfect := stand.Capacity(300, delay)
+	for i := range 3000 {
+		since := time.Duration(i) * time.Second / 300
+		if got := perfect(stand.Call{N: i + 1, Since: since}).Delay; got != delay {
+			t.Fatalf("a perfect schedule at the capacity: call %d held %v, want %v", i, got, delay)
+		}
+	}
+
+	// Every tenth call 1ms late: the nine after it wait out what is left of
+	// that millisecond, and nothing more piles up.
+	jittered := stand.Capacity(300, delay)
+	worst := time.Duration(0)
+	for i := range 3000 {
+		since := time.Duration(i) * time.Second / 300
+		if i%10 == 0 {
+			since += time.Millisecond
+		}
+		worst = max(worst, jittered(stand.Call{N: i + 1, Since: since}).Delay-delay)
+	}
+	if worst > time.Millisecond {
+		t.Errorf("1ms of jitter made a call wait %v: the queue grew", worst)
+	}
+}
+
 func TestStand_SlowingHoldsBackOnlyTheCallsAfterTheSwitch(t *testing.T) {
 	const slow = 200 * time.Millisecond
 
