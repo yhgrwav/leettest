@@ -566,3 +566,30 @@ func TestPrintReportNamesTheSentRateOfASilence(t *testing.T) {
 		}
 	}
 }
+
+// The plan a silence is held against is the stage of the second its sent
+// rate counts, not the whole plan: past the plan there is none to name.
+func TestPrintReportNeverSaysPlannedZero(t *testing.T) {
+	for _, tc := range []struct {
+		planned   int
+		want, not string
+	}{
+		{0, "at 33 rps,", "planned"},
+		{300, "sent at 33 rps (planned 300)", "planned 0"},
+	} {
+		from := 41
+		var out strings.Builder
+		PrintReport(&out, "localhost:50051", RunReport{Report: engine.Report{
+			Duration: 41 * time.Second,
+			Methods: []engine.MethodReport{{
+				Method: "a.B/One", Sent: 600, Failed: 300, TimedOut: 300,
+				SilentFrom: &from, SentRPS: 33, RPSLow: 100, RPSHigh: 300,
+				SilentPlannedLow: tc.planned, SilentPlannedHigh: tc.planned, Timeout: time.Second,
+			}},
+		}})
+		text := out.String()
+		if !strings.Contains(text, tc.want) || strings.Contains(text, tc.not) {
+			t.Errorf("planned %d: want %q and no %q:\n%s", tc.planned, tc.want, tc.not, text)
+		}
+	}
+}

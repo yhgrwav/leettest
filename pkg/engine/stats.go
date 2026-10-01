@@ -198,6 +198,10 @@ type MethodReport struct {
 	// RPSLow and RPSHigh are the planned rates over the stages the statement
 	// covers: from SilentFrom on if it is set, the whole plan otherwise.
 	RPSLow, RPSHigh int
+	// SilentPlannedLow and SilentPlannedHigh are the planned rates of the
+	// stages in the second SentRPS counts. 0 when there is no silence, or no
+	// stage with a rate in that second.
+	SilentPlannedLow, SilentPlannedHigh int
 	// Timeout is the method's timeout, the T of "no answer within T".
 	Timeout time.Duration
 }

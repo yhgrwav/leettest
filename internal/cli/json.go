@@ -175,6 +175,8 @@ type jsonMethod struct {
 	FailureCodes          []jsonCode    `json:"failure_codes"`
 	SilentFromS           *int          `json:"silent_from_s"`
 	SilentSentRPS         *int          `json:"silent_sent_rps"`
+	SilentPlannedRPSLow   *int          `json:"silent_planned_rps_low"`
+	SilentPlannedRPSHigh  *int          `json:"silent_planned_rps_high"`
 	LastAnswerAtUS        *int64        `json:"last_answer_at_us"`
 	Seconds               []jsonSecond  `json:"seconds"`
 }

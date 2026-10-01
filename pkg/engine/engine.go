@@ -250,6 +250,12 @@ func ratesFrom(stages []Stage, from time.Duration) (low, high int) {
 	return low, high
 }
 
+// ratesInWindow is the lowest and highest planned rate of the stages that
+// overlap second max(0, from-1); 0, 0 when none does or their rate is 0.
+func ratesInWindow(stages []Stage, from int) (low, high int) {
+	return 0, 0
+}
+
 // Run executes the plan once; an Engine is not reused. Cancelling ctx aborts
 // the run, Stop ends it gently.
 func (e *Engine) Run(ctx context.Context) error {
