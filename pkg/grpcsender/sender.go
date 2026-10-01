@@ -397,7 +397,10 @@ func (s *Sender) Send(ctx context.Context, req engine.Request) (engine.Outcome, 
 		Err:        err,
 
 		CodeFromTarget: fromTarget,
-		Heard:          times.heard || call.reply.over || (times.answered && !expiredCopy(code, times, req.Deadline)),
+		// A trailer that only copies or echoes our deadline is grpc-go on the
+		// target answering by itself: it does not show the target alive.
+		Heard: times.heard || call.reply.over ||
+			(times.answered && !expiredCopy(code, times, req.Deadline) && !echoOfOurDeadline(code, times, req.Deadline)),
 	}
 	if notSent {
 		outcome.NotSentOn = s.blocker(conn, times)
