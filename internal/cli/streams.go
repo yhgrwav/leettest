@@ -23,17 +23,12 @@ import (
 	"github.com/yhgrwav/leettest/pkg/engine"
 )
 
-// clientWaitsMoved reports the methods whose p99 drops by a tenth or more
-// when every client-side wait is taken out — start lag, connection, stream —
-// and whether that or calls never sent make a case for a verdict. A tenth is
-// a hypothesis (docs/decisions.md); it is taken on the histogram's values,
-// not the printed ones, lower bounds included: calls held for a stream to
-// their deadline leave both p99s bounds a long way apart.
+// clientWaitsMoved reports the methods whose p99 the client-side waits moved
+// (engine.MethodReport.Moved) and whether that or calls never sent make a
+// case for a verdict.
 func clientWaitsMoved(report engine.Report) (moved []*engine.MethodReport, limited bool) {
 	for i := range report.Methods {
-		m := &report.Methods[i]
-		if m.P99.Defined && m.P99WithoutClientWaits.Defined &&
-			10*(m.P99.Value-m.P99WithoutClientWaits.Value) >= m.P99.Value {
+		if m := &report.Methods[i]; m.Moved() {
 			moved = append(moved, m)
 		}
 	}
@@ -113,19 +108,14 @@ func rankedCauses(report engine.Report) []cause {
 	return out
 }
 
-// verdictCause is the cause that names the verdict. There is one when the
-// waits moved a printed p99 or calls went unsent, and some cause is in the
-// tail: a move below the floor has nothing to name, and stays a note.
+// verdictCause is the cause that names the verdict, by engine.Report.RunLimit:
+// a move below the floor has nothing to name, and stays a note.
 func verdictCause(report engine.Report) (cause, bool) {
-	if _, limited := clientWaitsMoved(report); !limited {
-		return cause{}, false
-	}
-	ranked := rankedCauses(report)
-	if len(ranked) == 0 {
+	if _, limited := report.RunLimit(); !limited {
 		return cause{}, false
 	}
 
-	return ranked[0], true
+	return rankedCauses(report)[0], true
 }
 
 // streamVerdict is the verdict on a run held back by itself or its

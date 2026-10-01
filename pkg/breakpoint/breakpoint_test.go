@@ -226,9 +226,11 @@ func TestSearch_EdgesOfTheProfile(t *testing.T) {
 // target: no breaking point is named above it.
 func TestSearch_TheRunsOwnLimitIsNotTheTargets(t *testing.T) {
 	for name, limit := range map[string]func(*engine.Report){
-		"in-flight cap":    func(r *engine.Report) { r.CapHit = &engine.CapHit{} },
-		"calls not sent":   func(r *engine.Report) { r.NotSent = 3 },
-		"generator behind": func(r *engine.Report) { r.Methods[0].P99WithoutClientWaits = exact(10 * time.Millisecond) },
+		"in-flight cap":  func(r *engine.Report) { r.CapHit = &engine.CapHit{} },
+		"calls not sent": func(r *engine.Report) { r.NotSent, r.GeneratorTailCalls = 3, 3 },
+		"generator behind": func(r *engine.Report) {
+			r.Methods[0].P99WithoutClientWaits, r.GeneratorTailCalls = exact(10*time.Millisecond), 30
+		},
 	} {
 		var asked []int
 		target := func(rps int) engine.Report {
@@ -259,7 +261,11 @@ func TestSearch_TheKneeBaselineIsTheLowestHeldP99(t *testing.T) {
 	if res.Outcome != BrokeBetween || res.Held != 156 || res.Broke != 195 {
 		t.Fatalf("%v held %d broke %d, want BrokeBetween 156 195: 70ms > 3 × 20ms", res.Outcome, res.Held, res.Broke)
 	}
-	broken := res.Steps[len(res.Steps)-1]
+	i := slices.IndexFunc(res.Steps, func(s Step) bool { return s.RPS == 195 })
+	if i < 0 {
+		t.Fatalf("steps %+v, no 195", res.Steps)
+	}
+	broken := res.Steps[i]
 	if want := "p99 70ms = 3.5× baseline 20ms (no p99_limit set)"; !strings.Contains(broken.Why, want) {
 		t.Errorf("why %q, want it to say %q", broken.Why, want)
 	}
@@ -374,7 +380,7 @@ func TestSearch_AStreamLimitIsTheRunsAndSaysSo(t *testing.T) {
 	target := func(rps int) engine.Report {
 		r := capacity(10000)(rps)
 		if rps >= 195 {
-			r.NotSent, r.NotSentStream = 3, 3
+			r.NotSent, r.NotSentStream, r.StreamTailCalls = 3, 3, 3
 			r.Connections = &engine.Connections{Open: 1, LimitAnnounced: true, FirstLimit: 1, LastLimit: 1}
 		}
 

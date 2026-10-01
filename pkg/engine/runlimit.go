@@ -29,5 +29,44 @@ const (
 // most common there. The text report's verdict and a breaking-point search
 // decide by this one rule.
 func (r Report) RunLimit() (cause WaitCause, limited bool) {
-	return "", false
+	if !r.ClientWaitsMoved() && r.NotSent == 0 {
+		return "", false
+	}
+
+	// A tie keeps the order generator, stream, connection.
+	top := 0
+	for _, c := range []struct {
+		tail  int
+		cause WaitCause
+	}{
+		{r.GeneratorTailCalls, WaitGenerator},
+		{r.StreamTailCalls, WaitStream},
+		{r.ConnectionTailCalls, WaitConnection},
+	} {
+		if c.tail > top {
+			top, cause = c.tail, c.cause
+		}
+	}
+
+	return cause, top > 0
+}
+
+// ClientWaitsMoved says some method's p99 drops by a tenth or more when every
+// client-side wait is taken out. A tenth is a hypothesis (docs/decisions.md);
+// it is taken on the histogram's values, lower bounds included.
+func (r Report) ClientWaitsMoved() bool {
+	for i := range r.Methods {
+		if r.Methods[i].Moved() {
+			return true
+		}
+	}
+
+	return false
+}
+
+// Moved says the method's p99 drops by a tenth or more without the
+// client-side waits.
+func (m *MethodReport) Moved() bool {
+	return m.P99.Defined && m.P99WithoutClientWaits.Defined &&
+		10*(m.P99.Value-m.P99WithoutClientWaits.Value) >= m.P99.Value
 }

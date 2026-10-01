@@ -82,7 +82,12 @@ const ReleaseMargin = 100 * time.Millisecond
 // InFlightNeed is the smallest in-flight cap the calls can run with: the one
 // checkInFlightBudget accepts. 0 when some call has no deadline.
 func InFlightNeed(calls []Call) int {
-	return 0
+	var e *InFlightBudgetError
+	if !errors.As(checkInFlightBudget(calls, 0), &e) || len(e.Unbounded) > 0 {
+		return 0
+	}
+
+	return e.Need
 }
 
 // checkInFlightBudget rejects calls that a hung target would push past the
