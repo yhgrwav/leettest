@@ -877,3 +877,28 @@ func TestTimeline_CallsCutOffByTheStopAreNoSilence(t *testing.T) {
 		t.Errorf("silent from second %d: the calls of the last second were cut off by the stop", *m.SilentFrom)
 	}
 }
+
+// Ground: boundary — a target that never answered did not fall silent: the
+// silence starts at second 0 with no last answer, and the rate is that of
+// second 0 itself, there being no second before it.
+func TestTimeline_ATargetThatNeverAnsweredIsSilentFromSecondZero(t *testing.T) {
+	stats := NewStats()
+	start := time.Now()
+	stats.Reserve(10*time.Second, "a")
+	stats.Start(start, 0)
+
+	for i := range 40 {
+		out := start.Add(time.Duration(i) * 50 * time.Millisecond)
+		stats.Record(Result{Method: "a", ScheduledAt: out, BegunAt: out, Deadline: out.Add(300 * time.Millisecond),
+			Outcome: Outcome{Category: CategoryTimeout, SentAt: out, DoneAt: out.Add(300 * time.Millisecond)}})
+	}
+	stats.Finish(start.Add(3 * time.Second))
+
+	m := stats.Report().Methods[0]
+	if m.SilentFrom == nil || *m.SilentFrom != 0 || m.LastAnswerAt != nil {
+		t.Fatalf("silent from %v, last answer %v; want second 0 and none", m.SilentFrom, m.LastAnswerAt)
+	}
+	if m.SentRPS != 20 {
+		t.Errorf("sent rps = %d, want 20: the calls of second 0", m.SentRPS)
+	}
+}

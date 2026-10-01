@@ -391,6 +391,11 @@ Decisions are fields, not text: `invalid_reasons` (`in_flight_cap`, `nothing_mea
 verdict) and the numbers per cause in `client_waits`. `notes` is the notes' text for people: it is
 reworded freely, do not parse it.
 
+The target's silence is by when calls went out: `methods[].silent_from_s` is the second from which
+the target answered none of the calls sent, `methods[].silent_sent_rps` how many calls went out in
+the second before it (in the first second, if the silence starts there). Without a silence both are
+`null`. The planned rate is in the config's stages.
+
 ## Not yet
 
 Ramp-up from zero to the target RPS, pass/fail thresholds for CI, export to

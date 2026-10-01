@@ -516,6 +516,29 @@ func TestPrintReportNamesTheMomentTheAnswersStopped(t *testing.T) {
 
 // The rate in a silence note is what the target was sent; the plan is named
 // beside it only when they differ by more than a tenth.
+// A target silent from second 0 with no answer at all never answered: the
+// note says so, and names no moment it went silent at.
+func TestPrintReportSaysATargetThatNeverAnsweredDidNotAnswer(t *testing.T) {
+	zero := 0
+	var out strings.Builder
+	PrintReport(&out, "localhost:50051", RunReport{Report: engine.Report{
+		Duration: 3 * time.Second,
+		Methods: []engine.MethodReport{{
+			Method: "a.B/One", Sent: 60, Failed: 60, TimedOut: 60,
+			SilentFrom: &zero, SentRPS: 20, RPSLow: 20, RPSHigh: 20, Timeout: 300 * time.Millisecond,
+		}},
+	}})
+	text := out.String()
+	if !strings.Contains(text, "the target answered nothing at all") {
+		t.Errorf("report does not say the target answered nothing:\n%s", text)
+	}
+	for _, wrong := range []string{"silent at", "went silent", "nothing after the call"} {
+		if strings.Contains(text, wrong) {
+			t.Errorf("report says %q of a target that never answered:\n%s", wrong, text)
+		}
+	}
+}
+
 func TestPrintReportNamesTheSentRateOfASilence(t *testing.T) {
 	for _, tc := range []struct {
 		sent      int
