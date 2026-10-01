@@ -146,6 +146,8 @@ jobs:
           fetch-depth: 0
       - run: git worktree add ../before origin/main && nproc
       - name: full CPUs
-        run: docker run --rm -v "$PWD/.github/tmp-bench":/bench -v "$PWD/../before":/before -v "$PWD":/after golang:1.27.1 sh /bench/run.sh
+        run: docker run --rm -e GOFLAGS=-buildvcs=false -v "$PWD/.github/tmp-bench":/bench -v "$PWD/../before":/before -v "$PWD":/after golang:1.27.1 sh /bench/run.sh
       - name: --cpus=1
-        run: docker run --rm --cpus=1 -e RATES="300 1000" -v "$PWD/.github/tmp-bench":/bench -v "$PWD/../before":/before -v "$PWD":/after golang:1.27.1 sh /bench/run.sh
+        run: docker run --rm --cpus=1 -e GOFLAGS=-buildvcs=false -e RATES="300 1000" -v "$PWD/.github/tmp-bench":/bench -v "$PWD/../before":/before -v "$PWD":/after golang:1.27.1 sh /bench/run.sh
+      - name: every CPU busy (a yes per core)
+        run: docker run --rm -e GOFLAGS=-buildvcs=false -e BUSY=1 -e RATES="300 1000" -e NO3=1 -v "$PWD/.github/tmp-bench":/bench -v "$PWD/../before":/before -v "$PWD":/after golang:1.27.1 sh /bench/run.sh

@@ -8,6 +8,9 @@ for v in before after; do
 done
 /tmp/stand -delay 20ms -life 1h >/dev/null 2>&1 &
 sleep 1
+if [ -n "$BUSY" ]; then
+  for k in $(seq "$(nproc)"); do yes >/dev/null & done
+fi
 
 one() { # version rps
   cat > /tmp/c.yaml <<EOF
