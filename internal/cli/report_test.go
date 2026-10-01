@@ -260,7 +260,7 @@ func TestPrintReportStatesWhatTheTargetDidNotAnswer(t *testing.T) {
 		Duration: 3 * time.Second,
 		Methods: []engine.MethodReport{{
 			Method: "a.B/One", Sent: 150, Failed: 150, TimedOut: 150, UnsentTimedOut: 4,
-			SilentFrom: &zero, RPSLow: 50, RPSHigh: 50, Timeout: 300 * time.Millisecond,
+			SilentFrom: &zero, SentRPS: 50, RPSLow: 50, RPSHigh: 50, Timeout: 300 * time.Millisecond,
 		}},
 	}
 
@@ -511,5 +511,58 @@ func TestPrintReportNamesTheMomentTheAnswersStopped(t *testing.T) {
 	// generator's lag on the target.
 	if !strings.Contains(text, "sent at 8.0s") || strings.Contains(text, "scheduled at") {
 		t.Errorf("report does not say the moment is when the call was sent:\n%s", text)
+	}
+}
+
+// The rate in a silence note is what the target was sent; the plan is named
+// beside it only when they differ by more than a tenth.
+// A target silent from second 0 with no answer at all never answered: the
+// note says so, and names no moment it went silent at.
+func TestPrintReportSaysATargetThatNeverAnsweredDidNotAnswer(t *testing.T) {
+	zero := 0
+	var out strings.Builder
+	PrintReport(&out, "localhost:50051", RunReport{Report: engine.Report{
+		Duration: 3 * time.Second,
+		Methods: []engine.MethodReport{{
+			Method: "a.B/One", Sent: 60, Failed: 60, TimedOut: 60,
+			SilentFrom: &zero, SentRPS: 20, RPSLow: 20, RPSHigh: 20, Timeout: 300 * time.Millisecond,
+		}},
+	}})
+	text := out.String()
+	if !strings.Contains(text, "the target answered nothing at all") {
+		t.Errorf("report does not say the target answered nothing:\n%s", text)
+	}
+	for _, wrong := range []string{"silent at", "went silent", "nothing after the call"} {
+		if strings.Contains(text, wrong) {
+			t.Errorf("report says %q of a target that never answered:\n%s", wrong, text)
+		}
+	}
+}
+
+func TestPrintReportNamesTheSentRateOfASilence(t *testing.T) {
+	for _, tc := range []struct {
+		sent      int
+		want, not string
+	}{
+		{150, "sent at 150 rps (planned 200)", "at 200 rps"},
+		{190, "at 190 rps,", "planned"},
+		{179, "sent at 179 rps (planned 200)", "at 200 rps"},
+		{181, "at 181 rps,", "planned"},
+		{219, "at 219 rps,", "planned"},
+		{221, "sent at 221 rps (planned 200)", "at 200 rps"},
+	} {
+		from := 2
+		var out strings.Builder
+		PrintReport(&out, "localhost:50051", RunReport{Report: engine.Report{
+			Duration: 5 * time.Second,
+			Methods: []engine.MethodReport{{
+				Method: "a.B/One", Sent: 600, Failed: 300, TimedOut: 300,
+				SilentFrom: &from, SentRPS: tc.sent, RPSLow: 200, RPSHigh: 200, Timeout: time.Second,
+			}},
+		}})
+		text := out.String()
+		if !strings.Contains(text, tc.want) || strings.Contains(text, tc.not) {
+			t.Errorf("sent %d: want %q and no %q:\n%s", tc.sent, tc.want, tc.not, text)
+		}
 	}
 }

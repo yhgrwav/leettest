@@ -491,3 +491,21 @@ func TestJSON_LatenciesAreNotRoundedForTheScreen(t *testing.T) {
 		t.Errorf("p50 %v, p99 %v; want 12344 and 12444, not the screen's 12.3ms", p50, p99)
 	}
 }
+
+// Ground: contract — silent_sent_rps is the text's "at X rps" of a silence,
+// and null without one: a 0 would read as nothing sent.
+func TestJSON_SilentSentRPSGoesWithTheSilence(t *testing.T) {
+	from := 2
+	for _, tc := range []struct {
+		silent *int
+		want   any
+	}{{&from, 150.0}, {nil, nil}} {
+		out := writeJSON(t, jsonRun(engine.Report{Methods: []engine.MethodReport{{
+			Method: "a.B/One", Sent: 10, SilentFrom: tc.silent, SentRPS: 150,
+		}}}))
+		method := field(t, out, "methods").([]any)[0].(map[string]any)
+		if got, ok := method["silent_sent_rps"]; !ok || got != tc.want {
+			t.Errorf("silent from %v: silent_sent_rps = %v (present %v), want %v", tc.silent, got, ok, tc.want)
+		}
+	}
+}
