@@ -16,24 +16,60 @@ package cli
 
 import (
 	"fmt"
+	"math"
 	"slices"
 	"strings"
 
 	"github.com/yhgrwav/leettest/pkg/engine"
 )
 
-// clientWaitsMoved reports the methods whose printed p99 changes when every
-// client-side wait is taken out — start lag, connection, stream — and whether
-// that or calls never sent make a case for a verdict.
+// clientWaitsMoved reports the methods whose p99 drops by a tenth or more
+// when every client-side wait is taken out — start lag, connection, stream —
+// and whether that or calls never sent make a case for a verdict. A tenth is
+// a hypothesis (docs/decisions.md); it is taken on the histogram's values,
+// not the printed ones, lower bounds included: calls held for a stream to
+// their deadline leave both p99s bounds a long way apart.
 func clientWaitsMoved(report engine.Report) (moved []*engine.MethodReport, limited bool) {
 	for i := range report.Methods {
 		m := &report.Methods[i]
-		if m.P99WithoutClientWaits.Defined && formatQuantile(m.P99) != formatQuantile(m.P99WithoutClientWaits) {
+		if m.P99.Defined && m.P99WithoutClientWaits.Defined &&
+			10*(m.P99.Value-m.P99WithoutClientWaits.Value) >= m.P99.Value {
 			moved = append(moved, m)
 		}
 	}
 
 	return moved, len(moved) > 0 || report.NotSent > 0
+}
+
+// clientWaitsShifted reports the methods whose printed p99 changes when the
+// client-side waits are taken out, by less than clientWaitsMoved asks.
+func clientWaitsShifted(report engine.Report) (shifted []*engine.MethodReport) {
+	moved, _ := clientWaitsMoved(report)
+	for i := range report.Methods {
+		m := &report.Methods[i]
+		if exactP99s(m) && !slices.Contains(moved, m) && formatQuantile(m.P99) != formatQuantile(m.P99WithoutClientWaits) {
+			shifted = append(shifted, m)
+		}
+	}
+
+	return shifted
+}
+
+// clientWaitsKept says no method's printed p99 changes without the waits:
+// only then can a note say they did not move it.
+func clientWaitsKept(report engine.Report) bool {
+	for i := range report.Methods {
+		m := &report.Methods[i]
+		if m.P99WithoutClientWaits.Defined && formatQuantile(m.P99) != formatQuantile(m.P99WithoutClientWaits) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func exactP99s(m *engine.MethodReport) bool {
+	return m.P99.Defined && m.P99.Exact && m.P99WithoutClientWaits.Defined && m.P99WithoutClientWaits.Exact
 }
 
 func plural(n int, word string) string {
@@ -243,10 +279,15 @@ func streamNotes(report engine.Report) []string {
 		notes = append(notes, fmt.Sprintf("%s: p99 without client-side waits (generator, connection, stream) is %s.",
 			displayMethod(m.Method), formatQuantile(m.P99WithoutClientWaits)))
 	}
+	for _, m := range clientWaitsShifted(report) {
+		added := m.P99.Value - m.P99WithoutClientWaits.Value
+		notes = append(notes, fmt.Sprintf("%s: client-side waits added %s to p99 (%d%%).",
+			displayMethod(m.Method), formatLatency(added), int(math.Round(100*float64(added)/float64(m.P99.Value)))))
+	}
 
 	const unmoved = "client-side waits (generator, connection, stream) did not move p99."
 	switch {
-	case limited:
+	case limited, !clientWaitsKept(report):
 	case report.StreamWaited > 0:
 		notes = append(notes, fmt.Sprintf("%d of %d sent calls waited for a stream (p99 %s); %s",
 			report.StreamWaited, report.Sent, formatQuantile(report.StreamWaitP99), unmoved))
