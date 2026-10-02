@@ -427,13 +427,13 @@ type jsonClientWaits struct {
 	ConnectionTailCalls int `json:"connection_tail_calls"`
 }
 
-// tailWaitCause names verdictCause the way JSON does.
+// tailWaitCause is engine.Report.WaitVerdict's cause, as JSON names it.
 func tailWaitCause(report engine.Report) *string {
-	c, ok := verdictCause(report)
+	c, _, ok := report.WaitVerdict()
 	if !ok {
 		return nil
 	}
-	name := map[string]string{causeGenerator: "generator", causeStream: "stream", causeConnection: "connection"}[c.what]
+	name := string(c)
 
 	return &name
 }

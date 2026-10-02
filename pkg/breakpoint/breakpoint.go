@@ -127,7 +127,7 @@ const (
 	// HeldThroughout: no step broke; the limit is above Result.Held.
 	HeldThroughout
 	// RunLimit: the run, not the target, gave out at Result.Broke —
-	// generator late, in-flight cap, connection or stream: nothing is said
+	// generator late, in-flight cap or the stream limit: nothing is said
 	// about the target above Result.Held.
 	RunLimit
 )
@@ -276,7 +276,7 @@ func (s *search) step(ctx context.Context, rps int, hold time.Duration, kind Kin
 		return step, err
 	}
 	step.Report = report
-	step.Why = s.runLimit(rps, report)
+	step.Broken, step.Why = s.waits(rps, report)
 	if step.Why == "" {
 		step.Broken, step.Why = s.broken(report)
 	}
@@ -308,27 +308,26 @@ func (s *search) broke(rps int, outcome Outcome) Result {
 	return s.res
 }
 
-// runLimit names what of the run gave out at rps, or "".
-func (s *search) runLimit(rps int, r engine.Report) string {
+// waits judges a step by its client-side waits (engine.Report.WaitVerdict):
+// the run's side gave out — why without broken — or the target's side broke.
+// Nothing to say: "".
+func (s *search) waits(rps int, r engine.Report) (broken bool, why string) {
 	if r.CapHit != nil {
-		return fmt.Sprintf("in-flight cap reached at %d rps; the target above that is untested", rps)
+		return false, fmt.Sprintf("in-flight cap reached at %d rps; the target above that is untested", rps)
 	}
-	cause, limited := r.RunLimit()
-	if !limited {
-		return ""
-	}
-	switch cause {
-	case engine.WaitStream:
-		if r.Connections != nil && r.Connections.LimitAnnounced {
-			return fmt.Sprintf("stream limit %d of a single connection reached at %d rps; the target above that is untested",
-				r.Connections.LastLimit, rps)
-		}
-
-		return fmt.Sprintf("calls waited for a stream at %d rps; the target above that is untested", rps)
-	case engine.WaitConnection:
-		return fmt.Sprintf("the connection was not ready at %d rps; the target above that is untested", rps)
+	cause, side, ok := r.WaitVerdict()
+	switch {
+	case !ok:
+		return false, ""
+	case side == engine.SideTarget:
+		return true, fmt.Sprintf("the connection to the target was not ready for %d calls at %d rps", r.ConnectionCauseCalls, rps)
+	case cause == engine.WaitStream && r.Connections != nil && r.Connections.LimitAnnounced:
+		return false, fmt.Sprintf("stream limit %d of a single connection reached at %d rps; the target above that is untested",
+			r.Connections.LastLimit, rps)
+	case cause == engine.WaitStream:
+		return false, fmt.Sprintf("calls waited for a stream at %d rps; the target above that is untested", rps)
 	default:
-		return fmt.Sprintf("the generator fell behind at %d rps; the target above that is untested", rps)
+		return false, fmt.Sprintf("the generator fell behind at %d rps; the target above that is untested", rps)
 	}
 }
 

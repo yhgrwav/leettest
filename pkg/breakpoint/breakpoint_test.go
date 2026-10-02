@@ -425,6 +425,52 @@ func TestSearch_AStreamLimitIsTheRunsAndSaysSo(t *testing.T) {
 	}
 }
 
+// A connection not ready is the target's side (#90): a server that starts to
+// drop or refuse connections under load is the break the search looks for.
+// A network blip clears on the repeat, like any noise.
+func TestSearch_AConnectionNotReadyIsTheTargetBreaking(t *testing.T) {
+	refused := func(r *engine.Report) {
+		r.Methods[0].P99WithoutClientWaits = exact(10 * time.Millisecond)
+		r.ConnectionTailCalls, r.ConnectionCauseCalls = 30, 40
+	}
+
+	var asked []int
+	target := func(rps int) engine.Report {
+		r := capacity(10000)(rps)
+		if rps >= 195 {
+			refused(&r)
+		}
+
+		return r
+	}
+	res, _ := Search(t.Context(), plan, fake(target, &asked))
+	if res.Outcome != BrokeBetween || res.Held != 156 || res.Broke != 195 {
+		t.Errorf("%v held %d broke %d, want BrokeBetween 156 195", res.Outcome, res.Held, res.Broke)
+	}
+	i := slices.IndexFunc(res.Steps, func(s Step) bool { return s.RPS == 195 })
+	if want := "the connection to the target was not ready for 40 calls at 195 rps"; i < 0 || res.Steps[i].Why != want {
+		t.Errorf("steps %+v, want 195 to say %q", res.Steps, want)
+	}
+
+	asked = nil
+	seen := 0
+	blip := func(rps int) engine.Report {
+		r := capacity(270)(rps)
+		if rps == 195 {
+			seen++
+			if seen == 1 {
+				refused(&r)
+			}
+		}
+
+		return r
+	}
+	res, _ = Search(t.Context(), plan, fake(blip, &asked))
+	if res.Outcome != BrokeBetween || res.Held != 244 || res.Broke != 305 || !slices.Contains(res.Notes, "195 broke once, held on repeat") {
+		t.Errorf("%v held %d broke %d notes %q, want 244 305 past a blip at 195", res.Outcome, res.Held, res.Broke, res.Notes)
+	}
+}
+
 // Ground: boundary — the criteria at their edges: failures at exactly 1%
 // break, the knee only past 3× the first step's p99, a user's p99 limit
 // replaces the knee.
