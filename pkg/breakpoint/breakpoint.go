@@ -139,10 +139,31 @@ type Step struct {
 	// Broken says the step broke; Why names the criterion with its numbers.
 	Broken bool
 	Why    string
-	// Repeat marks the run that confirmed a broken step; Probe a recovery
-	// probe before it.
-	Repeat bool
-	Probe  bool
+	Kind   Kind
+}
+
+// Kind is what a run in Result.Steps was. Held and Broke come only from
+// RateStep and Repeat runs, never from a Probe.
+type Kind int
+
+const (
+	// RateStep is a step of the profile.
+	RateStep Kind = iota
+	// Repeat confirms or clears a broken step after the cooldown.
+	Repeat
+	// Probe checks at the first step's rate that the target has recovered.
+	Probe
+)
+
+func (k Kind) String() string {
+	switch k {
+	case Repeat:
+		return "repeat"
+	case Probe:
+		return "probe"
+	default:
+		return "step"
+	}
 }
 
 type Result struct {
@@ -174,7 +195,7 @@ func Search(ctx context.Context, plan Plan, run RunStep) (Result, error) {
 
 	s := search{plan: plan, run: run, first: rates[0]}
 	for i, rps := range rates {
-		step, err := s.step(ctx, rps, plan.Hold)
+		step, err := s.step(ctx, rps, plan.Hold, RateStep)
 		if err != nil || s.limited(step) {
 			return s.res, err
 		}
@@ -200,11 +221,10 @@ func Search(ctx context.Context, plan Plan, run RunStep) (Result, error) {
 			}
 		}
 
-		repeat, err := s.step(ctx, rps, plan.Hold)
+		repeat, err := s.step(ctx, rps, plan.Hold, Repeat)
 		if err != nil {
 			return s.res, err
 		}
-		s.res.Steps[len(s.res.Steps)-1].Repeat = true
 		if s.limited(repeat) {
 			return s.res, nil
 		}
@@ -235,12 +255,12 @@ type search struct {
 }
 
 // step runs rps for hold and judges it, or names the cap that cannot run it.
-func (s *search) step(ctx context.Context, rps int, hold time.Duration) (Step, error) {
+func (s *search) step(ctx context.Context, rps int, hold time.Duration, kind Kind) (Step, error) {
 	need := engine.InFlightNeed([]engine.Call{{
 		Timeout: s.plan.Timeout,
 		Stages:  []engine.Stage{{StartRPS: rps, TargetRPS: rps, Duration: hold}},
 	}})
-	step := Step{RPS: rps}
+	step := Step{RPS: rps, Kind: kind}
 	if s.plan.MaxInFlight > 0 && need > s.plan.MaxInFlight {
 		step.Why = fmt.Sprintf("in-flight cap %d is too low for %d rps with timeout %v", s.plan.MaxInFlight, rps, s.plan.Timeout)
 		s.res.Steps = append(s.res.Steps, step)
@@ -337,11 +357,10 @@ func (s *search) broken(r engine.Report) (broken bool, why string) {
 // within Recovered of the baseline.
 func (s *search) probe(ctx context.Context) (bool, error) {
 	for range MaxProbes {
-		step, err := s.step(ctx, s.first, ProbeHold(s.first))
+		step, err := s.step(ctx, s.first, ProbeHold(s.first), Probe)
 		if err != nil {
 			return false, err
 		}
-		s.res.Steps[len(s.res.Steps)-1].Probe = true
 		if !step.Broken && step.Why == "" && float64(p99(step.Report)) <= Recovered*float64(s.baseline) {
 			return true, nil
 		}

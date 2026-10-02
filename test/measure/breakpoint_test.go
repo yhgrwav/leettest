@@ -154,7 +154,7 @@ func TestBreakpoint_ATargetThatDoesNotRecoverIsNamedSo(t *testing.T) {
 	if res.Outcome != breakpoint.BrokeBetween || !recovered {
 		t.Errorf("%v notes %q, want BrokeBetween that did not recover", res.Outcome, res.Notes)
 	}
-	if slices.ContainsFunc(res.Steps, func(s breakpoint.Step) bool { return s.Repeat }) {
+	if slices.ContainsFunc(res.Steps, func(s breakpoint.Step) bool { return s.Kind == breakpoint.Repeat }) {
 		t.Errorf("a repeat ran against a target that never recovered")
 	}
 }

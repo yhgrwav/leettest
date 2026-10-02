@@ -204,7 +204,7 @@ func TestSearch_NamesTheIntervalAndRepeatsTheBrokenStep(t *testing.T) {
 	if len(res.Steps) == 0 {
 		t.Fatalf("no steps in the result")
 	}
-	if last := res.Steps[len(res.Steps)-1]; !last.Repeat || !last.Broken {
+	if last := res.Steps[len(res.Steps)-1]; last.Kind != Repeat || !last.Broken {
 		t.Errorf("the last step %+v, want the broken repeat", last)
 	}
 }
@@ -346,6 +346,35 @@ func TestSearch_AFirstStepBrokenTwiceSaysToStartLower(t *testing.T) {
 	}
 	if want := "no lower step to check recovery against; start lower (from) for a reliable result"; !slices.Contains(res.Notes, want) {
 		t.Errorf("notes %q, want %q", res.Notes, want)
+	}
+}
+
+// Ground: contract — a probe is not a step of the profile: its rate is the
+// first step's, below the interval, so its verdict never moves Held or Broke,
+// recovered or not, and each run in the result says what it was.
+func TestSearch_AProbeNeverNamesTheInterval(t *testing.T) {
+	for name, slow := range map[string]int{"recovered on the third": 2, "never recovered": MaxProbes} {
+		var asked []int
+		target := func(rps int) engine.Report {
+			if rps == 100 && len(asked) > 6 && slow > 0 {
+				slow--
+
+				return report(1000, 20, 80*time.Millisecond, 80*time.Millisecond)
+			}
+
+			return capacity(270)(rps)
+		}
+		res, _ := Search(t.Context(), plan, fake(target, &asked))
+		if res.Held != 244 || res.Broke != 305 {
+			t.Errorf("%s: held %d broke %d, want 244 305 whatever the probes at 100", name, res.Held, res.Broke)
+		}
+		var kinds []Kind
+		for _, s := range res.Steps {
+			kinds = append(kinds, s.Kind)
+		}
+		if i := slices.Index(kinds, Probe); i != 6 || slices.ContainsFunc(res.Steps[:6], func(s Step) bool { return s.Kind != RateStep }) {
+			t.Errorf("%s: kinds %v, want six steps, then probes", name, kinds)
+		}
 	}
 }
 
