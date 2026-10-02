@@ -23,12 +23,42 @@ const (
 	WaitConnection WaitCause = "connection"
 )
 
-// RunLimit says whether the run, not the target, set the tail (#93, #140):
-// some method's p99 drops by a tenth or more without the client-side waits,
-// or calls went unsent, and some wait is in the p99 tail. cause is the one
-// most common there. The text report's verdict and a breaking-point search
-// decide by this one rule.
-func (r Report) RunLimit() (cause WaitCause, limited bool) {
+// Side is whose limit a client-side wait shows.
+type Side string
+
+const (
+	// SideRun: the generator or the connection's stream limit held calls
+	// back; the target above that is untested.
+	SideRun Side = "run"
+	// SideTarget: the connection was not ready — the target or the network
+	// refusing it (#90).
+	SideTarget Side = "target"
+)
+
+// Side is whose limit the cause shows.
+func (c WaitCause) Side() Side {
+	if c == WaitConnection {
+		return SideTarget
+	}
+
+	return SideRun
+}
+
+// WaitVerdict says whether client-side waits set the tail (#93, #140) and
+// whose limit that is: some method's p99 drops by a tenth or more without
+// the waits, or calls went unsent, and some wait is in the p99 tail. cause is
+// the one most common there. The text report's verdict and a breaking-point
+// search decide by this one rule.
+func (r Report) WaitVerdict() (cause WaitCause, side Side, ok bool) {
+	cause, ok = r.waitCause()
+	if !ok {
+		return "", "", false
+	}
+
+	return cause, cause.Side(), true
+}
+
+func (r Report) waitCause() (cause WaitCause, ok bool) {
 	if !r.ClientWaitsMoved() && r.NotSent == 0 {
 		return "", false
 	}

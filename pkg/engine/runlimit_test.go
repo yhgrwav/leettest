@@ -52,7 +52,7 @@ func statsOf(n, unsent int, lag, stream time.Duration) Report {
 // The rule on the engine's own reports, not hand-made ones, and the fields
 // that hand-made reports in other packages' tests must carry to match: a
 // wait that moved p99 or unsent calls come with that cause's tail calls.
-func TestReport_RunLimitOnTheEnginesOwnReports(t *testing.T) {
+func TestReport_WaitVerdictOnTheEnginesOwnReports(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		report  Report
@@ -64,7 +64,7 @@ func TestReport_RunLimitOnTheEnginesOwnReports(t *testing.T) {
 		{"3 unsent, held for a stream", statsOf(200, 3, 0, 0), WaitStream, true},
 	} {
 		r := tc.report
-		cause, limited := r.RunLimit()
+		cause, _, limited := r.WaitVerdict()
 		if cause != tc.cause || limited != tc.limited {
 			t.Errorf("%s: %q %v, want %q %v", tc.name, cause, limited, tc.cause, tc.limited)
 		}
@@ -81,28 +81,31 @@ func TestReport_RunLimitOnTheEnginesOwnReports(t *testing.T) {
 	}
 }
 
-// Ground: contract — one rule for the report's verdict and the search's
-// "run's limit" (#140, moved from internal/cli): a tenth of p99 on the
-// histogram's values, or unsent calls, and a wait in the tail.
-func TestReport_RunLimitIsTheVerdictRule(t *testing.T) {
+// Ground: contract — one rule for the report's verdict and the search (#140,
+// moved from internal/cli): a tenth of p99 on the histogram's values, or
+// unsent calls, and a wait in the tail; and one place says whose limit it is:
+// generator and stream the run's, a connection not ready the target's (#90).
+func TestReport_WaitVerdictIsTheVerdictRule(t *testing.T) {
 	q := func(ms float64) metrics.Quantile {
 		return metrics.Quantile{Value: time.Duration(ms * float64(time.Millisecond)), Exact: true, Defined: true}
 	}
 	for _, tc := range []struct {
-		name    string
-		report  Report
-		cause   WaitCause
-		limited bool
+		name   string
+		report Report
+		cause  WaitCause
+		side   Side
+		ok     bool
 	}{
-		{"1.1ms of 21.9ms", Report{GeneratorTailCalls: 100, Methods: []MethodReport{{P99: q(21.9), P99WithoutClientWaits: q(20.8)}}}, "", false},
-		{"exactly a tenth", Report{GeneratorTailCalls: 100, Methods: []MethodReport{{P99: q(20), P99WithoutClientWaits: q(18)}}}, WaitGenerator, true},
-		{"unsent for a stream", Report{NotSent: 2, NotSentStream: 2, StreamTailCalls: 5, Methods: []MethodReport{{P99: q(20), P99WithoutClientWaits: q(20)}}}, WaitStream, true},
-		{"moved, nobody waited in the tail", Report{Methods: []MethodReport{{P99: q(20), P99WithoutClientWaits: q(10)}}}, "", false},
-		{"the larger cause in the tail", Report{GeneratorTailCalls: 3, StreamTailCalls: 9, Methods: []MethodReport{{P99: q(20), P99WithoutClientWaits: q(10)}}}, WaitStream, true},
+		{"1.1ms of 21.9ms", Report{GeneratorTailCalls: 100, Methods: []MethodReport{{P99: q(21.9), P99WithoutClientWaits: q(20.8)}}}, "", "", false},
+		{"exactly a tenth", Report{GeneratorTailCalls: 100, Methods: []MethodReport{{P99: q(20), P99WithoutClientWaits: q(18)}}}, WaitGenerator, SideRun, true},
+		{"unsent for a stream", Report{NotSent: 2, NotSentStream: 2, StreamTailCalls: 5, Methods: []MethodReport{{P99: q(20), P99WithoutClientWaits: q(20)}}}, WaitStream, SideRun, true},
+		{"moved, nobody waited in the tail", Report{Methods: []MethodReport{{P99: q(20), P99WithoutClientWaits: q(10)}}}, "", "", false},
+		{"the larger cause in the tail", Report{GeneratorTailCalls: 3, StreamTailCalls: 9, Methods: []MethodReport{{P99: q(20), P99WithoutClientWaits: q(10)}}}, WaitStream, SideRun, true},
+		{"a connection not ready", Report{ConnectionTailCalls: 9, Methods: []MethodReport{{P99: q(20), P99WithoutClientWaits: q(10)}}}, WaitConnection, SideTarget, true},
 	} {
-		cause, limited := tc.report.RunLimit()
-		if cause != tc.cause || limited != tc.limited {
-			t.Errorf("%s: %q %v, want %q %v", tc.name, cause, limited, tc.cause, tc.limited)
+		cause, side, ok := tc.report.WaitVerdict()
+		if cause != tc.cause || side != tc.side || ok != tc.ok {
+			t.Errorf("%s: %q %q %v, want %q %q %v", tc.name, cause, side, ok, tc.cause, tc.side, tc.ok)
 		}
 	}
 }
