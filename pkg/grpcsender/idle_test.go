@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -65,21 +66,27 @@ func TestConnect_AnIdleTimeoutShorterThanTheConnectIsRefused(t *testing.T) {
 	if !errors.Is(err, ErrIdleShorterThanConnect) || time.Since(start) > 100*time.Millisecond {
 		t.Fatalf("after %v: %v, want ErrIdleShorterThanConnect at once", time.Since(start), err)
 	}
-	for _, want := range []string{"100ms", "300ms", "raise the idle timeout or shorten the connect timeout"} {
+	for _, want := range []string{"idle timeout 100ms", "raise the idle timeout or shorten the connect timeout"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("%q does not say %q", err, want)
 		}
+	}
+	// What is left of 300ms, in whole milliseconds: 299.987ms reads as noise.
+	if !regexp.MustCompile(`connect timeout (300|299)ms;`).MatchString(err.Error()) {
+		t.Errorf("%q does not give the connect timeout as 300ms or 299ms", err)
 	}
 
 	// The deadline at the idle timeout leaves Connect a little less than it.
 	ctx, cancel = context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
-	if err := stalled(100 * time.Millisecond).Connect(ctx); errors.Is(err, ErrIdleShorterThanConnect) {
-		t.Errorf("idle equal to the connect time: %v, want it allowed", err)
+	if equal := stalled(100 * time.Millisecond).Connect(ctx); errors.Is(equal, ErrIdleShorterThanConnect) {
+		t.Errorf("idle equal to the connect time: %v, want it allowed", equal)
 	}
 
-	if err := refused(time.Hour).Connect(context.WithoutCancel(t.Context())); !errors.Is(err, ErrIdleShorterThanConnect) {
-		t.Errorf("no deadline: %v, want ErrIdleShorterThanConnect", err)
+	err = refused(time.Hour).Connect(context.WithoutCancel(t.Context()))
+	if want := "connect has no deadline; set a connect timeout or drop the idle timeout"; !errors.Is(err, ErrIdleShorterThanConnect) ||
+		!strings.Contains(err.Error(), want) {
+		t.Errorf("no deadline: %v, want ErrIdleShorterThanConnect saying %q", err, want)
 	}
 
 	ctx, cancel = context.WithTimeout(t.Context(), 50*time.Millisecond)
