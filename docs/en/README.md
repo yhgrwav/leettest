@@ -421,6 +421,48 @@ The text report is printed in ASCII only, so a console on any code page shows it
 Characters from outside ASCII, in a method name or in the target's error text, are printed as
 `\uXXXX` (past U+FFFF as a surrogate pair, as in JSON). `notes` in JSON carry the same escaped text.
 
+### Breaking-point search
+
+A `load.breakpoint` section instead of the call's `rps` and `duration`: LeetTest raises the load in
+steps and names the step the target held and the step it broke at. Exactly one call, without `rps`,
+`duration` or `load.warmup`.
+
+```yaml
+load:
+  calls:
+    - method: wallet.v1.WalletService/GetBalance
+      timeout: 500ms
+  breakpoint:
+    from: 100         # first step, rps
+    to: 2000          # never above it
+    factor: 1.25      # next step = last × factor; or step: 100 — that many rps more
+    settle: 5s        # the start of a step, out of its verdict; under half the hold
+    hold: 30s         # a step's length
+    p99_limit: 200ms  # optional; without it a step breaks at p99 over 3× the best held one
+```
+
+A step breaks when 1% of its calls or more failed or its p99 crossed the line. A broken step is
+repeated after a pause and, except the first, after probes at the first step: the target must come
+back to its old p99. A step counts as held only if the generator sent what was planned — at least
+99.9% of the measured window's calls. Otherwise it is the run's limit, not the target's. Before the
+first step stderr has `breakpoint: up to N steps, at most T`: how many steps and how long the search
+takes at worst. One connection for the whole search; if the target drops it, the step is broken,
+with no reconnect.
+
+The result (`outcome` in JSON) is a closed list: `broke` (held X, broke at Y), `broke_at_first`
+(broke at the first step — start lower), `held_all` (held every step up to `to`), `run_limit` (the
+generator, a connection's limit or `-max-in-flight` ran out: nothing is known about the target
+above), `stopped` (Ctrl+C), `invalid` (a step was an invalid run). The cause (`why`) is a closed
+list too: `errors`, `p99_limit`, `p99_vs_base`, `connection`, `no_recovery`, `generator`,
+`in_flight_cap`, `stream_limit`, `stream_wait`, `clock_step`, `request_errors` or `null`.
+`held_rps` and `broke_rps` are `null` where there is none. In search mode the JSON is another
+object: `mode: "breakpoint"`, none of a plain run's top-level fields, each run with its full report
+in `breakpoint.runs` (`kind`: `step`, `repeat`, `probe`; `planned_rps` and `sent_rps`). A plain run
+writes `mode: "run"`.
+
+Exit codes: `0` for `broke`, `broke_at_first`, `held_all`, `run_limit` — they are findings; `2` for
+`invalid`; `3` for a stop by one Ctrl+C.
+
 ## Not yet
 
 Ramp-up from zero to the target RPS, pass/fail thresholds for CI, export to
