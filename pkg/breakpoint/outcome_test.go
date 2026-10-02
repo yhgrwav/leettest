@@ -17,7 +17,6 @@ package breakpoint
 import (
 	"context"
 	"fmt"
-	"math"
 	"slices"
 	"testing"
 	"time"
@@ -25,64 +24,105 @@ import (
 	"github.com/yhgrwav/leettest/pkg/engine"
 )
 
-// long is a plan whose measured window, 900ms, makes the planned call count
-// of a step large enough to tell a short run from rounding.
-var long = Plan{From: 100, To: 400, Settle: 100 * time.Millisecond, Hold: time.Second}
-
-// sending is a target of capacity 10000 that sends every planned call of
-// long's window, and share of them at rps short.
-func sending(short int, share float64) func(rps int) engine.Report {
+// sending is a target of capacity 10000 whose every run schedules scheduled
+// calls after its settle and sends sent of them at rps short, all at others.
+func sending(short, scheduled, sent int) func(rps int) engine.Report {
 	return func(rps int) engine.Report {
-		planned := float64(rps) * (long.Hold - long.Settle).Seconds()
-		sent := int(math.Ceil(planned))
+		r := report(scheduled, 0, 20*time.Millisecond, 20*time.Millisecond)
+		r.Scheduled = scheduled
 		if rps == short {
-			sent = int(planned * share)
+			r.Sent, r.Methods[0].Sent, r.Methods[0].Latencies = sent, sent, sent
 		}
 
-		return report(sent, 0, 20*time.Millisecond, 20*time.Millisecond)
+		return r
 	}
 }
 
-// A step is held at its planned rps only if the generator sent it: a run
-// that sent 90% of its planned calls is the run's limit, not a held step.
-// Within 1% (at least one call) is held: the last tick may fall outside.
+// A step is held at its planned rps only if the generator sent it: the
+// planned calls are the ticks the schedule put in the measured window
+// (Report.Scheduled), sent are counted in the same window. Short by 0.1% of
+// them, at least one call, still holds; one call more is the run's limit.
 func TestSearch_AStepTheGeneratorDidNotSendIsNotHeld(t *testing.T) {
-	var asked []int
-	res, err := Search(t.Context(), long, fake(sending(125, 0.9), &asked))
-	if err != nil {
-		t.Fatalf("search: %v", err)
-	}
-	if res.Outcome != RunLimit || res.Held != 100 || res.Broke != 125 || res.Cause != CauseGenerator {
-		t.Errorf("%v held %d at %d cause %v, want RunLimit 100 125 generator", res.Outcome, res.Held, res.Broke, res.Cause)
-	}
-	if !slices.Equal(asked, []int{100, 125}) {
-		t.Errorf("ran %v, want [100 125]", asked)
-	}
-	if last := res.Steps[len(res.Steps)-1]; last.Broken || last.Cause != CauseGenerator {
-		t.Errorf("last step broken %v cause %v, want the run's limit: not broken, generator", last.Broken, last.Cause)
-	}
+	for _, tc := range []struct {
+		scheduled, sent int
+		held            bool
+	}{
+		{1000, 1000, true}, {1000, 999, true}, {1000, 998, false},
+		{100, 99, true}, {100, 98, false},
+		{20000, 19980, true}, {20000, 19979, false},
+	} {
+		var asked []int
+		res, err := Search(t.Context(), plan, fake(sending(125, tc.scheduled, tc.sent), &asked))
+		if err != nil {
+			t.Fatalf("search: %v", err)
+		}
+		if tc.held {
+			if res.Outcome != HeldThroughout {
+				t.Errorf("%d of %d: %v, want HeldThroughout", tc.sent, tc.scheduled, res.Outcome)
+			}
 
-	asked = nil
-	res, _ = Search(t.Context(), long, fake(sending(125, 0.995), &asked))
-	if res.Outcome != HeldThroughout {
-		t.Errorf("0.5%% short: %v, want HeldThroughout: within the tolerance", res.Outcome)
+			continue
+		}
+		if res.Outcome != RunLimit || res.Held != 100 || res.Broke != 125 || res.Cause != CauseGenerator {
+			t.Errorf("%d of %d: %v held %d at %d cause %v, want RunLimit 100 125 generator",
+				tc.sent, tc.scheduled, res.Outcome, res.Held, res.Broke, res.Cause)
+		}
+		if !slices.Equal(asked, []int{100, 125}) {
+			t.Errorf("%d of %d: ran %v, want [100 125]", tc.sent, tc.scheduled, asked)
+		}
+		if last := res.Steps[len(res.Steps)-1]; last.Broken || last.Cause != CauseGenerator {
+			t.Errorf("%d of %d: last step broken %v cause %v, want not broken, generator", tc.sent, tc.scheduled, last.Broken, last.Cause)
+		}
 	}
 }
 
-// Worst is every step broken once and held on its repeat after the
-// cooldown and all probes; the first step has no probes. 100, 125, 156:
-// 3 × (2 × 1s + 500ms) + 2 × 5 × ProbeHold(100) = 7.5s + 50s.
+// Worst is every step broken once and held on its repeat after its cooldown
+// and all probes, each run waiting out its calls in flight for the timeout:
+// 2N × (hold + timeout) + (N − 1) × MaxProbes × (ProbeHold(from) + timeout)
+// + N × cooldown. 100, 125, 156 with hold 1s, timeout 500ms:
+// 9s + 55s + 1.5s.
 func TestPlan_WorstIsEveryStepRepeatedAfterAllProbes(t *testing.T) {
 	p := Plan{From: 100, To: 156, Settle: 100 * time.Millisecond, Hold: time.Second, Timeout: 500 * time.Millisecond}
 	got, err := p.Worst()
 	if err != nil {
 		t.Fatalf("worst: %v", err)
 	}
-	if want := 57500 * time.Millisecond; got != want {
+	if want := 65500 * time.Millisecond; got != want {
 		t.Errorf("worst %v, want %v", got, want)
 	}
 	if _, err := (Plan{From: 0, To: 10, Hold: time.Second}).Worst(); err == nil {
 		t.Error("a plan that cannot run has no worst case")
+	}
+}
+
+// Worst is an upper bound of a real search: a target whose calls hang to the
+// timeout, every step broken once, a probe after each break but the first.
+func TestPlan_WorstBoundsASearchOfHangingCalls(t *testing.T) {
+	p := Plan{From: 1000, To: 1250, Settle: 10 * time.Millisecond, Hold: 50 * time.Millisecond, Timeout: 30 * time.Millisecond}
+	worst, err := p.Worst()
+	if err != nil {
+		t.Fatalf("worst: %v", err)
+	}
+	runs := 0
+	run := func(ctx context.Context, rps int, _, hold time.Duration, _ int) (engine.Report, error) {
+		runs++
+		if err := sleep(ctx, hold+p.Timeout); err != nil {
+			return engine.Report{}, err
+		}
+		if runs == 1 || runs == 3 { // each step's first run
+			return report(rps, rps/2, 30*time.Millisecond, 30*time.Millisecond), nil
+		}
+
+		return report(rps, 0, 20*time.Millisecond, 20*time.Millisecond), nil
+	}
+	start := time.Now()
+	res, _ := Search(t.Context(), p, run)
+	took := time.Since(start)
+	if res.Outcome != HeldThroughout || runs != 5 {
+		t.Fatalf("%v after %d runs, want HeldThroughout after 5: step, repeat, step, probe, repeat", res.Outcome, runs)
+	}
+	if took > worst {
+		t.Errorf("the search took %v, over its worst case %v", took, worst)
 	}
 }
 
@@ -187,6 +227,36 @@ func TestSearch_EveryCauseIsReachable(t *testing.T) {
 
 		return capacity(10000)(rps)
 	}
+	invalidAt305 := func(err error) RunStep {
+		return func(_ context.Context, rps int, _, _ time.Duration, _ int) (engine.Report, error) {
+			if rps == 305 {
+				return capacity(10000)(rps), err
+			}
+
+			return capacity(10000)(rps), nil
+		}
+	}
+	seen := map[Cause]bool{}
+	for _, tc := range []struct {
+		cause Cause
+		run   RunStep
+	}{
+		{CauseClockStep, invalidAt305(ErrClockStep)},
+		{CauseRequestErrors, invalidAt305(ErrRequestErrors)},
+	} {
+		res, _ := Search(t.Context(), plan, tc.run)
+		seen[res.Cause] = true
+		if res.Cause != tc.cause {
+			t.Errorf("cause %v (%v), want %v", res.Cause, res.Outcome, tc.cause)
+		}
+	}
+	defer func() {
+		for c := CauseErrors; c <= CauseRequestErrors; c++ {
+			if !seen[c] {
+				t.Errorf("cause %v reached by no scenario", c)
+			}
+		}
+	}()
 	for _, tc := range []struct {
 		cause  Cause
 		plan   Plan
@@ -214,6 +284,7 @@ func TestSearch_EveryCauseIsReachable(t *testing.T) {
 	} {
 		var asked []int
 		res, _ := Search(t.Context(), tc.plan, fake(tc.target, &asked))
+		seen[res.Cause] = true
 		if res.Cause != tc.cause {
 			t.Errorf("cause %v (%v, steps %d), want %v", res.Cause, res.Outcome, len(res.Steps), tc.cause)
 		}

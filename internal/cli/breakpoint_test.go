@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -163,7 +164,8 @@ func TestBreakpoint_EveryRunIsARowWithPlannedAndSent(t *testing.T) {
 // The plan line says before the first step how long the search can take.
 func TestBreakpoint_ThePlanLine(t *testing.T) {
 	p := breakpoint.Plan{From: 100, To: 156, Settle: 100 * time.Millisecond, Hold: time.Second, Timeout: 500 * time.Millisecond}
-	if got, want := PlanLine(p), "breakpoint: up to 3 steps, at most 57.5s"; got != want {
+	// Plan.Worst 65.5s + connect 5s, rounded up.
+	if got, want := PlanLine(p, 5*time.Second), "breakpoint: up to 3 steps, at most 1m11s"; got != want {
 		t.Errorf("plan line %q, want %q", got, want)
 	}
 }
@@ -219,6 +221,9 @@ func TestBreakpoint_JSONIsAContract(t *testing.T) {
 			if run["kind"] != step.Kind.String() || run["planned_rps"] != float64(step.RPS) {
 				t.Errorf("%s run %d: kind %v planned %v, want %v %d", name, i, run["kind"], run["planned_rps"], step.Kind, step.RPS)
 			}
+			if why, ok := run["why"]; !ok || (why != nil && !slices.Contains(whyNames, why)) {
+				t.Errorf("%s run %d: why %v (present %v), want null or one of %v", name, i, why, ok, whyNames)
+			}
 			if _, ok := run["sent_rps"].(float64); !ok {
 				t.Errorf("%s run %d: sent_rps %v, want a number", name, i, run["sent_rps"])
 			}
@@ -236,6 +241,25 @@ func TestBreakpoint_JSONIsAContract(t *testing.T) {
 		if run, _ := runs[1].(map[string]any); run["sent_rps"] != 112.0 || run["why"] != "generator" {
 			t.Errorf("short run: sent %v why %v, want 112 generator", run["sent_rps"], run["why"])
 		}
+	}
+}
+
+// whyNames is the closed list of why, in the spec and the README.
+var whyNames = []any{"errors", "p99_limit", "p99_vs_base", "connection", "no_recovery",
+	"generator", "in_flight_cap", "stream_limit", "stream_wait", "clock_step", "request_errors"}
+
+// Every cause has its JSON name from the closed list, and the list has no
+// name no cause maps to.
+func TestBreakpoint_EveryCauseHasAListedName(t *testing.T) {
+	var got []any
+	for c := breakpoint.CauseErrors; c <= breakpoint.CauseRequestErrors; c++ {
+		res := breakpoint.Result{Outcome: breakpoint.RunLimit, Broke: 100, Cause: c,
+			Steps: []breakpoint.Step{bpRun(breakpoint.RateStep, 100, 400, 21*time.Millisecond, false, c, "x")}}
+		bp, _ := searchJSON(t, res)["breakpoint"].(map[string]any)
+		got = append(got, bp["why"])
+	}
+	if !slices.Equal(got, whyNames) {
+		t.Errorf("why of each cause %v, want %v", got, whyNames)
 	}
 }
 

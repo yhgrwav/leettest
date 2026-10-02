@@ -33,8 +33,9 @@ type BreakpointRun struct {
 }
 
 // PlanLine is the line printed before the first step: how many steps and the
-// longest the search can take.
-func PlanLine(_ breakpoint.Plan) string {
+// longest the search can take, connecting within connect included, rounded
+// up to a second.
+func PlanLine(_ breakpoint.Plan, _ time.Duration) string {
 	return ""
 }
 
