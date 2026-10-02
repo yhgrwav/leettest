@@ -333,7 +333,8 @@ every latency. So on Linux the generator sleeps to a call with a precise system 
 microseconds, in a one-core container and on a host whose every core is busy. The measured cost is
 +3% to +45% of one core at 100–3000 calls a second for the whole run, however many methods there
 are. Where it works: Linux. macOS: the plain timer, not measured. Windows: the plain timer. There
-the lateness shows in the report as start lag.
+the lateness shows in the report as start lag. In a container with a CPU quota under two cores,
+rare start lags up to the quota period (usually 100 ms) are possible.
 
 The report goes to stdout, progress and errors to stderr.
 
