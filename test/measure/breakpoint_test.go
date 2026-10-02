@@ -67,33 +67,40 @@ func stepsOn(t *testing.T, s *stand.Stand, timeout time.Duration) breakpoint.Run
 
 // The premise of the cooldown before a repeat: a target keeps working off
 // the calls we gave up on, so a step right after a broken one meets its
-// backlog. 400 rps for 1.5s against 270 leaves (1/270 − 1/400) × 600 ≈ 0.72s
-// queued; 244 rps right after waits it out (p99 far over 20ms). After the
-// search's cooldown, max(timeout, settle) = 500ms, ~0.2s is left, and a step
-// below the capacity works it off at its start: p99 stays near 20ms.
+// backlog. 200 rps for 1s against 100 queues (1/100 − 1/200) × 200 = 1s; the
+// run returns once its last call times out, 500ms later, leaving ~0.5s, and
+// 50 rps right after waits it out (p99 far over 20ms). After a further
+// cooldown of max(timeout, settle) = 500ms nothing is left: p99 stays near
+// 20ms. Rates a -race build still sends on time (#144); the premise holds
+// only if they were sent, so a short run fails the test with its numbers.
 func TestBreakpoint_ATargetsQueueOutlivesTheStep(t *testing.T) {
-	target := stand.Start(stand.Capacity(270, 20*time.Millisecond))
+	target := stand.Start(stand.Capacity(100, 20*time.Millisecond))
 	t.Cleanup(target.Stop)
 
 	run := stepsOn(t, target, 500*time.Millisecond)
-	p99 := func(rps int) time.Duration {
-		r, err := run(t.Context(), rps, 0, 1500*time.Millisecond, 2*rps)
+	p99 := func(rps int, hold time.Duration) time.Duration {
+		r, err := run(t.Context(), rps, 0, hold, 2*rps)
 		if err != nil {
 			t.Fatalf("run %d: %v", rps, err)
 		}
+		if planned := float64(rps) * hold.Seconds(); float64(r.Sent) < 0.95*planned {
+			t.Fatalf("%d rps for %v sent %d of %.0f planned: the premise needs 95%%", rps, hold, r.Sent, planned)
+		}
+		t.Logf("%d rps for %v: sent %d, p99 %v", rps, hold, r.Sent, r.Methods[0].P99.Value)
 
 		return r.Methods[0].P99.Value
 	}
 
-	p99(400)
-	if got := p99(244); got < 100*time.Millisecond {
-		t.Errorf("right after a broken step, 244 rps p99 %v: no backlog seen", got)
+	p99(200, time.Second)
+	if got := p99(50, 1500*time.Millisecond); got < 100*time.Millisecond {
+		t.Errorf("right after a broken step, 50 rps p99 %v: no backlog seen", got)
 	}
 
-	p99(400)
+	// The probe above ran 1.5s into the backlog and worked it off.
+	p99(200, time.Second)
 	time.Sleep(500 * time.Millisecond)
-	if got := p99(244); got > 40*time.Millisecond {
-		t.Errorf("after a cooldown, 244 rps p99 %v, want near the 20ms delay", got)
+	if got := p99(50, 1500*time.Millisecond); got > 40*time.Millisecond {
+		t.Errorf("after a cooldown, 50 rps p99 %v, want near the 20ms delay", got)
 	}
 }
 
