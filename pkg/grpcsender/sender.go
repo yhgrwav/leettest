@@ -52,6 +52,9 @@ var (
 	// client certificate looks from the client.
 	ErrClosedAfterHandshake = errors.New("the target closed the connection right after the TLS handshake; " +
 		"it may require a client certificate or refuse the one given")
+	// ErrIdleShorterThanConnect is an IdleTimeout shorter than the time
+	// Connect has: the idle timer would cut the first dial before it ends.
+	ErrIdleShorterThanConnect = errors.New("idle timeout is shorter than the time to connect")
 )
 
 // Options describes the target and how to reach it.
@@ -78,6 +81,13 @@ type Options struct {
 	// A larger reply fails the call as a bad response with
 	// ErrResponseTooLarge. A call in flight may buffer up to twice this.
 	MaxResponseBytes int
+	// IdleTimeout closes the connection after this long without calls
+	// (grpc.WithIdleTimeout); 0 keeps grpc-go's default. Connect refuses one
+	// shorter than the time its ctx leaves it, or set without a deadline:
+	// the idle timer would cut the first dial before it ends, and Connect
+	// would hang to its deadline. An idle timeout given in DialOptions is
+	// not seen by this check.
+	IdleTimeout time.Duration
 	// DialOptions are passed through for cases the fields above do not cover,
 	// such as custom credentials or an in-process dialer in tests. Custom
 	// transport credentials replace the sender's own, which read the stream
