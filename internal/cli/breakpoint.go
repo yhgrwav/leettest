@@ -163,8 +163,13 @@ func headline(res breakpoint.Result) (head, criterion string) {
 // brokeLine names the criterion of the run that confirmed the break.
 func brokeLine(res breakpoint.Result) string {
 	for i := len(res.Steps) - 1; i >= 0; i-- {
-		if s := res.Steps[i]; s.Broken && s.RPS == res.Broke {
-			return fmt.Sprintf("%d rps: %s", s.RPS, s.Why)
+		if s := &res.Steps[i]; s.Broken && s.RPS == res.Broke {
+			line := fmt.Sprintf("%d rps: %s", s.RPS, s.Why)
+			if res.Cause == breakpoint.CauseNoRecovery {
+				line += fmt.Sprintf("; the target did not recover within %d probes", breakpoint.MaxProbes)
+			}
+
+			return line
 		}
 	}
 
@@ -183,6 +188,10 @@ func verdict(res *breakpoint.Result, i int) string {
 		return "invalid: " + s.Why
 	case s.Why != "":
 		return "run limit: " + s.Why
+	case s.Kind == breakpoint.Probe && s.Recovered:
+		return "recovered"
+	case s.Kind == breakpoint.Probe:
+		return "not recovered"
 	}
 
 	return "held"
@@ -247,12 +256,15 @@ type jsonBreakpoint struct {
 }
 
 type jsonRunBP struct {
-	Kind       string     `json:"kind"`
-	PlannedRPS int        `json:"planned_rps"`
-	SentRPS    int        `json:"sent_rps"`
-	Broken     bool       `json:"broken"`
-	Why        *string    `json:"why"`
-	Report     JSONReport `json:"report"`
+	Kind       string `json:"kind"`
+	PlannedRPS int    `json:"planned_rps"`
+	SentRPS    int    `json:"sent_rps"`
+	Broken     bool   `json:"broken"`
+	// Recovered is a probe's verdict: back within 1.5× the baseline; null
+	// for a step or a repeat.
+	Recovered *bool      `json:"recovered"`
+	Why       *string    `json:"why"`
+	Report    JSONReport `json:"report"`
 }
 
 func rate(n int) *int {
@@ -297,9 +309,13 @@ func NewBreakpointReport(run BreakpointRun) BreakpointReport {
 		case s.Report.Incomplete:
 			outcome = OutcomeIncomplete
 		}
+		var rec *bool
+		if s.Kind == breakpoint.Probe {
+			rec = &s.Recovered
+		}
 		bp.Runs = append(bp.Runs, jsonRunBP{
 			Kind: s.Kind.String(), PlannedRPS: s.RPS, SentRPS: sentRPS(run.Plan, s),
-			Broken: s.Broken, Why: causeName(s.Cause),
+			Broken: s.Broken, Recovered: rec, Why: causeName(s.Cause),
 			Report: NewJSONReport(JSONRun{Target: run.Target, Version: run.Version, Outcome: outcome, StartedAt: s.Report.StartedAt, Run: r}),
 		})
 	}

@@ -79,15 +79,15 @@ func TestSearch_AStepTheGeneratorDidNotSendIsNotHeld(t *testing.T) {
 // Worst is every step broken once and held on its repeat after its cooldown
 // and all probes, each run waiting out its calls in flight for the timeout:
 // 2N × (hold + timeout) + (N − 1) × MaxProbes × (ProbeHold(from) + timeout)
-// + N × cooldown. 100, 125, 156 with hold 1s, timeout 500ms:
-// 9s + 55s + 1.5s.
+// + N × cooldown + (2N + (N − 1) × MaxProbes) × RunSlack. 100, 125, 156 with
+// hold 1s, timeout 500ms: 9s + 55s + 1.5s + 16 × 100ms.
 func TestPlan_WorstIsEveryStepRepeatedAfterAllProbes(t *testing.T) {
 	p := Plan{From: 100, To: 156, Settle: 100 * time.Millisecond, Hold: time.Second, Timeout: 500 * time.Millisecond}
 	got, err := p.Worst()
 	if err != nil {
 		t.Fatalf("worst: %v", err)
 	}
-	if want := 65500 * time.Millisecond; got != want {
+	if want := 67100 * time.Millisecond; got != want {
 		t.Errorf("worst %v, want %v", got, want)
 	}
 	if _, err := (Plan{From: 0, To: 10, Hold: time.Second}).Worst(); err == nil {
@@ -95,21 +95,31 @@ func TestPlan_WorstIsEveryStepRepeatedAfterAllProbes(t *testing.T) {
 	}
 }
 
-// Worst is an upper bound of a real search: a target whose calls hang to the
-// timeout, every step broken once, a probe after each break but the first.
-func TestPlan_WorstBoundsASearchOfHangingCalls(t *testing.T) {
+// Worst is an upper bound of a search down its longest path, every run
+// waiting out its calls to the timeout: each step breaks once, each step but
+// the first waits through all MaxProbes probes (the last one recovers), and
+// every repeat holds. The runs by kind show each term of the formula ran.
+func TestPlan_WorstBoundsTheLongestSearch(t *testing.T) {
 	p := Plan{From: 1000, To: 1250, Settle: 10 * time.Millisecond, Hold: 50 * time.Millisecond, Timeout: 30 * time.Millisecond}
 	worst, err := p.Worst()
 	if err != nil {
 		t.Fatalf("worst: %v", err)
 	}
-	runs := 0
+	seen, probes := map[int]int{}, 0
 	run := func(ctx context.Context, rps int, _, hold time.Duration, _ int) (engine.Report, error) {
-		runs++
 		if err := sleep(ctx, hold+p.Timeout); err != nil {
 			return engine.Report{}, err
 		}
-		if runs == 1 || runs == 3 { // each step's first run
+		if hold != p.Hold { // a probe: four slow, the fifth recovered
+			probes++
+			if probes < MaxProbes {
+				return report(rps, 0, 45*time.Millisecond, 45*time.Millisecond), nil
+			}
+
+			return report(rps, 0, 20*time.Millisecond, 20*time.Millisecond), nil
+		}
+		seen[rps]++
+		if seen[rps] == 1 { // each step's first run breaks
 			return report(rps, rps/2, 30*time.Millisecond, 30*time.Millisecond), nil
 		}
 
@@ -118,8 +128,12 @@ func TestPlan_WorstBoundsASearchOfHangingCalls(t *testing.T) {
 	start := time.Now()
 	res, _ := Search(t.Context(), p, run)
 	took := time.Since(start)
-	if res.Outcome != HeldThroughout || runs != 5 {
-		t.Fatalf("%v after %d runs, want HeldThroughout after 5: step, repeat, step, probe, repeat", res.Outcome, runs)
+	kinds := map[Kind]int{}
+	for _, s := range res.Steps {
+		kinds[s.Kind]++
+	}
+	if res.Outcome != HeldThroughout || kinds[RateStep] != 2 || kinds[Repeat] != 2 || kinds[Probe] != MaxProbes {
+		t.Fatalf("%v with %v, want HeldThroughout with 2 steps, 2 repeats, %d probes", res.Outcome, kinds, MaxProbes)
 	}
 	if took > worst {
 		t.Errorf("the search took %v, over its worst case %v", took, worst)
@@ -189,6 +203,46 @@ func TestSearch_AnInvalidRunInvalidatesTheSearch(t *testing.T) {
 		if n := len(res.Steps); n != 6 || res.Steps[n-1].RPS != 305 || res.Steps[n-1].Cause != tc.cause {
 			t.Errorf("%v: %d runs, want 6 ending with the invalid 305", tc.err, n)
 		}
+	}
+}
+
+// A probe that did not break may still not have recovered: p99 45ms against
+// a 20ms baseline is under the knee (3×) but over Recovered (1.5×). Each
+// probe says which it was; the search names the break as not recovered.
+func TestSearch_AProbeUnderTheKneeButOverRecoveredDidNotRecover(t *testing.T) {
+	broke := false
+	target := func(rps int) engine.Report {
+		if broke || rps > 170 {
+			broke = true
+			if rps == 100 {
+				return report(1000, 0, 45*time.Millisecond, 45*time.Millisecond)
+			}
+
+			return report(rps*10, rps/2, 500*time.Millisecond, 500*time.Millisecond)
+		}
+
+		return capacity(10000)(rps)
+	}
+	var asked []int
+	res, _ := Search(t.Context(), plan, fake(target, &asked))
+	probes := 0
+	for _, s := range res.Steps {
+		if s.Kind != Probe {
+			continue
+		}
+		probes++
+		if s.Broken || s.Recovered {
+			t.Errorf("probe broken %v recovered %v, want neither: 45ms is under 3× and over 1.5× of 20ms", s.Broken, s.Recovered)
+		}
+	}
+	if probes != MaxProbes || res.Cause != CauseNoRecovery {
+		t.Errorf("%d probes, cause %v; want %d, no_recovery", probes, res.Cause, MaxProbes)
+	}
+
+	broke = false
+	res, _ = Search(t.Context(), plan, fake(capacity(170), &asked))
+	if i := slices.IndexFunc(res.Steps, func(s Step) bool { return s.Kind == Probe }); i < 0 || !res.Steps[i].Recovered {
+		t.Errorf("a probe at the baseline must say it recovered: %+v", res.Steps)
 	}
 }
 
