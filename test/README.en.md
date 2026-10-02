@@ -68,7 +68,7 @@ call's arrival time is an observation from outside the generator.
 
 - a breaking-point search: the verdict "the target does not hold X RPS" is not done yet;
 - the stand changes its delay by call number, not by time;
-- a cross-check against `k6` on the same stand (against `ghz` — `docs/compare-ghz.md`);
+- a cross-check against `k6` on the same stand (against `ghz` — [docs/en/compare-ghz.md](../docs/en/compare-ghz.md));
 - rate accuracy over a long run: 800 RPS for a minute — about 48,000 calls with no bursts.
 
 ## How we work
