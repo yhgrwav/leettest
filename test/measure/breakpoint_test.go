@@ -122,8 +122,8 @@ func TestBreakpoint_FindsTheStandsCapacity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("search: %v", err)
 	}
-	if res.Outcome != breakpoint.BrokeBetween || res.Held >= 270 || res.Broke < 270 {
-		t.Errorf("%v: held %d, broke %d; want BrokeBetween with 270 in (held, broke]", res.Outcome, res.Held, res.Broke)
+	if res.Outcome != breakpoint.BrokeBetween || res.Held != 244 || res.Broke != 305 {
+		t.Errorf("%v: held %d, broke %d; want BrokeBetween 244 305, the steps around 270", res.Outcome, res.Held, res.Broke)
 	}
 	for _, step := range res.Steps {
 		t.Logf("%d rps: sent %d, failed %d, broken %v (%s)", step.RPS, step.Report.Sent, step.Report.Failed, step.Broken, step.Why)

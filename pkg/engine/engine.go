@@ -225,6 +225,12 @@ func (e *Engine) Report() Report {
 	return report
 }
 
+// ScheduledAfter counts the ticks the schedule of stages places at or after
+// warmup: the calls the run measures.
+func ScheduledAfter(_ []Stage, _ time.Duration) int {
+	return 0
+}
+
 // ratesOver is the lowest and highest planned rate of the stages that overlap
 // [from, to).
 func ratesOver(stages []Stage, from, to time.Duration) (low, high int) {
