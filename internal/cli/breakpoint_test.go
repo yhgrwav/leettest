@@ -28,7 +28,7 @@ import (
 	"github.com/yhgrwav/leettest/pkg/metrics"
 )
 
-// bpPlan measures 4s of each step: planned calls = rps Г— 4.
+// bpPlan measures 4s of each step: planned calls = rps × 4.
 var bpPlan = breakpoint.Plan{From: 100, To: 400, Settle: time.Second, Hold: 5 * time.Second, Timeout: 500 * time.Millisecond}
 
 // bpRun is a run at rps of kind that sent sent calls with p99, judged as
@@ -48,7 +48,7 @@ func held(rps int) breakpoint.Step {
 	return bpRun(breakpoint.RateStep, rps, rps*4, 21*time.Millisecond, false, breakpoint.NoCause, "")
 }
 
-const kneeWhy = "p99 341ms = 16.2Г— baseline 21ms (no p99_limit set)"
+const kneeWhy = "p99 341ms = 16.2x baseline 21ms (no p99_limit set)"
 
 // outcomes is one result per outcome, with the headline the text report
 // opens with.
@@ -61,7 +61,7 @@ var outcomes = map[string]struct {
 		Steps: []breakpoint.Step{
 			held(100), held(125), held(156), held(195), held(244),
 			bpRun(breakpoint.RateStep, 305, 1220, 341*time.Millisecond, true, breakpoint.CauseP99VsBase, kneeWhy),
-			bpRun(breakpoint.Probe, 100, 500, 22*time.Millisecond, false, breakpoint.NoCause, ""),
+			bpRun(breakpoint.Probe, 100, 400, 22*time.Millisecond, false, breakpoint.NoCause, ""), // 5s probe, 4s measured
 			bpRun(breakpoint.Repeat, 305, 1220, 338*time.Millisecond, true, breakpoint.CauseP99VsBase, kneeWhy),
 		},
 	}, "held 244 rps, broke at 305 rps"},

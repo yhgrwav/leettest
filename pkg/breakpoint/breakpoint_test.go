@@ -266,7 +266,7 @@ func TestSearch_TheKneeBaselineIsTheLowestHeldP99(t *testing.T) {
 		t.Fatalf("steps %+v, no 195", res.Steps)
 	}
 	broken := res.Steps[i]
-	if want := "p99 70ms = 3.5× baseline 20ms (no p99_limit set)"; !strings.Contains(broken.Why, want) {
+	if want := "p99 70ms = 3.5x baseline 20ms (no p99_limit set)"; !strings.Contains(broken.Why, want) {
 		t.Errorf("why %q, want it to say %q", broken.Why, want)
 	}
 }

@@ -112,7 +112,62 @@ type Breakpoint struct {
 // Plan is the search's plan for a call with the given timeout and in-flight
 // cap (0 sizes the cap per step).
 func (b Breakpoint) Plan(timeout time.Duration, maxInFlight int) breakpoint.Plan {
-	return breakpoint.Plan{}
+	return breakpoint.Plan{
+		From: int(b.From), To: int(b.To), Factor: b.Factor, Step: int(b.Step),
+		Settle: b.Settle, Hold: b.Hold, Timeout: timeout, MaxInFlight: maxInFlight, P99Limit: b.P99Limit,
+	}
+}
+
+// validate refuses a section breakpoint.Plan.Rates refuses, named by the key
+// its check reads first.
+func (b Breakpoint) validate() error {
+	if b.P99Limit < 0 {
+		return fmt.Errorf("%w: breakpoint.p99_limit %s, want positive or left out", ErrBreakpoint, b.P99Limit)
+	}
+	_, err := b.Plan(time.Second, 0).Rates()
+	if err == nil {
+		return nil
+	}
+	key := "settle"
+	switch {
+	case b.From < 1:
+		key = "from"
+	case b.To < b.From:
+		key = "to"
+	case b.Factor != 0:
+		key = "factor"
+	case b.Step < 0:
+		key = "step"
+	case b.Hold <= 0:
+		key = "hold"
+	}
+
+	return fmt.Errorf("%w: breakpoint.%s: %w", ErrBreakpoint, key, err)
+}
+
+// validateSearch refuses what a search cannot run with: more than one call,
+// a warm-up of its own, the rate or length a search sets per step.
+func (l Load) validateSearch() []error {
+	var errs []error
+	if len(l.Calls) > 1 {
+		errs = append(errs, fmt.Errorf("%w: load.breakpoint searches one call, got %d", ErrBreakpoint, len(l.Calls)))
+	}
+	if l.Warmup != 0 {
+		errs = append(errs, fmt.Errorf("%w: load.warmup with load.breakpoint: each step has its breakpoint.settle", ErrBreakpoint))
+	}
+	for i, call := range l.Calls {
+		if call.RPS != 0 {
+			errs = append(errs, fmt.Errorf("%w: %s: rps with load.breakpoint: the search sets it", ErrBreakpoint, call.where(i)))
+		}
+		if call.Duration != 0 {
+			errs = append(errs, fmt.Errorf("%w: %s: duration with load.breakpoint: the search sets it", ErrBreakpoint, call.where(i)))
+		}
+	}
+	if err := l.Breakpoint.validate(); err != nil {
+		errs = append(errs, err)
+	}
+
+	return errs
 }
 
 // Rate is a whole number of requests per second. A fractional one is refused
@@ -185,9 +240,17 @@ func (l Load) Validate() error {
 	if len(l.Calls) == 0 {
 		errs = append(errs, ErrNoCalls)
 	}
+	if l.Breakpoint != nil {
+		errs = append(errs, l.validateSearch()...)
+	}
 	first := make(map[string]int, len(l.Calls))
 	for i, call := range l.Calls {
-		if err := call.Validate(); err != nil {
+		checked := call
+		if l.Breakpoint != nil {
+			// The search sets rps and duration; the rest is checked as always.
+			checked.RPS, checked.Duration = 1, time.Second
+		}
+		if err := checked.Validate(); err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", call.where(i), err))
 		}
 		if call.Duration > 0 && l.Warmup >= call.Duration {

@@ -195,6 +195,9 @@ func (e *Engine) Report() Report {
 	report := e.stats.Report()
 	report.Incomplete = e.incomplete.Load()
 	report.Planned = e.plannedDuration()
+	for _, call := range e.opts.Calls {
+		report.Scheduled += ScheduledAfter(call.Stages, e.opts.Warmup)
+	}
 	report.StartedAt = e.startedAt
 
 	if r, ok := e.opts.Sender.(ConnectionReporter); ok {
@@ -227,8 +230,23 @@ func (e *Engine) Report() Report {
 
 // ScheduledAfter counts the ticks the schedule of stages places at or after
 // warmup: the calls the run measures.
-func ScheduledAfter(_ []Stage, _ time.Duration) int {
-	return 0
+func ScheduledAfter(stages []Stage, warmup time.Duration) int {
+	var at time.Duration
+	n := 0
+	for _, stage := range stages {
+		for i := 0; ; i++ {
+			offset := time.Duration(i) * time.Second / time.Duration(stage.TargetRPS)
+			if offset >= stage.Duration {
+				break
+			}
+			if at+offset >= warmup {
+				n++
+			}
+		}
+		at += stage.Duration
+	}
+
+	return n
 }
 
 // ratesOver is the lowest and highest planned rate of the stages that overlap

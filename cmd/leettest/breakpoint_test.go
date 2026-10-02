@@ -133,15 +133,15 @@ func TestRun_ASearchNamesTheStandsCapacity(t *testing.T) {
 }
 
 // A search is of one method: a second call is a config error naming the key,
-// exit 2 before any load.
+// exit 1 (the run did not happen, as every config error) before any load.
 func TestRun_ASearchOfTwoCallsIsRefused(t *testing.T) {
 	res := runCLI(t.Context(), t, 10*time.Second, "-fake",
 		"-c", writeSearch(t, closedPort(t), checkMethod, "grpc.health.v1.Health/Watch"))
-	if exitCode(res.err) != 2 {
-		t.Fatalf("exit code %d, want 2", exitCode(res.err))
+	if exitCode(res.err) != 1 {
+		t.Fatalf("exit code %d, want 1: a config error, the run did not happen", exitCode(res.err))
 	}
-	if !strings.Contains(res.stderr, "load.breakpoint") || strings.Contains(res.stdout, "breaking point") {
-		t.Errorf("want an error naming load.breakpoint and no report:\nstdout %s\nstderr %s", res.stdout, res.stderr)
+	if !strings.Contains(res.err.Error(), "load.breakpoint") || res.stdout != "" {
+		t.Errorf("want an error naming load.breakpoint and no report:\nerr %v\nstdout %s", res.err, res.stdout)
 	}
 }
 

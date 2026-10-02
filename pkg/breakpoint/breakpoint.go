@@ -181,7 +181,13 @@ type Step struct {
 // Worst is the longest the search can take: every step breaks once and
 // holds on its repeat after the cooldown and all probes.
 func (p Plan) Worst() (time.Duration, error) {
-	return 0, nil
+	rates, err := p.Rates()
+	if err != nil {
+		return 0, err
+	}
+	n := time.Duration(len(rates))
+
+	return 2*n*(p.Hold+p.Timeout) + (n-1)*MaxProbes*(ProbeHold(rates[0])+p.Timeout) + n*p.Cooldown(), nil
 }
 
 // Kind is what a run in Result.Steps was. Held and Broke come only from
@@ -230,7 +236,8 @@ func ProbeHold(rps int) time.Duration {
 }
 
 // Search runs the plan's steps from the lowest until one breaks and a repeat
-// of it breaks too, or the plan ends.
+// of it breaks too, or the plan ends. A context ended on the way is the
+// outcome Stopped and an invalid run the outcome Invalid, not errors.
 func Search(ctx context.Context, plan Plan, run RunStep) (Result, error) {
 	rates, err := plan.Rates()
 	if err != nil {
@@ -238,6 +245,31 @@ func Search(ctx context.Context, plan Plan, run RunStep) (Result, error) {
 	}
 
 	s := search{plan: plan, run: run, first: rates[0]}
+	res, err := s.loop(ctx, rates)
+	switch {
+	case errors.Is(err, ErrInvalidRun):
+		res.Outcome, res.Broke, res.Cause = Invalid, 0, res.Steps[len(res.Steps)-1].Cause
+
+		return res, nil
+	case ctx.Err() != nil && errors.Is(err, ctx.Err()):
+		res.Outcome, res.Broke, res.Cause = Stopped, 0, NoCause
+
+		return res, nil
+	}
+
+	return res, err
+}
+
+type search struct {
+	plan     Plan
+	run      RunStep
+	first    int
+	baseline time.Duration
+	res      Result
+}
+
+func (s *search) loop(ctx context.Context, rates []int) (Result, error) {
+	plan := s.plan
 	for i, rps := range rates {
 		step, err := s.step(ctx, rps, plan.Hold, RateStep)
 		if err != nil || s.limited(step) {
@@ -261,7 +293,10 @@ func Search(ctx context.Context, plan Plan, run RunStep) (Result, error) {
 				s.res.Notes = append(s.res.Notes, fmt.Sprintf("%d: broke and did not recover within %d probes of %v at %d rps",
 					rps, MaxProbes, ProbeHold(s.first), s.first))
 
-				return s.broke(rps, BrokeBetween), nil
+				s.broke(step, BrokeBetween)
+				s.res.Cause = CauseNoRecovery
+
+				return s.res, nil
 			}
 		}
 
@@ -276,10 +311,10 @@ func Search(ctx context.Context, plan Plan, run RunStep) (Result, error) {
 			if i == 0 {
 				s.res.Notes = append(s.res.Notes, "no lower step to check recovery against; start lower (from) for a reliable result")
 
-				return s.broke(rps, BrokeAtFirst), nil
+				return s.broke(repeat, BrokeAtFirst), nil
 			}
 
-			return s.broke(rps, BrokeBetween), nil
+			return s.broke(repeat, BrokeBetween), nil
 		}
 		s.res.Notes = append(s.res.Notes, fmt.Sprintf("%d broke once, held on repeat", rps))
 		s.hold(repeat)
@@ -290,14 +325,6 @@ func Search(ctx context.Context, plan Plan, run RunStep) (Result, error) {
 	return s.res, nil
 }
 
-type search struct {
-	plan     Plan
-	run      RunStep
-	first    int
-	baseline time.Duration
-	res      Result
-}
-
 // step runs rps for hold and judges it, or names the cap that cannot run it.
 func (s *search) step(ctx context.Context, rps int, hold time.Duration, kind Kind) (Step, error) {
 	need := engine.InFlightNeed([]engine.Call{{
@@ -306,6 +333,7 @@ func (s *search) step(ctx context.Context, rps int, hold time.Duration, kind Kin
 	}})
 	step := Step{RPS: rps, Kind: kind}
 	if s.plan.MaxInFlight > 0 && need > s.plan.MaxInFlight {
+		step.Cause = CauseInFlightCap
 		step.Why = fmt.Sprintf("in-flight cap %d is too low for %d rps with timeout %v", s.plan.MaxInFlight, rps, s.plan.Timeout)
 		s.res.Steps = append(s.res.Steps, step)
 
@@ -316,17 +344,46 @@ func (s *search) step(ctx context.Context, rps int, hold time.Duration, kind Kin
 	}
 
 	report, err := s.run(ctx, rps, s.plan.Settle, hold, need)
-	if err != nil {
+	step.Report = report
+	switch {
+	case errors.Is(err, ErrInvalidRun):
+		step.Cause, step.Why = CauseRequestErrors, err.Error()
+		if errors.Is(err, ErrClockStep) {
+			step.Cause = CauseClockStep
+		}
+		s.res.Steps = append(s.res.Steps, step)
+
+		return step, err
+	case ctx.Err() != nil:
+		// Stopped inside the run: kept as it ran, never judged.
+		s.res.Steps = append(s.res.Steps, step)
+
+		return step, ctx.Err()
+	case err != nil:
 		return step, err
 	}
-	step.Report = report
-	step.Broken, step.Why = s.waits(rps, report)
+	step.Broken, step.Cause, step.Why = s.waits(rps, report)
 	if step.Why == "" {
-		step.Broken, step.Why = s.broken(report)
+		step.Cause, step.Why = undersent(rps, report)
+	}
+	if step.Why == "" {
+		step.Broken, step.Cause, step.Why = s.broken(report)
 	}
 	s.res.Steps = append(s.res.Steps, step)
 
 	return step, nil
+}
+
+// undersent names a run whose generator did not send its schedule: sent
+// short of the calls scheduled in the measured window by over 0.1%, at least
+// one call.
+func undersent(rps int, r engine.Report) (cause Cause, why string) {
+	if r.Sent >= r.Scheduled-max(1, r.Scheduled/1000) {
+		return NoCause, ""
+	}
+
+	return CauseGenerator, fmt.Sprintf("the generator sent %d of %d scheduled calls at %d rps; the target above that is untested",
+		r.Sent, r.Scheduled, rps)
 }
 
 // limited ends the search on a step where the run gave out.
@@ -334,7 +391,7 @@ func (s *search) limited(step Step) bool {
 	if step.Broken || step.Why == "" {
 		return false
 	}
-	s.res.Outcome, s.res.Broke = RunLimit, step.RPS
+	s.res.Outcome, s.res.Broke, s.res.Cause = RunLimit, step.RPS, step.Cause
 
 	return true
 }
@@ -346,8 +403,8 @@ func (s *search) hold(step Step) {
 	}
 }
 
-func (s *search) broke(rps int, outcome Outcome) Result {
-	s.res.Outcome, s.res.Broke = outcome, rps
+func (s *search) broke(step Step, outcome Outcome) Result {
+	s.res.Outcome, s.res.Broke, s.res.Cause = outcome, step.RPS, step.Cause
 
 	return s.res
 }
@@ -355,45 +412,45 @@ func (s *search) broke(rps int, outcome Outcome) Result {
 // waits judges a step by its client-side waits (engine.Report.WaitVerdict):
 // the run's side gave out — why without broken — or the target's side broke.
 // Nothing to say: "".
-func (s *search) waits(rps int, r engine.Report) (broken bool, why string) {
+func (s *search) waits(rps int, r engine.Report) (broken bool, cause Cause, why string) {
 	if r.CapHit != nil {
-		return false, fmt.Sprintf("in-flight cap reached at %d rps; the target above that is untested", rps)
+		return false, CauseInFlightCap, fmt.Sprintf("in-flight cap reached at %d rps; the target above that is untested", rps)
 	}
-	cause, side, ok := r.WaitVerdict()
+	wait, side, ok := r.WaitVerdict()
 	switch {
 	case !ok:
-		return false, ""
+		return false, NoCause, ""
 	case side == engine.SideTarget:
-		return true, fmt.Sprintf("the connection to the target was not ready for %d calls at %d rps", r.ConnectionCauseCalls, rps)
-	case cause == engine.WaitStream && r.Connections != nil && r.Connections.LimitAnnounced:
-		return false, fmt.Sprintf("stream limit %d of a single connection reached at %d rps; the target above that is untested",
+		return true, CauseConnection, fmt.Sprintf("the connection to the target was not ready for %d calls at %d rps", r.ConnectionCauseCalls, rps)
+	case wait == engine.WaitStream && r.Connections != nil && r.Connections.LimitAnnounced:
+		return false, CauseStreamLimit, fmt.Sprintf("stream limit %d of a single connection reached at %d rps; the target above that is untested",
 			r.Connections.LastLimit, rps)
-	case cause == engine.WaitStream:
-		return false, fmt.Sprintf("calls waited for a stream at %d rps; the target above that is untested", rps)
+	case wait == engine.WaitStream:
+		return false, CauseStreamWait, fmt.Sprintf("calls waited for a stream at %d rps; the target above that is untested", rps)
 	default:
-		return false, fmt.Sprintf("the generator fell behind at %d rps; the target above that is untested", rps)
+		return false, CauseGenerator, fmt.Sprintf("the generator fell behind at %d rps; the target above that is untested", rps)
 	}
 }
 
 // broken judges a step the run held: failures, then the user's p99 limit or
 // the knee over the baseline.
-func (s *search) broken(r engine.Report) (broken bool, why string) {
+func (s *search) broken(r engine.Report) (broken bool, cause Cause, why string) {
 	if r.Sent > 0 && float64(r.Failed)/float64(r.Sent) >= FailShare {
-		return true, fmt.Sprintf("failed %d of %d calls (%.1f%%)", r.Failed, r.Sent, 100*float64(r.Failed)/float64(r.Sent))
+		return true, CauseErrors, fmt.Sprintf("failed %d of %d calls (%.1f%%)", r.Failed, r.Sent, 100*float64(r.Failed)/float64(r.Sent))
 	}
 	got := p99(r)
 	if s.plan.P99Limit > 0 {
 		if got > s.plan.P99Limit {
-			return true, fmt.Sprintf("p99 %v over p99_limit %v", short(got), s.plan.P99Limit)
+			return true, CauseP99Limit, fmt.Sprintf("p99 %v over p99_limit %v", short(got), s.plan.P99Limit)
 		}
 
-		return false, ""
+		return false, NoCause, ""
 	}
 	if s.baseline > 0 && got > KneeRatio*s.baseline {
-		return true, fmt.Sprintf("p99 %v = %.1f× baseline %v (no p99_limit set)", short(got), float64(got)/float64(s.baseline), short(s.baseline))
+		return true, CauseP99VsBase, fmt.Sprintf("p99 %v = %.1fx baseline %v (no p99_limit set)", short(got), float64(got)/float64(s.baseline), short(s.baseline))
 	}
 
-	return false, ""
+	return false, NoCause, ""
 }
 
 // probe runs up to MaxProbes probes at the first step's rate until one comes
