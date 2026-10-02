@@ -19,6 +19,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -129,6 +130,50 @@ func TestRun_ASearchNamesTheStandsCapacity(t *testing.T) {
 	bp, _ := decodeOnly(t, res.stdout)["breakpoint"].(map[string]any)
 	if bp == nil || bp["outcome"] != "broke" || bp["held_rps"] != 244.0 || bp["broke_rps"] != 305.0 {
 		t.Errorf("breakpoint %v, want broke, held 244, broke 305", bp)
+	}
+}
+
+// A stop during a search follows a plain run's: one Ctrl+C ends the current
+// run gently, the report of what was found is printed with the stopped run
+// in its table, exit 3; SIGTERM cuts the run's calls off and still prints
+// the report (3), as a plain run does — 143 is only the exit without one.
+func TestRun_ASearchStoppedBySignal(t *testing.T) {
+	path := writeSearchOf(t, "127.0.0.1:1", `  breakpoint:
+    from: 50
+    to: 80
+    settle: 100ms
+    hold: 5s
+`, "300ms", checkMethod)
+
+	for name, signal := range map[string]func(stops, aborts chan<- struct{}){
+		"ctrl+c":  func(stops, _ chan<- struct{}) { stops <- struct{}{} },
+		"sigterm": func(_, aborts chan<- struct{}) { aborts <- struct{}{} },
+	} {
+		res := runSignalledOn(t, path, signal)
+		if exitCode(res.err) != 3 {
+			t.Errorf("%s: exit code %d, want 3\n%s", name, exitCode(res.err), res.stderr)
+		}
+		if !strings.Contains(res.stdout, "  stopped at the first step; nothing was learned about the target\n") {
+			t.Errorf("%s: no stopped headline:\n%s", name, res.stdout)
+		}
+		if !regexp.MustCompile(`(?m)^\s+step\s+50\s.*\sstopped$`).MatchString(res.stdout) {
+			t.Errorf("%s: the stopped run is not in the table:\n%s", name, res.stdout)
+		}
+	}
+}
+
+// With -output json stdout is the one JSON document; the progress goes to
+// stderr.
+func TestRun_ASearchWritesOnlyJSONToStdout(t *testing.T) {
+	res := runCLI(t.Context(), t, 60*time.Second, "-fake", "-output", "json", "-c", writeSearch(t, closedPort(t), checkMethod))
+	if res.err != nil {
+		t.Fatalf("run: %v", res.err)
+	}
+	decodeOnly(t, res.stdout)
+	for _, line := range []string{"breakpoint: up to 3 steps", "50 rps: sent", "79 rps: sent"} {
+		if !strings.Contains(res.stderr, line) {
+			t.Errorf("stderr lacks %q:\n%s", line, res.stderr)
+		}
 	}
 }
 

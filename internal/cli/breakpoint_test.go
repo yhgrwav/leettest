@@ -44,6 +44,12 @@ func bpRun(kind breakpoint.Kind, rps, sent int, p99 time.Duration, broken bool, 
 	}
 }
 
+func recovered(s breakpoint.Step) breakpoint.Step {
+	s.Recovered = true
+
+	return s
+}
+
 func held(rps int) breakpoint.Step {
 	return bpRun(breakpoint.RateStep, rps, rps*4, 21*time.Millisecond, false, breakpoint.NoCause, "")
 }
@@ -61,7 +67,7 @@ var outcomes = map[string]struct {
 		Steps: []breakpoint.Step{
 			held(100), held(125), held(156), held(195), held(244),
 			bpRun(breakpoint.RateStep, 305, 1220, 341*time.Millisecond, true, breakpoint.CauseP99VsBase, kneeWhy),
-			bpRun(breakpoint.Probe, 100, 400, 22*time.Millisecond, false, breakpoint.NoCause, ""), // 5s probe, 4s measured
+			recovered(bpRun(breakpoint.Probe, 100, 400, 22*time.Millisecond, false, breakpoint.NoCause, "")), // 5s probe, 4s measured
 			bpRun(breakpoint.Repeat, 305, 1220, 338*time.Millisecond, true, breakpoint.CauseP99VsBase, kneeWhy),
 		},
 	}, "held 244 rps, broke at 305 rps"},
@@ -161,11 +167,44 @@ func TestBreakpoint_EveryRunIsARowWithPlannedAndSent(t *testing.T) {
 	}
 }
 
+// A probe's row says what the search decided of it: one that did not break
+// but stayed over 1.5× the baseline did not recover, and a search that ended
+// so says it before the table.
+func TestBreakpoint_AProbeRowSaysWhetherItRecovered(t *testing.T) {
+	slow := bpRun(breakpoint.Probe, 100, 400, 45*time.Millisecond, false, breakpoint.NoCause, "")
+	ok := slow
+	ok.Recovered = true
+	steps := []breakpoint.Step{held(100), held(125), held(156), held(195), held(244),
+		bpRun(breakpoint.RateStep, 305, 1220, 341*time.Millisecond, true, breakpoint.CauseP99VsBase, kneeWhy)}
+	for range breakpoint.MaxProbes {
+		steps = append(steps, slow)
+	}
+	out := printedSearch(breakpoint.Result{
+		Outcome: breakpoint.BrokeBetween, Held: 244, Broke: 305, Cause: breakpoint.CauseNoRecovery, Steps: steps,
+		Notes: []string{"305: broke and did not recover within 5 probes of 1s at 100 rps"},
+	})
+	if n := len(regexp.MustCompile(`(?m)^\s+probe\s.*not recovered`).FindAllString(out, -1)); n != breakpoint.MaxProbes {
+		t.Errorf("%d probe rows say not recovered, want %d:\n%s", n, breakpoint.MaxProbes, out)
+	}
+	if regexp.MustCompile(`(?m)^\s+probe\s.*\sheld$`).MatchString(out) {
+		t.Errorf("a probe that did not recover prints as held:\n%s", out)
+	}
+	head, _, _ := strings.Cut(out, "kind")
+	if !strings.Contains(head, "did not recover") {
+		t.Errorf("the lines before the table do not say the target did not recover:\n%s", head)
+	}
+
+	out = printedSearch(breakpoint.Result{Outcome: breakpoint.HeldThroughout, Held: 305, Steps: append(steps[:6:6], ok)})
+	if !regexp.MustCompile(`(?m)^\s+probe\s.*\srecovered$`).MatchString(out) {
+		t.Errorf("a recovered probe's row must say recovered:\n%s", out)
+	}
+}
+
 // The plan line says before the first step how long the search can take.
 func TestBreakpoint_ThePlanLine(t *testing.T) {
 	p := breakpoint.Plan{From: 100, To: 156, Settle: 100 * time.Millisecond, Hold: time.Second, Timeout: 500 * time.Millisecond}
-	// Plan.Worst 65.5s + connect 5s, rounded up.
-	if got, want := PlanLine(p, 5*time.Second), "breakpoint: up to 3 steps, at most 1m11s"; got != want {
+	// Plan.Worst 67.1s + connect 5s, rounded up.
+	if got, want := PlanLine(p, 5*time.Second), "breakpoint: up to 3 steps, at most 1m13s"; got != want {
 		t.Errorf("plan line %q, want %q", got, want)
 	}
 }
@@ -223,6 +262,10 @@ func TestBreakpoint_JSONIsAContract(t *testing.T) {
 			}
 			if why, ok := run["why"]; !ok || (why != nil && !slices.Contains(whyNames, why)) {
 				t.Errorf("%s run %d: why %v (present %v), want null or one of %v", name, i, why, ok, whyNames)
+			}
+			if rec, ok := run["recovered"]; !ok || (step.Kind == breakpoint.Probe) != (rec != nil) ||
+				(rec != nil && rec != step.Recovered) {
+				t.Errorf("%s run %d (%v): recovered %v, want the probe's verdict, null for others", name, i, step.Kind, rec)
 			}
 			if _, ok := run["sent_rps"].(float64); !ok {
 				t.Errorf("%s run %d: sent_rps %v, want a number", name, i, run["sent_rps"])

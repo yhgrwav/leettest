@@ -176,6 +176,9 @@ type Step struct {
 	Why    string
 	Cause  Cause
 	Kind   Kind
+	// Recovered, for a Probe, says its p99 came within Recovered times the
+	// baseline: a probe that did not break may still not have recovered.
+	Recovered bool
 }
 
 // Worst is the longest the search can take: every step breaks once and
@@ -186,9 +189,15 @@ func (p Plan) Worst() (time.Duration, error) {
 		return 0, err
 	}
 	n := time.Duration(len(rates))
+	runs := 2*n + (n-1)*MaxProbes
 
-	return 2*n*(p.Hold+p.Timeout) + (n-1)*MaxProbes*(ProbeHold(rates[0])+p.Timeout) + n*p.Cooldown(), nil
+	return 2*n*(p.Hold+p.Timeout) + (n-1)*MaxProbes*(ProbeHold(rates[0])+p.Timeout) + n*p.Cooldown() + runs*RunSlack, nil
 }
+
+// RunSlack is what a run takes beyond its hold and timeout in Worst: building
+// the engine, a coarse timer (15.6ms on Windows), a late cancel. Hypothesis,
+// docs/decisions.md: measured 0.5ms a run on Windows; 100ms keeps "at most" true.
+const RunSlack = 100 * time.Millisecond
 
 // Kind is what a run in Result.Steps was. Held and Broke come only from
 // RateStep and Repeat runs, never from a Probe.
@@ -462,6 +471,8 @@ func (s *search) probe(ctx context.Context) (bool, error) {
 			return false, err
 		}
 		if !step.Broken && step.Why == "" && float64(p99(step.Report)) <= Recovered*float64(s.baseline) {
+			s.res.Steps[len(s.res.Steps)-1].Recovered = true
+
 			return true, nil
 		}
 	}

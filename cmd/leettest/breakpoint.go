@@ -114,7 +114,9 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 		if err != nil {
 			return engine.Report{}, err
 		}
-		current.Store(eng)
+		if current.Swap(eng) == nil {
+			runStarting(eng)
+		}
 		if searchCtx.Err() != nil {
 			eng.Stop()
 		}
