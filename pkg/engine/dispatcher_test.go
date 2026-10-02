@@ -16,9 +16,9 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"math/rand/v2"
 	"runtime"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -39,13 +39,13 @@ func TestWaitUntil_NeverBeforeTheMoment(t *testing.T) {
 	}
 }
 
-// Ground: boundary — a stop must not wait out the exact wait. Each part is
-// waited on for 10ms and cancelled after 1ms; it must return within 1ms of
-// the cancel, a tenth of the wait: cut, not waited out. Idle on Linux it
-// returns in ~10µs (busy-wait) and ~100µs (a sleep chunk and a wake-up);
-// with every core busy under -race 180µs was seen, so the bound is the
-// tenth. Whether the exact wait beats the timer is measured in the CI tour,
-// alone, not here next to other packages under -race.
+// Ground: boundary — a stop cuts the exact wait, it does not wait it out.
+// Each part waits 1s and is cancelled after 1ms; it must return the
+// context's error more than 500ms before its moment, half the wait. Without
+// a look at ctx a part returns at the moment; looking only after the timer
+// phase, 2ms before it. How fast a cancel is seen is the environment's: in a
+// container with a CPU quota under one core it waited out the quota period,
+// up to ~36ms (#142, reviews), so this test does not time it.
 func TestWaitUntil_CancelCutsTheWait(t *testing.T) {
 	for _, part := range []struct {
 		name string
@@ -53,26 +53,26 @@ func TestWaitUntil_CancelCutsTheWait(t *testing.T) {
 	}{
 		{"busy-wait", spinUntil},
 		{"microsecond sleep", sleepPrecisely},
+		{"the whole wait", func(ctx context.Context, at time.Time) error { return waitUntil(ctx, at, true) }},
 	} {
 		ctx, cancel := context.WithCancel(t.Context())
 		start := time.Now()
+		at := start.Add(time.Second)
 
 		// Not a timer: a Go timer is itself up to 1ms late.
-		var cancelledAt atomic.Int64
 		go func() {
 			for time.Since(start) < time.Millisecond {
 				runtime.Gosched()
 			}
-			cancelledAt.Store(time.Now().UnixNano())
 			cancel()
 		}()
 
-		if err := part.wait(ctx, start.Add(10*time.Millisecond)); err == nil {
-			t.Fatalf("%s: returned nil, want the context's error", part.name)
+		err := part.wait(ctx, at)
+		if left := time.Until(at); left <= 500*time.Millisecond {
+			t.Errorf("%s: returned %v before its moment, want over 500ms: the wait was not cut", part.name, left)
 		}
-		took := time.Duration(time.Now().UnixNano() - cancelledAt.Load())
-		if took > time.Millisecond+clock.StepOf(time.Now) {
-			t.Errorf("%s: returned %v after the cancel, want at most 1ms", part.name, took)
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("%s: returned %v, want the context's error", part.name, err)
 		}
 	}
 }
