@@ -14,7 +14,7 @@
 
 ---
 
-> Translated from [README.md](../../README.md) at 4bcef1e, 2026-09-25. If they differ, the Russian
+> Translated from [README.md](../../README.md) at ce3e22f, 2026-10-02. If they differ, the Russian
 > one is right.
 
 > **Early stage.** Working now: unary load against a real service, several methods at their own
@@ -424,7 +424,7 @@ Characters from outside ASCII, in a method name or in the target's error text, a
 
 ## Not yet
 
-Ramp-up from zero to the target RPS, pass/fail thresholds for CI, export to
+Ramp-up from zero to the target RPS, pass/fail thresholds, export to
 Prometheus.
 
 ## Going deeper
