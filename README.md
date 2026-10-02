@@ -283,9 +283,13 @@ $ leettest -c leettest.yaml
 |---|---|---|---|
 | `INVALID_ARGUMENT`, `NOT_FOUND`, `ALREADY_EXISTS`, `PERMISSION_DENIED`, `UNAUTHENTICATED`, `FAILED_PRECONDITION`, `OUT_OF_RANGE`, `UNIMPLEMENTED` | `request error` | `cut off` | `client error` |
 | `RESOURCE_EXHAUSTED` | `overload`; «larger than max» от grpc-go — `request error` | `cut off`; ответ больше нашего лимита — `bad response` | `client error` |
-| `UNAVAILABLE` | `overload` | `cut off` | `unreachable` |
+| `UNAVAILABLE` | `overload` | `cut off`; поток, отвергнутый целью до обработки, — `overload` | `unreachable`; то же |
 | `CANCELLED`, `UNKNOWN`, `INTERNAL`, `DATA_LOSS`, `ABORTED` | `failure` | `cut off`; ответ не распаковался — `bad response` | `client error` |
 | `DEADLINE_EXCEEDED` | тайм-аут | тайм-аут | тайм-аут, не отправлен |
+
+`UNAVAILABLE` у отвергнутого потока — перевод grpc-go для RST_STREAM REFUSED_STREAM от цели: код
+поставил клиент, а отказ прислала цель, поэтому он в строке «sent by the target». Такой поток цель
+не обрабатывала (RFC 9113 §8.7).
 
 Вызов, прерванный нашей остановкой (Ctrl+C, SIGTERM), — `aborted` при любом коде: это не отказ
 цели.
