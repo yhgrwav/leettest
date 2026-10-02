@@ -437,7 +437,7 @@ Prometheus.
 | What does commercial use look like? | [Read](commercial.md) |
 | Where do I ask a question or leave feedback? | [Read](feedback.md) |
 
-**[Comparison with ghz on one stand →](../compare-ghz.md)** — tables and the command to reproduce.
+**[Comparison with ghz on one stand →](compare-ghz.md)** — tables and the command to reproduce.
 
 ## Contributing
 

@@ -1,5 +1,8 @@
 # LeetTest and ghz on the same stand
 
+> Translated from [docs/ru/compare-ghz.md](../ru/compare-ghz.md) at ebe60eb, 2026-10-02. If they
+> differ, the Russian one is right.
+
 This page compares LeetTest with [ghz](https://ghz.sh) on a test server with known behavior. The
 question is narrow: when the server stalls or slows down, does the report show it?
 
@@ -13,12 +16,15 @@ In short:
   default) with `-c 10` sends 2980 of the 6000 requested calls. Its latencies are correct for the
   calls it sent, but that is half the requested load. With the default `-c 50` it sends all 6000.
 
-This is not a bug in ghz. The synchronous mode runs a fixed number of workers. Each worker waits
-for its call to finish before starting the next one: a closed model, by design. When the server
-stalls, the workers wait too, and calls that should have gone out during the stall are never
-sent. So their delay is never measured. This effect is known as *coordinated omission*. With
-`--async`, ghz sends on schedule whether or not earlier calls have returned: an open model. That
-gives the same numbers as LeetTest. LeetTest has only the open model.
+This is not a bug in ghz. The synchronous mode runs a fixed number of workers (`-c`, 50 by default
+[1]). Each worker waits for its call to finish before taking the next one [2]: a closed model, by
+design. When the server stalls, the workers wait too, and calls that should have gone out during
+the stall do not go out on time. So their delay is never measured. This effect is known as
+*coordinated omission*. With `--async`, ghz does not wait for a call to finish before the next
+one [2][3]: an open model. That gives the same numbers as LeetTest. LeetTest has only the open
+model.
+
+Everything said here about ghz was checked against v0.121.0 — sources at the end of the page.
 
 ## Setup
 
@@ -74,8 +80,9 @@ Over 2 seconds at 200 RPS, about 400 calls were due. With `--async`, ghz counts 
 the ones due in the first half of the freeze wait longer than a second. In synchronous mode, 10
 calls are over 1s with `-c 10` and 50 with `-c 50`, one per worker. That is 0.17% and 0.83%
 of the calls, too few to reach p99. The workers stood still during the freeze. When it ended, ghz
-sent the missed calls at once to catch up, and those calls met a server that was already
-fast again. Their wait before sending is not part of the latency ghz reports.
+sent the missed calls at once: behind schedule, its pacer does not wait before the next call [4].
+Those calls met a server that was already fast again. Their wait before sending is not part of
+the latency ghz reports: it counts from the start of the call itself [5].
 
 The number of calls sent is the same in all rows, so the count does not reveal the stall.
 
@@ -106,7 +113,7 @@ same ceiling applies to any c once the server slows down enough: at `-c 50` it i
 
 All three agree within 0.6ms. LeetTest reads 0.4–0.6ms higher; the cause is not measured here.
 LeetTest measures from the moment a call was scheduled, while ghz measures from the moment the
-call starts, so LeetTest includes the generator's own delay before sending. LeetTest counts it on
+call starts [5], so LeetTest includes the generator's own delay before sending. LeetTest counts it on
 purpose: if the generator falls behind, the latency shows it instead of hiding it. The start lag
 is also reported separately.
 
@@ -128,3 +135,13 @@ minutes. It prints this page's tables and writes them, with every run's raw outp
 
 Numbers will differ on another machine. The pattern should not: in B1, ghz in synchronous mode
 misses the freeze, while LeetTest and ghz with `--async` both show it.
+
+## Sources on ghz (v0.121.0, checked 2026-10-02)
+
+1. `-c` defaults to 50 — [`runner/options.go`, `NewConfig`](https://github.com/bojand/ghz/blob/v0.121.0/runner/options.go).
+2. A synchronous worker calls `makeRequest` and waits for it; with `--async` it starts a goroutine
+   per call — [`runner/worker.go`, `runWorker`](https://github.com/bojand/ghz/blob/v0.121.0/runner/worker.go).
+3. `--async`, `--duration-stop`, `--connections` — [options documentation](https://ghz.sh/docs/options).
+4. Behind schedule, the pacer returns a zero wait — [`load/pacer.go`, `ConstantPacer.Pace`](https://github.com/bojand/ghz/blob/v0.121.0/load/pacer.go);
+   ticks reach the workers over an unbuffered channel — [`runner/requester.go`, `runWorkers`](https://github.com/bojand/ghz/blob/v0.121.0/runner/requester.go).
+5. A call's duration is `EndTime − BeginTime` from gRPC stats events — [`runner/stats_handler.go`, `HandleRPC`](https://github.com/bojand/ghz/blob/v0.121.0/runner/stats_handler.go).
