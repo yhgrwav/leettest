@@ -242,15 +242,20 @@ func TestSend_WentOutIsTheLastAttempts(t *testing.T) {
 	}
 }
 
-// REFUSED_STREAM on the last attempt means unprocessed, yet the call is cut off
-// with "may have processed": the safe side, a user checks for duplicates rather
-// than assumes none. Telling it apart needs the status text; that is tech debt.
-func TestSend_RefusedOnTheLastAttemptIsCutOff(t *testing.T) {
+// Ground: contract — REFUSED_STREAM on the last attempt means the target did
+// not process the stream (RFC 9113 §8.7), so "cut off, may have processed" is
+// untrue. It is the target refusing work: overload, a code sent by the target,
+// as UNAVAILABLE from it is. grpc-go v1.84.0 says so only in the status text,
+// "stream terminated by RST_STREAM with error code: REFUSED_STREAM"
+// (internal/transport/http2_client.go:1318, the same since v1.20.0); this
+// test runs against grpc-go itself, so a changed text fails it.
+func TestSend_RefusedOnTheLastAttemptIsTheTargetsOverload(t *testing.T) {
 	sender, _ := refusingAfterPayload(t, false)
 	out := sendWithin(t, sender, time.Second)
 
-	if out.Category != engine.CategoryCutOff {
-		t.Errorf("category = %v (code %s, %v), want cut off", out.Category, out.Code, out.Err)
+	if out.Category != engine.CategoryOverload || !out.CodeFromTarget {
+		t.Errorf("category = %v (code %s from the target %v, %v), want overload from the target",
+			out.Category, out.Code, out.CodeFromTarget, out.Err)
 	}
 }
 
