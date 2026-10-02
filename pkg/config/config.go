@@ -21,6 +21,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/yhgrwav/leettest/pkg/breakpoint"
 )
 
 var (
@@ -39,6 +41,8 @@ var (
 	ErrTLSFilesWithoutTLS     = errors.New("ca, cert, key and server_name need TLS: remove them or set app.tls: true")
 	ErrCertWithoutKey         = errors.New("cert and key go together: set both or neither")
 	ErrInvalidTimeout         = errors.New("timeout must be positive: without one, requests to a hung target pile up until the in-flight cap ends the run")
+	// ErrBreakpoint is a breakpoint section that cannot run as written.
+	ErrBreakpoint             = errors.New("invalid breakpoint")
 	ErrInvalidMaxResponseSize = errors.New("max_response_size must be a positive size below 2GiB with a unit: B, KB, MB, GB, KiB, MiB or GiB")
 )
 
@@ -87,6 +91,28 @@ type ConnectionString string
 type Load struct {
 	Warmup time.Duration `yaml:"warmup"`
 	Calls  []Call        `yaml:"calls"`
+	// Breakpoint searches for the rate the one call's target breaks at,
+	// instead of loading the calls at their rps; nil runs them as configured.
+	Breakpoint *Breakpoint `yaml:"breakpoint"`
+}
+
+// Breakpoint is the search's profile: rates from From to To, each step Factor
+// times the last or Step more, each held for Hold, its first Settle out of the
+// verdict. P99Limit, when set, replaces the knee.
+type Breakpoint struct {
+	From     Rate          `yaml:"from"`
+	To       Rate          `yaml:"to"`
+	Factor   float64       `yaml:"factor"`
+	Step     Rate          `yaml:"step"`
+	Settle   time.Duration `yaml:"settle"`
+	Hold     time.Duration `yaml:"hold"`
+	P99Limit time.Duration `yaml:"p99_limit"`
+}
+
+// Plan is the search's plan for a call with the given timeout and in-flight
+// cap (0 sizes the cap per step).
+func (b Breakpoint) Plan(timeout time.Duration, maxInFlight int) breakpoint.Plan {
+	return breakpoint.Plan{}
 }
 
 // Rate is a whole number of requests per second. A fractional one is refused
