@@ -15,7 +15,7 @@
 ---
 
 > Translated from [README.md](../../README.md) at ce3e22f, 2026-10-02. If they differ, the Russian
-> one is right.
+> one is right. Plus an index of English docs, not in the Russian source.
 
 > **Early stage.** Working now: unary load against a real service, several methods at their own
 > RPS in one run, request bodies from the config, a console report and JSON for scripts. Not yet: ramp-up, pass/fail
