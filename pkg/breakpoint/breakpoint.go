@@ -130,41 +130,6 @@ const (
 	// generator late, in-flight cap or the stream limit: nothing is said
 	// about the target above Result.Held.
 	RunLimit
-	// Stopped: the context ended the search; the last of Result.Steps is the
-	// run it ended, Result.Held what held before it.
-	Stopped
-	// Invalid: a run was an invalid run (ErrInvalidRun); no breaking point.
-	Invalid
-)
-
-// ErrInvalidRun, wrapped by a RunStep's error, says the run's numbers cannot
-// be trusted (clock step, every call a request error); the search ends Invalid.
-var (
-	ErrInvalidRun    = errors.New("invalid run")
-	ErrClockStep     = fmt.Errorf("%w: clock step", ErrInvalidRun)
-	ErrRequestErrors = fmt.Errorf("%w: every call a request error", ErrInvalidRun)
-)
-
-// Cause is the closed list of reasons a run broke, gave out or was invalid;
-// Step.Why carries the same with its numbers.
-type Cause int
-
-const (
-	NoCause Cause = iota
-	// The target's side.
-	CauseErrors
-	CauseP99Limit
-	CauseP99VsBase
-	CauseConnection
-	CauseNoRecovery
-	// The run's side.
-	CauseGenerator
-	CauseInFlightCap
-	CauseStreamLimit
-	CauseStreamWait
-	// Validity.
-	CauseClockStep
-	CauseRequestErrors
 )
 
 // Step is one step's run and verdict.
@@ -174,14 +139,7 @@ type Step struct {
 	// Broken says the step broke; Why names the criterion with its numbers.
 	Broken bool
 	Why    string
-	Cause  Cause
 	Kind   Kind
-}
-
-// Worst is the longest the search can take: every step breaks once and
-// holds on its repeat after the cooldown and all probes.
-func (p Plan) Worst() (time.Duration, error) {
-	return 0, nil
 }
 
 // Kind is what a run in Result.Steps was. Held and Broke come only from
@@ -211,9 +169,7 @@ func (k Kind) String() string {
 type Result struct {
 	Outcome     Outcome
 	Held, Broke int
-	// Cause is the reason of the run that ended the search.
-	Cause Cause
-	Steps []Step
+	Steps       []Step
 	// Notes say what the outcome does not: a step that broke once and held
 	// on its repeat, a knee with no baseline below it.
 	Notes []string
