@@ -139,10 +139,20 @@ func checkIdle(ctx context.Context, idle time.Duration) error {
 	}
 	if left := time.Until(deadline); idle < left {
 		return fmt.Errorf("%w: idle timeout %v, connect timeout %v; "+
-			"raise the idle timeout or shorten the connect timeout", ErrIdleShorterThanConnect, idle, left.Round(time.Millisecond))
+			"raise the idle timeout or shorten the connect timeout", ErrIdleShorterThanConnect, idle, ceilMillis(left))
 	}
 
 	return nil
+}
+
+// ceilMillis rounds d up to a whole millisecond: what is left of a timeout
+// set in milliseconds reads back as that timeout while under 1ms has passed.
+func ceilMillis(d time.Duration) time.Duration {
+	if r := d % time.Millisecond; r > 0 {
+		return d - r + time.Millisecond
+	}
+
+	return d
 }
 
 // defaultMaxResponse is grpc-go's own default, kept when no limit is given.
