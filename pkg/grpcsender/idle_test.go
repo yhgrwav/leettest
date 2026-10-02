@@ -18,7 +18,6 @@ import (
 	"context"
 	"errors"
 	"net"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -71,9 +70,10 @@ func TestConnect_AnIdleTimeoutShorterThanTheConnectIsRefused(t *testing.T) {
 			t.Errorf("%q does not say %q", err, want)
 		}
 	}
-	// What is left of 300ms, in whole milliseconds: 299.987ms reads as noise.
-	if !regexp.MustCompile(`connect timeout (300|299)ms;`).MatchString(err.Error()) {
-		t.Errorf("%q does not give the connect timeout as 300ms or 299ms", err)
+	// What is left of 300ms, rounded up: the timeout the user set, not
+	// 299.987ms or 299ms.
+	if !strings.Contains(err.Error(), "connect timeout 300ms;") {
+		t.Errorf("%q does not give the connect timeout as 300ms", err)
 	}
 
 	// The deadline at the idle timeout leaves Connect a little less than it.
