@@ -108,6 +108,14 @@ The README is written in Russian and translated into English. A README change sh
 English together.
 The README describes what already works — it is not a list of promises.
 
+Docs are not a dump: give the reader the most of what they need and the least of what they do
+not. A guide says what LeetTest is, how to install and run it and how to read the result.
+Internals the code hides (clocks, timers, platform quirks, why a rule was chosen) stay out of
+user docs; a platform note is one line, and only when without it the result would be wrong.
+Reference detail goes to a reference. The same goes for tests (test what users and scripts rely
+on, not the wording of every line) and for pull requests (the change, not the review history).
+[AGENTS.md](AGENTS.md#docs) has the full rule.
+
 ## Contributor License Agreement
 
 **Pull requests are merged only after the author has signed the [CLA](CLA.md).** It is a license,

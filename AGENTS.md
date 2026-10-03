@@ -156,3 +156,22 @@ the container), not on a desktop.
 The README is written in Russian and translated; a README change ships in Russian and English
 together. The README describes what works now: it is not a requirements source, and a mismatch
 between it and the code is a question to ask, not a task to make the code match.
+
+**Docs are not a dump.** Write for the reader, not about the problem you just solved:
+
+- The most of what the reader needs, the least of what they do not. A guide answers what it is,
+  how to install it, how to run it, how to read the result. Everything else is cut.
+- What the code hides behind an interface stays out of user docs: clocks, timers, platform
+  quirks, how an internal rule was chosen. That is the code's job and the developer docs' topic.
+- No "if you are on Windows rather than macOS, then…" paragraphs. A platform note is kept only
+  when without it the user gets a wrong result, and then it is one line.
+- Reference detail (every JSON field, every enum value) lives in a reference, not in the guide.
+- A fix does not leave its story in the docs. If a sentence explains how you got here, delete it.
+
+**Tests are not a dump either.** Test behaviour the user or a script relies on: the numbers, the
+JSON contract, the exit codes, end-to-end runs against the stand. Do not pin the exact wording or
+layout of text a person reads unless that text is the contract; such tests break on every edit
+and protect nothing.
+
+**Pull requests carry the change, not the process.** Review threads, verdicts, internal notes and
+the history of how a decision was reached stay out of public PRs, commits and docs.
