@@ -84,7 +84,13 @@ creating the record. Every field, TLS, headers, the request body and flags are i
 **[reference](reference.md)**.
 
 In a terminal the run goes full-screen, `q` to stop. Without a terminal (CI, redirected output) — a
-progress line once a second. The report goes to stdout, progress and errors to stderr.
+progress line once a second:
+
+```
+32.0s  sent 25600  rps 800  in-flight 47  failed 51  not-sent 0  p99 43ms
+```
+
+The report goes to stdout, progress and errors to stderr.
 
 ## Reading the report
 
@@ -144,7 +150,10 @@ running late, waiting for the connection, waiting for a free stream. If without 
 least one method drops by 10% or more, or some calls never went out, the report gives a verdict,
 names the cause most common in the p99 tail, and prints p99 without the waits — the time the call
 spent at the target. If the cause is that streams ran out, the target's capacity above "limit ×
-connections" is not measured. A shift under 10% is not a verdict but a note with the number.
+connections" is not measured. If a call waited for the resolver first, the caller's interceptors
+land in the connection wait too, so p99 without waits may come out slightly low. Calls that never
+went out are split by reason. A shift under 10% is not a verdict but a note with the number; when
+p99 is a lower bound the shift is unknown and there is no note.
 
 **Clock.** The tool measures the host's clock step before and after the run. A noticeable step
 prints a line `clock step 502us on this host: every latency and wait is +/- 502us`. On Linux the
@@ -200,7 +209,8 @@ the only fractional number. A value the run did not produce is `null`, not `0`. 
 object `{"us": 1234, "lower_bound": false}`: with `lower_bound: true` it is a lower bound, not a
 value. Latencies are the histogram's values at 3 significant figures (an error of up to 0.1%),
 counts are exact. Times count from `started_at` (RFC 3339, UTC), the start of the schedule, warm-up
-included. The codes in `failure_codes` are canonical names (`UNAVAILABLE`). To reconcile: the run's
+included; `duration_us` includes warm-up too. `in_flight` in a second is how many calls were in
+flight at its end. The codes in `failure_codes` are canonical names (`UNAVAILABLE`). To reconcile: the run's
 totals are the sum of the methods', and over a method's seconds `Σ begun` plus `outside_timeline`
 is every call of the method, warm-up included.
 
@@ -212,10 +222,13 @@ not parse them.
 
 The target's silence: `methods[].silent_from_s` is the second from which the target answered none
 of the calls sent, `methods[].silent_sent_rps` how many calls went out in the second before it,
-`methods[].silent_planned_rps_low` and `_high` the planned rate in that second. Without a silence
-all are `null`.
+`methods[].silent_planned_rps_low` and `_high` the planned rate of the stages in that second.
+Without a silence all are `null`; the planned rate is `null` also when no stage ran in that second.
+`planned_rps_low` and `_high` are the whole plan's rate.
 
-The text report is printed in ASCII only: characters outside ASCII as `\uXXXX`, as in JSON.
+The text report is printed in ASCII only. Characters from outside ASCII, in a method name or in
+the target's error text, are printed as `\uXXXX` (past U+FFFF as a surrogate pair, as in JSON).
+`notes` in JSON carry the same escaped text.
 
 ## Not yet
 
