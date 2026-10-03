@@ -161,17 +161,21 @@ between it and the code is a question to ask, not a task to make the code match.
 
 - The most of what the reader needs, the least of what they do not. A guide answers what it is,
   how to install it, how to run it, how to read the result. Everything else is cut.
-- What the code hides behind an interface stays out of user docs: clocks, timers, platform
-  quirks, how an internal rule was chosen. That is the code's job and the developer docs' topic.
-- No "if you are on Windows rather than macOS, then…" paragraphs. A platform note is kept only
-  when without it the user gets a wrong result, and then it is one line.
+- What the code hides behind an interface stays out of user docs: how timers work, how an
+  internal rule was chosen, what the code already handles. That is the developer docs' topic.
+- A detail stays in user docs if it changes the result or whether the result can be trusted:
+  exact scheduling only on Linux, a coarse clock step that makes a run invalid, measuring from
+  Linux next to the target. What the user does not need to get true numbers is cut, and there
+  are no "if you are on Windows rather than macOS, then…" paragraphs beyond that.
 - Reference detail (every JSON field, every enum value) lives in a reference, not in the guide.
 - A fix does not leave its story in the docs. If a sentence explains how you got here, delete it.
 
-**Tests are not a dump either.** Test behaviour the user or a script relies on: the numbers, the
-JSON contract, the exit codes, end-to-end runs against the stand. Do not pin the exact wording or
-layout of text a person reads unless that text is the contract; such tests break on every edit
-and protect nothing.
+**Tests are not a dump either.** A test checks meaning, not prose: the outcome, the numbers, the
+category, which claim the output makes ("at most T", "not recovered" rather than "held", "nothing
+was learned about the target"). The contract is checked exactly: JSON field names and enum
+values, exit codes, the ASCII rule. The characterization frames of the screen stay: they guard
+refactors and are changed on purpose, in a commit of their own. What is left out is pinning the
+wording around a claim, which breaks on every edit and protects nothing.
 
 **Pull requests carry the change, not the process.** Review threads, verdicts, internal notes and
 the history of how a decision was reached stay out of public PRs, commits and docs.

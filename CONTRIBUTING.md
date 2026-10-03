@@ -110,10 +110,11 @@ The README describes what already works — it is not a list of promises.
 
 Docs are not a dump: give the reader the most of what they need and the least of what they do
 not. A guide says what LeetTest is, how to install and run it and how to read the result.
-Internals the code hides (clocks, timers, platform quirks, why a rule was chosen) stay out of
-user docs; a platform note is one line, and only when without it the result would be wrong.
-Reference detail goes to a reference. The same goes for tests (test what users and scripts rely
-on, not the wording of every line) and for pull requests (the change, not the review history).
+Internals the code hides (how timers work, why a rule was chosen) stay out of user docs; a
+detail that changes the result or whether it can be trusted stays. Reference detail goes to a
+reference. The same goes for tests (check the meaning — outcome, numbers, the claim made — and
+the contract exactly, not the prose around it) and for pull requests (the change, not the review
+history).
 [AGENTS.md](AGENTS.md#docs) has the full rule.
 
 ## Contributor License Agreement
