@@ -306,7 +306,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		return runSearch(ctx, abort, &stopper, searchSetup{
 			cfg: cfg, configPath: *configPath, target: target, sender: sender, calls: opts.Calls,
 			unchecked: unchecked, maxInFlight: *maxInFlight, capSet: capSet, connect: connectWithin,
-			json: *output == "json", stepBefore: stepBefore,
+			json: *output == "json", interactive: interactive, stepBefore: stepBefore,
 		}, stdout, stderr)
 	}
 
