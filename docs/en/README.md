@@ -295,9 +295,13 @@ with one typo in three methods the run's share would be 33%, and no verdict at a
 |---|---|---|---|
 | `INVALID_ARGUMENT`, `NOT_FOUND`, `ALREADY_EXISTS`, `PERMISSION_DENIED`, `UNAUTHENTICATED`, `FAILED_PRECONDITION`, `OUT_OF_RANGE`, `UNIMPLEMENTED` | `request error` | `cut off` | `client error` |
 | `RESOURCE_EXHAUSTED` | `overload`; grpc-go's "larger than max" is a `request error` | `cut off`; a reply over our limit is a `bad response` | `client error` |
-| `UNAVAILABLE` | `overload` | `cut off` | `unreachable` |
+| `UNAVAILABLE` | `overload` | `cut off`; a stream the target refused before processing it is `overload` | `unreachable`; the same |
 | `CANCELLED`, `UNKNOWN`, `INTERNAL`, `DATA_LOSS`, `ABORTED` | `failure` | `cut off`; a reply that did not decompress is a `bad response` | `client error` |
 | `DEADLINE_EXCEEDED` | timeout | timeout | timeout, not sent |
+
+`UNAVAILABLE` on a refused stream is grpc-go's translation of the target's RST_STREAM
+REFUSED_STREAM: the client set the code, the target sent the refusal, so it is in the "sent by the
+target" line. The target did not process such a stream (RFC 9113 §8.7).
 
 A call cut off by our own stop (Ctrl+C, SIGTERM) is `aborted` whatever its code: not the target's
 refusal.
