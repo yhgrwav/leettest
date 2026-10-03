@@ -49,7 +49,9 @@ Source of truth: [README, «Exit codes»](docs/en/README.md#exit-codes). What ea
 
 ### Reading the JSON
 
-Every field is described in the [README, «JSON for scripts and CI»](docs/en/README.md#json-for-scripts-and-ci). How an agent reads them:
+The rule: every JSON field is described in `docs/<lang>/reference.md`, checked against
+`internal/cli/testdata/schema_v1.txt`. Until that table lands, the contract rules are in the
+[README, «JSON for scripts and CI»](docs/en/README.md#json-for-scripts-and-ci). How an agent reads them:
 
 - Decisions are fields, not text: read `invalid_reasons`, `methods[].invalid_reason`,
   `tail_wait_cause`, `methods[].silent_from_s`. Never parse `notes` — it is reworded freely.
