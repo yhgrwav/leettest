@@ -183,14 +183,15 @@ SIGTERM (`docker stop`, Kubernetes, отмена джоба в CI) сразу о
 Правила контракта — версия схемы, единицы, `null` вместо `0`, неизвестные поля — в
 [README](../../README.md#json-для-скриптов-и-ci). Здесь — каждое поле `schema_version` 1. Тип с `?`
 может быть `null`. Счётчики прогрева не входят ни в какие другие счётчики; `sent` и все его доли
-— только измеренные вызовы.
+— только измеренные вызовы. В первой колонке — полный путь поля.
 
-**Перцентиль** — объект; `null` — нет ни одного наблюдения.
+**Перцентиль** — объект; `null` — нет ни одного наблюдения. `<перцентиль>` — любое поле с типом
+«перцентиль?» ниже.
 
 | Поле | Тип | Что значит |
 |---|---|---|
-| `us` | int | Значение, целые микросекунды |
-| `lower_bound` | bool | `true` — это нижняя граница, а не значение ([README](../../README.md#как-читать-отчёт)) |
+| `<перцентиль>.us` | int | Значение, целые микросекунды |
+| `<перцентиль>.lower_bound` | bool | `true` — это нижняя граница, а не значение ([README](../../README.md#как-читать-отчёт)) |
 
 ### Прогон
 
@@ -226,8 +227,8 @@ SIGTERM (`docker stop`, Kubernetes, отмена джоба в CI) сразу о
 | `connections.first_limit`, `connections.last_limit` | int? | `MAX_CONCURRENT_STREAMS` на первом и последнем рукопожатии; `null` — цель не объявила (`0` — объявила ноль) |
 | `connections.limit_changes` | int | Сколько рукопожатий объявили лимит, отличный от прежнего |
 | `client_waits` | object | Вызовы, ждавшие на стороне клиента дольше порога, по причинам ([README](../../README.md#как-читать-отчёт)) |
-| `client_waits.generator_calls`, `stream_calls`, `connection_calls` | int | Все такие вызовы, отправленные и нет. Отправленный может считаться за несколько причин |
-| `client_waits.generator_tail_calls`, `stream_tail_calls`, `connection_tail_calls` | int | Только среди вызовов хвоста p99 и неотправленных: по ним выбирается `tail_wait_cause` |
+| `client_waits.generator_calls`, `client_waits.stream_calls`, `client_waits.connection_calls` | int | Все такие вызовы, отправленные и нет. Отправленный может считаться за несколько причин |
+| `client_waits.generator_tail_calls`, `client_waits.stream_tail_calls`, `client_waits.connection_tail_calls` | int | Только среди вызовов хвоста p99 и неотправленных: по ним выбирается `tail_wait_cause` |
 | `methods` | []object | Методы, см. ниже |
 | `unchecked` | []object | Методы, которые не удалось проверить через reflection |
 | `unchecked[].method` | string | Метод |
@@ -239,37 +240,43 @@ SIGTERM (`docker stop`, Kubernetes, отмена джоба в CI) сразу о
 
 | Поле | Тип | Что значит |
 |---|---|---|
-| `method` | string | Полное имя метода |
-| `invalid_reason` | string? | Метод ничего не измерил про нагрузку: `request_error`, `client_error`, `bad_response`, `mixed`; `null` — измерил |
-| `sent`, `failed`, `aborted`, `not_sent`, `not_sent_generator`, `not_sent_stream`, `not_sent_connection`, `warmup_sent`, `warmup_failed`, `warmup_not_sent` | int | Доля метода в одноимённых полях прогона |
-| `rps` | float? | `sent/s`: отправленные, делённые на время отправки; `null` — ни одного вызова |
-| `timeout_us` | int | Таймаут метода |
-| `planned_rps_low`, `planned_rps_high` | int | Наименьший и наибольший плановый темп всего плана |
-| `latency` | object | Задержка успешных вызовов, с таймаутами и оборванными как нижними границами |
-| `latency.min`, `latency.p50`, `latency.p90`, `latency.p95`, `latency.p99`, `latency.max` | перцентиль? | Минимум, перцентили, максимум |
-| `p99_without_client_waits` | перцентиль? | p99 тех же вызовов без ожиданий на стороне клиента; может выйти немного заниженным |
-| `observations` | int | Наблюдений за перцентилями `latency` |
-| `censored` | int | Из них известна только нижняя граница |
-| `invalid_latencies` | int | Отброшены как невозможные (отрицательная задержка) — признак ошибки в коде, а не в цели |
-| `timed_out` | int | Ушли и не получили ответа за таймаут |
-| `timed_out_after_wait` | int | Из `timed_out` — ушли, когда от таймаута оставалось меньше половины |
-| `cut_off` | int | Ушли и не получили статуса |
-| `unreachable` | int | Не дошли до цели |
-| `unclassified` | int | Отправитель не дал категорию — дефект отправителя, не наблюдение о цели |
-| `outside_timeline` | int | Не попали в `seconds`: момент вызова не лёг на шкалу |
-| `request_error`, `overload`, `failure`, `bad_response` | object | Категория ([README](../../README.md#как-читать-отчёт)), у каждой одинаковые поля |
-| `<категория>.count` | int | Сколько вызовов в ней |
-| `<категория>.p50`, `<категория>.p90`, `<категория>.p95`, `<категория>.p99`, `<категория>.max` | перцентиль? | Её время ответа |
-| `client_error` | int | Клиент отказался отправлять |
-| `failure_codes` | []object | Упавшие вызовы по кодам gRPC |
-| `failure_codes[].code` | string | Каноническое имя кода (`UNAVAILABLE`); список может расширяться |
-| `failure_codes[].count` | int | Сколько |
-| `failure_codes[].from_target` | bool | `true` — статус пришёл по сети, `false` — код поставил клиент |
-| `silent_from_s` | int? | Секунда, с которой цель не ответила ни на один отправленный вызов; `null` — тишины нет |
-| `silent_sent_rps` | int? | Сколько вызовов ушло за секунду до неё (за первую, если тишина с начала) |
-| `silent_planned_rps_low`, `silent_planned_rps_high` | int? | Плановый темп стадий в ту же секунду; `null` и тогда, когда стадий в ней не было |
-| `last_answer_at_us` | int? | Когда ушёл последний вызов, на который цель ответила; `null` — не ответила ни разу |
-| `seconds` | []object | Посекундная шкала, см. ниже |
+`<категория>` — каждая из четырёх категорий, у которых в JSON есть свой объект с временем ответа:
+`request_error`, `overload`, `failure`, `bad_response` ([категории](../../README.md#как-читать-отчёт)).
+Остальные — просто счётчики.
+
+| Поле | Тип | Что значит |
+|---|---|---|
+| `methods[].method` | string | Полное имя метода |
+| `methods[].invalid_reason` | string? | Метод ничего не измерил про нагрузку: `request_error`, `client_error`, `bad_response`, `mixed`; `null` — измерил |
+| `methods[].sent`, `methods[].failed`, `methods[].aborted`, `methods[].not_sent`, `methods[].not_sent_generator`, `methods[].not_sent_stream`, `methods[].not_sent_connection`, `methods[].warmup_sent`, `methods[].warmup_failed`, `methods[].warmup_not_sent` | int | Доля метода в одноимённых полях прогона |
+| `methods[].rps` | float? | `sent/s`: отправленные, делённые на время отправки; `null` — ни одного вызова |
+| `methods[].timeout_us` | int | Таймаут метода |
+| `methods[].planned_rps_low`, `methods[].planned_rps_high` | int | Наименьший и наибольший плановый темп всего плана |
+| `methods[].latency` | object | Задержка успешных вызовов, с таймаутами и оборванными как нижними границами |
+| `methods[].latency.min`, `methods[].latency.p50`, `methods[].latency.p90`, `methods[].latency.p95`, `methods[].latency.p99`, `methods[].latency.max` | перцентиль? | Минимум, перцентили, максимум |
+| `methods[].p99_without_client_waits` | перцентиль? | p99 тех же вызовов без ожиданий на стороне клиента; может выйти немного заниженным |
+| `methods[].observations` | int | Наблюдений за перцентилями `latency` |
+| `methods[].censored` | int | Из них известна только нижняя граница |
+| `methods[].invalid_latencies` | int | Отброшены как невозможные (отрицательная задержка) — признак ошибки в коде, а не в цели |
+| `methods[].timed_out` | int | Ушли и не получили ответа за таймаут |
+| `methods[].timed_out_after_wait` | int | Из `timed_out` — ушли, когда от таймаута оставалось меньше половины |
+| `methods[].cut_off` | int | Ушли и не получили статуса |
+| `methods[].unreachable` | int | Не дошли до цели |
+| `methods[].unclassified` | int | Отправитель не дал категорию — дефект отправителя, не наблюдение о цели |
+| `methods[].outside_timeline` | int | Не попали в `seconds`: момент вызова не лёг на шкалу |
+| `methods[].<категория>` | object | Ответы этой категории |
+| `methods[].<категория>.count` | int | Сколько вызовов в ней |
+| `methods[].<категория>.p50`, `methods[].<категория>.p90`, `methods[].<категория>.p95`, `methods[].<категория>.p99`, `methods[].<категория>.max` | перцентиль? | Её время ответа |
+| `methods[].client_error` | int | Клиент отказался отправлять |
+| `methods[].failure_codes` | []object | Упавшие вызовы по кодам gRPC |
+| `methods[].failure_codes[].code` | string | Каноническое имя кода (`UNAVAILABLE`); список может расширяться |
+| `methods[].failure_codes[].count` | int | Сколько |
+| `methods[].failure_codes[].from_target` | bool | `true` — статус пришёл по сети, `false` — код поставил клиент |
+| `methods[].silent_from_s` | int? | Секунда, с которой цель не ответила ни на один отправленный вызов; `null` — тишины нет |
+| `methods[].silent_sent_rps` | int? | Сколько вызовов ушло за секунду до неё (за первую, если тишина с начала) |
+| `methods[].silent_planned_rps_low`, `methods[].silent_planned_rps_high` | int? | Плановый темп стадий в ту же секунду; `null` и тогда, когда стадий в ней не было |
+| `methods[].last_answer_at_us` | int? | Когда ушёл последний вызов, на который цель ответила; `null` — не ответила ни разу |
+| `methods[].seconds` | []object | Посекундная шкала, см. ниже |
 
 ### Секунда: `methods[].seconds[]`
 
@@ -278,11 +285,11 @@ SIGTERM (`docker stop`, Kubernetes, отмена джоба в CI) сразу о
 
 | Поле | Тип | Что значит |
 |---|---|---|
-| `warmup` | bool | Секунда в прогреве |
-| `begun` | int | Вызовы, начатые в эту секунду |
-| `succeeded`, `overload`, `failure`, `client_error`, `bad_response`, `request_error`, `timed_out`, `unreachable`, `cut_off`, `aborted`, `unclassified` | int | Вызовы, завершившиеся в эту секунду, по категориям |
-| `not_sent_generator`, `not_sent_stream`, `not_sent_connection` | int | Таймауты до отправки, завершившиеся в эту секунду, по причинам |
-| `in_flight` | int | Вызовов в полёте на конце секунды |
-| `lag_calls`, `lag_sum_us`, `lag_max_us` | int | По вызовам, запланированным на эту секунду: сколько, сумма и максимум опоздания старта |
-| `observed_calls` | int | Из них успешных |
-| `observed_lag_sum_us`, `transport_wait_sum_us`, `service_time_sum_us` | int | По успешным: сумма опоздания старта, ожидания до отправки (соединение и стрим), времени от отправки до ответа. В сумме — их задержки |
+| `methods[].seconds[].warmup` | bool | Секунда в прогреве |
+| `methods[].seconds[].begun` | int | Вызовы, начатые в эту секунду |
+| `methods[].seconds[].succeeded`, `methods[].seconds[].overload`, `methods[].seconds[].failure`, `methods[].seconds[].client_error`, `methods[].seconds[].bad_response`, `methods[].seconds[].request_error`, `methods[].seconds[].timed_out`, `methods[].seconds[].unreachable`, `methods[].seconds[].cut_off`, `methods[].seconds[].aborted`, `methods[].seconds[].unclassified` | int | Вызовы, завершившиеся в эту секунду, по категориям |
+| `methods[].seconds[].not_sent_generator`, `methods[].seconds[].not_sent_stream`, `methods[].seconds[].not_sent_connection` | int | Таймауты до отправки, завершившиеся в эту секунду, по причинам |
+| `methods[].seconds[].in_flight` | int | Вызовов в полёте на конце секунды |
+| `methods[].seconds[].lag_calls`, `methods[].seconds[].lag_sum_us`, `methods[].seconds[].lag_max_us` | int | По вызовам, запланированным на эту секунду: сколько, сумма и максимум опоздания старта |
+| `methods[].seconds[].observed_calls` | int | Из них успешных |
+| `methods[].seconds[].observed_lag_sum_us`, `methods[].seconds[].transport_wait_sum_us`, `methods[].seconds[].service_time_sum_us` | int | По успешным: сумма опоздания старта, ожидания до отправки (соединение и стрим), времени от отправки до ответа. В сумме — их задержки |

@@ -193,14 +193,15 @@ than was planned.
 The contract's rules — schema version, units, `null` rather than `0`, unknown fields — are in the
 [README](README.md#json-for-scripts-and-ci). Here is every field of `schema_version` 1. A type with
 `?` may be `null`. Warm-up counters are in no other counter; `sent` and all its shares are
-measured calls only.
+measured calls only. The first column is the field's full path.
 
-**Percentile** — an object; `null` — not a single observation.
+**Percentile** — an object; `null` — not a single observation. `<percentile>` is any field typed
+"percentile?" below.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `us` | int | The value, whole microseconds |
-| `lower_bound` | bool | `true` — a lower bound, not a value ([README](README.md#reading-the-report)) |
+| `<percentile>.us` | int | The value, whole microseconds |
+| `<percentile>.lower_bound` | bool | `true` — a lower bound, not a value ([README](README.md#reading-the-report)) |
 
 ### Run
 
@@ -236,8 +237,8 @@ measured calls only.
 | `connections.first_limit`, `connections.last_limit` | int? | `MAX_CONCURRENT_STREAMS` at the first and last handshake; `null` — not announced (`0` — announced zero) |
 | `connections.limit_changes` | int | Handshakes that announced a limit different from the one before |
 | `client_waits` | object | Calls that waited on the client side over the floor, by cause ([README](README.md#reading-the-report)) |
-| `client_waits.generator_calls`, `stream_calls`, `connection_calls` | int | All such calls, sent or not. A sent call can count for several causes |
-| `client_waits.generator_tail_calls`, `stream_tail_calls`, `connection_tail_calls` | int | Only among the p99 tail and the unsent: these pick `tail_wait_cause` |
+| `client_waits.generator_calls`, `client_waits.stream_calls`, `client_waits.connection_calls` | int | All such calls, sent or not. A sent call can count for several causes |
+| `client_waits.generator_tail_calls`, `client_waits.stream_tail_calls`, `client_waits.connection_tail_calls` | int | Only among the p99 tail and the unsent: these pick `tail_wait_cause` |
 | `methods` | []object | Methods, see below |
 | `unchecked` | []object | Methods that could not be checked through reflection |
 | `unchecked[].method` | string | The method |
@@ -249,37 +250,43 @@ measured calls only.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `method` | string | The full method name |
-| `invalid_reason` | string? | The method measured nothing about load: `request_error`, `client_error`, `bad_response`, `mixed`; `null` — it did |
-| `sent`, `failed`, `aborted`, `not_sent`, `not_sent_generator`, `not_sent_stream`, `not_sent_connection`, `warmup_sent`, `warmup_failed`, `warmup_not_sent` | int | The method's share of the run's fields of the same name |
-| `rps` | float? | `sent/s`: calls sent divided by the sending time; `null` — no calls |
-| `timeout_us` | int | The method's timeout |
-| `planned_rps_low`, `planned_rps_high` | int | Lowest and highest planned rate of the whole plan |
-| `latency` | object | Latency of successful calls, with timeouts and aborted calls as lower bounds |
-| `latency.min`, `latency.p50`, `latency.p90`, `latency.p95`, `latency.p99`, `latency.max` | percentile? | Minimum, percentiles, maximum |
-| `p99_without_client_waits` | percentile? | p99 of the same calls without client-side waits; may come out slightly low |
-| `observations` | int | Observations behind the `latency` percentiles |
-| `censored` | int | Of them, only a lower bound is known |
-| `invalid_latencies` | int | Rejected as impossible (a negative latency) — a sign of a bug in the code, not in the target |
-| `timed_out` | int | Went out and got no answer within the timeout |
-| `timed_out_after_wait` | int | Of `timed_out` — went out with less than half the timeout left |
-| `cut_off` | int | Went out and got no status |
-| `unreachable` | int | Never reached the target |
-| `unclassified` | int | The sender gave no category — a sender defect, not an observation of the target |
-| `outside_timeline` | int | Left off `seconds`: a moment of the call did not fit the timeline |
-| `request_error`, `overload`, `failure`, `bad_response` | object | The category ([README](README.md#reading-the-report)), each with the same fields |
-| `<category>.count` | int | Calls in it |
-| `<category>.p50`, `<category>.p90`, `<category>.p95`, `<category>.p99`, `<category>.max` | percentile? | Its answer time |
-| `client_error` | int | The client refused to send |
-| `failure_codes` | []object | Failed calls by gRPC code |
-| `failure_codes[].code` | string | The canonical code name (`UNAVAILABLE`); the list may grow |
-| `failure_codes[].count` | int | How many |
-| `failure_codes[].from_target` | bool | `true` — the status came over the wire, `false` — the client set the code |
-| `silent_from_s` | int? | The second from which the target answered none of the calls sent; `null` — no silence |
-| `silent_sent_rps` | int? | Calls sent in the second before it (in the first, if the silence starts there) |
-| `silent_planned_rps_low`, `silent_planned_rps_high` | int? | The planned rate of the stages in that second; `null` also when no stage ran in it |
-| `last_answer_at_us` | int? | When the last call the target answered went out; `null` — it never answered |
-| `seconds` | []object | The per-second timeline, see below |
+`<category>` is each of the four categories that have an object with answer times in JSON:
+`request_error`, `overload`, `failure`, `bad_response` ([categories](README.md#reading-the-report)).
+The rest are plain counters.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `methods[].method` | string | The full method name |
+| `methods[].invalid_reason` | string? | The method measured nothing about load: `request_error`, `client_error`, `bad_response`, `mixed`; `null` — it did |
+| `methods[].sent`, `methods[].failed`, `methods[].aborted`, `methods[].not_sent`, `methods[].not_sent_generator`, `methods[].not_sent_stream`, `methods[].not_sent_connection`, `methods[].warmup_sent`, `methods[].warmup_failed`, `methods[].warmup_not_sent` | int | The method's share of the run's fields of the same name |
+| `methods[].rps` | float? | `sent/s`: calls sent divided by the sending time; `null` — no calls |
+| `methods[].timeout_us` | int | The method's timeout |
+| `methods[].planned_rps_low`, `methods[].planned_rps_high` | int | Lowest and highest planned rate of the whole plan |
+| `methods[].latency` | object | Latency of successful calls, with timeouts and aborted calls as lower bounds |
+| `methods[].latency.min`, `methods[].latency.p50`, `methods[].latency.p90`, `methods[].latency.p95`, `methods[].latency.p99`, `methods[].latency.max` | percentile? | Minimum, percentiles, maximum |
+| `methods[].p99_without_client_waits` | percentile? | p99 of the same calls without client-side waits; may come out slightly low |
+| `methods[].observations` | int | Observations behind the `latency` percentiles |
+| `methods[].censored` | int | Of them, only a lower bound is known |
+| `methods[].invalid_latencies` | int | Rejected as impossible (a negative latency) — a sign of a bug in the code, not in the target |
+| `methods[].timed_out` | int | Went out and got no answer within the timeout |
+| `methods[].timed_out_after_wait` | int | Of `timed_out` — went out with less than half the timeout left |
+| `methods[].cut_off` | int | Went out and got no status |
+| `methods[].unreachable` | int | Never reached the target |
+| `methods[].unclassified` | int | The sender gave no category — a sender defect, not an observation of the target |
+| `methods[].outside_timeline` | int | Left off `seconds`: a moment of the call did not fit the timeline |
+| `methods[].<category>` | object | Answers of this category |
+| `methods[].<category>.count` | int | Calls in it |
+| `methods[].<category>.p50`, `methods[].<category>.p90`, `methods[].<category>.p95`, `methods[].<category>.p99`, `methods[].<category>.max` | percentile? | Its answer time |
+| `methods[].client_error` | int | The client refused to send |
+| `methods[].failure_codes` | []object | Failed calls by gRPC code |
+| `methods[].failure_codes[].code` | string | The canonical code name (`UNAVAILABLE`); the list may grow |
+| `methods[].failure_codes[].count` | int | How many |
+| `methods[].failure_codes[].from_target` | bool | `true` — the status came over the wire, `false` — the client set the code |
+| `methods[].silent_from_s` | int? | The second from which the target answered none of the calls sent; `null` — no silence |
+| `methods[].silent_sent_rps` | int? | Calls sent in the second before it (in the first, if the silence starts there) |
+| `methods[].silent_planned_rps_low`, `methods[].silent_planned_rps_high` | int? | The planned rate of the stages in that second; `null` also when no stage ran in it |
+| `methods[].last_answer_at_us` | int? | When the last call the target answered went out; `null` — it never answered |
+| `methods[].seconds` | []object | The per-second timeline, see below |
 
 ### Second: `methods[].seconds[]`
 
@@ -289,11 +296,11 @@ of the method.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `warmup` | bool | The second is in the warm-up |
-| `begun` | int | Calls begun in this second |
-| `succeeded`, `overload`, `failure`, `client_error`, `bad_response`, `request_error`, `timed_out`, `unreachable`, `cut_off`, `aborted`, `unclassified` | int | Calls that finished in this second, by category |
-| `not_sent_generator`, `not_sent_stream`, `not_sent_connection` | int | Timeouts before sending that finished in this second, by cause |
-| `in_flight` | int | Calls in flight at the end of the second |
-| `lag_calls`, `lag_sum_us`, `lag_max_us` | int | Over calls scheduled in this second: how many, sum and maximum of the start lag |
-| `observed_calls` | int | Of them, the successful ones |
-| `observed_lag_sum_us`, `transport_wait_sum_us`, `service_time_sum_us` | int | Over the successful ones: sum of start lag, of the wait before sending (connection and stream), of the time from sending to the answer. Together — their latencies |
+| `methods[].seconds[].warmup` | bool | The second is in the warm-up |
+| `methods[].seconds[].begun` | int | Calls begun in this second |
+| `methods[].seconds[].succeeded`, `methods[].seconds[].overload`, `methods[].seconds[].failure`, `methods[].seconds[].client_error`, `methods[].seconds[].bad_response`, `methods[].seconds[].request_error`, `methods[].seconds[].timed_out`, `methods[].seconds[].unreachable`, `methods[].seconds[].cut_off`, `methods[].seconds[].aborted`, `methods[].seconds[].unclassified` | int | Calls that finished in this second, by category |
+| `methods[].seconds[].not_sent_generator`, `methods[].seconds[].not_sent_stream`, `methods[].seconds[].not_sent_connection` | int | Timeouts before sending that finished in this second, by cause |
+| `methods[].seconds[].in_flight` | int | Calls in flight at the end of the second |
+| `methods[].seconds[].lag_calls`, `methods[].seconds[].lag_sum_us`, `methods[].seconds[].lag_max_us` | int | Over calls scheduled in this second: how many, sum and maximum of the start lag |
+| `methods[].seconds[].observed_calls` | int | Of them, the successful ones |
+| `methods[].seconds[].observed_lag_sum_us`, `methods[].seconds[].transport_wait_sum_us`, `methods[].seconds[].service_time_sum_us` | int | Over the successful ones: sum of start lag, of the wait before sending (connection and stream), of the time from sending to the answer. Together — their latencies |
