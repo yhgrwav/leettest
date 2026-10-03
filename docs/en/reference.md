@@ -195,9 +195,12 @@ The contract's rules — schema version, units, `null` rather than `0`, unknown 
 `?` may be `null`. Warm-up counters are in no other counter; `sent` and all its shares are
 measured calls only.
 
-**Percentile** — an object `{"us", "lower_bound"}`: `us` is whole microseconds, `lower_bound: true`
-means a lower bound, not a value ([README](README.md#reading-the-report)). `null` — not a single
-observation.
+**Percentile** — an object; `null` — not a single observation.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `us` | int | The value, whole microseconds |
+| `lower_bound` | bool | `true` — a lower bound, not a value ([README](README.md#reading-the-report)) |
 
 ### Run
 
@@ -252,7 +255,8 @@ observation.
 | `rps` | float? | `sent/s`: calls sent divided by the sending time; `null` — no calls |
 | `timeout_us` | int | The method's timeout |
 | `planned_rps_low`, `planned_rps_high` | int | Lowest and highest planned rate of the whole plan |
-| `latency` | object | `min`, `p50`, `p90`, `p95`, `p99`, `max` — percentiles? of successful calls, with timeouts and aborted calls as lower bounds |
+| `latency` | object | Latency of successful calls, with timeouts and aborted calls as lower bounds |
+| `latency.min`, `latency.p50`, `latency.p90`, `latency.p95`, `latency.p99`, `latency.max` | percentile? | Minimum, percentiles, maximum |
 | `p99_without_client_waits` | percentile? | p99 of the same calls without client-side waits; may come out slightly low |
 | `observations` | int | Observations behind the `latency` percentiles |
 | `censored` | int | Of them, only a lower bound is known |
@@ -263,7 +267,9 @@ observation.
 | `unreachable` | int | Never reached the target |
 | `unclassified` | int | The sender gave no category — a sender defect, not an observation of the target |
 | `outside_timeline` | int | Left off `seconds`: a moment of the call did not fit the timeline |
-| `request_error`, `overload`, `failure`, `bad_response` | object | The category ([README](README.md#reading-the-report)): `count` and percentiles? `p50`, `p90`, `p95`, `p99`, `max` of its answer time |
+| `request_error`, `overload`, `failure`, `bad_response` | object | The category ([README](README.md#reading-the-report)), each with the same fields |
+| `<category>.count` | int | Calls in it |
+| `<category>.p50`, `<category>.p90`, `<category>.p95`, `<category>.p99`, `<category>.max` | percentile? | Its answer time |
 | `client_error` | int | The client refused to send |
 | `failure_codes` | []object | Failed calls by gRPC code |
 | `failure_codes[].code` | string | The canonical code name (`UNAVAILABLE`); the list may grow |
