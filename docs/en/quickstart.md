@@ -5,7 +5,8 @@
 
 A full pass over what LeetTest does, in half an hour: from installing it to a report you can hand
 to the service's developers, and a run in CI. Every field and flag is in the
-[README](README.md); this is how they work together.
+[reference](reference.md), reading the report in the [README](README.md); this is how they work
+together.
 
 Working through an AI agent? Give it [AGENTS.md](../../AGENTS.md): the same ground, in the shape
 an agent needs — a run without a terminal, JSON, exit codes.
@@ -75,7 +76,7 @@ load:
 
 - **`name`** — the run's name in the header.
 - **`tls: false`** — the stand has no encryption. TLS is on by default; `ca`, `cert`, `key`,
-  `server_name` for TLS and mTLS are in the README's «Access to the service».
+  `server_name` for TLS and mTLS are in the reference, [«Access to the service»](reference.md#access-to-the-service).
 - **`metadata`** — headers on every call. `${LEETTEST_TOKEN}` comes from the environment: the
   token is in neither the config nor the shell history, and LeetTest prints header values nowhere.
   An unset variable is an error before the start, not a run with an empty token.
@@ -167,7 +168,8 @@ What matters here:
   the run is invalid: numbers below the clock step mean nothing.
 
 The failure categories (`overload`, `failure`, `request error`, `timed out`, `cut off`,
-`unreachable` and others) and what they mean are in the README, «Run».
+`unreachable` and others) and what they mean are in the
+[README, «Reading the report»](README.md#reading-the-report).
 
 ## 6. Other target behaviours
 
@@ -204,7 +206,7 @@ $ echo $?
 
 The JSON is versioned (`schema_version`); decisions are fields, not text: `invalid_reasons`,
 `methods[].invalid_reason`, `tail_wait_cause`, `methods[].silent_from_s`. They are described in
-the README, «Run».
+the [README, «JSON for scripts and CI»](README.md#json-for-scripts-and-ci).
 
 Exit codes:
 
@@ -229,6 +231,6 @@ without one. The report is marked `fake target`.
 
 ## Next
 
-- [README](README.md) — every field, flag and report line.
+- [Reference](reference.md) — every field and flag; [README](README.md) — reading the report.
 - [Pitfalls](pitfalls.md) — what breaks measurements.
 - [CONTRIBUTING](../../CONTRIBUTING.md) — proposing a change, as a person or with an AI agent.
