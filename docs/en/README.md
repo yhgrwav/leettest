@@ -43,7 +43,7 @@ runner. Everything between the generator and the target goes into the latency an
 target's time: on our stand at 1000 RPS, through Docker Desktop port forwarding p99 was 38 ms,
 inside the Docker network 2 ms. The exact call schedule is Linux-only; in a container with a CPU
 quota under two cores, rare start lags up to the quota period (usually 100 ms) are possible, and
-the report shows them. On Windows the clock steps about 0.5 ms, and a run against a fast service
+the report shows them. Behind an L4 balancer one backend is loaded — [see below](#reading-the-report). On Windows the clock steps about 0.5 ms, and a run against a fast service
 will be declared invalid.
 
 **[Quickstart →](quickstart.md)** — every capability on the reference stand: a config with every
@@ -102,9 +102,11 @@ At the end — a report per method: sent, failed, `sent/s`, p50/p90/p95/p99.
   does not lower this number.
 - A percentile whose place calls cut off by the timeout could take is printed as a **lower
   bound**: `>2.0s`. Not a value, but "at least".
-- The load goes over **one connection** to one address: if DNS returns several addresses, only one
-  backend is loaded. The report prints how many times the connection reconnected and which
-  concurrent stream limit the target announced.
+- The load goes over **one connection**, and it lands on **one backend**: behind an L4 balancer
+  (Kubernetes ClusterIP, NLB) and when DNS returns several addresses. "Does not hold X" is about
+  that backend, not the service, and the report will not show it. An L7 balancer (Envoy, a gRPC
+  ingress) spreads calls even over one connection. The report prints how many times the connection
+  reconnected and which concurrent stream limit the target announced.
 
 **Categories.** Answers other than a success are split into rows, each with its own percentiles.
 The status may have come from a proxy in front of the target rather than from the target: nginx
