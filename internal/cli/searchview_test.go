@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -32,8 +33,14 @@ var searchStart = time.Date(2026, 10, 3, 12, 0, 0, 0, time.UTC)
 func testSearchModel(t *testing.T) *searchModel {
 	t.Helper()
 
+	return testSearchModelOf(t, bpPlan)
+}
+
+func testSearchModelOf(t *testing.T, plan breakpoint.Plan) *searchModel {
+	t.Helper()
+
 	base := testModel(t)
-	m := newSearchModel("localhost:50051", "pkg.Svc/Do", bpPlan, 10*time.Second, base.settings,
+	m := newSearchModel("localhost:50051", "pkg.Svc/Do", plan, 10*time.Second, base.settings,
 		NewStopper(func() {}, func() {}, func() {}, time.Hour))
 	m.start = searchStart
 	m.now = func() time.Time { return searchStart.Add(72 * time.Second) }
@@ -112,6 +119,7 @@ func collapse(s string) string {
 // rowsOf are the lines of out that start with a run kind, collapsed.
 func rowsOf(out string) []string {
 	var rows []string
+	out = regexp.MustCompile("\x1b\\[[0-9;]*m").ReplaceAllString(out, "")
 	for _, line := range strings.Split(out, "\n") {
 		line = strings.Trim(line, " │|")
 		if f := strings.Fields(line); len(f) > 0 && (f[0] == "step" || f[0] == "repeat" || f[0] == "probe") {
@@ -270,12 +278,110 @@ func TestSearchView_DrawsOnlyCheckedGlyphs(t *testing.T) {
 	}
 }
 
+// A screen that takes 200ms for every message delays no call: each run sends
+// all it scheduled, on time — start lag p99 under 1ms, nothing left unsent.
+// Counting alone would not show it: in an open model late ticks still go
+// out, so a run whose schedule began before the screen let it go keeps its
+// count and spoils its latency.
+//
+// On every host the bound is half the screen's 200ms (the flaky-test rule):
+// a schedule started before the screen let the run go puts its first calls
+// up to 200ms late; the host's own timer (1-2ms on Windows) stays far under.
+// Linux, where the schedule is exact, also holds 1ms outright (below).
+func TestSearchFeed_ASlowScreenDelaysNoCall(t *testing.T) {
+	for i, lag := range searchLags(t, func(any) { time.Sleep(200 * time.Millisecond) }) {
+		if lag >= 100*time.Millisecond {
+			t.Errorf("run %d: start lag p99 %v with a 200ms screen: the screen delayed calls", i, lag)
+		}
+	}
+}
+
+// searchLags runs a short search on a fake, its screen fed through send,
+// and returns each run's start lag p99, failing on any call not sent.
+func searchLags(t *testing.T, send func(any)) []time.Duration {
+	t.Helper()
+
+	feed := NewSearchFeed(send)
+	p := breakpoint.Plan{From: 200, To: 250, Settle: 0, Hold: 400 * time.Millisecond, Timeout: 200 * time.Millisecond}
+	run := func(ctx context.Context, rps int, settle, hold time.Duration, need int) (engine.Report, error) {
+		eng, err := engine.New(engine.Options{
+			Calls: []engine.Call{{Method: "/pkg.Svc/Do", Timeout: p.Timeout,
+				Stages: []engine.Stage{{StartRPS: rps, TargetRPS: rps, Duration: hold}}}},
+			Sender: engine.FakeSender{Delay: time.Millisecond}, MaxInFlight: need, Warmup: settle,
+		})
+		if err != nil {
+			return engine.Report{}, err
+		}
+		feed.Starting(eng)
+		err = eng.Run(ctx)
+
+		return eng.Report(), err
+	}
+	res, err := breakpoint.SearchWith(t.Context(), p, run, feed.Observer())
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(res.Steps) == 0 {
+		t.Fatal("no runs")
+	}
+	lags := make([]time.Duration, 0, len(res.Steps))
+	for i := range res.Steps {
+		s := &res.Steps[i]
+		r := s.Report
+		if r.Sent != r.Scheduled || r.NotSent != 0 || !r.StartLagP99.Defined {
+			t.Errorf("%d rps %v: sent %d of %d, not sent %d; want all, none", s.RPS, s.Kind, r.Sent, r.Scheduled, r.NotSent)
+		}
+		lags = append(lags, r.StartLagP99.Value)
+	}
+
+	return lags
+}
+
+// On a host whose engine schedules exactly (Linux), a slow screen leaves the
+// start lag under 1ms outright.
+func TestSearchFeed_ASlowScreenKeepsTheLagUnderAMillisecond(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the absolute bound holds where the schedule is exact: Linux")
+	}
+	for i, lag := range searchLags(t, func(any) { time.Sleep(200 * time.Millisecond) }) {
+		if lag >= time.Millisecond {
+			t.Errorf("run %d: start lag p99 %v, want under 1ms", i, lag)
+		}
+	}
+}
+
+// The next run's first frame carries none of the last run's numbers: the
+// panel starts afresh with each run.
+func TestSearchView_ANewRunStartsWithAFreshPanel(t *testing.T) {
+	m := testSearchModel(t)
+	send(m, searchRunMsg{eng: stepEngine(t, 244), run: breakpoint.Run{RPS: 244, Kind: breakpoint.RateStep, Step: 5, Steps: 6}})
+	m.base.snapshot = engine.Snapshot{Sent: 98765, Failed: 4321, InFlight: 777, RPS: 243,
+		P50: exact(613), P90: exact(719), P99: exact(887)}
+	h := &history{}
+	h.push(243, exact(613), exact(719), exact(887))
+	m.base.overall = *h
+	last := m.View()
+	for _, n := range []string{"98,765", "777", "613", "719", "887"} {
+		if !strings.Contains(last, n) {
+			t.Fatalf("the fixture's number %s is not on run k's frame:\n%s", n, last)
+		}
+	}
+
+	send(m, searchRunMsg{eng: stepEngine(t, 305), run: breakpoint.Run{RPS: 305, Kind: breakpoint.RateStep, Step: 6, Steps: 6}})
+	first := m.View()
+	for _, n := range []string{"98,765", "98765", "4,321", "4321", "777", "613", "719", "887"} {
+		if strings.Contains(first, n) {
+			t.Errorf("run k+1's first frame still shows %s of run k:\n%s", n, first)
+		}
+	}
+}
+
 // End to end without a tty: a real search on a fake feeds the screen through
 // its observer, and the final screen's rows are the text report's.
 func TestSearchView_ARealSearchDrivesTheScreen(t *testing.T) {
-	m := testSearchModel(t)
-	feed := NewSearchFeed(func(msg any) { m.Update(msg) })
 	p := breakpoint.Plan{From: 100, To: 400, Settle: 10 * time.Millisecond, Hold: 50 * time.Millisecond}
+	m := testSearchModelOf(t, p)
+	feed := NewSearchFeed(func(msg any) { m.Update(msg) })
 	run := func(_ context.Context, rps int, _, _ time.Duration, _ int) (engine.Report, error) {
 		feed.Starting(stepEngine(t, rps))
 		if rps > 270 {

@@ -99,23 +99,30 @@ func (m *model) fullBody(inner int) string {
 		b.WriteString("\n\n")
 	}
 
-	switch {
-	case m.done:
+	if m.done {
 		b.WriteString(m.finalReport(inner))
-	case m.showHelp:
-		b.WriteString(m.help(inner))
-	case m.active == 0:
-		b.WriteString(m.summary(inner))
-	case m.active == m.settingsTab():
-		b.WriteString(m.settingsView(inner))
-	default:
-		b.WriteString(m.method(inner, m.active-1))
+	} else {
+		b.WriteString(m.content(inner))
 	}
 
 	b.WriteString("\n\n")
 	b.WriteString(m.footer())
 
 	return b.String()
+}
+
+// content is what the active tab shows while the run goes on, or the help.
+func (m *model) content(inner int) string {
+	switch {
+	case m.showHelp:
+		return m.help(inner)
+	case m.active == 0:
+		return m.summary(inner)
+	case m.active == m.settingsTab():
+		return m.settingsView(inner)
+	default:
+		return m.method(inner, m.active-1)
+	}
 }
 
 func (m *model) header(width int) string {
