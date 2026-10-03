@@ -48,6 +48,12 @@ type searchSetup struct {
 	stepBefore time.Duration
 }
 
+// searchScreen says whether a search draws its full screen: only in a
+// terminal and never with -output json; otherwise the stderr lines.
+func searchScreen(_, _ bool) bool {
+	return true
+}
+
 // searchExitCode is the exit code of a search that ended with outcome:
 // findings are 0, an invalid search 2 as an invalid run, a soft stop 3.
 func searchExitCode(outcome breakpoint.Outcome) int {
