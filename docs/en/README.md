@@ -104,8 +104,8 @@ At the end — a report per method: sent, failed, `sent/s`, p50/p90/p95/p99.
   bound**: `>2.0s`. Not a value, but "at least".
 - The load goes over **one connection**, and it lands on **one backend**: behind an L4 balancer
   (Kubernetes ClusterIP, NLB) and when DNS returns several addresses. "Does not hold X" is about
-  that backend, not the service, and the report will not show it. An L7 balancer (Envoy, a gRPC
-  ingress) spreads calls even over one connection. The report prints how many times the connection
+  that backend, not the service, and the report will not show it. An L7 balancer that spreads
+  individual requests (Envoy, a gRPC ingress) spreads even one connection. The report prints how many times the connection
   reconnected and which concurrent stream limit the target announced.
 
 **Categories.** Answers other than a success are split into rows, each with its own percentiles.
