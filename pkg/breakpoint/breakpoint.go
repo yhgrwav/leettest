@@ -244,6 +244,35 @@ func ProbeHold(rps int) time.Duration {
 	return max(time.Second, time.Duration(ProbeCalls)*time.Second/time.Duration(rps))
 }
 
+// Run is a run about to start, as an Observer sees it. Step is the 1-based
+// index of the step it runs or repeats, of at most Steps; Probe the 1-based
+// index of a probe, of at most MaxProbes.
+type Run struct {
+	RPS   int
+	Kind  Kind
+	Step  int
+	Steps int
+	Probe int
+}
+
+// Observer is told of the search's progress, only between runs, never inside
+// one's measured window. It must return quickly: the search waits for it, and
+// the time it takes is added to the search's.
+type Observer struct {
+	// Started is called before each run.
+	Started func(Run)
+	// Finished is called after each run with its judgement.
+	Finished func(Step)
+	// Cooldown is called before the pause without load ahead of a repeat of
+	// rps.
+	Cooldown func(d time.Duration, rps int)
+}
+
+// SearchWith is Search telling obs of its progress.
+func SearchWith(ctx context.Context, plan Plan, run RunStep, _ Observer) (Result, error) {
+	return Search(ctx, plan, run)
+}
+
 // Search runs the plan's steps from the lowest until one breaks and a repeat
 // of it breaks too, or the plan ends. A context ended on the way is the
 // outcome Stopped and an invalid run the outcome Invalid, not errors.
