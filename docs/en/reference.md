@@ -187,3 +187,107 @@ interrupt it.
 
 A stopped run is marked incomplete in the report (exit 3): its numbers are honest but cover less
 than was planned.
+
+## JSON fields
+
+The contract's rules — schema version, units, `null` rather than `0`, unknown fields — are in the
+[README](README.md#json-for-scripts-and-ci). Here is every field of `schema_version` 1. A type with
+`?` may be `null`. Warm-up counters are in no other counter; `sent` and all its shares are
+measured calls only.
+
+**Percentile** — an object `{"us", "lower_bound"}`: `us` is whole microseconds, `lower_bound: true`
+means a lower bound, not a value ([README](README.md#reading-the-report)). `null` — not a single
+observation.
+
+### Run
+
+| Field | Type | Meaning |
+|---|---|---|
+| `schema_version` | int | Schema version, now `1` |
+| `leettest_version` | string | The tool's version; a build from source gives the commit |
+| `target` | string | The target address from the config, `fake target` with `-fake` |
+| `outcome` | string | `complete`, `invalid`, `incomplete` — matches exit code `0`, `2`, `3` |
+| `invalid_reasons` | []string | Why the run is invalid: `in_flight_cap`, `nothing_measured`, `clock_step`. Empty — valid |
+| `tail_wait_cause` | string? | The client-side wait that set the tail: `generator`, `stream`, `connection`; `null` — no verdict |
+| `clock_step_ns` | int | The host clock step, ns: every latency and wait is ± it |
+| `started_at` | string | Start of the schedule, RFC 3339 UTC, warm-up included. Every `_us` and `_s` counts from it |
+| `duration_us` | int | How long the run went, warm-up included |
+| `planned_us` | int | How long it was meant to go |
+| `warmup_us` | int | Warm-up length |
+| `sent` | int | Measured calls, except `not_sent`. `unreachable` and `aborted` are in it |
+| `failed` | int | Of `sent` — every call that did not succeed, except `aborted` |
+| `aborted` | int | Cut off by our own stop |
+| `not_sent` | int | The timeout ran out before sending: in neither `sent` nor `failed` |
+| `not_sent_generator`, `not_sent_stream`, `not_sent_connection` | int | `not_sent` by cause: the generator was late, no free stream, no ready connection. They add up to `not_sent` |
+| `warmup_sent`, `warmup_failed`, `warmup_not_sent` | int | The same for calls scheduled in the warm-up |
+| `cap_hit` | object? | The `-max-in-flight` cap was hit; `null` — it was not |
+| `cap_hit.at_us` | int | When |
+| `cap_hit.unsent` | int | Calls the cap refused |
+| `cap_hit.over_deadline` | int | Calls in flight at that moment holding their slot past their deadline |
+| `start_lag` | object | How late calls started against the schedule |
+| `start_lag.p99` | percentile? | p99 of the lag |
+| `start_lag.max` | percentile? | The maximum, always exact; `null` without calls |
+| `connections` | object? | Connections; `null` when the sender does not report them |
+| `connections.open` | int | How many connections carried calls at once |
+| `connections.reconnects` | int | Successful handshakes after the first |
+| `connections.first_limit`, `connections.last_limit` | int? | `MAX_CONCURRENT_STREAMS` at the first and last handshake; `null` — not announced (`0` — announced zero) |
+| `connections.limit_changes` | int | Handshakes that announced a limit different from the one before |
+| `client_waits` | object | Calls that waited on the client side over the floor, by cause ([README](README.md#reading-the-report)) |
+| `client_waits.generator_calls`, `stream_calls`, `connection_calls` | int | All such calls, sent or not. A sent call can count for several causes |
+| `client_waits.generator_tail_calls`, `stream_tail_calls`, `connection_tail_calls` | int | Only among the p99 tail and the unsent: these pick `tail_wait_cause` |
+| `methods` | []object | Methods, see below |
+| `unchecked` | []object | Methods that could not be checked through reflection |
+| `unchecked[].method` | string | The method |
+| `unchecked[].reason` | string | `reflection_off` or `reflection_failed` |
+| `unchecked[].error` | string | Text for people, changes with grpc-go |
+| `notes` | []string | The report's notes, text for people in ASCII; do not parse |
+
+### Method: `methods[]`
+
+| Field | Type | Meaning |
+|---|---|---|
+| `method` | string | The full method name |
+| `invalid_reason` | string? | The method measured nothing about load: `request_error`, `client_error`, `bad_response`, `mixed`; `null` — it did |
+| `sent`, `failed`, `aborted`, `not_sent`, `not_sent_generator`, `not_sent_stream`, `not_sent_connection`, `warmup_sent`, `warmup_failed`, `warmup_not_sent` | int | The method's share of the run's fields of the same name |
+| `rps` | float? | `sent/s`: calls sent divided by the sending time; `null` — no calls |
+| `timeout_us` | int | The method's timeout |
+| `planned_rps_low`, `planned_rps_high` | int | Lowest and highest planned rate of the whole plan |
+| `latency` | object | `min`, `p50`, `p90`, `p95`, `p99`, `max` — percentiles? of successful calls, with timeouts and aborted calls as lower bounds |
+| `p99_without_client_waits` | percentile? | p99 of the same calls without client-side waits; may come out slightly low |
+| `observations` | int | Observations behind the `latency` percentiles |
+| `censored` | int | Of them, only a lower bound is known |
+| `invalid_latencies` | int | Rejected as impossible (a negative latency) — a sign of a bug in the code, not in the target |
+| `timed_out` | int | Went out and got no answer within the timeout |
+| `timed_out_after_wait` | int | Of `timed_out` — went out with less than half the timeout left |
+| `cut_off` | int | Went out and got no status |
+| `unreachable` | int | Never reached the target |
+| `unclassified` | int | The sender gave no category — a sender defect, not an observation of the target |
+| `outside_timeline` | int | Left off `seconds`: a moment of the call did not fit the timeline |
+| `request_error`, `overload`, `failure`, `bad_response` | object | The category ([README](README.md#reading-the-report)): `count` and percentiles? `p50`, `p90`, `p95`, `p99`, `max` of its answer time |
+| `client_error` | int | The client refused to send |
+| `failure_codes` | []object | Failed calls by gRPC code |
+| `failure_codes[].code` | string | The canonical code name (`UNAVAILABLE`); the list may grow |
+| `failure_codes[].count` | int | How many |
+| `failure_codes[].from_target` | bool | `true` — the status came over the wire, `false` — the client set the code |
+| `silent_from_s` | int? | The second from which the target answered none of the calls sent; `null` — no silence |
+| `silent_sent_rps` | int? | Calls sent in the second before it (in the first, if the silence starts there) |
+| `silent_planned_rps_low`, `silent_planned_rps_high` | int? | The planned rate of the stages in that second; `null` also when no stage ran in it |
+| `last_answer_at_us` | int? | When the last call the target answered went out; `null` — it never answered |
+| `seconds` | []object | The per-second timeline, see below |
+
+### Second: `methods[].seconds[]`
+
+The timeline covers the whole run, warm-up included, up to the last second anything happened in.
+Unlike the totals it keeps every call. To reconcile: `Σ begun` + `outside_timeline` is every call
+of the method.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `warmup` | bool | The second is in the warm-up |
+| `begun` | int | Calls begun in this second |
+| `succeeded`, `overload`, `failure`, `client_error`, `bad_response`, `request_error`, `timed_out`, `unreachable`, `cut_off`, `aborted`, `unclassified` | int | Calls that finished in this second, by category |
+| `not_sent_generator`, `not_sent_stream`, `not_sent_connection` | int | Timeouts before sending that finished in this second, by cause |
+| `in_flight` | int | Calls in flight at the end of the second |
+| `lag_calls`, `lag_sum_us`, `lag_max_us` | int | Over calls scheduled in this second: how many, sum and maximum of the start lag |
+| `observed_calls` | int | Of them, the successful ones |
+| `observed_lag_sum_us`, `transport_wait_sum_us`, `service_time_sum_us` | int | Over the successful ones: sum of start lag, of the wait before sending (connection and stream), of the time from sending to the answer. Together — their latencies |

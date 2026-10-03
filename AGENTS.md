@@ -49,8 +49,8 @@ Source of truth: [README, «Exit codes»](docs/en/README.md#exit-codes). What ea
 
 ### Reading the JSON
 
-The rule: every JSON field is described in `docs/<lang>/reference.md`, checked against
-`internal/cli/testdata/schema_v1.txt`. Until that table lands, the contract rules are in the
+Every JSON field is described in the [reference, «JSON fields»](docs/en/reference.md#json-fields),
+checked against `internal/cli/testdata/schema_v1.txt`; the contract rules are in the
 [README, «JSON for scripts and CI»](docs/en/README.md#json-for-scripts-and-ci). How an agent reads them:
 
 - Decisions are fields, not text: read `invalid_reasons`, `methods[].invalid_reason`,
