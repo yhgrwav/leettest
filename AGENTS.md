@@ -37,7 +37,7 @@ from outside (a method name, the target's error text) is escaped as `\uXXXX`.
 
 ### Exit codes — decide by these first
 
-Source of truth: [README, «Run»](docs/en/README.md). What each code asks of an agent:
+Source of truth: [README, «Exit codes»](docs/en/README.md#exit-codes). What each code asks of an agent:
 
 | Code | What to do |
 |---|---|
@@ -49,7 +49,9 @@ Source of truth: [README, «Run»](docs/en/README.md). What each code asks of an
 
 ### Reading the JSON
 
-Every field is described in the [README, «Run»](docs/en/README.md). How an agent reads them:
+The rule: every JSON field is described in `docs/<lang>/reference.md`, checked against
+`internal/cli/testdata/schema_v1.txt`. Until that table lands, the contract rules are in the
+[README, «JSON for scripts and CI»](docs/en/README.md#json-for-scripts-and-ci). How an agent reads them:
 
 - Decisions are fields, not text: read `invalid_reasons`, `methods[].invalid_reason`,
   `tail_wait_cause`, `methods[].silent_from_s`. Never parse `notes` — it is reworded freely.
@@ -59,7 +61,7 @@ Every field is described in the [README, «Run»](docs/en/README.md). How an age
 
 ### Writing a config
 
-Every field, with what it does: [README, «Config»](docs/en/README.md). A config using all of them
+Every field, with what it does: [reference](docs/en/reference.md). A config using all of them
 against the reference stand: [`examples/tour.yaml`](examples/tour.yaml). Rules an agent trips on:
 
 - The config is strict: an unknown field or a wrong value is an error with its line or call, not
