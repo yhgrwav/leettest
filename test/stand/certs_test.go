@@ -52,9 +52,28 @@ func readCert(t *testing.T, path string) *x509.Certificate {
 	return cert
 }
 
+// startMTLS serves a mutual-TLS stand with c on a network listener.
+func startMTLS(t *testing.T, c stand.Certs) *stand.Stand {
+	t.Helper()
+
+	opt, err := c.ServerOption(true)
+	if err != nil {
+		t.Fatalf("server option: %v", err)
+	}
+	lis, err := new(net.ListenConfig).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	s := stand.StartOn(lis, nil, opt)
+	t.Cleanup(s.Stop)
+
+	return s
+}
+
 // checkTLS calls Health over TLS against the CA, with the client certificate
-// when withCert.
-func checkTLS(t *testing.T, s *stand.Stand, c stand.Certs, withCert bool) error {
+// when withCert. An empty serverName checks the certificate against the
+// address dialed, 127.0.0.1.
+func checkTLS(t *testing.T, s *stand.Stand, c stand.Certs, withCert bool, serverName string) error {
 	t.Helper()
 
 	roots := x509.NewCertPool()
@@ -62,7 +81,7 @@ func checkTLS(t *testing.T, s *stand.Stand, c stand.Certs, withCert bool) error 
 	if err != nil || !roots.AppendCertsFromPEM(raw) {
 		t.Fatalf("CA %s: unreadable (%v)", c.CA(), err)
 	}
-	conf := &tls.Config{RootCAs: roots, ServerName: "localhost", MinVersion: tls.VersionTLS12}
+	conf := &tls.Config{RootCAs: roots, ServerName: serverName, MinVersion: tls.VersionTLS12}
 	if withCert {
 		pair, pairErr := tls.LoadX509KeyPair(c.ClientCert(), c.ClientKey())
 		if pairErr != nil {
@@ -103,22 +122,16 @@ func TestStand_MTLS(t *testing.T) {
 		}
 	}
 
-	opt, err := c.ServerOption(true)
-	if err != nil {
-		t.Fatalf("server option: %v", err)
-	}
-	lis, err := new(net.ListenConfig).Listen(t.Context(), "tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
-	s := stand.StartOn(lis, nil, opt)
-	defer s.Stop()
+	s := startMTLS(t, c)
 
-	if err := checkTLS(t, s, c, true); err != nil {
-		t.Errorf("with the client certificate: %v", err)
+	if err := checkTLS(t, s, c, true, "localhost"); err != nil {
+		t.Errorf("with the client certificate, as localhost: %v", err)
+	}
+	if err := checkTLS(t, s, c, true, ""); err != nil {
+		t.Errorf("with the client certificate, as 127.0.0.1: %v", err)
 	}
 	before := len(s.Arrivals())
-	if err := checkTLS(t, s, c, false); err == nil {
+	if err := checkTLS(t, s, c, false, "localhost"); err == nil {
 		t.Error("without a client certificate the call was answered")
 	}
 	if n := len(s.Arrivals()) - before; n != 0 {
@@ -139,6 +152,9 @@ func TestStand_TLSFilesRewritten(t *testing.T) {
 	second, err := stand.WriteCerts(dir)
 	if err != nil {
 		t.Fatalf("second write: %v", err)
+	}
+	if err := checkTLS(t, startMTLS(t, second), second, true, "localhost"); err != nil {
+		t.Errorf("after the second write the set does not fit together: %v", err)
 	}
 	if now := readCert(t, second.CA()).SerialNumber; now.Cmp(was) == 0 {
 		t.Errorf("the CA was not replaced: serial %v both times", now)

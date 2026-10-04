@@ -48,6 +48,9 @@ type options struct {
 	capacity   int
 	maxStreams int
 	life       time.Duration
+	tls        bool
+	mtls       bool
+	certs      string
 }
 
 func parse(args []string, usage io.Writer) (options, error) {
@@ -64,6 +67,9 @@ func parse(args []string, usage io.Writer) (options, error) {
 	fs.IntVar(&o.capacity, "capacity", 0, "serve at most this many calls a second, first come first served; above it calls queue")
 	fs.IntVar(&o.maxStreams, "max-streams", 0, "announce this many concurrent streams per connection; 0 announces no limit")
 	fs.DurationVar(&o.life, "life", 0, "exit after this long; 0 waits for Ctrl+C")
+	fs.BoolVar(&o.tls, "tls", false, "serve over TLS with certificates generated at start into -certs")
+	fs.BoolVar(&o.mtls, "mtls", false, "-tls, and require a client certificate signed by the generated CA")
+	fs.StringVar(&o.certs, "certs", "test/stand/certs", "folder the TLS certificates are written to, relative to the working directory")
 
 	if err := fs.Parse(args); err != nil {
 		return o, err
