@@ -5,6 +5,8 @@
 set -eu
 
 PROTOC_VERSION=36.2
+# Taken from the first download: protobuf publishes no checksums. It pins the
+# file against a later swap, it does not vouch for the first one.
 PROTOC_SHA256=121f6c7afe1d4d0e3ea6aab9432038599250134cbf4474cb1167d2c7decd4278
 # protoc-gen-go follows google.golang.org/protobuf in go.mod; protoc-gen-go-grpc
 # is the release built against grpc not newer than go.mod's.

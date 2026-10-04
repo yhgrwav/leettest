@@ -103,7 +103,8 @@ jobs:
             echo "exit code $rc"
             exit 1
           fi
-          grep -q '"sent":11100' tour.json
+          # (300 + 50) rps for 40s, the 3s warm-up counted apart.
+          jq -e '.sent == 12950 and [.methods[].sent] == [11100, 1850]' tour.json
           # The exact schedule (#142): the plain Go timer starts calls up to
           # 1ms late (p99 ~1.08ms on this runner); the exact one measured
           # 144µs in this tour. The bound is half the timer's lateness.
@@ -121,7 +122,7 @@ jobs:
           bin/stand -mtls -delay 20ms -life 30s &
           sleep 1
           bin/leettest -c examples/tour-tls.yaml -output json > tour-tls.json
-          grep -q '"sent":2000' tour-tls.json
+          jq -e '.sent == 2000' tour-tls.json
       - name: Run examples/leettest.yaml
         run: |
           pkill -x stand || true

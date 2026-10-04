@@ -51,7 +51,8 @@ func (c Certs) ClientCert() string { return filepath.Join(c.Dir, "client.pem") }
 func (c Certs) ClientKey() string  { return filepath.Join(c.Dir, "client-key.pem") }
 
 // WriteCerts generates a fresh set into dir, replacing what is there: ECDSA
-// P-256 keys, valid for 24 hours.
+// P-256 keys, valid for 24 hours. The CA is written first: a failure midway
+// leaves a new CA beside old leaves, and the next start rewrites them all.
 func WriteCerts(dir string) (Certs, error) {
 	c := Certs{Dir: dir}
 	if err := os.MkdirAll(dir, 0o750); err != nil {
