@@ -248,8 +248,6 @@ measured calls only. The first column is the field's full path.
 
 ### Method: `methods[]`
 
-| Field | Type | Meaning |
-|---|---|---|
 `<category>` is each of the four categories that have an object with answer times in JSON:
 `request_error`, `overload`, `failure`, `bad_response` ([categories](README.md#reading-the-report)).
 The rest are plain counters.
