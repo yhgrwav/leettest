@@ -121,13 +121,34 @@ func run(args []string, out, errOut io.Writer, stop <-chan struct{}, ready func(
 		return err
 	}
 
+	// Certificates are written before listening: a client that sees the
+	// stand ready finds them in place.
+	opts := o.serverOptions()
+	mode := "plaintext"
+	if o.tls || o.mtls {
+		certs, certErr := stand.WriteCerts(o.certs)
+		if certErr != nil {
+			return fmt.Errorf("-certs %s: %w", o.certs, certErr)
+		}
+		opt, optErr := certs.ServerOption(o.mtls)
+		if optErr != nil {
+			return optErr
+		}
+		opts = append(opts, opt)
+		mode = "TLS, certificates in " + o.certs
+		if o.mtls {
+			mode = "mutual " + mode
+		}
+	}
+
 	lis, err := new(net.ListenConfig).Listen(context.Background(), "tcp", o.addr)
 	if err != nil {
 		return err
 	}
 
-	s := stand.StartOn(lis, o.answer(), o.serverOptions()...)
-	fmt.Fprintf(errOut, "stand on %s, method grpc.health.v1.Health/Check\n", s.Target())
+	s := stand.StartOn(lis, o.answer(), opts...)
+	fmt.Fprintf(errOut, "stand on %s (%s): grpc.health.v1.Health/Check, wallet.v1.WalletService/GetBalance and /Transfer\n",
+		s.Target(), mode)
 	ready(s.Target())
 
 	var expired <-chan time.Time

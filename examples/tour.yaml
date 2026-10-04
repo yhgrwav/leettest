@@ -1,7 +1,8 @@
-# Every field LeetTest reads, against the reference stand:
+# Every field LeetTest reads, against the reference stand, from the repository root:
 #   go run ./test/stand/cmd/stand -delay 20ms -hang-from 25s -life 60s
-#   LEETTEST_TOKEN=demo leettest -c examples/tour.yaml
-# The quickstart walks through it: docs/en/quickstart.md, docs/ru/quickstart.md.
+#   export LEETTEST_TOKEN=demo
+#   leettest -c examples/tour.yaml
+# TLS and mTLS: tour-tls.yaml. The quickstart walks through it: docs/en/quickstart.md.
 
 name: tour                          # the run's name in the header
 
@@ -9,8 +10,7 @@ app:
   target:
     ip: 127.0.0.1
     port: 50051
-  tls: false                        # on by default; the stand speaks plaintext
-  # ca, cert, key, server_name: TLS and mTLS, see the README's "Access to the service"
+  tls: false                        # on by default; the stand speaks plaintext unless started with -tls
   metadata:                         # sent with every call; ${NAME} comes from the environment
     authorization: Bearer ${LEETTEST_TOKEN}
     x-request-source: leettest-tour
@@ -18,12 +18,16 @@ app:
 
 load:
   warmup: 3s                        # sent, but kept out of the percentiles
-  calls:
+  calls:                            # one call per method, each with its own rps
     - method: grpc.health.v1.Health/Check
       rps: 300
       duration: 40s
       timeout: 500ms                # a call with no answer by then timed out
       data:                         # the request body as YAML; the schema comes from reflection
         service: wallet.v1.WalletService
-    # More methods, each with its own rps, go as more calls: one call per method.
-    # The stand serves one method; examples/leettest.yaml shows two.
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 50
+      duration: 40s
+      timeout: 500ms
+      data:
+        wallet_id: w-42

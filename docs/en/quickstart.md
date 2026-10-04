@@ -34,8 +34,8 @@ releases page.
 ## 2. A target: the reference stand
 
 You need no service of your own for the tour: the repository has a reference stand, a gRPC
-service whose behaviour you set. It answers `grpc.health.v1.Health/Check` and serves reflection,
-as a real service does.
+service whose behaviour you set. It answers `grpc.health.v1.Health/Check` and
+`wallet.v1.WalletService` and serves reflection, as a real service does.
 
 ```console
 $ git clone https://github.com/yhgrwav/leettest && cd leettest
@@ -72,11 +72,17 @@ load:
       timeout: 500ms
       data:
         service: wallet.v1.WalletService
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 50
+      duration: 40s
+      timeout: 500ms
+      data:
+        wallet_id: w-42
 ```
 
 - **`name`** — the run's name in the header.
 - **`tls: false`** — the stand has no encryption. TLS is on by default; `ca`, `cert`, `key`,
-  `server_name` for TLS and mTLS are in the reference, [«Access to the service»](reference.md#access-to-the-service).
+  `server_name` are in [`examples/tour-tls.yaml`](../../examples/tour-tls.yaml) (below, "TLS").
 - **`metadata`** — headers on every call. `${LEETTEST_TOKEN}` comes from the environment: the
   token is in neither the config nor the shell history, and LeetTest prints header values nowhere.
   An unset variable is an error before the start, not a run with an empty token.
@@ -92,21 +98,11 @@ load:
 Several methods are several calls, each at its own rate. One method, one call: the report is per
 method.
 
-```yaml
-load:
-  calls:
-    - method: wallet.v1.WalletService/GetBalance
-      rps: 800
-      duration: 5m
-    - method: wallet.v1.WalletService/Transfer
-      rps: 50
-      duration: 5m
-```
-
 ## 4. Run
 
 ```console
-$ LEETTEST_TOKEN=demo leettest -c examples/tour.yaml
+$ export LEETTEST_TOKEN=demo
+$ leettest -c examples/tour.yaml
 ```
 
 Before the start LeetTest connects to the target, checks each method through reflection, builds
@@ -120,34 +116,43 @@ the third exits without one.
 
 Without a terminal (CI, output to a file) you get a progress line a second on stderr instead.
 
+**TLS.** With `-mtls` the stand writes a CA, its certificate and a client one into
+`test/stand/certs` at start and requires the client certificate;
+[`examples/tour-tls.yaml`](../../examples/tour-tls.yaml) points at those files:
+
+```console
+$ go run ./test/stand/cmd/stand -mtls -delay 20ms -life 30s
+$ leettest -c examples/tour-tls.yaml
+```
+
 ## 5. The report
 
 The report goes to stdout, ASCII only — save it to a file or `grep` it. The tour above ends so:
 
 ```
 run finished: 127.0.0.1:50051 in 40.5s
-sent 11100, failed 4499
+sent 12950, failed 5248
 
 method                                           sent   failed    sent/s       p50       p90       p95       p99
-grpc.health.v1.Health/Check                     11100     4499       300    21.9ms    >500ms    >500ms    >500ms
+grpc.health.v1.Health/Check                     11100     4499       300    20.5ms    >500ms    >500ms    >500ms
+wallet.v1.WalletService/GetBalance               1850      749        50    20.5ms    >500ms    >500ms    >500ms
 
-warm-up 900 sent, excluded from stats
+warm-up 1050 sent, excluded from stats
 
 grpc.health.v1.Health/Check: at 300 rps, 4499 of 11100 calls (40.5%) got no answer within 500ms,
 and nothing after the call sent at 25.0s of the run got one.
-
+...
 failed calls by gRPC code:
-grpc.health.v1.Health/Check codes sent by the target: DeadlineExceeded 1
-grpc.health.v1.Health/Check codes set by the client: DeadlineExceeded 4498
+grpc.health.v1.Health/Check codes sent by the target: DeadlineExceeded 2
+grpc.health.v1.Health/Check codes set by the client: DeadlineExceeded 4497
 ...
-start lag, how late calls began against their schedule: p99 1.14ms, max 1.27ms.
+start lag, how late calls began against their schedule: p99 109us, max 225us.
 ...
-4499 requests were abandoned before answering. A percentile shown as "> value"
+5248 requests were abandoned before answering. A percentile shown as "> value"
 is a lower bound: the real tail lies above it. Raise the timeout to see it.
-...
 ```
 
-(Linux, Docker, 10b99c2.)
+(Linux, Docker.)
 
 What matters here:
 

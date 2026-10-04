@@ -112,6 +112,32 @@ jobs:
             echo "::error::start lag p99 ${lag}us, want under 500us: the schedule is not exact"
             exit 1
           fi
+      - name: Run examples/tour-tls.yaml
+        run: |
+          bin/stand -mtls -delay 20ms -life 30s &
+          sleep 1
+          bin/leettest -c examples/tour-tls.yaml -output json > tour-tls.json
+          grep -q '"sent":2000' tour-tls.json
+      - name: Run examples/leettest.yaml
+        run: |
+          bin/stand -delay 20ms -life 75s &
+          sleep 1
+          bin/leettest -c examples/leettest.yaml -output json > leettest.json
+          # (800 + 50) rps for 1m, the 5s warm-up counted apart.
+          jq -e '.sent == 46750' leettest.json
+
+  # The stand's Go code is generated from wallet.proto with pinned tools:
+  # regenerating must change nothing.
+  proto:
+    name: generated code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_LATEST }}
+      - run: sh test/stand/proto/gen.sh
+      - run: git diff --exit-code
 
   # The release runs only on a tag; building it here keeps a broken
   # .goreleaser.yaml from surfacing first at release time.
