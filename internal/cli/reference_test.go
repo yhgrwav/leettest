@@ -129,7 +129,30 @@ func documentedPaths(t *testing.T, doc referenceDoc) []string {
 	}
 	slices.Sort(paths)
 
-	return slices.Compact(paths)
+	return paths
+}
+
+// categoryParagraph is the names in the paragraph that opens with the
+// category placeholder: the categories the reference says it stands for.
+func categoryParagraph(t *testing.T, doc referenceDoc) []string {
+	t.Helper()
+
+	data, err := os.ReadFile(doc.file)
+	if err != nil {
+		t.Fatalf("read %s: %v", doc.file, err)
+	}
+	_, rest, ok := strings.Cut(string(data), "\n`"+doc.category+"`")
+	if !ok {
+		t.Fatalf("%s has no paragraph opening with %q", doc.file, doc.category)
+	}
+	paragraph, _, _ := strings.Cut(rest, "\n\n")
+	var names []string
+	for _, m := range codeSpan.FindAllStringSubmatch(paragraph, -1) {
+		names = append(names, m[1])
+	}
+	slices.Sort(names)
+
+	return names
 }
 
 // Every JSON field is described in the reference, in each language, by its
@@ -141,6 +164,19 @@ func TestReference_DescribesEveryJSONField(t *testing.T) {
 		{"../../docs/en/reference.md", "## JSON fields", "<category>", "<percentile>", "percentile"},
 	} {
 		got := documentedPaths(t, doc)
+		var dup []string
+		for i := 1; i < len(got); i++ {
+			if got[i] == got[i-1] && !slices.Contains(dup, got[i]) {
+				dup = append(dup, got[i])
+			}
+		}
+		if len(dup) > 0 {
+			t.Errorf("%s: described more than once %v", doc.file, dup)
+		}
+		names := categoryParagraph(t, doc)
+		if cats := slices.Sorted(slices.Values(answerCategories())); !slices.Equal(names, cats) {
+			t.Errorf("%s: %s is said to be %v, the JSON has %v", doc.file, doc.category, names, cats)
+		}
 		var missing, extra []string
 		for _, p := range want {
 			if !slices.Contains(got, p) {
