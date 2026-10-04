@@ -2,7 +2,8 @@
 
 [← Back to docs](README.md)
 
-> This translation may lag behind the [Russian original](../ru/pitfalls.md).
+> Translated from [docs/ru/pitfalls.md](../ru/pitfalls.md) at d5bfed5, 2026-10-04. If they
+> differ, the Russian one is right.
 
 A list of places where load tools lie or get in the way, and where we stand on each.
 
@@ -93,9 +94,11 @@ They skew the percentiles of the whole run, so `warmup` keeps them out of the pe
 The flip side of the open model: if the target stalls, hanging requests pile up and the generator
 dies before the service under test. The cure is an explicit cap on concurrent requests. Silently
 lowering the load at the cap is not allowed: a "1000 RPS" run that quietly became "whatever we
-managed" is worse than a failed one. Today hitting the cap ends the run with an error. The plan is
-to stop the run with a report and a verdict instead — "the service does not hold the requested
-RPS" — which is the very answer the test was run for.
+managed" is worse than a failed one. So the cap is checked before the start: it holds everything
+a stalled service can keep until the timeout, with a margin. A stalled service lasts to the end of
+the run, and the report states what was measured: "at 100 RPS, 150 of 150 calls got no answer
+within 300 ms, from second 0 on". If the cap still runs out, the generator held the slots, not the
+service: the run stops with a report and is marked invalid.
 
 ## The generator hits its own limit
 
