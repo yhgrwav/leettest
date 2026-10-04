@@ -112,14 +112,20 @@ jobs:
             echo "::error::start lag p99 ${lag}us, want under 500us: the schedule is not exact"
             exit 1
           fi
+      # Each example uses port 50051: the previous step's stand outlives its
+      # run by its -life, so it is stopped first.
       - name: Run examples/tour-tls.yaml
         run: |
+          pkill -x stand || true
+          while pgrep -x stand > /dev/null; do sleep 0.2; done
           bin/stand -mtls -delay 20ms -life 30s &
           sleep 1
           bin/leettest -c examples/tour-tls.yaml -output json > tour-tls.json
           grep -q '"sent":2000' tour-tls.json
       - name: Run examples/leettest.yaml
         run: |
+          pkill -x stand || true
+          while pgrep -x stand > /dev/null; do sleep 0.2; done
           bin/stand -delay 20ms -life 75s &
           sleep 1
           bin/leettest -c examples/leettest.yaml -output json > leettest.json
