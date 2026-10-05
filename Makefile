@@ -69,8 +69,10 @@ run:
 	go run ./cmd/leettest -c examples/stand.yaml
 
 # The pinned tools are Linux builds, so the script runs in a Linux container.
+# The cd is inside the command: Git Bash rewrites a bare /src argument into a
+# Windows path.
 proto:
-	docker run --rm -v "$(CURDIR):/src" -w /src golang:1.27.1 sh -c "apt-get -qq update && apt-get -qq install -y unzip && sh test/stand/proto/gen.sh"
+	docker run --rm -v "$(CURDIR):/src" golang:1.27.1 sh -c "cd /src && apt-get -qq update && apt-get -qq install -y unzip && sh test/stand/proto/gen.sh"
 
 # git, not rm: cmd.exe has no rm. -X removes only ignored files there.
 clean:
