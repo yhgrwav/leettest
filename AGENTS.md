@@ -159,7 +159,7 @@ the container), not on a desktop.
 ### Docs
 
 The README is written in Russian and translated; a README change ships in Russian and English
-together. The README describes what works now: it is not a requirements source, and a mismatch
+together, German and Chinese catch up before a release. The README describes what works now: it is not a requirements source, and a mismatch
 between it and the code is a question to ask, not a task to make the code match.
 
 **Docs are not a dump.** Write for the reader, not about the problem you just solved:
