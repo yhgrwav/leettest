@@ -270,7 +270,7 @@ SIGTERM (`docker stop`, Kubernetes, отмена джоба в CI) сразу о
 | `methods[].failure_codes` | []object | Упавшие вызовы по кодам gRPC |
 | `methods[].failure_codes[].code` | string | Каноническое имя кода (`UNAVAILABLE`); список может расширяться |
 | `methods[].failure_codes[].count` | int | Сколько |
-| `methods[].failure_codes[].from_target` | bool | `true` — статус пришёл по сети, `false` — код поставил клиент |
+| `methods[].failure_codes[].from_target` | bool | `true` — отказ прислала цель: статус по сети или REFUSED_STREAM, `false` — код поставил клиент |
 | `methods[].silent_from_s` | int? | Секунда, с которой цель не ответила ни на один отправленный вызов; `null` — тишины нет |
 | `methods[].silent_sent_rps` | int? | Сколько вызовов ушло за секунду до неё (за первую, если тишина с начала) |
 | `methods[].silent_planned_rps_low`, `methods[].silent_planned_rps_high` | int? | Плановый темп стадий в ту же секунду; `null` и тогда, когда стадий в ней не было |

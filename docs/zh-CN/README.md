@@ -118,12 +118,16 @@ $ leettest -c leettest.yaml
 |---|---|---|---|
 | `INVALID_ARGUMENT`、`NOT_FOUND`、`ALREADY_EXISTS`、`PERMISSION_DENIED`、`UNAUTHENTICATED`、`FAILED_PRECONDITION`、`OUT_OF_RANGE`、`UNIMPLEMENTED` | `request error` | `cut off` | `client error` |
 | `RESOURCE_EXHAUSTED` | `overload`；grpc-go 的 “larger than max” 是 `request error` | `cut off`；超过我们上限的应答是 `bad response` | `client error` |
-| `UNAVAILABLE` | `overload` | `cut off` | `unreachable` |
+| `UNAVAILABLE` | `overload` | `cut off`；目标在处理前拒绝的流是 `overload` | `unreachable`；同样 |
 | `CANCELLED`、`UNKNOWN`、`INTERNAL`、`DATA_LOSS`、`ABORTED` | `failure` | `cut off`；无法解压的应答是 `bad response` | `client error` |
 | `DEADLINE_EXCEEDED` | 超时 | 超时 | 超时，未发送 |
 
 请求过大是根据 grpc-go 的错误文本识别的。基于其他实现的目标（Envoy、Java）措辞不同，它的拒绝
 会落入 `overload` 而不是 `request error`。
+
+被拒绝的流上的 `UNAVAILABLE` 是 grpc-go 对目标发来的 RST_STREAM REFUSED_STREAM 的翻译：代码由
+客户端设置，但拒绝来自目标，所以它在 “sent by the target” 一行。目标没有处理这样的流（RFC 9113
+§8.7）。
 
 报告下方，失败的调用按 gRPC 代码分两行列出。“sent by the target”——状态经网络传回，来自目标或
 代理。“set by the client”——代码由客户端自己设置：没人应答、流被重置、我们的截止时间到了，或客户端

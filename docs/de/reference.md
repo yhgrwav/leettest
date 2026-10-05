@@ -282,7 +282,7 @@ Die übrigen sind einfache Zähler.
 | `methods[].failure_codes` | []object | Fehlgeschlagene Aufrufe nach gRPC-Code |
 | `methods[].failure_codes[].code` | string | Der kanonische Codename (`UNAVAILABLE`); die Liste kann wachsen |
 | `methods[].failure_codes[].count` | int | Wie viele |
-| `methods[].failure_codes[].from_target` | bool | `true` — der Status kam über die Leitung, `false` — der Client hat den Code gesetzt |
+| `methods[].failure_codes[].from_target` | bool | `true` — das Ziel hat die Ablehnung geschickt: ein Status über die Leitung oder REFUSED_STREAM, `false` — der Client hat den Code gesetzt |
 | `methods[].silent_from_s` | int? | Die Sekunde, ab der das Ziel keinen der gesendeten Aufrufe beantwortet hat; `null` — kein Schweigen |
 | `methods[].silent_sent_rps` | int? | In der Sekunde davor gesendete Aufrufe (in der ersten, wenn das Schweigen dort beginnt) |
 | `methods[].silent_planned_rps_low`, `methods[].silent_planned_rps_high` | int? | Die geplante Rate der Stufen in dieser Sekunde; `null` auch, wenn darin keine Stufe lief |
