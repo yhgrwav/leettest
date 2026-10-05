@@ -1,6 +1,6 @@
 # <img src="../../assets/icon.png" width="24" alt="" align="top"> Справочник
 
-[Русский](reference.md) · [English](../en/reference.md)
+[Русский](reference.md) · [English](../en/reference.md) · [Deutsch](../de/reference.md) · [简体中文](../zh-CN/reference.md)
 [← На главную](../../README.md)
 
 Каждое поле конфига, каждый флаг и что инструмент проверяет до старта. Как читать отчёт — в

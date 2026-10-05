@@ -162,6 +162,8 @@ func TestReference_DescribesEveryJSONField(t *testing.T) {
 	for _, doc := range []referenceDoc{
 		{"../../docs/ru/reference.md", "## Поля JSON", "<категория>", "<перцентиль>", "перцентиль"},
 		{"../../docs/en/reference.md", "## JSON fields", "<category>", "<percentile>", "percentile"},
+		{"../../docs/de/reference.md", "## JSON-Felder", "<category>", "<percentile>", "percentile"},
+		{"../../docs/zh-CN/reference.md", "## JSON 字段", "<category>", "<percentile>", "percentile"},
 	} {
 		got := documentedPaths(t, doc)
 		var dup []string

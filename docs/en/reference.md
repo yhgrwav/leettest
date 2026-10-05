@@ -1,6 +1,6 @@
 # <img src="../../assets/icon.png" width="24" alt="" align="top"> Reference
 
-[Русский](../ru/reference.md) · [English](reference.md)
+[Русский](../ru/reference.md) · [English](reference.md) · [Deutsch](../de/reference.md) · [简体中文](../zh-CN/reference.md)
 [← Home](README.md)
 
 > Translated from [docs/ru/reference.md](../ru/reference.md) at 9a08876, 2026-10-05. If they differ, the

@@ -105,8 +105,9 @@ more:
 
 ## Docs
 
-The README is written in Russian and translated into English. A README change ships in Russian and
-English together.
+The README and docs are written in Russian and translated into English, German and Chinese. A
+change ships in Russian and English together; German and Chinese catch up before each release, and
+each translation names the commit it follows.
 The README describes what already works — it is not a list of promises.
 
 Docs are not a dump: give the reader the most of what they need and the least of what they do
