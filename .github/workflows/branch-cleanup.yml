@@ -26,23 +26,30 @@ jobs:
         run: |
           set -o pipefail
           week_ago=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)
+          # NONE: no pull request of this repository; KEEP: one is open or
+          # merged; CLOSED <when>: all closed without a merge, the last at <when>.
+          verdict='[.[] | select(.isCrossRepository | not)] as $own
+            | if ($own | length) == 0 then "NONE"
+              elif ($own | all(.state == "CLOSED")) then "CLOSED \($own | map(.closedAt) | max)"
+              else "KEEP" end'
           gh api "repos/$REPO/branches" --paginate --jq '.[].name' | while read -r b; do
             case "$b" in
               main|release/*|cla-signatures) continue ;;
             esac
             # --head matches the branch name in forks too: only this repository's
-            # pull requests say anything about this repository's branch.
+            # pull requests say anything about this repository's branch. One
+            # branch may head several (into main and into a release branch):
+            # it goes only when every one of them was closed without a merge.
             pr=$(gh pr list -R "$REPO" --head "$b" --state all --limit 100 \
-              --json state,closedAt,isCrossRepository \
-              --jq '[.[] | select(.isCrossRepository | not)][0] | "\(.state) \(.closedAt)"')
+              --json state,closedAt,isCrossRepository --jq "$verdict")
             case "$pr" in
               "CLOSED "*)
                 closed=${pr#CLOSED }
                 if [ "$closed" \< "$week_ago" ]; then
                   gh api -X DELETE "repos/$REPO/git/refs/heads/$b"
-                  echo "deleted $b (pull request closed $closed)" >> "$GITHUB_STEP_SUMMARY"
+                  echo "deleted $b (last pull request closed $closed)" >> "$GITHUB_STEP_SUMMARY"
                 fi ;;
-              ""|"null null")
+              NONE)
                 echo "no pull request: $b" >> "$GITHUB_STEP_SUMMARY" ;;
             esac
           done
