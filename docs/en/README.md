@@ -19,8 +19,9 @@
 
 > **Early stage.** Working now: unary load against a real service, several methods at their own
 > RPS in one run, request bodies from the config, a console report and JSON for scripts. Not yet:
-> ramp-up, pass/fail thresholds for CI, metrics export. Everything below describes what already
-> works.
+> ramp-up, pass/fail thresholds for CI, metrics export — **[what comes next →](roadmap.md)**.
+> Missing something — [open an issue](https://github.com/yhgrwav/leettest/issues/new/choose).
+> Everything below describes what already works.
 
 The tool answers the question people bring to a load test: **at what load does the service stop
 coping, and where is the bottleneck.** It applies load that looks like production — several
@@ -238,7 +239,8 @@ the target's error text, are printed as `\uXXXX` (past U+FFFF as a surrogate pai
 
 ## Not yet
 
-Ramp-up from zero to the target RPS, pass/fail thresholds, export to Prometheus.
+Ramp-up from zero to the target RPS, pass/fail thresholds, export to Prometheus. What comes and in
+what order — **[the plan](roadmap.md)**; what you are missing — [an issue](https://github.com/yhgrwav/leettest/issues/new/choose).
 
 ## Going deeper
 
@@ -252,6 +254,7 @@ Ramp-up from zero to the target RPS, pass/fail thresholds, export to Prometheus.
 | What is call chaining and why does it matter? | [Read](chaining.md) |
 | What does commercial use look like? | [Read](commercial.md) |
 | Where do I ask a question or leave feedback? | [Read](feedback.md) |
+| What comes next? | [Read](roadmap.md) |
 
 **[Comparison with ghz on one stand →](compare-ghz.md)** — tables and the command to reproduce.
 
