@@ -2,7 +2,8 @@
 
 [← Back to docs](README.md)
 
-> This translation may lag behind the [Russian original](../ru/commercial.md).
+> Translated from [docs/ru/commercial.md](../ru/commercial.md) at 9a08876, 2026-10-05. If they
+> differ, the Russian one is right.
 
 > This page describes an **intended** model. None of the paid part exists yet and there is no
 > timeline. It is written down so that it does not come as a surprise later.
@@ -10,8 +11,8 @@
 ## What stays free
 
 The core and the CLI are distributed under the Apache License 2.0 and will remain open. This is
-a complete tool, not a demo: single-machine runs, any number of methods at any rate, CI
-thresholds, reports. Commercial use is not restricted — a company can wire the CLI into its
+a complete tool, not a demo: single-machine runs, any number of methods at any rate, reports, CI
+thresholds (planned). Commercial use is not restricted — a company can wire the CLI into its
 pipelines without paying anyone or talking to anyone.
 
 ## What will be paid
