@@ -14,5 +14,11 @@
 
 package main
 
-// flagNames is every flag the CLI accepts, without the dash.
-func flagNames() []string { return nil }
+// flagNames is every flag the CLI accepts, without the dash. Add a flag to run
+// and to this list together: TestFlagNames_AreTheHelp compares it with -help.
+func flagNames() []string {
+	return []string{
+		"c", "connect-timeout", "fake", "fake-delay", "fake-fail-ratio", "fake-jitter",
+		"max-in-flight", "output", "version",
+	}
+}
