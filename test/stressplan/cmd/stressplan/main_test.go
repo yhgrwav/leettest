@@ -50,25 +50,81 @@ func gitIn(t *testing.T, dir string, args ...string) {
 	}
 }
 
-// The jobs of a run come from `gh api --paginate`: one JSON object per page,
-// back to back. Page two holds a red job of a branch whose first job is on
-// page one, and every job of another branch: lost, the first would read green
-// and the second red.
-func TestVerdicts_ReadsEveryPageOfTheJobList(t *testing.T) {
-	list := write(t, "stress-branches", "main\nrelease/v0.1\n")
-	jobs := write(t, "jobs.json", `{"total_count":4,"jobs":[
-  {"name":"plan","conclusion":"success"},
-  {"name":"stress main@9a08876 go1.26","conclusion":"success"}]}
-{"total_count":4,"jobs":[
-  {"name":"stress main@9a08876 go1.27.1","conclusion":"failure"},
-  {"name":"stress release/v0.1@d5bfed5 go1.26","conclusion":"success"}]}`)
+const planJSON = `{"include":[
+{"branch":"main","sha":"9a088764ab1365dd","go":"1.26","name":"stress main@9a08876 go1.26"},
+{"branch":"main","sha":"9a088764ab1365dd","go":"1.27.1","name":"stress main@9a08876 go1.27.1"},
+{"branch":"release/v0.1","sha":"d5bfed53fa113fbe","go":"1.26","name":"stress release/v0.1@d5bfed5 go1.26"},
+{"branch":"release/v0.1","sha":"d5bfed53fa113fbe","go":"1.27.1","name":"stress release/v0.1@d5bfed5 go1.27.1"}]}`
 
-	code, out, errOut := runCmd(t, "verdicts", list, jobs)
+// resultsDir writes one file per job, the way the downloaded artifacts lie.
+func resultsDir(t *testing.T, files map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+// Each job wrote its own result; the plan says which jobs there should be. A
+// job of main that wrote nothing makes main red and leaves the other branch
+// green — the API's job list is not asked.
+func TestVerdicts_ReadsThePlanAndTheResultFiles(t *testing.T) {
+	list := write(t, "stress-branches", "main\nrelease/v0.1\n")
+	plan := write(t, "plan.json", planJSON)
+	dir := resultsDir(t, map[string]string{
+		"result-0.txt": "stress main@9a08876 go1.26\tsuccess\n",
+		"result-2.txt": "stress release/v0.1@d5bfed5 go1.26\tsuccess\n",
+		"result-3.txt": "stress release/v0.1@d5bfed5 go1.27.1\tsuccess\n",
+	})
+
+	code, out, errOut := runCmd(t, "verdicts", list, plan, dir)
 	if code != 0 {
 		t.Fatalf("exit %d: %s", code, errOut)
 	}
 	if want := "main red\nrelease/v0.1 green\n"; out != want {
 		t.Errorf("verdicts:\n%s\nwant:\n%s", out, want)
+	}
+}
+
+// A file that cannot be parsed is named on stderr and counts as no result.
+func TestVerdicts_AnUnreadableResultIsNamedAndRed(t *testing.T) {
+	list := write(t, "stress-branches", "main\nrelease/v0.1\n")
+	plan := write(t, "plan.json", planJSON)
+	dir := resultsDir(t, map[string]string{
+		"result-0.txt": "stress main@9a08876 go1.26\tsuccess\n",
+		"result-1.txt": "stress main@9a08876 go1.27.1 success\n",
+		"result-2.txt": "stress release/v0.1@d5bfed5 go1.26\tsuccess\n",
+		"result-3.txt": "stress release/v0.1@d5bfed5 go1.27.1\tsuccess\n",
+	})
+
+	code, out, errOut := runCmd(t, "verdicts", list, plan, dir)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	if want := "main red\nrelease/v0.1 green\n"; out != want {
+		t.Errorf("verdicts:\n%s\nwant:\n%s", out, want)
+	}
+	if !strings.Contains(errOut, "result-1.txt") {
+		t.Errorf("stderr %q does not name the unreadable file", errOut)
+	}
+}
+
+// Every job reported: both green.
+func TestVerdicts_AllReportedIsGreen(t *testing.T) {
+	list := write(t, "stress-branches", "main\nrelease/v0.1\n")
+	plan := write(t, "plan.json", planJSON)
+	dir := resultsDir(t, map[string]string{
+		"result-0.txt": "stress main@9a08876 go1.26\tsuccess\n",
+		"result-1.txt": "stress main@9a08876 go1.27.1\tsuccess\n",
+		"result-2.txt": "stress release/v0.1@d5bfed5 go1.26\tsuccess\n",
+		"result-3.txt": "stress release/v0.1@d5bfed5 go1.27.1\tsuccess\n",
+	})
+
+	if _, out, _ := runCmd(t, "verdicts", list, plan, dir); out != "main green\nrelease/v0.1 green\n" {
+		t.Errorf("verdicts = %q, want both green", out)
 	}
 }
 

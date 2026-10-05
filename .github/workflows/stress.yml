@@ -77,6 +77,20 @@ jobs:
         with:
           name: stress-${{ strategy.job-index }}
           path: failures.txt
+      # The job says for itself how it ended; the report reads these files, not
+      # the jobs API, which may not have recorded the last jobs' results yet.
+      - name: write the job's result
+        if: always()
+        env:
+          JOB: ${{ matrix.name }}
+          STATUS: ${{ job.status }}
+        run: printf '%s\t%s\n' "$JOB" "$STATUS" > "result-${{ strategy.job-index }}.txt"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: result-${{ strategy.job-index }}
+          path: result-${{ strategy.job-index }}.txt
+          retention-days: 1
 
   report:
     name: report a failure
@@ -84,7 +98,6 @@ jobs:
     needs: [plan, stress]
     if: always()
     permissions:
-      actions: read
       contents: read
       issues: write
     steps:
@@ -92,21 +105,31 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      # One issue per red branch: another branch's red job does not blame it.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        # Nothing to download when no stress job started (the plan failed).
+        continue-on-error: true
+        with:
+          pattern: result-*
+          merge-multiple: true
+          path: results
+      # One issue per red branch: another branch's red job does not blame it. A
+      # planned job that wrote no result is red.
       - name: open or update the issue of each red branch
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          MATRIX: ${{ needs.plan.outputs.matrix }}
         run: |
-          gh api "repos/$GH_REPO/actions/runs/$GITHUB_RUN_ID/jobs" --paginate > jobs.json
-          go run ./test/stressplan/cmd/stressplan verdicts .github/stress-branches jobs.json > verdicts.txt
+          mkdir -p results
+          printf '%s\n' "$MATRIX" > plan.json
+          go run ./test/stressplan/cmd/stressplan verdicts .github/stress-branches plan.json results > verdicts.txt
           cat verdicts.txt
           while read -r branch verdict <&3; do
             [ "$verdict" = red ] || continue
             title=$(go run ./test/stressplan/cmd/stressplan title "$branch")
-            red=$(jq -rs --arg b "$branch" '[.[].jobs[] | select((.name | startswith("stress " + $b + "@")) and .conclusion != "success") | .name] | join(", ")' jobs.json)
-            body="Run: $RUN. Red: ${red:-no stress job ran for this branch}. The failing tests are in the run's artifacts."
+            red=$(cat results/*.txt 2>/dev/null | grep "^stress $branch@" | grep -v "$(printf '\tsuccess$')" | cut -f1 | paste -sd, - || true)
+            body="Run: $RUN. Red: ${red:-a job of this branch wrote no result}. The failing tests are in the run's artifacts."
             open=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number')
             if [ -n "$open" ]; then
               gh issue comment "$open" --body "$body"

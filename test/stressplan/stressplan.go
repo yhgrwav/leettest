@@ -17,6 +17,7 @@ package stressplan
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -204,7 +205,14 @@ type Result struct {
 
 // ParseResult reads a result file: one line "<job name>\t<status>". A wrong
 // field count, an empty name or an empty status is an error.
-func ParseResult(raw []byte) (Result, error) { return Result{}, nil }
+func ParseResult(raw []byte) (Result, error) {
+	line := strings.TrimRight(string(raw), "\r\n")
+	fields := strings.Split(line, "\t")
+	if len(fields) != 2 || fields[0] == "" || fields[1] == "" {
+		return Result{}, fmt.Errorf("result %q: want \"<job name>\\t<status>\"", line)
+	}
+	return Result{Name: fields[0], Conclusion: fields[1]}, nil
+}
 
 // Verdicts says, for each branch under the count, whether the run is green
 // for it: it has at least one planned job and every planned job of it has a
@@ -213,7 +221,31 @@ func ParseResult(raw []byte) (Result, error) { return Result{}, nil }
 // job past timeout-minutes too) or anything else. A result whose name is not
 // planned is ignored. A branch with no planned job is not green.
 func Verdicts(branches []string, planned []Job, results []Result) map[string]bool {
-	return make(map[string]bool, len(branches))
+	status := map[string][]string{}
+	for _, r := range results {
+		status[r.Name] = append(status[r.Name], r.Conclusion)
+	}
+
+	green := make(map[string]bool, len(branches))
+	for _, b := range branches {
+		green[b] = false
+	}
+	red := map[string]bool{}
+	for _, j := range planned {
+		if _, listed := green[j.Branch]; !listed {
+			continue
+		}
+		got := status[j.Name()]
+		if len(got) == 0 || slices.ContainsFunc(got, func(s string) bool { return s != "success" }) {
+			red[j.Branch] = true
+			continue
+		}
+		green[j.Branch] = true
+	}
+	for b := range red {
+		green[b] = false
+	}
+	return green
 }
 
 // IssueTitle is the title of the failure issue for a branch.

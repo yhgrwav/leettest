@@ -16,7 +16,8 @@
 // rules are in package stressplan, this only reads files and git and prints.
 //
 //	stressplan plan <list-file>                   matrix JSON for the stress job
-//	stressplan verdicts <list-file> <jobs.json>   "<branch> green|red" per branch
+//	stressplan verdicts <list-file> <plan.json> <results-dir>
+//	                                                 "<branch> green|red" per branch
 //	stressplan title <branch>                     the failure issue's title
 //	stressplan tag <tag> <points-at-file>         exit 1 unless the tag is a branch tip
 package main
@@ -29,6 +30,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/yhgrwav/leettest/test/stressplan"
@@ -36,7 +38,7 @@ import (
 
 const usage = `usage:
   stressplan plan <list-file>
-  stressplan verdicts <list-file> <jobs.json>
+  stressplan verdicts <list-file> <plan.json> <results-dir>
   stressplan title <branch>
   stressplan tag <tag> <points-at-file>`
 
@@ -53,8 +55,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	switch cmd, rest := args[0], args[1:]; {
 	case cmd == "plan" && len(rest) == 1:
 		err = plan(rest[0], stdout, stderr)
-	case cmd == "verdicts" && len(rest) == 2:
-		err = verdicts(rest[0], rest[1], stdout)
+	case cmd == "verdicts" && len(rest) == 3:
+		err = verdicts(rest[0], rest[1], rest[2], stdout, stderr)
 	case cmd == "title" && len(rest) == 1:
 		fmt.Fprintln(stdout, stressplan.IssueTitle(rest[0]))
 	case cmd == "tag" && len(rest) == 2:
@@ -142,39 +144,51 @@ func git(args ...string) ([]byte, error) {
 	return out, nil
 }
 
-// verdicts reads the output of `gh api .../runs/<id>/jobs --paginate`: one
-// JSON object per page, back to back.
-func verdicts(listPath, jobsPath string, stdout io.Writer) error {
+// verdicts reads the matrix the plan job wrote and the result file each stress
+// job wrote about itself. A file that cannot be read or parsed is named on
+// stderr and counts as no result: its job is red.
+func verdicts(listPath, planPath, resultsDir string, stdout, stderr io.Writer) error {
 	names, err := readList(listPath)
 	if err != nil {
 		return err
 	}
-	f, err := os.Open(jobsPath)
+	rawPlan, err := os.ReadFile(planPath)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-
-	var results []stressplan.Result
-	dec := json.NewDecoder(f)
-	for {
-		var page struct {
-			Jobs []struct {
-				Name       string `json:"name"`
-				Conclusion string `json:"conclusion"`
-			} `json:"jobs"`
-		}
-		if err := dec.Decode(&page); errors.Is(err, io.EOF) {
-			break
-		} else if err != nil {
-			return fmt.Errorf("%s: %w", jobsPath, err)
-		}
-		for _, j := range page.Jobs {
-			results = append(results, stressplan.Result{Name: j.Name, Conclusion: j.Conclusion})
-		}
+	var matrix struct {
+		Include []matrixEntry `json:"include"`
+	}
+	if err = json.Unmarshal(rawPlan, &matrix); err != nil {
+		return fmt.Errorf("%s: %w", planPath, err)
+	}
+	planned := make([]stressplan.Job, 0, len(matrix.Include))
+	for _, e := range matrix.Include {
+		planned = append(planned, stressplan.Job{Branch: e.Branch, SHA: e.SHA, Go: e.Go})
 	}
 
-	green := stressplan.Verdicts(names, nil, results)
+	files, err := os.ReadDir(resultsDir)
+	if err != nil {
+		return err
+	}
+	var results []stressplan.Result
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
+		path := filepath.Join(resultsDir, f.Name())
+		raw, err := os.ReadFile(path)
+		if err == nil {
+			var r stressplan.Result
+			if r, err = stressplan.ParseResult(raw); err == nil {
+				results = append(results, r)
+				continue
+			}
+		}
+		fmt.Fprintf(stderr, "stressplan: %s: %v\n", path, err)
+	}
+
+	green := stressplan.Verdicts(names, planned, results)
 	for _, n := range names {
 		verdict := "red"
 		if green[n] {
