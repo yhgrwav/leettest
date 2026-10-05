@@ -2,7 +2,8 @@
 
 [← Back to docs](README.md)
 
-> This translation may lag behind the [Russian original](../ru/chaining.md).
+> Translated from [docs/ru/chaining.md](../ru/chaining.md) at 9a08876, 2026-10-05. If they
+> differ, the Russian one is right.
 
 > **Status: planned, not working yet.** The example below is a draft of the format, not a working
 > config.
