@@ -35,11 +35,6 @@ checksum:
 release:
   prerelease: auto
 
+# The notes are written by hand (docs/release-notes/), passed by release.yml.
 changelog:
-  use: github
-  filters:
-    exclude:
-      - "^docs:"
-      - "^test:"
-      - "^chore:"
-      - "^ci:"
+  disable: true
