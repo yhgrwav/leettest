@@ -13,7 +13,7 @@
 
 Kern und CLI stehen unter der Apache License 2.0 und bleiben offen. Das ist ein vollständiges
 Werkzeug, keine Demo: Läufe von einer Maschine, beliebig viele Methoden mit beliebigen Raten,
-CI-Schwellwerte, Berichte. Kommerzielle Nutzung ist nicht eingeschränkt — ein Unternehmen kann
+Berichte, CI-Schwellwerte (geplant). Kommerzielle Nutzung ist nicht eingeschränkt — ein Unternehmen kann
 die CLI in seine Pipelines einbauen, ohne zu zahlen oder jemanden zu fragen.
 
 ## Was kostenpflichtig wird
