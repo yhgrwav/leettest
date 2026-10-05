@@ -1,0 +1,45 @@
+name: Branch cleanup
+
+# A merged pull request's branch is deleted by GitHub (delete_branch_on_merge).
+# This removes what that leaves: the branch of a pull request closed without a
+# merge, a week after the close, so it can still be reopened meanwhile. A
+# branch with no pull request is someone's work in progress: it is named in
+# the run's summary, never deleted. Long-lived branches are skipped, and the
+# ruleset forbids deleting them anyway.
+on:
+  schedule:
+    - cron: "37 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete branches of pull requests closed without a merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -o pipefail
+          week_ago=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)
+          gh api "repos/$REPO/branches" --paginate --jq '.[].name' | while read -r b; do
+            case "$b" in
+              main|dev|release/*|cla-signatures) continue ;;
+            esac
+            pr=$(gh pr list -R "$REPO" --head "$b" --state all --limit 1 \
+              --json state,closedAt --jq '.[0] | "\(.state) \(.closedAt)"')
+            case "$pr" in
+              "CLOSED "*)
+                closed=${pr#CLOSED }
+                if [ "$closed" \< "$week_ago" ]; then
+                  gh api -X DELETE "repos/$REPO/git/refs/heads/$b"
+                  echo "deleted $b (pull request closed $closed)" >> "$GITHUB_STEP_SUMMARY"
+                fi ;;
+              ""|"null null")
+                echo "no pull request: $b" >> "$GITHUB_STEP_SUMMARY" ;;
+            esac
+          done
