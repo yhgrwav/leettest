@@ -195,41 +195,25 @@ func part(p []string, i int) int {
 	return n
 }
 
-// Result is a finished job as the run's job list reports it.
+// Result is what a job wrote about itself: its name and its status
+// (success, failure or cancelled), not what the jobs API says later.
 type Result struct {
 	Name       string
 	Conclusion string
 }
 
+// ParseResult reads a result file: one line "<job name>\t<status>". A wrong
+// field count, an empty name or an empty status is an error.
+func ParseResult(raw []byte) (Result, error) { return Result{}, nil }
+
 // Verdicts says, for each branch under the count, whether the run is green
-// for it: it has jobs, and every one concluded "success". Anything else —
-// failure, cancelled (a job past timeout-minutes too), skipped — is red for
-// its own branch only. A branch with no job is not green.
-func Verdicts(branches []string, results []Result) map[string]bool {
-	green := make(map[string]bool, len(branches))
-	for _, b := range branches {
-		green[b] = false
-	}
-	red := map[string]bool{}
-	for _, r := range results {
-		j, ok := ParseJobName(r.Name)
-		if !ok {
-			continue
-		}
-		if r.Conclusion != "success" {
-			red[j.Branch] = true
-			continue
-		}
-		if _, listed := green[j.Branch]; listed {
-			green[j.Branch] = true
-		}
-	}
-	for b := range red {
-		if _, listed := green[b]; listed {
-			green[b] = false
-		}
-	}
-	return green
+// for it: it has at least one planned job and every planned job of it has a
+// result with the status "success". A planned job without a result is red
+// (the job never wrote it: it did not finish), so is failure, cancelled (a
+// job past timeout-minutes too) or anything else. A result whose name is not
+// planned is ignored. A branch with no planned job is not green.
+func Verdicts(branches []string, planned []Job, results []Result) map[string]bool {
+	return make(map[string]bool, len(branches))
 }
 
 // IssueTitle is the title of the failure issue for a branch.

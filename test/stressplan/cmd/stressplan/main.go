@@ -174,7 +174,7 @@ func verdicts(listPath, jobsPath string, stdout io.Writer) error {
 		}
 	}
 
-	green := stressplan.Verdicts(names, results)
+	green := stressplan.Verdicts(names, nil, results)
 	for _, n := range names {
 		verdict := "red"
 		if green[n] {

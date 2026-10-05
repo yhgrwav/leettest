@@ -187,13 +187,27 @@ func TestPlan_ReadsThisRepositorysWorkflows(t *testing.T) {
 	}
 }
 
+const sha = "9a088764ab1365dd"
+
+func nameOf(branch, goVer string) string { return Job{Branch: branch, SHA: sha, Go: goVer}.Name() }
+
+func plannedFor(branches ...string) []Job {
+	var jobs []Job
+	for _, b := range branches {
+		for _, v := range []string{"1.26", "1.27.1"} {
+			jobs = append(jobs, Job{Branch: b, SHA: sha, Go: v})
+		}
+	}
+	return jobs
+}
+
 // A red job counts against its own branch only: main red, the release branch
 // green — the run counts for the release branch. Anything but success is red;
-// a branch with no job is not green.
+// a branch with no planned job is not green.
 func TestVerdicts(t *testing.T) {
-	name := func(branch, goVer string) string { return Job{Branch: branch, SHA: "9a08876", Go: goVer}.Name() }
+	name := nameOf
 
-	got := Verdicts([]string{"main", "release/v0.1", "release/v0.2", "release/v0.3"}, []Result{
+	got := Verdicts([]string{"main", "release/v0.1", "release/v0.2", "release/v0.3"}, plannedFor("main", "release/v0.1", "release/v0.2"), []Result{
 		{Name: name("main", "1.26"), Conclusion: "failure"},
 		{Name: name("main", "1.27.1"), Conclusion: "success"},
 		{Name: name("release/v0.1", "1.26"), Conclusion: "success"},
@@ -205,6 +219,57 @@ func TestVerdicts(t *testing.T) {
 	want := map[string]bool{"main": false, "release/v0.1": true, "release/v0.2": false, "release/v0.3": false}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Verdicts = %v, want %v", got, want)
+	}
+}
+
+// A planned job that wrote no result did not finish: its branch is red, which
+// is also what a result the jobs API had not recorded yet used to look like.
+// The other branch, whose jobs all reported, stays green.
+func TestVerdicts_APlannedJobWithoutAResultIsRed(t *testing.T) {
+	got := Verdicts([]string{"main", "release/v0.1"}, plannedFor("main", "release/v0.1"), []Result{
+		{Name: nameOf("main", "1.26"), Conclusion: "success"},
+		{Name: nameOf("release/v0.1", "1.26"), Conclusion: "success"},
+		{Name: nameOf("release/v0.1", "1.27.1"), Conclusion: "success"},
+	})
+	want := map[string]bool{"main": false, "release/v0.1": true}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Verdicts = %v, want %v", got, want)
+	}
+}
+
+// Only the planned jobs are read: a failure written for a commit that was not
+// planned does not turn main red.
+func TestVerdicts_AResultOutsideThePlanIsIgnored(t *testing.T) {
+	other := Job{Branch: "main", SHA: "1111111222222", Go: "1.26"}.Name()
+	got := Verdicts([]string{"main"}, plannedFor("main"), []Result{
+		{Name: nameOf("main", "1.26"), Conclusion: "success"},
+		{Name: nameOf("main", "1.27.1"), Conclusion: "success"},
+		{Name: other, Conclusion: "failure"},
+	})
+	if want := map[string]bool{"main": true}; !reflect.DeepEqual(got, want) {
+		t.Errorf("Verdicts = %v, want %v", got, want)
+	}
+}
+
+func TestParseResult(t *testing.T) {
+	got, err := ParseResult([]byte("stress main@9a08876 go1.26\tsuccess\n"))
+	if err != nil {
+		t.Fatalf("ParseResult: %v", err)
+	}
+	if want := (Result{Name: "stress main@9a08876 go1.26", Conclusion: "success"}); got != want {
+		t.Errorf("ParseResult = %+v, want %+v", got, want)
+	}
+
+	for _, bad := range []string{
+		"stress main@9a08876 go1.26\tsuccess\textra\n",
+		"stress main@9a08876 go1.26\t\n",
+		"\tsuccess\n",
+		"stress main@9a08876 go1.26 success\n",
+		"",
+	} {
+		if _, err := ParseResult([]byte(bad)); err == nil {
+			t.Errorf("ParseResult(%q): no error", bad)
+		}
 	}
 }
 
