@@ -38,10 +38,37 @@ jobs:
           go-version: "1.27.1"
 `
 
-func TestParseList_SkipsBlanksAndComments(t *testing.T) {
-	got := ParseList([]byte("# branches under the count\nmain\n\n  release/v0.1  \n# release/v0.0\n"))
+func TestParseList(t *testing.T) {
+	got, err := ParseList([]byte("# branches under the count\nmain\n\n  release/v0.1  \n# release/v0.0\nmain\n"))
+	if err != nil {
+		t.Fatalf("ParseList: %v", err)
+	}
 	if want := []string{"main", "release/v0.1"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("ParseList = %q, want %q", got, want)
+	}
+
+	for _, bad := range []string{"main release/v0.1\n", "release/v0.1 # until the tag\n"} {
+		if _, err := ParseList([]byte(bad)); err == nil {
+			t.Errorf("ParseList(%q): no error", bad)
+		}
+	}
+}
+
+// An empty list, or one of comments only, leaves nothing to stress: the plan
+// says so instead of handing GitHub an empty matrix.
+func TestPlan_NothingToStressIsAnError(t *testing.T) {
+	for _, raw := range []string{"", "# none yet\n\n"} {
+		names, err := ParseList([]byte(raw))
+		if err != nil {
+			t.Fatalf("ParseList(%q): %v", raw, err)
+		}
+		var branches []Branch
+		for _, n := range names {
+			branches = append(branches, Branch{Name: n})
+		}
+		if _, err := Plan(branches); err == nil {
+			t.Errorf("Plan of list %q: no error, want one: nothing would be stressed", raw)
+		}
 	}
 }
 
@@ -74,6 +101,25 @@ func TestPlan_EachBranchOnItsOwnCommitAndGo(t *testing.T) {
 	}
 }
 
+// A job name read back gives the same branch, commit and Go — a branch with
+// a slash in its name included.
+func TestParseJobName_RoundTrip(t *testing.T) {
+	for _, j := range []Job{
+		{Branch: "main", SHA: "9a08876", Go: "1.26"},
+		{Branch: "release/v0.1", SHA: "d5bfed5", Go: "1.27.1"},
+	} {
+		got, ok := ParseJobName(j.Name())
+		if !ok || got != j {
+			t.Errorf("ParseJobName(%q) = %+v, %v, want %+v", j.Name(), got, ok, j)
+		}
+	}
+	for _, other := range []string{"", "stress (go 1.26)", "report", "stress main go1.26"} {
+		if _, ok := ParseJobName(other); ok {
+			t.Errorf("ParseJobName(%q) ok, want not a stress job", other)
+		}
+	}
+}
+
 // The binary is built with release.yml's Go: a branch whose test matrix
 // moved past it is still stressed with it.
 func TestPlan_TheReleaseGoIsAlwaysIn(t *testing.T) {
@@ -92,20 +138,32 @@ func TestPlan_TheReleaseGoIsAlwaysIn(t *testing.T) {
 	}
 }
 
-// A branch whose files name no Go version is an error naming it, not a branch
-// that silently gets no jobs and so never turns red.
-func TestPlan_NoGoVersionIsAnError(t *testing.T) {
-	_, err := Plan([]Branch{
-		{Name: "main", SHA: "9a088764ab", CI: []byte(ciYML), Release: []byte(releaseYML)},
+// A branch whose files lack a Go version is red for that branch: an error
+// naming it. The other branches still get their jobs, so one broken branch
+// does not stop another's count.
+func TestPlan_ABrokenBranchIsItsOwnError(t *testing.T) {
+	noRelease := strings.Replace(releaseYML, `go-version: "1.27.1"`, `go-version-file: go.mod`, 1)
+
+	for _, broken := range []Branch{
 		{Name: "release/v0.3", SHA: "1234567890", CI: []byte("jobs: {}\n"), Release: []byte("jobs: {}\n")},
-	})
-	if err == nil || !strings.Contains(err.Error(), "release/v0.3") {
-		t.Errorf("Plan = %v, want an error naming release/v0.3", err)
+		// The matrix is there, the release Go is not: its builds would go unstressed.
+		{Name: "release/v0.3", SHA: "1234567890", CI: []byte(ciYML), Release: []byte(noRelease)},
+	} {
+		jobs, err := Plan([]Branch{
+			{Name: "main", SHA: "9a088764ab", CI: []byte(ciYML), Release: []byte(releaseYML)},
+			broken,
+		})
+		if err == nil || !strings.Contains(err.Error(), "release/v0.3") {
+			t.Errorf("Plan = %v, want an error naming release/v0.3", err)
+		}
+		if len(jobs) != 2 || jobs[0].Branch != "main" || jobs[1].Branch != "main" {
+			t.Errorf("jobs %+v, want main's two jobs planned anyway", jobs)
+		}
 	}
 }
 
-// The workflow files this repository has now give a plan: the parser reads
-// the real shape, not only the fixtures above.
+// The workflow files this repository has now give exactly its Go versions:
+// the parser reads the real shape, the matrix included.
 func TestPlan_ReadsThisRepositorysWorkflows(t *testing.T) {
 	ci, err := os.ReadFile("../../.github/workflows/ci.yml")
 	if err != nil {
@@ -116,21 +174,36 @@ func TestPlan_ReadsThisRepositorysWorkflows(t *testing.T) {
 		t.Fatal(err)
 	}
 	jobs, err := Plan([]Branch{{Name: "main", SHA: "0000000000", CI: ci, Release: release}})
-	if err != nil || len(jobs) == 0 {
-		t.Fatalf("Plan of this repository: %d jobs, %v", len(jobs), err)
+	if err != nil {
+		t.Fatalf("Plan of this repository: %v", err)
+	}
+	var gos []string
+	for _, j := range jobs {
+		gos = append(gos, j.Go)
+	}
+	// Update with the Go floor and GO_LATEST in ci.yml.
+	if want := []string{"1.26", "1.27.1"}; !reflect.DeepEqual(gos, want) {
+		t.Errorf("Go versions of this repository %q, want %q", gos, want)
 	}
 }
 
 // A red job counts against its own branch only: main red, the release branch
-// green — the run counts for the release branch.
-func TestVerdicts_ARedJobOfAnotherBranchDoesNotCount(t *testing.T) {
-	got := Verdicts([]Result{
-		{Job: Job{Branch: "main", Go: "1.26"}, Green: false},
-		{Job: Job{Branch: "main", Go: "1.27.1"}, Green: true},
-		{Job: Job{Branch: "release/v0.1", Go: "1.26"}, Green: true},
-		{Job: Job{Branch: "release/v0.1", Go: "1.27.1"}, Green: true},
+// green — the run counts for the release branch. Anything but success is red;
+// a branch with no job is not green.
+func TestVerdicts(t *testing.T) {
+	name := func(branch, goVer string) string { return Job{Branch: branch, SHA: "9a08876", Go: goVer}.Name() }
+
+	got := Verdicts([]string{"main", "release/v0.1", "release/v0.2", "release/v0.3"}, []Result{
+		{Name: name("main", "1.26"), Conclusion: "failure"},
+		{Name: name("main", "1.27.1"), Conclusion: "success"},
+		{Name: name("release/v0.1", "1.26"), Conclusion: "success"},
+		{Name: name("release/v0.1", "1.27.1"), Conclusion: "success"},
+		{Name: name("release/v0.2", "1.26"), Conclusion: "success"},
+		{Name: name("release/v0.2", "1.27.1"), Conclusion: "cancelled"},
+		{Name: "report", Conclusion: "skipped"},
 	})
-	if want := map[string]bool{"main": false, "release/v0.1": true}; !reflect.DeepEqual(got, want) {
+	want := map[string]bool{"main": false, "release/v0.1": true, "release/v0.2": false, "release/v0.3": false}
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Verdicts = %v, want %v", got, want)
 	}
 }

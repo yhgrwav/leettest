@@ -14,7 +14,9 @@
 
 package stressplan
 
-// TagOnReleaseBranch checks the output of `git branch -r --contains <tag>`:
-// a release is cut only from a commit some origin/release/* branch holds,
-// the branch its stress count and rehearsal ran on.
-func TagOnReleaseBranch(contains string) error { return nil }
+// TagOnReleaseBranch checks tag vX.Y.Z[-rc.N] against the output of
+// `git branch -r --points-at <tag commit>`: the commit must be the tip of
+// origin/release/vX.Y, the branch whose count and rehearsal ran. Being merely
+// contained in a release branch is not enough: a later branch contains every
+// older commit.
+func TagOnReleaseBranch(tag, pointsAt string) error { return nil }

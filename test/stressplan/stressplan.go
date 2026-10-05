@@ -27,27 +27,35 @@ type Job struct {
 }
 
 // Name is the job's name as the run shows it: «stress <branch>@<sha7> go<ver>».
-// The count reads the branch and the commit back from it.
+// The count reads the branch and the commit back from it with ParseJobName.
 func (j Job) Name() string { return "" }
 
+// ParseJobName reads a job name written by Name; SHA comes back as its seven
+// characters. ok is false for any other name.
+func ParseJobName(name string) (j Job, ok bool) { return Job{}, false }
+
 // ParseList reads .github/stress-branches: one branch per line; blank lines
-// and lines starting with # are skipped.
-func ParseList(raw []byte) []string { return nil }
+// and lines starting with # are skipped, a repeated branch counts once. A
+// line with a space inside or a trailing comment is an error, not a guess.
+func ParseList(raw []byte) ([]string, error) { return nil, nil }
 
 // Plan is the jobs for the branches: each branch with every Go version of its
-// own ci.yml test matrix and the Go its release.yml builds with. A branch whose
-// files name no Go version is an error, not a branch with no jobs.
+// own ci.yml test matrix and the Go its release.yml builds with. A branch
+// whose files lack either is an error naming it; the other branches still get
+// their jobs. No branches at all is an error: an empty matrix checks nothing.
 func Plan(branches []Branch) ([]Job, error) { return nil, nil }
 
-// Result is a finished job.
+// Result is a finished job as the run's job list reports it.
 type Result struct {
-	Job   Job
-	Green bool
+	Name       string
+	Conclusion string
 }
 
-// Verdicts says, per branch, whether the run is green for it: every job of
-// that branch is green. Another branch's red job does not touch it.
-func Verdicts(results []Result) map[string]bool { return nil }
+// Verdicts says, for each branch under the count, whether the run is green
+// for it: it has jobs, and every one concluded "success". Anything else —
+// failure, cancelled (a job past timeout-minutes too), skipped — is red for
+// its own branch only. A branch with no job is not green.
+func Verdicts(branches []string, results []Result) map[string]bool { return nil }
 
 // IssueTitle is the title of the failure issue for a branch.
 func IssueTitle(branch string) string { return "" }
