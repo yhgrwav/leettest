@@ -51,21 +51,23 @@ func gitIn(t *testing.T, dir string, args ...string) {
 }
 
 // The jobs of a run come from `gh api --paginate`: one JSON object per page,
-// back to back. A red job on page two still counts against its branch.
+// back to back. Page two holds a red job of a branch whose first job is on
+// page one, and every job of another branch: lost, the first would read green
+// and the second red.
 func TestVerdicts_ReadsEveryPageOfTheJobList(t *testing.T) {
 	list := write(t, "stress-branches", "main\nrelease/v0.1\n")
-	jobs := write(t, "jobs.json", `{"total_count":3,"jobs":[
+	jobs := write(t, "jobs.json", `{"total_count":4,"jobs":[
   {"name":"plan","conclusion":"success"},
   {"name":"stress main@9a08876 go1.26","conclusion":"success"}]}
-{"total_count":3,"jobs":[
-  {"name":"stress release/v0.1@d5bfed5 go1.26","conclusion":"failure"},
-  {"name":"stress release/v0.1@d5bfed5 go1.27.1","conclusion":"success"}]}`)
+{"total_count":4,"jobs":[
+  {"name":"stress main@9a08876 go1.27.1","conclusion":"failure"},
+  {"name":"stress release/v0.1@d5bfed5 go1.26","conclusion":"success"}]}`)
 
 	code, out, errOut := runCmd(t, "verdicts", list, jobs)
 	if code != 0 {
 		t.Fatalf("exit %d: %s", code, errOut)
 	}
-	if want := "main green\nrelease/v0.1 red\n"; out != want {
+	if want := "main red\nrelease/v0.1 green\n"; out != want {
 		t.Errorf("verdicts:\n%s\nwant:\n%s", out, want)
 	}
 }
