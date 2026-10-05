@@ -28,10 +28,13 @@ jobs:
           week_ago=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)
           gh api "repos/$REPO/branches" --paginate --jq '.[].name' | while read -r b; do
             case "$b" in
-              main|dev|release/*|cla-signatures) continue ;;
+              main|release/*|cla-signatures) continue ;;
             esac
-            pr=$(gh pr list -R "$REPO" --head "$b" --state all --limit 1 \
-              --json state,closedAt --jq '.[0] | "\(.state) \(.closedAt)"')
+            # --head matches the branch name in forks too: only this repository's
+            # pull requests say anything about this repository's branch.
+            pr=$(gh pr list -R "$REPO" --head "$b" --state all --limit 100 \
+              --json state,closedAt,isCrossRepository \
+              --jq '[.[] | select(.isCrossRepository | not)][0] | "\(.state) \(.closedAt)"')
             case "$pr" in
               "CLOSED "*)
                 closed=${pr#CLOSED }
