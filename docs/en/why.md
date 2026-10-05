@@ -2,7 +2,8 @@
 
 [← Back to docs](README.md)
 
-> This translation may lag behind the [Russian original](../ru/why.md).
+> Translated from [docs/ru/why.md](../ru/why.md) at 9a08876, 2026-10-05. If they differ, the
+> Russian one is right.
 
 LeetTest is built on one principle: a load test result is worth something only when it can
 be trusted without caveats. Everything else in the tool follows from that.
