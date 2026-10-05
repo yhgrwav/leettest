@@ -151,7 +151,7 @@ start lag, how late calls began against their schedule: p99 109us, max 225us.
 is a lower bound: the real tail lies above it. Raise the timeout to see it.
 ```
 
-(Linux, Docker.)
+(Linux, Docker, 9a08876.)
 
 Что здесь главное:
 
