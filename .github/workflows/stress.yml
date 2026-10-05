@@ -1,14 +1,20 @@
 name: Stress
 
-# Every test many times under -race, nightly: a flaky test passes a PR's single
-# run and fails one run in fifty. A failure opens an issue, or comments on the
-# open one, so it does not rest in a mail to whoever last touched the cron.
-# GitHub disables a scheduled workflow after 60 days without commits to a
-# public repo; re-enable it under Actions after a quiet spell.
+# Every test many times under -race, four times a day: a flaky test passes a
+# PR's single run and fails one run in fifty. A failure opens an issue, or
+# comments on the open one, so it does not rest in a mail to whoever last
+# touched the cron. GitHub disables a scheduled workflow after 60 days without
+# commits to a public repo; re-enable it under Actions after a quiet spell.
 on:
   schedule:
-    - cron: "0 2 * * *"
+    # Off the hour: GitHub delays runs due at :00 the most.
+    - cron: "13 1,7,13,19 * * *"
   workflow_dispatch:
+
+# A run delayed by hours must not share the CPU with the next one.
+concurrency:
+  group: stress
+  cancel-in-progress: false
 
 permissions:
   contents: read
