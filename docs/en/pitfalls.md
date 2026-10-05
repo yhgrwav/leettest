@@ -2,7 +2,7 @@
 
 [← Back to docs](README.md)
 
-> Translated from [docs/ru/pitfalls.md](../ru/pitfalls.md) at 9a08876, 2026-10-05. If they
+> Translated from [docs/ru/pitfalls.md](../ru/pitfalls.md) at 724bf40, 2026-10-05. If they
 > differ, the Russian one is right.
 
 A list of places where load tools lie or get in the way, and where we stand on each.

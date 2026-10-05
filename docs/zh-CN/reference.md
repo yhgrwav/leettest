@@ -3,7 +3,7 @@
 [Русский](../ru/reference.md) · [English](../en/reference.md) · [Deutsch](../de/reference.md) · [简体中文](reference.md)
 [← 首页](README.md)
 
-> 译自 [docs/ru/reference.md](../ru/reference.md)，对应 9a08876，2026-10-05。如有出入，以俄文版为准。
+> 译自 [docs/ru/reference.md](../ru/reference.md)，对应 724bf40，2026-10-05。如有出入，以俄文版为准。
 
 每个配置字段、每个命令行参数，以及工具在启动前检查什么。如何阅读报告见
 [README](README.md#阅读报告)。

@@ -1,4 +1,4 @@
-> Übersetzt aus [docs/ru/quickstart.md](../ru/quickstart.md) bei 9a08876, 2026-10-05. Bei
+> Übersetzt aus [docs/ru/quickstart.md](../ru/quickstart.md) bei 724bf40, 2026-10-05. Bei
 > Abweichungen gilt die russische Fassung.
 
 # Schnellstart

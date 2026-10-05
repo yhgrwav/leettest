@@ -14,7 +14,7 @@
 
 ---
 
-> Übersetzt aus [README.md](../../README.md) bei 9a08876, 2026-10-05. Bei Abweichungen gilt die
+> Übersetzt aus [README.md](../../README.md) bei 724bf40, 2026-10-05. Bei Abweichungen gilt die
 > russische Fassung. Dazu ein Verzeichnis der deutschen Dokumentation, das im Original fehlt.
 
 > **Frühes Stadium.** Funktioniert: unäre Last auf einen echten Dienst, mehrere Methoden mit eigener

@@ -1,4 +1,4 @@
-> 译自 [docs/ru/quickstart.md](../ru/quickstart.md)，对应 9a08876，2026-10-05。如有出入，以俄文版为准。
+> 译自 [docs/ru/quickstart.md](../ru/quickstart.md)，对应 724bf40，2026-10-05。如有出入，以俄文版为准。
 
 # 快速上手
 
