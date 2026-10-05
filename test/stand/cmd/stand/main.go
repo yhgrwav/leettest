@@ -48,6 +48,9 @@ type options struct {
 	capacity   int
 	maxStreams int
 	life       time.Duration
+	tls        bool
+	mtls       bool
+	certs      string
 }
 
 func parse(args []string, usage io.Writer) (options, error) {
@@ -64,6 +67,9 @@ func parse(args []string, usage io.Writer) (options, error) {
 	fs.IntVar(&o.capacity, "capacity", 0, "serve at most this many calls a second, first come first served; above it calls queue")
 	fs.IntVar(&o.maxStreams, "max-streams", 0, "announce this many concurrent streams per connection; 0 announces no limit")
 	fs.DurationVar(&o.life, "life", 0, "exit after this long; 0 waits for Ctrl+C")
+	fs.BoolVar(&o.tls, "tls", false, "serve over TLS with certificates generated at start into -certs")
+	fs.BoolVar(&o.mtls, "mtls", false, "-tls, and require a client certificate signed by the generated CA")
+	fs.StringVar(&o.certs, "certs", "test/stand/certs", "folder the TLS certificates are written to, relative to the working directory")
 
 	if err := fs.Parse(args); err != nil {
 		return o, err
@@ -115,13 +121,34 @@ func run(args []string, out, errOut io.Writer, stop <-chan struct{}, ready func(
 		return err
 	}
 
+	// Certificates are written before listening: a client that sees the
+	// stand ready finds them in place.
+	opts := o.serverOptions()
+	mode := "plaintext"
+	if o.tls || o.mtls {
+		certs, certErr := stand.WriteCerts(o.certs)
+		if certErr != nil {
+			return fmt.Errorf("-certs %s: %w", o.certs, certErr)
+		}
+		opt, optErr := certs.ServerOption(o.mtls)
+		if optErr != nil {
+			return optErr
+		}
+		opts = append(opts, opt)
+		mode = "TLS, certificates in " + o.certs
+		if o.mtls {
+			mode = "mutual " + mode
+		}
+	}
+
 	lis, err := new(net.ListenConfig).Listen(context.Background(), "tcp", o.addr)
 	if err != nil {
 		return err
 	}
 
-	s := stand.StartOn(lis, o.answer(), o.serverOptions()...)
-	fmt.Fprintf(errOut, "stand on %s, method grpc.health.v1.Health/Check\n", s.Target())
+	s := stand.StartOn(lis, o.answer(), opts...)
+	fmt.Fprintf(errOut, "stand on %s (%s): grpc.health.v1.Health/Check, wallet.v1.WalletService/GetBalance and /Transfer\n",
+		s.Target(), mode)
 	ready(s.Target())
 
 	var expired <-chan time.Time

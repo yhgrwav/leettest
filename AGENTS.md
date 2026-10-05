@@ -61,8 +61,10 @@ checked against `internal/cli/testdata/schema_v1.txt`; the contract rules are in
 
 ### Writing a config
 
-Every field, with what it does: [reference](docs/en/reference.md). A config using all of them
-against the reference stand: [`examples/tour.yaml`](examples/tour.yaml). Rules an agent trips on:
+Every field, with what it does: [reference](docs/en/reference.md). Configs using all of them
+against the reference stand: [`examples/tour.yaml`](examples/tour.yaml) (needs `LEETTEST_TOKEN`
+set) and, for TLS, [`examples/tour-tls.yaml`](examples/tour-tls.yaml) against a stand started with
+`-mtls` from the repository root. Rules an agent trips on:
 
 - The config is strict: an unknown field or a wrong value is an error with its line or call, not
   an empty run. `rps` is an integer.
@@ -136,6 +138,7 @@ $ make check      # gofmt (via the linter), vet, tests, golangci-lint — before
 $ make race       # tests under -race; needs gcc
 $ make stand      # the reference stand on 127.0.0.1:50051
 $ make demo       # a run against the built-in fake target
+$ make proto      # regenerate the stand's code from wallet.proto, in Docker
 ```
 
 `make check && git push` — never put a pipe between a check and a push: a pipe returns the last

@@ -72,3 +72,6 @@ docs/strategy.md
 
 # goreleaser output
 dist/
+
+# The reference stand writes its TLS certificates here at start
+/test/stand/certs/

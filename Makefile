@@ -6,7 +6,7 @@ LINT_VERSION := v2.14.0
 # CI calls these targets rather than copying their commands: one definition,
 # so a local run and CI cannot drift apart.
 
-.PHONY: help vet test race stress lint lint-install fmt check build demo stand run clean
+.PHONY: help vet test race stress lint lint-install fmt check build demo stand run proto clean
 
 # Recipes run in sh (Git Bash, CI) or in cmd.exe (an IDE on Windows, no sh
 # in PATH): every one must mean the same in both. $(info) needs no shell.
@@ -22,6 +22,7 @@ help:
 	$(info make demo          a run against the built-in fake target, no server needed)
 	$(info make stand         start the reference stand on 127.0.0.1:50051 (keep it running))
 	$(info make run           a run against the stand, from a second terminal)
+	$(info make proto         regenerate the stand's code from wallet.proto, in Docker)
 	@:
 
 vet:
@@ -66,6 +67,10 @@ stand:
 
 run:
 	go run ./cmd/leettest -c examples/stand.yaml
+
+# The pinned tools are Linux builds, so the script runs in a Linux container.
+proto:
+	docker run --rm -v "$(CURDIR):/src" -w /src golang:1.27.1 sh -c "apt-get -qq update && apt-get -qq install -y unzip && sh test/stand/proto/gen.sh"
 
 # git, not rm: cmd.exe has no rm. -X removes only ignored files there.
 clean:

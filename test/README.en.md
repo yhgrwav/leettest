@@ -15,7 +15,8 @@ construction, not asserted, so the right answer is known in advance: a stand tol
 answer for 200 ms has no opinion on the right number — it makes it.
 
 The stand does not depend on the engine's code — only on the `grpc.health.v1.Health/Check`
-contract and server reflection — so another tool can be pointed at it too.
+contract, `wallet.v1.WalletService` (`stand/proto`, for the examples) and server reflection — so
+another tool can be pointed at it too. Every method obeys the same behaviour.
 
 **`stand/cmd/stand`** — the same stand as a separate process over TCP: point the CLI or another
 tool at it. Behaviour is set by a flag, one at a time; on exit the stand prints what it saw
@@ -29,7 +30,11 @@ $ go run ./test/stand/cmd/stand -delay 150ms -max-streams 1
 $ go run ./test/stand/cmd/stand -delay 20ms -capacity 270
 ```
 
-The method is `grpc.health.v1.Health/Check`, the default address `127.0.0.1:50051`, no TLS. Times
+The methods are `grpc.health.v1.Health/Check`, `wallet.v1.WalletService/GetBalance` and
+`/Transfer`, the default address `127.0.0.1:50051`, no TLS. `-tls` serves TLS, `-mtls` also
+requires a client certificate: at start the stand writes a CA, its certificate and a client one
+(ECDSA P-256, valid a day) into `-certs`, by default `test/stand/certs` under the working
+directory — run it from the repository root. Times
 in flags count from the first call to arrive. Without `-life` the stand runs until Ctrl+C.
 `-max-streams n` is the limit of concurrent streams per connection the stand announces to the
 client; it combines with any behaviour. `0` announces no limit at all. `-capacity n` is a stand of

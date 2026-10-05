@@ -31,7 +31,8 @@ $ leettest -version
 ## 2. Цель: эталонный стенд
 
 Для тура не нужен свой сервис: в репозитории есть эталонный стенд — gRPC-сервис с управляемым
-поведением. Он отвечает на `grpc.health.v1.Health/Check` и отдаёт reflection, как настоящий сервис.
+поведением. Он отвечает на `grpc.health.v1.Health/Check` и `wallet.v1.WalletService` и отдаёт
+reflection, как настоящий сервис.
 
 ```console
 $ git clone https://github.com/yhgrwav/leettest && cd leettest
@@ -44,7 +45,7 @@ $ go run ./test/stand/cmd/stand -delay 20ms -hang-from 25s -life 60s
 
 ## 3. Конфиг
 
-[`examples/tour.yaml`](../../examples/tour.yaml) задействует все поля, которые можно проверить на
+[`examples/ru/tour.yaml`](../../examples/ru/tour.yaml) задействует все поля, которые можно проверить на
 локальном стенде:
 
 ```yaml
@@ -69,11 +70,17 @@ load:
       timeout: 500ms
       data:
         service: wallet.v1.WalletService
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 50
+      duration: 40s
+      timeout: 500ms
+      data:
+        wallet_id: w-42
 ```
 
 - **`name`** — как прогон называется в заголовке.
 - **`tls: false`** — стенд без шифрования. По умолчанию TLS включён; `ca`, `cert`, `key`,
-  `server_name` для TLS и mTLS — в справочнике, [«Доступ к сервису»](reference.md#доступ-к-сервису).
+  `server_name` — в [`examples/tour-tls.yaml`](../../examples/ru/tour-tls.yaml) (ниже, «TLS»).
 - **`metadata`** — заголовки каждого вызова. `${LEETTEST_TOKEN}` берётся из окружения: токен не
   попадает ни в конфиг, ни в историю shell, а значения заголовков инструмент не печатает нигде.
   Переменная не задана — ошибка до старта, а не прогон с пустым токеном.
@@ -89,21 +96,11 @@ load:
 Несколько методов — несколько вызовов, у каждого свой темп. Один метод — один вызов: отчёт идёт по
 методам.
 
-```yaml
-load:
-  calls:
-    - method: wallet.v1.WalletService/GetBalance
-      rps: 800
-      duration: 5m
-    - method: wallet.v1.WalletService/Transfer
-      rps: 50
-      duration: 5m
-```
-
 ## 4. Запуск
 
 ```console
-$ LEETTEST_TOKEN=demo leettest -c examples/tour.yaml
+$ export LEETTEST_TOKEN=demo
+$ leettest -c examples/ru/tour.yaml
 ```
 
 Перед стартом инструмент подключается к цели, проверяет каждый метод через reflection, собирает
@@ -117,6 +114,15 @@ $ LEETTEST_TOKEN=demo leettest -c examples/tour.yaml
 
 Без терминала (CI, перенаправление в файл) вместо экрана — строка прогресса раз в секунду в stderr.
 
+**TLS.** Стенд с `-mtls` при старте пишет CA, свой сертификат и клиентский в `test/stand/certs` и
+требует клиентский сертификат; [`examples/ru/tour-tls.yaml`](../../examples/ru/tour-tls.yaml)
+указывает на эти файлы:
+
+```console
+$ go run ./test/stand/cmd/stand -mtls -delay 20ms -life 30s
+$ leettest -c examples/ru/tour-tls.yaml
+```
+
 ## 5. Отчёт
 
 Отчёт идёт в stdout, только ASCII — его можно сохранить в файл или разобрать `grep`. Тур на стенде
@@ -124,28 +130,28 @@ $ LEETTEST_TOKEN=demo leettest -c examples/tour.yaml
 
 ```
 run finished: 127.0.0.1:50051 in 40.5s
-sent 11100, failed 4499
+sent 12950, failed 5248
 
 method                                           sent   failed    sent/s       p50       p90       p95       p99
-grpc.health.v1.Health/Check                     11100     4499       300    21.9ms    >500ms    >500ms    >500ms
+grpc.health.v1.Health/Check                     11100     4499       300    20.5ms    >500ms    >500ms    >500ms
+wallet.v1.WalletService/GetBalance               1850      749        50    20.5ms    >500ms    >500ms    >500ms
 
-warm-up 900 sent, excluded from stats
+warm-up 1050 sent, excluded from stats
 
 grpc.health.v1.Health/Check: at 300 rps, 4499 of 11100 calls (40.5%) got no answer within 500ms,
 and nothing after the call sent at 25.0s of the run got one.
-
+...
 failed calls by gRPC code:
-grpc.health.v1.Health/Check codes sent by the target: DeadlineExceeded 1
-grpc.health.v1.Health/Check codes set by the client: DeadlineExceeded 4498
+grpc.health.v1.Health/Check codes sent by the target: DeadlineExceeded 2
+grpc.health.v1.Health/Check codes set by the client: DeadlineExceeded 4497
 ...
-start lag, how late calls began against their schedule: p99 1.14ms, max 1.27ms.
+start lag, how late calls began against their schedule: p99 109us, max 225us.
 ...
-4499 requests were abandoned before answering. A percentile shown as "> value"
+5248 requests were abandoned before answering. A percentile shown as "> value"
 is a lower bound: the real tail lies above it. Raise the timeout to see it.
-...
 ```
 
-(Linux, Docker, 10b99c2.)
+(Linux, Docker.)
 
 Что здесь главное:
 

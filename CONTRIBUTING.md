@@ -46,6 +46,7 @@ version in `.github/workflows/ci.yml` (`make lint-install`). `make race` needs a
 $ make check      # vet, tests, golangci-lint (gofmt included) — must pass before a pull request
 $ make race       # tests under the race detector
 $ make stand      # the reference stand on 127.0.0.1:50051, for running the CLI against
+$ make proto      # regenerate the stand's code after changing wallet.proto (needs Docker)
 ```
 
 The order of work:
