@@ -1,6 +1,6 @@
 # <img src="../assets/icon.png" width="24" alt="" align="top"> Reference stand and measurement correctness tests
 
-> Translated from [README.md](README.md) at d7f498c, 2026-10-02. If they differ, the Russian
+> Translated from [README.md](README.md) at 9a08876, 2026-10-05. If they differ, the Russian
 > one is right.
 
 What lives here is not a check of features but a check that the tool does not lie. The product is

@@ -2,7 +2,8 @@
 
 [← Back to docs](README.md)
 
-> This translation may lag behind the [Russian original](../ru/problem.md).
+> Translated from [docs/ru/problem.md](../ru/problem.md) at 9a08876, 2026-10-05. If they differ,
+> the Russian one is right.
 
 A load test exists to answer one question: **at what load does the service stop coping, and
 where is the bottleneck.** That answer goes to the developers — to fix, to optimise, to decide

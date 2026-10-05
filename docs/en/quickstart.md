@@ -1,5 +1,5 @@
-> Translated from [quickstart.md](../ru/quickstart.md), 2026-10-01. If they differ, the Russian
-> one is right.
+> Translated from [docs/ru/quickstart.md](../ru/quickstart.md) at 9a08876, 2026-10-05. If they
+> differ, the Russian one is right.
 
 # Quickstart
 
@@ -152,7 +152,7 @@ start lag, how late calls began against their schedule: p99 109us, max 225us.
 is a lower bound: the real tail lies above it. Raise the timeout to see it.
 ```
 
-(Linux, Docker.)
+(Linux, Docker, 9a08876.)
 
 What matters here:
 
