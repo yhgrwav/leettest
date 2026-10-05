@@ -27,10 +27,13 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 )
 
-// refusingThenGone refuses the first stream with RST_STREAM REFUSED_STREAM
-// and closes the connection right after, so the transparent retry finds no
-// connection to write its headers into.
-func refusingThenGone(conn net.Conn) {
+// goingAway answers the first stream with GOAWAY, last stream 0: the stream
+// was not processed and is retried transparently. grpc-go v1.84.0 marks the
+// connection draining (internal/transport/http2_client.go:1427–1428) before
+// it closes the stream (:1455), so the retry never writes into this
+// connection. A refusal by RST_STREAM instead races: the retry may be written
+// before the client sees the connection close.
+func goingAway(conn net.Conn) {
 	defer conn.Close()
 
 	preface := make([]byte, len(http2.ClientPreface))
@@ -52,17 +55,15 @@ func refusingThenGone(conn net.Conn) {
 				_ = fr.WriteSettingsAck()
 			}
 		case *http2.HeadersFrame:
-			_ = fr.WriteRSTStream(f.StreamID, http2.ErrCodeRefusedStream)
-
-			return
+			_ = fr.WriteGoAway(0, http2.ErrCodeNo, nil)
 		}
 	}
 }
 
 // Ground: signal grpc-go v1.84.0 — TestRetry_AnAttemptWithoutHeadersClosesNoStream feeds the
 // handler a retry with no OutHeader; this pins that grpc-go sends that sequence when the target
-// refuses the stream and drops the connection before the retry is written, and that the gauge
-// of open streams ends at 0. Later dials wait out the deadline, so the retry never gets a stream.
+// goes away before processing the stream, and that the gauge of open streams ends at 0. Later
+// dials wait out the deadline, so the retry never gets a stream.
 func TestRetry_ARetryWithoutHeadersOnTheWire(t *testing.T) {
 	lis := bufconn.Listen(1024 * 1024)
 	var dials atomic.Int32
@@ -72,7 +73,7 @@ func TestRetry_ARetryWithoutHeadersOnTheWire(t *testing.T) {
 			if err != nil {
 				return
 			}
-			go refusingThenGone(conn)
+			go goingAway(conn)
 		}
 	}()
 	t.Cleanup(func() { _ = lis.Close() })
