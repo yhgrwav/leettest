@@ -23,7 +23,7 @@ Statuses are honest: `done` — works now; `planned` — the decision is made, t
 | Cold start skews percentiles | done |
 | The generator dies before the target on hanging requests | done |
 | The generator hits its own limit and the report blames the service | planned |
-| Target rate limits counted as service errors | planned |
+| Target rate limits counted as service errors | done |
 | Calls can't be chained on data | planned |
 | No idea what is happening during the run | done |
 
@@ -96,8 +96,8 @@ dies before the service under test. The cure is an explicit cap on concurrent re
 lowering the load at the cap is not allowed: a "1000 RPS" run that quietly became "whatever we
 managed" is worse than a failed one. So the cap is checked before the start: it holds everything
 a stalled service can keep until the timeout, with a margin. A stalled service lasts to the end of
-the run, and the report states what was measured: "at 100 RPS, 150 of 150 calls got no answer
-within 300 ms, from second 0 on". If the cap still runs out, the generator held the slots, not the
+the run, and the report states what was measured: `at 100 rps, 150 of 150 calls (100.0%) got no
+answer within 300ms, and the target answered nothing at all`. If the cap still runs out, the generator held the slots, not the
 service: the run stops with a report and is marked invalid.
 
 ## The generator hits its own limit
@@ -110,8 +110,9 @@ the generator hit its limit is declared invalid, with what to change.
 ## Errors by category
 
 A `RESOURCE_EXHAUSTED` from the target's rate limiter is not the same as a timeout or a service
-crash. Lumping them into "errors: 12%" loses the meaning. The core tells the categories apart; the
-report doesn't show the breakdown yet — today it has the total number of failures.
+crash. Lumping them into "errors: 12%" loses the meaning. The report splits calls by category, per method
+and per second: an "overloaded" refusal (`overload`) apart from a timeout (`timed_out`) and from a
+target failure (`failure`) — [categories](README.md#reading-the-report).
 
 ## Visibility
 
