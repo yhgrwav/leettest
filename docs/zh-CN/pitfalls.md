@@ -2,7 +2,7 @@
 
 [← 返回文档](README.md)
 
-> 译自 [docs/ru/pitfalls.md](../ru/pitfalls.md)，对应 9a08876，2026-10-05。如有出入，以俄文版为准。
+> 译自 [docs/ru/pitfalls.md](../ru/pitfalls.md)，对应 724bf40，2026-10-05。如有出入，以俄文版为准。
 
 下面列出压测工具在哪些地方会撒谎或碍事，以及我们各自处于什么状态。
 

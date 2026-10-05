@@ -14,7 +14,7 @@
 
 ---
 
-> Translated from [README.md](../../README.md) at 9a08876, 2026-10-05. If they differ, the Russian
+> Translated from [README.md](../../README.md) at 724bf40, 2026-10-05. If they differ, the Russian
 > one is right. Plus an index of English docs, not in the Russian source.
 
 > **Early stage.** Working now: unary load against a real service, several methods at their own

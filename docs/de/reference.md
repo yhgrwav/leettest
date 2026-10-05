@@ -3,7 +3,7 @@
 [Русский](../ru/reference.md) · [English](../en/reference.md) · [Deutsch](reference.md) · [简体中文](../zh-CN/reference.md)
 [← Startseite](README.md)
 
-> Übersetzt aus [docs/ru/reference.md](../ru/reference.md) bei 9a08876, 2026-10-05. Bei
+> Übersetzt aus [docs/ru/reference.md](../ru/reference.md) bei 724bf40, 2026-10-05. Bei
 > Abweichungen gilt die russische Fassung.
 
 Jedes Konfigurationsfeld, jedes Flag und was das Werkzeug vor dem Start prüft. Wie man den Bericht
