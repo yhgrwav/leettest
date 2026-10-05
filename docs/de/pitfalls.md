@@ -2,7 +2,7 @@
 
 [← Zur Übersicht](README.md)
 
-> Übersetzt aus [docs/ru/pitfalls.md](../ru/pitfalls.md) bei 9a08876, 2026-10-05. Bei
+> Übersetzt aus [docs/ru/pitfalls.md](../ru/pitfalls.md) bei 724bf40, 2026-10-05. Bei
 > Abweichungen gilt die russische Fassung.
 
 Eine Liste der Stellen, an denen Lastwerkzeuge lügen oder im Weg stehen, und wo wir jeweils stehen.

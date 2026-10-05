@@ -2,7 +2,7 @@
 
 [← 返回文档](README.md)
 
-> 译自 [docs/ru/commercial.md](../ru/commercial.md)，对应 9a08876，2026-10-05。如有出入，以俄文版为准。
+> 译自 [docs/ru/commercial.md](../ru/commercial.md)，对应 724bf40，2026-10-05。如有出入，以俄文版为准。
 
 > 本页描述的是**预期**模式。付费部分目前尚不存在，也没有时间表。
 > 写在这里是为了它日后不会成为意外。
