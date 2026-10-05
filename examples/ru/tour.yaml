@@ -1,0 +1,33 @@
+# Все поля, которые читает LeetTest, против эталонного стенда, из корня репозитория:
+#   go run ./test/stand/cmd/stand -delay 20ms -hang-from 25s -life 60s
+#   export LEETTEST_TOKEN=demo
+#   leettest -c examples/ru/tour.yaml
+# TLS и mTLS: tour-tls.yaml. Разбор по шагам — docs/ru/quickstart.md.
+
+name: tour                          # имя прогона в заголовке отчёта
+
+app:
+  target:
+    ip: 127.0.0.1
+    port: 50051
+  tls: false                        # по умолчанию включён; стенд без -tls говорит без шифрования
+  metadata:                         # уходят с каждым вызовом; ${NAME} берётся из окружения
+    authorization: Bearer ${LEETTEST_TOKEN}
+    x-request-source: leettest-tour
+  max_response_size: 1MiB           # ответ больше — bad response, а не успех
+
+load:
+  warmup: 3s                        # вызовы уходят, но в перцентили не попадают
+  calls:                            # один call на метод, у каждого свой rps
+    - method: grpc.health.v1.Health/Check
+      rps: 300
+      duration: 40s
+      timeout: 500ms                # не ответили за это время — timed out
+      data:                         # тело запроса в YAML; схема — из reflection
+        service: wallet.v1.WalletService
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 50
+      duration: 40s
+      timeout: 500ms
+      data:
+        wallet_id: w-42

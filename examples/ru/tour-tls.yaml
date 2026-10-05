@@ -1,0 +1,24 @@
+# Поля TLS, против эталонного стенда со взаимным TLS, из корня репозитория:
+#   go run ./test/stand/cmd/stand -mtls -delay 20ms -life 30s
+# Стенд пишет CA, свой сертификат и клиентский сертификат в test/stand/certs.
+#   leettest -c examples/ru/tour-tls.yaml
+
+name: tour over mutual TLS
+
+app:
+  target:
+    ip: 127.0.0.1
+    port: 50051
+  tls: true                         # так и по умолчанию, здесь — явно
+  ca: ../../test/stand/certs/ca.pem # доверять этому CA вместо системных; пути — от этого файла
+  cert: ../../test/stand/certs/client.pem   # клиентский сертификат, если цель его просит
+  key: ../../test/stand/certs/client-key.pem
+  server_name: localhost            # имя, с которым сверяется сертификат цели
+
+load:
+  calls:
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 100
+      duration: 20s
+      data:
+        wallet_id: w-42

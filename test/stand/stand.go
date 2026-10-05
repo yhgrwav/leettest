@@ -28,6 +28,8 @@ import (
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
+
+	walletv1 "github.com/yhgrwav/leettest/test/stand/proto/wallet/v1"
 )
 
 // bufSize is the in-process listener's buffer. Large enough that a burst of
@@ -227,6 +229,7 @@ func StartOn(lis net.Listener, answer Answer, opts ...grpc.ServerOption) *Stand 
 	}
 
 	grpc_health_v1.RegisterHealthServer(s.srv, s)
+	walletv1.RegisterWalletServiceServer(s.srv, wallet{s: s})
 	reflection.Register(s.srv)
 
 	go func() { _ = s.srv.Serve(s.lis) }()
@@ -288,15 +291,25 @@ func (s *Stand) Holds() []time.Duration {
 func (s *Stand) Check(ctx context.Context, _ *grpc_health_v1.HealthCheckRequest) (
 	*grpc_health_v1.HealthCheckResponse, error,
 ) {
+	if err := s.serve(ctx); err != nil {
+		return nil, err
+	}
+
+	return &grpc_health_v1.HealthCheckResponse{Status: grpc_health_v1.HealthCheckResponse_SERVING}, nil
+}
+
+// serve does what the answer says for a call that arrived now: every method
+// of the stand goes through it, so each obeys the same behavior.
+func (s *Stand) serve(ctx context.Context) error {
 	arrivedAt := time.Now()
 	behavior := s.answer(s.arrived(arrivedAt))
 
 	if behavior.Hang {
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return ctx.Err()
 		case <-s.stopped:
-			return nil, status.Error(codes.Unavailable, "stand stopped")
+			return status.Error(codes.Unavailable, "stand stopped")
 		}
 	}
 
@@ -307,9 +320,9 @@ func (s *Stand) Check(ctx context.Context, _ *grpc_health_v1.HealthCheckRequest)
 		select {
 		case <-timer.C:
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return ctx.Err()
 		case <-s.stopped:
-			return nil, status.Error(codes.Unavailable, "stand stopped")
+			return status.Error(codes.Unavailable, "stand stopped")
 		}
 	}
 
@@ -321,10 +334,10 @@ func (s *Stand) Check(ctx context.Context, _ *grpc_health_v1.HealthCheckRequest)
 	s.mu.Unlock()
 
 	if behavior.Code != codes.OK {
-		return nil, status.Error(behavior.Code, "as the stand was told")
+		return status.Error(behavior.Code, "as the stand was told")
 	}
 
-	return &grpc_health_v1.HealthCheckResponse{Status: grpc_health_v1.HealthCheckResponse_SERVING}, nil
+	return nil
 }
 
 func (s *Stand) arrived(at time.Time) Call {

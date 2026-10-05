@@ -1,0 +1,24 @@
+# The TLS fields, against the reference stand with mutual TLS, from the repository root:
+#   go run ./test/stand/cmd/stand -mtls -delay 20ms -life 30s
+# The stand writes a CA, its certificate and a client certificate into test/stand/certs.
+#   leettest -c examples/tour-tls.yaml
+
+name: tour over mutual TLS
+
+app:
+  target:
+    ip: 127.0.0.1
+    port: 50051
+  tls: true                         # the default, written out
+  ca: ../test/stand/certs/ca.pem    # trust this CA instead of the system's; paths are from this file
+  cert: ../test/stand/certs/client.pem   # a client certificate, for a target that asks for one
+  key: ../test/stand/certs/client-key.pem
+  server_name: localhost            # the name the target's certificate is checked against
+
+load:
+  calls:
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 100
+      duration: 20s
+      data:
+        wallet_id: w-42
