@@ -141,13 +141,18 @@ keine Ablehnung durch das Ziel.
 |---|---|---|---|
 | `INVALID_ARGUMENT`, `NOT_FOUND`, `ALREADY_EXISTS`, `PERMISSION_DENIED`, `UNAUTHENTICATED`, `FAILED_PRECONDITION`, `OUT_OF_RANGE`, `UNIMPLEMENTED` | `request error` | `cut off` | `client error` |
 | `RESOURCE_EXHAUSTED` | `overload`; „larger than max" von grpc-go ist ein `request error` | `cut off`; eine Antwort über unserem Limit ist eine `bad response` | `client error` |
-| `UNAVAILABLE` | `overload` | `cut off` | `unreachable` |
+| `UNAVAILABLE` | `overload` | `cut off`; ein vom Ziel vor der Verarbeitung abgelehnter Stream ist `overload` | `unreachable`; dasselbe |
 | `CANCELLED`, `UNKNOWN`, `INTERNAL`, `DATA_LOSS`, `ABORTED` | `failure` | `cut off`; eine Antwort, die sich nicht entpacken ließ, ist eine `bad response` | `client error` |
 | `DEADLINE_EXCEEDED` | Timeout | Timeout | Timeout, nicht gesendet |
 
 Eine zu große Anfrage wird am Fehlertext von grpc-go erkannt. Ein Ziel mit anderer Implementierung
 (Envoy, Java) formuliert es anders, und seine Ablehnung landet bei `overload` statt bei
 `request error`.
+
+`UNAVAILABLE` bei einem abgelehnten Stream ist die Übersetzung von grpc-go für das RST_STREAM
+REFUSED_STREAM des Ziels: Den Code hat der Client gesetzt, die Ablehnung kam aber vom Ziel, deshalb
+steht er in der Zeile „sent by the target". Das Ziel hat einen solchen Stream nicht verarbeitet
+(RFC 9113 §8.7).
 
 Unter dem Bericht werden fehlgeschlagene Aufrufe nach gRPC-Code auf zwei Zeilen aufgeschlüsselt.
 „sent by the target" — der Status kam über die Leitung, vom Ziel oder einem Proxy. „set by the
