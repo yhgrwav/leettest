@@ -128,6 +128,17 @@ func TestCategorize_OutcomeAgreesWithTheCodesSource(t *testing.T) {
 func refusingAfterPayload(t *testing.T, once bool) (*Sender, *refusalRecord) {
 	t.Helper()
 
+	return refusing(t, once, nil)
+}
+
+// always refuses every stream on its HEADERS.
+func always() bool { return true }
+
+// refusing is refusingAfterPayload, or with onHeaders a stand that decides on
+// each stream's HEADERS, before any DATA: refuse it, or leave it hanging.
+func refusing(t *testing.T, once bool, onHeaders func() bool) (*Sender, *refusalRecord) {
+	t.Helper()
+
 	rec := &refusalRecord{}
 	lis := bufconn.Listen(1024 * 1024)
 	t.Cleanup(func() { _ = lis.Close() })
@@ -166,7 +177,15 @@ func refusingAfterPayload(t *testing.T, once bool) (*Sender, *refusalRecord) {
 				if !f.IsAck() {
 					_ = fr.WriteSettingsAck()
 				}
+			case *http2.HeadersFrame:
+				if onHeaders != nil && onHeaders() {
+					rec.refused.Store(true)
+					_ = fr.WriteRSTStream(f.StreamID, http2.ErrCodeRefusedStream)
+				}
 			case *http2.DataFrame:
+				if onHeaders != nil {
+					break
+				}
 				// GOAWAY first: the client stops opening streams on this
 				// connection before it sees the refusal, so the retry cannot
 				// be written here before the hang-up (5 in 300 on go1.25.0,
@@ -242,15 +261,72 @@ func TestSend_WentOutIsTheLastAttempts(t *testing.T) {
 	}
 }
 
-// REFUSED_STREAM on the last attempt means unprocessed, yet the call is cut off
-// with "may have processed": the safe side, a user checks for duplicates rather
-// than assumes none. Telling it apart needs the status text; that is tech debt.
-func TestSend_RefusedOnTheLastAttemptIsCutOff(t *testing.T) {
+// Ground: contract — REFUSED_STREAM on the last attempt means the target did
+// not process the stream (RFC 9113 §8.7), so "cut off, may have processed" is
+// untrue. It is the target refusing work: overload, a code sent by the target,
+// as UNAVAILABLE from it is. grpc-go v1.84.0 says so only in the status text,
+// "stream terminated by RST_STREAM with error code: REFUSED_STREAM"
+// (internal/transport/http2_client.go:1318, the same since v1.20.0); this
+// test runs against grpc-go itself, so a changed text fails it.
+func TestSend_RefusedOnTheLastAttemptIsTheTargetsOverload(t *testing.T) {
 	sender, _ := refusingAfterPayload(t, false)
 	out := sendWithin(t, sender, time.Second)
 
-	if out.Category != engine.CategoryCutOff {
-		t.Errorf("category = %v (code %s, %v), want cut off", out.Category, out.Code, out.Err)
+	if out.Category != engine.CategoryOverload || !out.CodeFromTarget {
+		t.Errorf("category = %v (code %s from the target %v, %v), want overload from the target",
+			out.Category, out.Code, out.CodeFromTarget, out.Err)
+	}
+	if !out.Heard {
+		t.Errorf("a refused stream is not heard: the target answered it")
+	}
+}
+
+// A target that refuses streams is alive and saying no. In a run where it
+// refuses every stream in one 100ms window and leaves every stream hanging in
+// the next, each second has timeouts, and only the refusals keep it from
+// reading as silent from the first.
+func TestRun_ATargetThatRefusesStreamsIsNotSilent(t *testing.T) {
+	start := time.Now()
+	sender, _ := refusing(t, false, func() bool { return time.Since(start)/(100*time.Millisecond)%2 == 0 })
+	eng, err := engine.New(engine.Options{
+		Calls: []engine.Call{{
+			Method: "grpc.health.v1.Health/Check", Timeout: 300 * time.Millisecond,
+			Stages: []engine.Stage{{StartRPS: 50, TargetRPS: 50, Duration: 2 * time.Second}},
+		}},
+		Sender:      sender,
+		MaxInFlight: 100,
+	})
+	if err != nil {
+		t.Fatalf("engine: %v", err)
+	}
+	if err := eng.Run(t.Context()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	m := eng.Report().Methods[0]
+	if m.SilentFrom != nil || m.TimedOut == 0 || m.Failed != m.Sent {
+		silent := "none"
+		if m.SilentFrom != nil {
+			silent = fmt.Sprint(*m.SilentFrom)
+		}
+		t.Errorf("silent from %s, timed out %d, failed %d of %d; want none, some timed out, every call failed",
+			silent, m.TimedOut, m.Failed, m.Sent)
+	}
+}
+
+// The same refusal before any DATA, on the stream's HEADERS: grpc-go retries
+// the first attempt transparently, the stand refuses the retry too, and the
+// call lands where a refusal after the payload does.
+func TestSend_RefusedOnItsHeadersIsTheTargetsOverloadToo(t *testing.T) {
+	sender, rec := refusing(t, false, always)
+	out := sendWithin(t, sender, time.Second)
+
+	if !rec.refused.Load() {
+		t.Fatalf("the stand refused nothing")
+	}
+	if out.Category != engine.CategoryOverload || !out.CodeFromTarget || !out.Heard {
+		t.Errorf("category = %v (code %s from the target %v, heard %v, %v), want overload from the target, heard",
+			out.Category, out.Code, out.CodeFromTarget, out.Heard, out.Err)
 	}
 }
 

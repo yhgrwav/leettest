@@ -126,6 +126,11 @@ func TestCategorize_MessagesThatDidNotFit(t *testing.T) {
 		{"a reply we could not decompress", status.Error(codes.Internal, "grpc: failed to decompress the received message: gzip: invalid header"), false, engine.CategoryBadResponse},
 		{"a reply compressed with an encoding we lack", status.Error(codes.Internal, "grpc: Decompressor is not installed for grpc-encoding \"br\""), false, engine.CategoryBadResponse},
 		{"a stream reset after the reply's headers", status.Error(codes.Internal, "stream terminated by RST_STREAM with error code: INTERNAL_ERROR"), false, engine.CategoryCutOff},
+		// The refusal is recognised only as grpc-go words it: UNAVAILABLE and
+		// the whole sentence (#152).
+		{"a stream the target refused", status.Error(codes.Unavailable, "stream terminated by RST_STREAM with error code: REFUSED_STREAM"), false, engine.CategoryOverload},
+		{"the refusal's text under another code", status.Error(codes.Internal, "stream terminated by RST_STREAM with error code: REFUSED_STREAM"), false, engine.CategoryCutOff},
+		{"REFUSED_STREAM in some other text", status.Error(codes.Unavailable, "upstream said REFUSED_STREAM"), false, engine.CategoryCutOff},
 	} {
 		if got := categorize(c.err, c.answered, true); got != c.want {
 			t.Errorf("%s: category %v, want %v", c.name, got, c.want)

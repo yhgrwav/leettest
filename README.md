@@ -128,12 +128,16 @@ server reflection, поэтому `.proto` не нужен. Конфиг, адр
 |---|---|---|---|
 | `INVALID_ARGUMENT`, `NOT_FOUND`, `ALREADY_EXISTS`, `PERMISSION_DENIED`, `UNAUTHENTICATED`, `FAILED_PRECONDITION`, `OUT_OF_RANGE`, `UNIMPLEMENTED` | `request error` | `cut off` | `client error` |
 | `RESOURCE_EXHAUSTED` | `overload`; «larger than max» от grpc-go — `request error` | `cut off`; ответ больше нашего лимита — `bad response` | `client error` |
-| `UNAVAILABLE` | `overload` | `cut off` | `unreachable` |
+| `UNAVAILABLE` | `overload` | `cut off`; поток, отвергнутый целью до обработки, — `overload` | `unreachable`; то же |
 | `CANCELLED`, `UNKNOWN`, `INTERNAL`, `DATA_LOSS`, `ABORTED` | `failure` | `cut off`; ответ не распаковался — `bad response` | `client error` |
 | `DEADLINE_EXCEEDED` | тайм-аут | тайм-аут | тайм-аут, не отправлен |
 
 Слишком большой запрос узнаётся по тексту ошибки grpc-go. Цель на другой реализации (Envoy, Java)
 пишет его иначе, и такой отказ попадёт в `overload`, а не в `request error`.
+
+`UNAVAILABLE` у отвергнутого потока — перевод grpc-go для RST_STREAM REFUSED_STREAM от цели: код
+поставил клиент, а отказ прислала цель, поэтому он в строке «sent by the target». Такой поток цель
+не обрабатывала (RFC 9113 §8.7).
 
 Под отчётом упавшие вызовы разложены по кодам gRPC в две строки. «sent by the target» — статус
 пришёл по сети, от цели или от прокси. «set by the client» — код поставил сам клиент: никто не
