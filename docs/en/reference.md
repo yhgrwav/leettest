@@ -102,7 +102,8 @@ certificate is checked against and that goes into SNI; `:authority` stays the ad
 `target`. A password-protected key is not supported: decrypt it beforehand.
 
 **One connection.** The generator holds one connection to one address. If DNS returns several
-addresses, only one backend is loaded, and the report will not show it. Calls are not retried.
+addresses or the target is behind an L4 balancer, only one backend is loaded, and the report will
+not show it. Calls are not retried.
 The service's service config is ignored: retries and the balancing policy from it are not
 applied. A production client that applies them will see other categories and p99.
 
