@@ -40,9 +40,16 @@ jobs:
           want="leettest ${GITHUB_REF_NAME}"
           echo "$got"
           [ "$got" = "$want" ] || { echo "::error::-version printed '$got', want '$want'"; exit 1; }
+      # The release page shows what the version can do, written for users, not
+      # a list of commits; an rc uses its version's notes.
+      - name: release notes exist
+        run: |
+          notes="docs/release-notes/${GITHUB_REF_NAME%%-*}.md"
+          [ -s "$notes" ] || { echo "::error::no $notes: write the release notes first"; exit 1; }
+          echo "NOTES=$notes" >> "$GITHUB_ENV"
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
           version: "v2.18.2"
-          args: release --clean
+          args: release --clean --release-notes ${{ env.NOTES }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
