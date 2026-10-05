@@ -133,12 +133,16 @@ whatever its code: not the target's refusal.
 |---|---|---|---|
 | `INVALID_ARGUMENT`, `NOT_FOUND`, `ALREADY_EXISTS`, `PERMISSION_DENIED`, `UNAUTHENTICATED`, `FAILED_PRECONDITION`, `OUT_OF_RANGE`, `UNIMPLEMENTED` | `request error` | `cut off` | `client error` |
 | `RESOURCE_EXHAUSTED` | `overload`; grpc-go's "larger than max" is a `request error` | `cut off`; a reply over our limit is a `bad response` | `client error` |
-| `UNAVAILABLE` | `overload` | `cut off` | `unreachable` |
+| `UNAVAILABLE` | `overload` | `cut off`; a stream the target refused before processing it is `overload` | `unreachable`; the same |
 | `CANCELLED`, `UNKNOWN`, `INTERNAL`, `DATA_LOSS`, `ABORTED` | `failure` | `cut off`; a reply that did not decompress is a `bad response` | `client error` |
 | `DEADLINE_EXCEEDED` | timeout | timeout | timeout, not sent |
 
 A request too large is recognised by grpc-go's error text. A target on another implementation
 (Envoy, Java) words it otherwise, and its refusal lands on `overload` instead of `request error`.
+
+`UNAVAILABLE` on a refused stream is grpc-go's translation of the target's RST_STREAM
+REFUSED_STREAM: the client set the code, the target sent the refusal, so it is in the "sent by the
+target" line. The target did not process such a stream (RFC 9113 §8.7).
 
 Below the report, failed calls are broken down by gRPC code on two lines. "sent by the target" —
 the status came over the wire, from the target or a proxy. "set by the client" — the client set the
