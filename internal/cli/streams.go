@@ -23,17 +23,12 @@ import (
 	"github.com/yhgrwav/leettest/pkg/engine"
 )
 
-// clientWaitsMoved reports the methods whose p99 drops by a tenth or more
-// when every client-side wait is taken out — start lag, connection, stream —
-// and whether that or calls never sent make a case for a verdict. A tenth is
-// a hypothesis (docs/decisions.md); it is taken on the histogram's values,
-// not the printed ones, lower bounds included: calls held for a stream to
-// their deadline leave both p99s bounds a long way apart.
+// clientWaitsMoved reports the methods whose p99 the client-side waits moved
+// (engine.MethodReport.Moved) and whether that or calls never sent make a
+// case for a verdict.
 func clientWaitsMoved(report engine.Report) (moved []*engine.MethodReport, limited bool) {
 	for i := range report.Methods {
-		m := &report.Methods[i]
-		if m.P99.Defined && m.P99WithoutClientWaits.Defined &&
-			10*(m.P99.Value-m.P99WithoutClientWaits.Value) >= m.P99.Value {
+		if m := &report.Methods[i]; m.Moved() {
 			moved = append(moved, m)
 		}
 	}
@@ -113,37 +108,36 @@ func rankedCauses(report engine.Report) []cause {
 	return out
 }
 
-// verdictCause is the cause that names the verdict. There is one when the
-// waits moved a printed p99 or calls went unsent, and some cause is in the
-// tail: a move below the floor has nothing to name, and stays a note.
-func verdictCause(report engine.Report) (cause, bool) {
-	if _, limited := clientWaitsMoved(report); !limited {
-		return cause{}, false
-	}
-	ranked := rankedCauses(report)
-	if len(ranked) == 0 {
-		return cause{}, false
+// verdictCause is the cause that names the verdict and whose limit it shows,
+// by engine.Report.WaitVerdict: a move below the floor has nothing to name,
+// and stays a note.
+func verdictCause(report engine.Report) (cause, engine.Side, bool) {
+	_, side, ok := report.WaitVerdict()
+	if !ok {
+		return cause{}, "", false
 	}
 
-	return ranked[0], true
+	return rankedCauses(report)[0], side, true
 }
 
 // streamVerdict is the verdict on a run held back by itself or its
 // connection, or "" when nothing moved. It is about the run: the numbers of
 // single methods go to streamNotes.
 func streamVerdict(report engine.Report) string {
-	top, ok := verdictCause(report)
+	top, side, ok := verdictCause(report)
 	if !ok {
 		return ""
 	}
 
 	var b strings.Builder
 
+	if side == engine.SideRun {
+		b.WriteString("limited by the run, not the target: ")
+	}
 	switch top.what {
 	case causeGenerator:
-		fmt.Fprintf(&b, "limited by the run, not the target: the generator fell behind for %s.", plural(top.n, "call"))
+		fmt.Fprintf(&b, "the generator fell behind for %s.", plural(top.n, "call"))
 	case causeConnection:
-		// The target or the network refusing it: not the run's limit.
 		fmt.Fprintf(&b, "the connection to the target was not ready for %s.", plural(top.n, "call"))
 	default:
 		b.WriteString(streamHeading(report))
@@ -179,8 +173,6 @@ func streamVerdict(report engine.Report) string {
 func streamHeading(report engine.Report) string {
 	var b strings.Builder
 
-	b.WriteString("limited by the run, not the target: ")
-
 	waited := fmt.Sprintf("%d of %d sent calls waited for", report.StreamWaited, report.Sent)
 	conns := report.Connections
 
@@ -206,23 +198,27 @@ func streamHeading(report engine.Report) string {
 
 // shortStreamVerdict is streamVerdict in one ASCII phrase.
 func shortStreamVerdict(report engine.Report) string {
-	top, ok := verdictCause(report)
+	top, side, ok := verdictCause(report)
 	if !ok {
 		return ""
 	}
 
+	run := ""
+	if side == engine.SideRun {
+		run = "limited by the run: "
+	}
 	switch top.what {
 	case causeGenerator:
-		return "limited by the run: the generator fell behind"
+		return run + "the generator fell behind"
 	case causeConnection:
-		return "the connection to the target was not ready"
+		return run + "the connection to the target was not ready"
 	}
 
 	conns := report.Connections
 
 	switch {
 	case conns == nil:
-		return "limited by the run: calls waited for streams"
+		return run + "calls waited for streams"
 	case conns.LimitAnnounced:
 		return fmt.Sprintf("limited by %s: target allows %s",
 			plural(conns.Open, "connection"), plural(int(conns.LastLimit), "stream"))
