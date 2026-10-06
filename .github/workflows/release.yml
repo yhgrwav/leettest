@@ -25,6 +25,14 @@ jobs:
           go-version: "1.27.1"
           # This job can write: a cache other workflows wrote does not get in.
           cache: false
+      # Only the tip of release/vX.Y gets vX.Y.Z[-rc.N]: that is the commit
+      # the stress count and the rehearsal ran on. Outside the work tree, so
+      # goreleaser still sees a clean one.
+      - name: the tag is the tip of its release branch
+        run: |
+          git fetch --quiet origin
+          git branch -r --points-at "$GITHUB_SHA" > "$RUNNER_TEMP/pointsat.txt"
+          go run ./test/stressplan/cmd/stressplan tag "$GITHUB_REF_NAME" "$RUNNER_TEMP/pointsat.txt"
       - run: go test -race ./...
       - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
         with:
