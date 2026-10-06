@@ -523,8 +523,10 @@ func TestSend_AStatusLostOnAnAnsweredRetryIsNotTheTargets(t *testing.T) {
 		{"NOT_FOUND", codes.NotFound, func(out engine.Outcome) bool {
 			return out.Category == engine.CategoryClientFault && out.Code == codes.NotFound.String() && out.CodeFromTarget
 		}},
+		// grpc-go's own "cardinality violation" on an OK with no message: the
+		// same outcome the call has without #9443.
 		{"OK without a reply", codes.OK, func(out engine.Outcome) bool {
-			return out.Category == engine.CategoryServerFault && out.Code == codes.Internal.String() && !out.CodeFromTarget
+			return out.Category == engine.CategoryServerFault && out.Code == codes.Internal.String() && out.CodeFromTarget
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
