@@ -74,13 +74,15 @@ func current(t *testing.T) []string {
 	for _, f := range flagNames() {
 		lines = append(lines, "flag "+f)
 	}
-	schema, err := os.ReadFile("../../internal/cli/testdata/schema_v1.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for line := range strings.Lines(string(schema)) {
-		if path, _, _ := strings.Cut(strings.TrimSpace(line), " "); path != "" {
-			lines = append(lines, "json "+path)
+	for _, golden := range []string{"schema_v1.txt", "schema_breakpoint_v1.txt"} {
+		schema, err := os.ReadFile("../../internal/cli/testdata/" + golden)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for line := range strings.Lines(string(schema)) {
+			if path, _, _ := strings.Cut(strings.TrimSpace(line), " "); path != "" {
+				lines = append(lines, "json "+path)
+			}
 		}
 	}
 	for _, p := range configPaths(reflect.TypeFor[config.MasterConfig](), "") {
