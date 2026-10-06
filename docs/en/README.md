@@ -14,6 +14,8 @@
 
 ---
 
+> This is `main`: it has unreleased features, marked "not released". Docs of the released version are in the [latest release](https://github.com/yhgrwav/leettest/releases/latest).
+
 > Translated from [README.md](../../README.md) at 9a08876, 2026-10-05. If they differ, the Russian
 > one is right. Plus an index of English docs, not in the Russian source.
 
