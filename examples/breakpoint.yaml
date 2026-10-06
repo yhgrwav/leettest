@@ -1,0 +1,23 @@
+# A breaking-point search against the reference stand of known capacity, from the repository root:
+#   go run ./test/stand/cmd/stand -capacity 270 -delay 20ms
+#   leettest -c examples/breakpoint.yaml
+# The stand serves 270 calls a second: the search should hold the step before and break at the one
+# after. An absolute step instead of a factor: breakpoint-step.yaml.
+
+app:
+  target:
+    ip: 127.0.0.1
+    port: 50051
+  tls: false
+
+load:
+  calls:                            # exactly one call, without rps and duration: the search sets them
+    - method: grpc.health.v1.Health/Check
+      timeout: 500ms
+  breakpoint:
+    from: 100                       # the first step, rps
+    to: 400                         # no step above it
+    factor: 1.25                    # each step is the last times factor
+    settle: 2s                      # the start of a step, kept out of its verdict
+    hold: 10s                       # the length of a step
+    p99_limit: 200ms                # a step breaks over it; without it, over 3x the best held p99

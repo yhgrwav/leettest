@@ -43,6 +43,27 @@ func schemaPaths(t *testing.T) []string {
 	return paths
 }
 
+// breakpointPaths are the paths only the search's JSON has, from its golden
+// schema; the fields it shares with a plain run are described once, in that
+// run's table.
+func breakpointPaths(t *testing.T) []string {
+	t.Helper()
+
+	data, err := os.ReadFile("testdata/schema_breakpoint_v1.txt")
+	if err != nil {
+		t.Fatalf("read golden schema: %v", err)
+	}
+	plain := schemaPaths(t)
+	var paths []string
+	for line := range strings.Lines(string(data)) {
+		if path, _, _ := strings.Cut(strings.TrimSpace(line), " "); path != "" && !slices.Contains(plain, path) {
+			paths = append(paths, path)
+		}
+	}
+
+	return paths
+}
+
 // answerCategories are the methods' fields shaped as jsonAnswers: what the
 // reference's category placeholder stands for.
 func answerCategories() []string {
@@ -158,7 +179,7 @@ func categoryParagraph(t *testing.T, doc referenceDoc) []string {
 // Every JSON field is described in the reference, in each language, by its
 // full path, and the tables name no path the schema does not have.
 func TestReference_DescribesEveryJSONField(t *testing.T) {
-	want := schemaPaths(t)
+	want := slices.Concat(schemaPaths(t), breakpointPaths(t))
 	for _, doc := range []referenceDoc{
 		{"../../docs/ru/reference.md", "## Поля JSON", "<категория>", "<перцентиль>", "перцентиль"},
 		{"../../docs/en/reference.md", "## JSON fields", "<category>", "<percentile>", "percentile"},

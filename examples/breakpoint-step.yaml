@@ -1,0 +1,20 @@
+# The same search with an absolute step, from the repository root:
+#   go run ./test/stand/cmd/stand -capacity 270 -delay 20ms
+#   leettest -c examples/breakpoint-step.yaml
+
+app:
+  target:
+    ip: 127.0.0.1
+    port: 50051
+  tls: false
+
+load:
+  calls:
+    - method: grpc.health.v1.Health/Check
+      timeout: 500ms
+  breakpoint:
+    from: 100
+    to: 400
+    step: 50                        # each step is 50 rps above the last, instead of factor
+    settle: 2s
+    hold: 10s

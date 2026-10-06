@@ -209,6 +209,7 @@ measured calls only. The first column is the field's full path.
 | Field | Type | Meaning |
 |---|---|---|
 | `schema_version` | int | Schema version, now `1` |
+| `mode` | string | `run` for a plain run, `breakpoint` for a breaking-point search — not released |
 | `leettest_version` | string | The tool's version; a build from source gives the commit |
 | `target` | string | The target address from the config, `fake target` with `-fake` |
 | `outcome` | string | `complete`, `invalid`, `incomplete` — matches exit code `0`, `2`, `3` |
@@ -303,3 +304,27 @@ of the method.
 | `methods[].seconds[].lag_calls`, `methods[].seconds[].lag_sum_us`, `methods[].seconds[].lag_max_us` | int | Over calls scheduled in this second: how many, sum and maximum of the start lag |
 | `methods[].seconds[].observed_calls` | int | Of them, the successful ones |
 | `methods[].seconds[].observed_lag_sum_us`, `methods[].seconds[].transport_wait_sum_us`, `methods[].seconds[].service_time_sum_us` | int | Over the successful ones: sum of start lag, of the wait before sending (connection and stream), of the time from sending to the answer. Together — their latencies |
+
+### Breaking-point search: `mode: "breakpoint"`
+
+A search writes another object: `schema_version`, `leettest_version`, `target` and `started_at` are
+as in the run above, a plain run's other fields are not at the top level. Every run is in
+`breakpoint.runs` with its own full report ([the search](../../README.md#breaking-point-search)).
+
+| Field | Type | What it means |
+|---|---|---|
+| `method` | string | The method the search loaded — not released |
+| `breakpoint` | object | The search's result — not released |
+| `breakpoint.outcome` | string | Closed list: `broke`, `broke_at_first`, `held_all`, `run_limit`, `stopped`, `invalid` — not released |
+| `breakpoint.held_rps` | int? | The highest rate the target held; `null` — none held — not released |
+| `breakpoint.broke_rps` | int? | The lowest rate the target broke at or a run limit stopped the search at; `null` — it did not break — not released |
+| `breakpoint.why` | string? | The cause of the run that ended the search, from a closed list: `errors`, `p99_limit`, `p99_vs_base`, `connection`, `no_recovery`, `generator`, `in_flight_cap`, `stream_limit`, `stream_wait`, `clock_step`, `request_errors`; `null` — no cause — not released |
+| `breakpoint.notes` | []string | The search's notes, text for people in ASCII; do not parse — not released |
+| `breakpoint.runs` | []object | Every run in order — not released |
+| `breakpoint.runs[].kind` | string | `step`, `repeat` or `probe` — not released |
+| `breakpoint.runs[].planned_rps` | int | The run's planned rate — not released |
+| `breakpoint.runs[].sent_rps` | int | The rate the calls actually went out at: only what was sent counts as held — not released |
+| `breakpoint.runs[].broken` | bool | `true` — the run broke the target — not released |
+| `breakpoint.runs[].recovered` | bool? | For a `probe`: the target is back within 1.5× of the baseline p99; `null` for a `step` and a `repeat` — not released |
+| `breakpoint.runs[].why` | string? | The run's cause, the same closed list as `breakpoint.why`; `null` — no cause — not released |
+| `breakpoint.runs[].report` | object | This run's full report, the same object as a plain run's JSON (fields above) — not released |
