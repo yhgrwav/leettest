@@ -20,10 +20,15 @@ import (
 	"time"
 )
 
-// FakeSender answers after a delay instead of calling a real service.
+// FakeSender answers after a delay instead of calling a real service: the
+// target of the CLI's -fake (a look at the tool without a service, as in the
+// quickstart) and of tests. Its behaviour is part of the contract: each call
+// answers after Delay plus a uniform random part of Jitter, fails with
+// ErrFakeFailure in FailRatio of calls, and past its deadline times out.
 type FakeSender struct {
-	Delay     time.Duration
-	Jitter    time.Duration
+	Delay  time.Duration
+	Jitter time.Duration
+	// FailRatio is the share of calls that fail, 0 to 1.
 	FailRatio float64
 }
 
