@@ -236,7 +236,7 @@ JSON несут тот же экранированный текст.
 
 ### Поиск точки отказа
 
-Секция `load.breakpoint` вместо `rps` и `duration` у вызова: LeetTest поднимает нагрузку ступенями
+Секция `load.breakpoint` (не выпущено) вместо `rps` и `duration` у вызова: LeetTest поднимает нагрузку ступенями
 и называет, на какой ступени цель держалась и на какой сломалась. Вызов — ровно один, без `rps`,
 `duration` и `load.warmup`.
 
@@ -270,7 +270,7 @@ stderr — строка `breakpoint: up to N steps, at most T`: сколько �
 `generator`, `in_flight_cap`, `stream_limit`, `stream_wait`, `clock_step`, `request_errors` или
 `null`. `held_rps` и `broke_rps` — `null`, где их нет. В режиме поиска JSON — другой объект:
 `mode: "breakpoint"`, полей обычного прогона на верхнем уровне нет, каждый прогон со своим полным
-отчётом лежит в `breakpoint.runs` (`kind`: `step`, `repeat`, `probe`; `planned_rps` и `sent_rps`).
+отчётом лежит в `breakpoint.runs` (не выпущено; `kind`: `step`, `repeat`, `probe`; `planned_rps` и `sent_rps`).
 Обычный прогон пишет `mode: "run"`.
 
 Коды выхода: `0` для `broke`, `broke_at_first`, `held_all`, `run_limit` — это находки; `2` для

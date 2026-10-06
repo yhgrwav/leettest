@@ -241,7 +241,7 @@ the target's error text, are printed as `\uXXXX` (past U+FFFF as a surrogate pai
 
 ### Breaking-point search
 
-A `load.breakpoint` section instead of the call's `rps` and `duration`: LeetTest raises the load in
+A `load.breakpoint` section (not released) instead of the call's `rps` and `duration`: LeetTest raises the load in
 steps and names the step the target held and the step it broke at. Exactly one call, without `rps`,
 `duration` or `load.warmup`.
 
@@ -275,7 +275,7 @@ list too: `errors`, `p99_limit`, `p99_vs_base`, `connection`, `no_recovery`, `ge
 `in_flight_cap`, `stream_limit`, `stream_wait`, `clock_step`, `request_errors` or `null`.
 `held_rps` and `broke_rps` are `null` where there is none. In search mode the JSON is another
 object: `mode: "breakpoint"`, none of a plain run's top-level fields, each run with its full report
-in `breakpoint.runs` (`kind`: `step`, `repeat`, `probe`; `planned_rps` and `sent_rps`). A plain run
+in `breakpoint.runs` (not released; `kind`: `step`, `repeat`, `probe`; `planned_rps` and `sent_rps`). A plain run
 writes `mode: "run"`.
 
 Exit codes: `0` for `broke`, `broke_at_first`, `held_all`, `run_limit` — they are findings; `2` for

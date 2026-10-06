@@ -199,6 +199,7 @@ SIGTERM (`docker stop`, Kubernetes, отмена джоба в CI) сразу о
 | Поле | Тип | Что значит |
 |---|---|---|
 | `schema_version` | int | Версия схемы, сейчас `1` |
+| `mode` | string | `run` у обычного прогона, `breakpoint` у поиска точки отказа — не выпущено |
 | `leettest_version` | string | Версия инструмента; собранное из исходников — коммит |
 | `target` | string | Адрес цели из конфига, `fake target` при `-fake` |
 | `outcome` | string | `complete`, `invalid`, `incomplete` — совпадает с кодом выхода `0`, `2`, `3` |
@@ -292,3 +293,27 @@ SIGTERM (`docker stop`, Kubernetes, отмена джоба в CI) сразу о
 | `methods[].seconds[].lag_calls`, `methods[].seconds[].lag_sum_us`, `methods[].seconds[].lag_max_us` | int | По вызовам, запланированным на эту секунду: сколько, сумма и максимум опоздания старта |
 | `methods[].seconds[].observed_calls` | int | Из них успешных |
 | `methods[].seconds[].observed_lag_sum_us`, `methods[].seconds[].transport_wait_sum_us`, `methods[].seconds[].service_time_sum_us` | int | По успешным: сумма опоздания старта, ожидания до отправки (соединение и стрим), времени от отправки до ответа. В сумме — их задержки |
+
+### Поиск точки отказа: `mode: "breakpoint"`
+
+Поиск пишет другой объект: поля `schema_version`, `leettest_version`, `target`, `started_at` — как у
+прогона выше, полей обычного прогона на верхнем уровне нет. Каждый прогон лежит в `breakpoint.runs`
+со своим полным отчётом ([поиск](../../README.md#поиск-точки-отказа)).
+
+| Поле | Тип | Что значит |
+|---|---|---|
+| `method` | string | Метод, который нагружал поиск — не выпущено |
+| `breakpoint` | object | Итог поиска — не выпущено |
+| `breakpoint.outcome` | string | Закрытый список: `broke`, `broke_at_first`, `held_all`, `run_limit`, `stopped`, `invalid` — не выпущено |
+| `breakpoint.held_rps` | int? | Наибольший темп, который цель выдержала; `null` — выдержавшего нет — не выпущено |
+| `breakpoint.broke_rps` | int? | Наименьший темп, на котором цель сломалась или упёрся прогон; `null` — не ломалась — не выпущено |
+| `breakpoint.why` | string? | Причина прогона, закончившего поиск, из закрытого списка: `errors`, `p99_limit`, `p99_vs_base`, `connection`, `no_recovery`, `generator`, `in_flight_cap`, `stream_limit`, `stream_wait`, `clock_step`, `request_errors`; `null` — причины нет — не выпущено |
+| `breakpoint.notes` | []string | Заметки поиска, текст для человека в ASCII; не разбирать — не выпущено |
+| `breakpoint.runs` | []object | Все прогоны по порядку — не выпущено |
+| `breakpoint.runs[].kind` | string | `step`, `repeat` или `probe` — не выпущено |
+| `breakpoint.runs[].planned_rps` | int | Плановый темп прогона — не выпущено |
+| `breakpoint.runs[].sent_rps` | int | Темп, с которым вызовы реально ушли: держится только то, что отправлено — не выпущено |
+| `breakpoint.runs[].broken` | bool | `true` — прогон сломал цель — не выпущено |
+| `breakpoint.runs[].recovered` | bool? | У `probe`: цель вернулась к p99 в пределах 1,5 от исходного; у `step` и `repeat` — `null` — не выпущено |
+| `breakpoint.runs[].why` | string? | Причина прогона, тот же закрытый список, что у `breakpoint.why`; `null` — причины нет — не выпущено |
+| `breakpoint.runs[].report` | object | Полный отчёт этого прогона, тот же объект, что JSON обычного прогона (поля выше) — не выпущено |

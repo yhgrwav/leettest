@@ -56,11 +56,11 @@ func held(rps int) breakpoint.Step {
 
 const kneeWhy = "p99 341ms = 16.2x baseline 21ms (no p99_limit set)"
 
-// outcomes is one result per outcome, with the headline the text report
-// opens with.
+// outcomes is one result per outcome, with what the headline of the text
+// report must say and must not ("|" separates the claims).
 var outcomes = map[string]struct {
-	res      breakpoint.Result
-	headline string
+	res          breakpoint.Result
+	says, denies string
 }{
 	"broke": {breakpoint.Result{
 		Outcome: breakpoint.BrokeBetween, Held: 244, Broke: 305, Cause: breakpoint.CauseP99VsBase,
@@ -70,7 +70,7 @@ var outcomes = map[string]struct {
 			recovered(bpRun(breakpoint.Probe, 100, 400, 22*time.Millisecond, false, breakpoint.NoCause, "")), // 5s probe, 4s measured
 			bpRun(breakpoint.Repeat, 305, 1220, 338*time.Millisecond, true, breakpoint.CauseP99VsBase, kneeWhy),
 		},
-	}, "held 244 rps, broke at 305 rps"},
+	}, "held 244|broke at 305", "stopped|invalid|gave out"},
 	"broke_at_first": {breakpoint.Result{
 		Outcome: breakpoint.BrokeAtFirst, Broke: 100, Cause: breakpoint.CauseErrors,
 		Steps: []breakpoint.Step{
@@ -78,37 +78,37 @@ var outcomes = map[string]struct {
 			bpRun(breakpoint.Repeat, 100, 400, 30*time.Millisecond, true, breakpoint.CauseErrors, "failed 200 of 400 calls (50.0%)"),
 		},
 		Notes: []string{"no lower step to check recovery against; start lower (from) for a reliable result"},
-	}, "broke at the first step, 100 rps: the limit is at or below it"},
+	}, "broke at|first|100|at or below", "held|stopped|gave out"},
 	"held_all": {breakpoint.Result{
 		Outcome: breakpoint.HeldThroughout, Held: 381,
 		Steps: []breakpoint.Step{held(100), held(125), held(156), held(195), held(244), held(305), held(381)},
-	}, "held every step up to 381 rps: the limit is above it"},
+	}, "held|every step|381|above", "broke|stopped|gave out|invalid"},
 	"run_limit": {breakpoint.Result{
 		Outcome: breakpoint.RunLimit, Held: 100, Broke: 125, Cause: breakpoint.CauseGenerator,
 		Steps: []breakpoint.Step{held(100),
 			bpRun(breakpoint.RateStep, 125, 450, 21*time.Millisecond, false, breakpoint.CauseGenerator,
 				"the generator sent 112 of 125 rps; the target above that is untested")},
-	}, "the run gave out at 125 rps, not the target: the generator sent 112 of 125 rps; the target above that is untested; the target held 100 rps"},
+	}, "gave out at 125|not the target|generator sent 112 of 125|untested|held 100", "broke at"},
 	"run_limit_first": {breakpoint.Result{
 		Outcome: breakpoint.RunLimit, Broke: 100, Cause: breakpoint.CauseGenerator,
 		Steps: []breakpoint.Step{bpRun(breakpoint.RateStep, 100, 300, 21*time.Millisecond, false, breakpoint.CauseGenerator,
 			"the generator sent 75 of 100 rps; the target above that is untested")},
-	}, "the run gave out at the first step (100 rps); nothing was learned about the target"},
+	}, "gave out|first step|100|nothing was learned", "broke at|held"},
 	"stopped": {breakpoint.Result{
 		Outcome: breakpoint.Stopped, Held: 244,
 		Steps: []breakpoint.Step{held(100), held(125), held(156), held(195), held(244),
 			bpRun(breakpoint.RateStep, 305, 1220, 341*time.Millisecond, true, breakpoint.CauseP99VsBase, kneeWhy),
 			bpRun(breakpoint.Probe, 100, 200, 22*time.Millisecond, false, breakpoint.NoCause, "")},
-	}, "stopped at 100 rps (probe); held 244 rps so far"},
+	}, "stopped at 100|probe|held 244", "broke at|gave out|invalid"},
 	"stopped_first": {breakpoint.Result{
 		Outcome: breakpoint.Stopped,
 		Steps:   []breakpoint.Step{bpRun(breakpoint.RateStep, 100, 200, 21*time.Millisecond, false, breakpoint.NoCause, "")},
-	}, "stopped at the first step; nothing was learned about the target"},
+	}, "stopped|first step|nothing was learned", "broke at|held|gave out|invalid"},
 	"invalid": {breakpoint.Result{
 		Outcome: breakpoint.Invalid, Held: 244, Cause: breakpoint.CauseClockStep,
 		Steps: []breakpoint.Step{held(100), held(125), held(156), held(195), held(244),
 			bpRun(breakpoint.RateStep, 305, 1220, 341*time.Millisecond, false, breakpoint.CauseClockStep, "invalid run: clock step")},
-	}, "invalid search: clock step at 305 rps; no breaking point is reported"},
+	}, "invalid|clock step|305|no breaking point", "held|broke at"},
 }
 
 func printedSearch(res breakpoint.Result) string {
@@ -132,12 +132,27 @@ func searchJSON(t *testing.T, res breakpoint.Result) map[string]any {
 	return out
 }
 
-// Each outcome opens with its own headline, under the method's name.
+// Each outcome opens with a headline under the method's name that makes its
+// claims, with the rates they are about, and none of another outcome's.
 func TestBreakpoint_EachOutcomeHasItsHeadline(t *testing.T) {
 	for name, tc := range outcomes {
 		out := printedSearch(tc.res)
-		if !strings.Contains(out, "breaking point: pkg.Svc/Do\n  "+tc.headline+"\n") {
-			t.Errorf("%s: want the headline %q under the method, got\n%s", name, tc.headline, out)
+		_, rest, ok := strings.Cut(out, "breaking point: pkg.Svc/Do\n  ")
+		if !ok {
+			t.Errorf("%s: no headline under the method, got\n%s", name, out)
+
+			continue
+		}
+		head, _, _ := strings.Cut(rest, "\n")
+		for _, claim := range strings.Split(tc.says, "|") {
+			if !strings.Contains(head, claim) {
+				t.Errorf("%s: the headline %q does not say %q", name, head, claim)
+			}
+		}
+		for _, claim := range strings.Split(tc.denies, "|") {
+			if strings.Contains(head, claim) {
+				t.Errorf("%s: the headline %q says %q, another outcome's claim", name, head, claim)
+			}
 		}
 	}
 }
