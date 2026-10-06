@@ -61,14 +61,6 @@ func (m *model) View() string {
 	return frame.Render(m.body(width))
 }
 
-func (m *model) viewWidth() int {
-	if m.width < minWidth {
-		return 72
-	}
-
-	return m.width
-}
-
 // contentWidth is what the frame leaves for the body on a terminal this wide:
 // the border takes one column a side and the padding two.
 func contentWidth(width int) int {
@@ -107,23 +99,30 @@ func (m *model) fullBody(inner int) string {
 		b.WriteString("\n\n")
 	}
 
-	switch {
-	case m.done:
+	if m.done {
 		b.WriteString(m.finalReport(inner))
-	case m.showHelp:
-		b.WriteString(m.help(inner))
-	case m.active == 0:
-		b.WriteString(m.summary(inner))
-	case m.active == m.settingsTab():
-		b.WriteString(m.settingsView(inner))
-	default:
-		b.WriteString(m.method(inner, m.active-1))
+	} else {
+		b.WriteString(m.content(inner))
 	}
 
 	b.WriteString("\n\n")
 	b.WriteString(m.footer())
 
 	return b.String()
+}
+
+// content is what the active tab shows while the run goes on, or the help.
+func (m *model) content(inner int) string {
+	switch {
+	case m.showHelp:
+		return m.help(inner)
+	case m.active == 0:
+		return m.summary(inner)
+	case m.active == m.settingsTab():
+		return m.settingsView(inner)
+	default:
+		return m.method(inner, m.active-1)
+	}
 }
 
 func (m *model) header(width int) string {
@@ -292,159 +291,6 @@ func (m *model) tabBar(width int) string {
 	row := strings.Join(parts, "")
 
 	return row + "\n" + m.styles.faint.Render(strings.Repeat("─", width))
-}
-
-// notSentLine is its own line so no width drops it, and absent when every
-// call went out.
-func (m *model) notSentLine(width, n int) string {
-	if n == 0 {
-		return ""
-	}
-
-	return fitStatLine(m.styles, width, countField(m.text.NotSent(), n, 0)) + "\n"
-}
-
-func (m *model) summary(width int) string {
-	s := m.snapshot
-
-	var b strings.Builder
-
-	b.WriteString(fitStatLine(m.styles, width,
-		countField(m.text.Sent(), s.Sent, 1),
-		statField{label: "rps", value: fmt.Sprintf("%.0f", s.RPS), drop: 2},
-		countField(m.text.InFlight(), s.InFlight, 0),
-		statField{label: m.text.Errors(), value: m.errorShare(s.Sent, s.Failed)},
-	))
-	b.WriteString("\n")
-	b.WriteString(statLine(m.styles,
-		[2]string{"p50", formatQuantile(s.P50)},
-		[2]string{"p90", formatQuantile(s.P90)},
-		[2]string{"p99", formatQuantile(s.P99)},
-	))
-	b.WriteString("\n" + m.notSentLine(width, s.NotSent) + "\n")
-
-	b.WriteString(m.gaugeRow("rps", s.RPS, m.totalTarget(), fmt.Sprintf("%.0f", s.RPS)))
-	b.WriteString("\n")
-	b.WriteString(m.gaugeRow(m.text.InFlight(), float64(s.InFlight), float64(max(s.InFlight, 1)*2), formatCount(s.InFlight)))
-	b.WriteString("\n\n")
-
-	b.WriteString(m.sparkRow(m.text.Rate(), m.overall.rps, "", func(v float64) string {
-		return fmt.Sprintf("%.0f", v)
-	}))
-	b.WriteString("\n")
-	b.WriteString("\n")
-	b.WriteString(m.latencyChart(m.overall.points))
-
-	if full, short := m.note(); full != "" {
-		note := "> " + full
-		if lipgloss.Width(note) > width {
-			note = "> " + short
-		}
-		b.WriteString("\n\n")
-		b.WriteString(m.styles.note.Render(note))
-	}
-
-	return b.String()
-}
-
-func (m *model) method(width, index int) string {
-	if index >= len(m.snapshot.Methods) {
-		return m.styles.muted.Render(ellipsis)
-	}
-
-	method := m.snapshot.Methods[index]
-
-	var b strings.Builder
-
-	b.WriteString(m.styles.value.Render(displayMethod(method.Method)))
-	b.WriteString("\n\n")
-
-	b.WriteString(fitStatLine(m.styles, width,
-		countField(m.text.Sent(), method.Sent, 1),
-		statField{label: "rps", value: fmt.Sprintf("%.0f", method.RPS), drop: 2},
-		statField{label: m.text.Errors(), value: m.errorShare(method.Sent, method.Failed)},
-	))
-	b.WriteString("\n")
-	b.WriteString(statLine(m.styles,
-		[2]string{"p50", formatQuantile(method.P50)},
-		[2]string{"p90", formatQuantile(method.P90)},
-		[2]string{"p99", formatQuantile(method.P99)},
-	))
-	b.WriteString("\n\n")
-
-	b.WriteString(m.gaugeRow("rps", method.RPS, float64(method.TargetRPS), fmt.Sprintf("%.0f / %d", method.RPS, method.TargetRPS)))
-	b.WriteString("\n\n")
-
-	h := m.perMethod[method.Method]
-	if h == nil {
-		h = &history{}
-	}
-
-	b.WriteString(m.sparkRow(m.text.Rate(), h.rps, "", func(v float64) string {
-		return fmt.Sprintf("%.0f", v)
-	}))
-	b.WriteString("\n")
-	b.WriteString("\n")
-	b.WriteString(m.latencyChart(h.points))
-
-	return b.String()
-}
-
-// latencyChart is three sparkline rows, p50 to p99, on one shared scale: the
-// height of a cell means the same value in every row, so the gap between p50
-// and p99 is visible at a glance. The scale is written once, above the rows.
-func (m *model) latencyChart(points []point) string {
-	series := latencySeriesOf(points)
-	low, high, ok := latencyScale(series)
-	width := m.sparkCells()
-
-	scale := "-"
-	if ok {
-		scale = formatDuration(millis(low)) + " - " + formatDuration(millis(high))
-	}
-
-	var b strings.Builder
-
-	b.WriteString(m.styles.label.Render(padRight(m.text.Latency(), sparkLabelWidth)))
-	b.WriteString(m.styles.muted.Render(scale))
-
-	for _, s := range series {
-		b.WriteString("\n")
-		b.WriteString(m.styles.label.Render(fmt.Sprintf("  %-8s", s.label)))
-		b.WriteString(latencyCells(m.styles, s.values, s.bounds, low, high, width))
-		b.WriteString(m.styles.pad(2))
-		b.WriteString(m.styles.value.Render(latencyValue(s.values, s.bounds)))
-	}
-
-	return b.String()
-}
-
-// Columns a spark row keeps beside its cells: the label and the value after.
-const (
-	sparkLabelWidth = 10
-	sparkValueWidth = 18
-)
-
-// sparkCells is how many cells a spark row gets: as many as fit beside its
-// label and value, up to the length of the history, and never so few the line
-// means nothing.
-func (m *model) sparkCells() int {
-	room := contentWidth(m.viewWidth()) - sparkLabelWidth - 2 - sparkValueWidth
-
-	return min(max(room, 8), historyLimit)
-}
-
-func (m *model) sparkRow(label string, values []float64, unit string, format func(float64) string) string {
-	return m.styles.label.Render(padRight(label, sparkLabelWidth)) +
-		sparkline(m.styles, values, m.sparkCells()) +
-		m.styles.pad(2) +
-		sparkRange(m.styles, values, unit, format)
-}
-
-func (m *model) gaugeRow(label string, value, limit float64, text string) string {
-	return m.styles.label.Render(padRight(label, sparkLabelWidth)) +
-		gauge(m.styles, value, limit, min(max(gaugeWidth, m.sparkCells()/2), m.sparkCells())) + m.styles.pad(2) +
-		m.styles.value.Render(text)
 }
 
 // helpKeyWidth is the key column of the help screen, wide enough for "<- -> tab".
@@ -831,46 +677,6 @@ func notesLen(notes [][]string) int {
 	}
 
 	return n
-}
-
-// note returns the live view's note in full and in the short form a narrow
-// frame takes instead of wrapping it.
-func (m *model) note() (full, short string) {
-	s := m.snapshot
-
-	if m.warmup > 0 && s.Elapsed < m.warmup {
-		return m.text.WarmupNote(formatDuration(m.warmup-s.Elapsed), s.WarmupSent), m.text.WarmupNoteShort(s.WarmupSent)
-	}
-	if s.Sent > 0 && float64(s.Failed)/float64(s.Sent) > 0.05 {
-		return m.text.ErrorsNote(), m.text.ErrorsNoteShort()
-	}
-	if s.InFlight > 0 && float64(s.InFlight) > m.totalTarget() {
-		return m.text.InFlightNote(), m.text.InFlightNoteShort()
-	}
-
-	return "", ""
-}
-
-func (m *model) errorShare(sent, failed int) string {
-	if sent == 0 {
-		return "0%"
-	}
-
-	return fmt.Sprintf("%.1f%%", float64(failed)/float64(sent)*100)
-}
-
-func (m *model) totalTarget() float64 {
-	var total float64
-
-	for _, method := range m.snapshot.Methods {
-		total += float64(method.TargetRPS)
-	}
-
-	if total == 0 {
-		return 1
-	}
-
-	return total
 }
 
 // FakeTarget is the target name the CLI passes when -fake is on.

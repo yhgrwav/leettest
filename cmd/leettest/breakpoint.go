@@ -25,6 +25,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/yhgrwav/leettest/internal/cli"
 	"github.com/yhgrwav/leettest/pkg/breakpoint"
 	"github.com/yhgrwav/leettest/pkg/config"
@@ -42,10 +44,17 @@ type searchSetup struct {
 	unchecked   []cli.Unchecked
 	maxInFlight int
 	// capSet: -max-in-flight was given; otherwise each step gets its own.
-	capSet     bool
-	connect    time.Duration
-	json       bool
-	stepBefore time.Duration
+	capSet      bool
+	connect     time.Duration
+	json        bool
+	interactive bool
+	stepBefore  time.Duration
+}
+
+// searchScreen says whether a search draws its full screen: only in a
+// terminal and never with -output json; otherwise the stderr lines.
+func searchScreen(interactive, json bool) bool {
+	return interactive && !json
 }
 
 // searchExitCode is the exit code of a search that ended with outcome:
@@ -78,17 +87,24 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 	searchCtx, stopSearch := context.WithCancel(ctx)
 	defer stopSearch()
 
+	screen := searchScreen(s.interactive, s.json)
+	method := strings.TrimPrefix(call.Method, "/")
+
 	var current atomic.Pointer[engine.Engine]
 	st := cli.NewStopper(
 		func() {
-			fmt.Fprintln(stderr, "stopping: the search ends with this run; waiting for its calls in flight. Ctrl+C again to cut them off")
+			if !screen {
+				fmt.Fprintln(stderr, "stopping: the search ends with this run; waiting for its calls in flight. Ctrl+C again to cut them off")
+			}
 			stopSearch()
 			if eng := current.Load(); eng != nil {
 				eng.Stop()
 			}
 		},
 		func() {
-			fmt.Fprintln(stderr, "aborting: requests in flight are cut off and counted as aborted. Ctrl+C again to exit without a report")
+			if !screen {
+				fmt.Fprintln(stderr, "aborting: requests in flight are cut off and counted as aborted. Ctrl+C again to exit without a report")
+			}
 			abort()
 		},
 		exitNow,
@@ -101,7 +117,21 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 		maxResponse = strings.TrimSpace(*raw)
 	}
 
-	fmt.Fprintln(stderr, cli.PlanLine(plan, s.connect))
+	var (
+		program *tea.Program
+		feed    *cli.SearchFeed
+		obs     breakpoint.Observer
+	)
+	if screen {
+		settings, err := screenSettings()
+		if err != nil {
+			return err
+		}
+		program, feed = cli.NewSearchProgram(s.target, method, plan, s.connect, settings, st)
+		obs = feed.Observer()
+	} else {
+		fmt.Fprintln(stderr, cli.PlanLine(plan, s.connect))
+	}
 
 	var runs []cli.RunReport
 	step := func(_ context.Context, rps int, settle, hold time.Duration, need int) (engine.Report, error) {
@@ -120,6 +150,11 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 		if searchCtx.Err() != nil {
 			eng.Stop()
 		}
+		// Before Run: the schedule is anchored when the run starts, so the
+		// screen taking its time here delays no call.
+		if feed != nil {
+			feed.Starting(eng)
+		}
 		// The run's own context is the command's: a stop of the search ends it
 		// gently through Stop, only an abort cuts its calls off.
 		runErr := eng.Run(ctx)
@@ -129,7 +164,9 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 		}
 		runs = append(runs, run)
 		r := run.Report
-		fmt.Fprintf(stderr, "%d rps: sent %d of %d, failed %d\n", rps, r.Sent, r.Scheduled, r.Failed)
+		if !screen {
+			fmt.Fprintf(stderr, "%d rps: sent %d of %d, failed %d\n", rps, r.Sent, r.Scheduled, r.Failed)
+		}
 
 		switch {
 		case runErr != nil && !errors.Is(runErr, context.Canceled) && !errors.Is(runErr, engine.ErrInFlightCapExceeded):
@@ -144,14 +181,29 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 	}
 
 	started := time.Now()
-	res, err := breakpoint.Search(searchCtx, plan, step)
+	var res breakpoint.Result
+	search := func() error {
+		var err error
+		res, err = breakpoint.SearchWith(searchCtx, plan, step, obs)
+		if err == nil && feed != nil {
+			feed.Done(res)
+		}
+
+		return err
+	}
+	var err error
+	if screen {
+		err = cli.RunLive(program, st, search, abort)
+	} else {
+		err = search()
+	}
 	if err != nil {
 		return err
 	}
 
 	info, _ := debug.ReadBuildInfo()
 	report := cli.BreakpointRun{
-		Target: s.target, Version: versionString(version, info), Method: strings.TrimPrefix(call.Method, "/"),
+		Target: s.target, Version: versionString(version, info), Method: method,
 		StartedAt: started, Plan: plan, Result: res, Runs: aligned(res.Steps, runs),
 	}
 	if s.json {
@@ -171,6 +223,22 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 	}
 
 	return nil
+}
+
+// screenSettings are the screen's settings, set up on first use as for a
+// plain run.
+func screenSettings() (*cli.Settings, error) {
+	settings, err := cli.LoadSettings()
+	if err != nil {
+		return nil, err
+	}
+	if !settings.Configured() {
+		if err := cli.RunSetup(settings); err != nil {
+			return nil, err
+		}
+	}
+
+	return settings, nil
 }
 
 // aligned pairs each step with the run it made, in order; a step that never

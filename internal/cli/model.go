@@ -98,31 +98,20 @@ type model struct {
 	engine  *engine.Engine
 	stopper *Stopper
 
-	text   Text
-	styles styles
+	runPanel
 
-	snapshot engine.Snapshot
-	live     *engine.LiveBuffer
-	// percentilesAt is when the snapshot's percentiles were last recomputed.
-	// Copying a distribution holds its lock while recording waits, so it is
-	// done once a second; a person cannot tell that from every frame.
-	percentilesAt time.Time
-	report        engine.Report
-	unchecked     []Unchecked
+	report    engine.Report
+	unchecked []Unchecked
 	// finished is what the CLI knows of the finished run beside the engine report.
 	finished RunReport
 	// reportOf is the finished run's report, called once the run returns.
-	reportOf  func() RunReport
-	warmup    time.Duration
-	overall   history
-	perMethod map[string]*history
+	reportOf func() RunReport
 
 	tabs   []string
 	active int
 	row    settingsRow
 
 	frame    int
-	width    int
 	height   int
 	showHelp bool
 	editing  bool
@@ -140,14 +129,12 @@ type model struct {
 
 func newModel(target string, eng *engine.Engine, warmup time.Duration, settings *Settings, stopper *Stopper) *model {
 	m := &model{
-		target:    target,
-		engine:    eng,
-		stopper:   stopper,
-		warmup:    warmup,
-		perMethod: make(map[string]*history),
-		live:      engine.NewLiveBuffer(),
-		settings:  settings,
-		reportOf:  func() RunReport { return RunReport{Report: eng.Report()} },
+		target:   target,
+		engine:   eng,
+		stopper:  stopper,
+		runPanel: newRunPanel(warmup),
+		settings: settings,
+		reportOf: func() RunReport { return RunReport{Report: eng.Report()} },
 	}
 
 	m.applySettings()
@@ -193,22 +180,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.frame++
 
 		if !m.done {
-			fresh := time.Since(m.percentilesAt) >= percentileEvery
-			m.engine.SnapshotInto(&m.snapshot, m.live, fresh)
-			if fresh {
-				m.percentilesAt = time.Now()
-			}
-
-			m.overall.push(m.snapshot.RPS, m.snapshot.P50, m.snapshot.P90, m.snapshot.P99)
-
-			for _, method := range m.snapshot.Methods {
-				h, ok := m.perMethod[method.Method]
-				if !ok {
-					h = &history{}
-					m.perMethod[method.Method] = h
-				}
-				h.push(method.RPS, method.P50, method.P90, method.P99)
-			}
+			m.refresh(m.engine)
 		}
 
 		return m, tick()

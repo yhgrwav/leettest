@@ -244,16 +244,38 @@ func ProbeHold(rps int) time.Duration {
 	return max(time.Second, time.Duration(ProbeCalls)*time.Second/time.Duration(rps))
 }
 
-// Search runs the plan's steps from the lowest until one breaks and a repeat
-// of it breaks too, or the plan ends. A context ended on the way is the
-// outcome Stopped and an invalid run the outcome Invalid, not errors.
-func Search(ctx context.Context, plan Plan, run RunStep) (Result, error) {
+// Run is a run about to start, as an Observer sees it. Step is the 1-based
+// index of the step it runs or repeats, of at most Steps; Probe the 1-based
+// index of a probe, of at most MaxProbes.
+type Run struct {
+	RPS   int
+	Kind  Kind
+	Step  int
+	Steps int
+	Probe int
+}
+
+// Observer is told of the search's progress, only between runs, never inside
+// one's measured window. It must return quickly: the search waits for it, and
+// the time it takes is added to the search's.
+type Observer struct {
+	// Started is called before each run.
+	Started func(Run)
+	// Finished is called after each run with its judgement.
+	Finished func(Step)
+	// Cooldown is called before the pause without load ahead of a repeat of
+	// rps.
+	Cooldown func(d time.Duration, rps int)
+}
+
+// SearchWith is Search telling obs of its progress.
+func SearchWith(ctx context.Context, plan Plan, run RunStep, obs Observer) (Result, error) {
 	rates, err := plan.Rates()
 	if err != nil {
 		return Result{}, err
 	}
 
-	s := search{plan: plan, run: run, first: rates[0]}
+	s := search{plan: plan, run: run, first: rates[0], obs: obs, steps: len(rates)}
 	res, err := s.loop(ctx, rates)
 	switch {
 	case errors.Is(err, ErrInvalidRun):
@@ -269,17 +291,48 @@ func Search(ctx context.Context, plan Plan, run RunStep) (Result, error) {
 	return res, err
 }
 
+// Search runs the plan's steps from the lowest until one breaks and a repeat
+// of it breaks too, or the plan ends. A context ended on the way is the
+// outcome Stopped and an invalid run the outcome Invalid, not errors.
+func Search(ctx context.Context, plan Plan, run RunStep) (Result, error) {
+	return SearchWith(ctx, plan, run, Observer{})
+}
+
 type search struct {
 	plan     Plan
 	run      RunStep
 	first    int
 	baseline time.Duration
 	res      Result
+
+	obs Observer
+	// index is the 1-based step under way, of steps; probeN the probe's.
+	index, steps, probeN int
+}
+
+// record keeps a run's judgement and tells the observer.
+func (s *search) record(step Step) {
+	s.res.Steps = append(s.res.Steps, step)
+	if s.obs.Finished != nil {
+		s.obs.Finished(step)
+	}
+}
+
+func (s *search) started(rps int, kind Kind) {
+	if s.obs.Started == nil {
+		return
+	}
+	r := Run{RPS: rps, Kind: kind, Step: s.index, Steps: s.steps}
+	if kind == Probe {
+		r.Probe = s.probeN
+	}
+	s.obs.Started(r)
 }
 
 func (s *search) loop(ctx context.Context, rates []int) (Result, error) {
 	plan := s.plan
 	for i, rps := range rates {
+		s.index = i + 1
 		step, err := s.step(ctx, rps, plan.Hold, RateStep)
 		if err != nil || s.limited(step) {
 			return s.res, err
@@ -290,6 +343,9 @@ func (s *search) loop(ctx context.Context, rates []int) (Result, error) {
 			continue
 		}
 
+		if s.obs.Cooldown != nil {
+			s.obs.Cooldown(plan.Cooldown(), rps)
+		}
 		if cooled := sleep(ctx, plan.Cooldown()); cooled != nil {
 			return s.res, cooled
 		}
@@ -344,7 +400,7 @@ func (s *search) step(ctx context.Context, rps int, hold time.Duration, kind Kin
 	if s.plan.MaxInFlight > 0 && need > s.plan.MaxInFlight {
 		step.Cause = CauseInFlightCap
 		step.Why = fmt.Sprintf("in-flight cap %d is too low for %d rps with timeout %v", s.plan.MaxInFlight, rps, s.plan.Timeout)
-		s.res.Steps = append(s.res.Steps, step)
+		s.record(step)
 
 		return step, nil
 	}
@@ -352,6 +408,7 @@ func (s *search) step(ctx context.Context, rps int, hold time.Duration, kind Kin
 		need = s.plan.MaxInFlight
 	}
 
+	s.started(rps, kind)
 	report, err := s.run(ctx, rps, s.plan.Settle, hold, need)
 	step.Report = report
 	switch {
@@ -360,12 +417,12 @@ func (s *search) step(ctx context.Context, rps int, hold time.Duration, kind Kin
 		if errors.Is(err, ErrClockStep) {
 			step.Cause = CauseClockStep
 		}
-		s.res.Steps = append(s.res.Steps, step)
+		s.record(step)
 
 		return step, err
 	case ctx.Err() != nil:
 		// Stopped inside the run: kept as it ran, never judged.
-		s.res.Steps = append(s.res.Steps, step)
+		s.record(step)
 
 		return step, ctx.Err()
 	case err != nil:
@@ -378,7 +435,10 @@ func (s *search) step(ctx context.Context, rps int, hold time.Duration, kind Kin
 	if step.Why == "" {
 		step.Broken, step.Cause, step.Why = s.broken(report)
 	}
-	s.res.Steps = append(s.res.Steps, step)
+	if kind == Probe && !step.Broken && step.Why == "" {
+		step.Recovered = float64(p99(report)) <= Recovered*float64(s.baseline)
+	}
+	s.record(step)
 
 	return step, nil
 }
@@ -465,14 +525,13 @@ func (s *search) broken(r engine.Report) (broken bool, cause Cause, why string) 
 // probe runs up to MaxProbes probes at the first step's rate until one comes
 // within Recovered of the baseline.
 func (s *search) probe(ctx context.Context) (bool, error) {
-	for range MaxProbes {
+	for k := range MaxProbes {
+		s.probeN = k + 1
 		step, err := s.step(ctx, s.first, ProbeHold(s.first), Probe)
 		if err != nil {
 			return false, err
 		}
-		if !step.Broken && step.Why == "" && float64(p99(step.Report)) <= Recovered*float64(s.baseline) {
-			s.res.Steps[len(s.res.Steps)-1].Recovered = true
-
+		if step.Recovered {
 			return true, nil
 		}
 	}

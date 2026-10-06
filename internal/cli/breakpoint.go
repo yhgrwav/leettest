@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -178,10 +179,16 @@ func brokeLine(res breakpoint.Result) string {
 
 // verdict is a run's last column, read off its judgement.
 func verdict(res *breakpoint.Result, i int) string {
-	s := res.Steps[i]
-	switch {
-	case res.Outcome == breakpoint.Stopped && i == len(res.Steps)-1:
+	if res.Outcome == breakpoint.Stopped && i == len(res.Steps)-1 {
 		return "stopped"
+	}
+
+	return stepVerdict(&res.Steps[i])
+}
+
+// stepVerdict is a run's verdict word as its judgement gives it.
+func stepVerdict(s *breakpoint.Step) string {
+	switch {
 	case s.Broken:
 		return "broke: " + s.Why
 	case s.Cause == breakpoint.CauseClockStep || s.Cause == breakpoint.CauseRequestErrors:
@@ -195,6 +202,25 @@ func verdict(res *breakpoint.Result, i int) string {
 	}
 
 	return "held"
+}
+
+// runsTable is the runs as rows under a heading, each line led by indent:
+// the text report and the search's screen print the same rows.
+func runsTable(plan breakpoint.Plan, steps []breakpoint.Step, verdicts []string, indent string) string {
+	var b strings.Builder
+	tw := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, indent+"kind\tplanned\tsent\tfailed\tp99\tverdict")
+	for i := range steps {
+		s := &steps[i]
+		p99 := "-"
+		if len(s.Report.Methods) > 0 && s.Report.Methods[0].P99.Defined {
+			p99 = formatQuantile(s.Report.Methods[0].P99)
+		}
+		fmt.Fprintf(tw, "%s%v\t%d\t%d\t%d\t%s\t%s\n", indent, s.Kind, s.RPS, sentRPS(plan, s), s.Report.Failed, p99, verdicts[i])
+	}
+	_ = tw.Flush()
+
+	return b.String()
 }
 
 // PrintBreakpoint writes the search's text report: the answer, every run a
@@ -211,17 +237,11 @@ func PrintBreakpoint(w io.Writer, run BreakpointRun) {
 	}
 	fmt.Fprintln(w)
 
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "  kind\tplanned\tsent\tfailed\tp99\tverdict")
+	verdicts := make([]string, len(res.Steps))
 	for i := range res.Steps {
-		s := &res.Steps[i]
-		p99 := "-"
-		if len(s.Report.Methods) > 0 && s.Report.Methods[0].P99.Defined {
-			p99 = formatQuantile(s.Report.Methods[0].P99)
-		}
-		fmt.Fprintf(tw, "  %v\t%d\t%d\t%d\t%s\t%s\n", s.Kind, s.RPS, sentRPS(run.Plan, s), s.Report.Failed, p99, verdict(&res, i))
+		verdicts[i] = verdict(&res, i)
 	}
-	_ = tw.Flush()
+	fmt.Fprint(w, runsTable(run.Plan, res.Steps, verdicts, "  "))
 
 	if len(res.Notes) > 0 {
 		fmt.Fprintln(w, "\nnotes:")

@@ -1,0 +1,80 @@
+=== tab 0, width 40
+window narrower than 60 columns - wid...
+=== tab 0, width 80
+[;m+────────────────────────────────────────────────────────────────────────────+[0m
+[;m│[0m                                                                            [;m│[0m
+[;m│[0m  ● load test finished  |  localhost:50051                                  [;m│[0m
+[;m│[0m  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 12.0s / 30.0s  [;m│[0m
+[;m│[0m                                                                            [;m│[0m
+[;m│[0m  Run finished                                                              [;m│[0m
+[;m│[0m  sent 9,999,950,000,000  |  failed 9,999,950,000,000  |  duration 999m59s  [;m│[0m
+[;m│[0m  not sent 9,999,950,000,000                                                [;m│[0m
+[;m│[0m                                                                            [;m│[0m
+[;m│[0m  method                                                                    [;m│[0m
+[;m│[0m               sent            failed   sent/s                              [;m│[0m
+[;m│[0m       p50      p90      p95      p99                                       [;m│[0m
+[;m│[0m  GetBalanceWithAVeryLongNameIndeed                                         [;m│[0m
+[;m│[0m  9,999,950,000,000 9,999,950,000,000 99999999                              [;m│[0m
+[;m│[0m  >999m59s >999m59s >999m59s >999m59s                                       [;m│[0m
+[;m│[0m    overload                                                                [;m│[0m
+[;m│[0m                    9,999,950,000,000                                       [;m│[0m
+[;m│[0m  >999m59s >999m59s >999m59s >999m59s                                       [;m│[0m
+[;m│[0m  GetBalanceWithAVeryLongNameIndeed                                         [;m│[0m
+[;m│[0m  9,999,950,000,000 9,999,950,000,000 99999999                              [;m│[0m
+[;m│[0m  >999m59s >999m59s >999m59s >999m59s                                       [;m│[0m
+[;m│[0m    overload                                                                [;m│[0m
+[;m│[0m                    9,999,950,000,000                                       [;m│[0m
+[;m│[0m  >999m59s >999m59s >999m59s >999m59s                                       [;m│[0m
+[;m│[0m                                                                            [;m│[0m
+[;m│[0m  > not sent 9999950000000: cause unknown 9999950000000 (a defect of the    [;m│[0m
+[;m│[0m    tool; please report it).                                                [;m│[0m
+[;m│[0m                                                                            [;m│[0m
+[;m│[0m  > A method's percentiles are the time to serve a call: successes, and     [;m│[0m
+[;m│[0m    timeouts as lower bounds. The rows under it time the other answers:     [;m│[0m
+[;m│[0m    "overload": the status says overloaded or unavailable                   [;m│[0m
+[;m│[0m    (RESOURCE_EXHAUSTED, UNAVAILABLE), from the target or a proxy in front  [;m│[0m
+[;m│[0m    of it; a proxy with no live backend says the same;                      [;m│[0m
+[;m│[0m                                                                            [;m│[0m
+[;m│[0m  enter to exit                                                   LeetTest  [;m│[0m
+[;m│[0m                                                                            [;m│[0m
+[;m│[0m                                                                            [;m│[0m
+[;m+────────────────────────────────────────────────────────────────────────────+[0m
+=== tab 0, width 120
+[;m+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────+[0m
+[;m│[0m                                                                                                                    [;m│[0m
+[;m│[0m  ● load test finished  |  localhost:50051                                                                          [;m│[0m
+[;m│[0m  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 12.0s / 30.0s  [;m│[0m
+[;m│[0m                                                                                                                    [;m│[0m
+[;m│[0m  Run finished                                                                                                      [;m│[0m
+[;m│[0m  sent 9,999,950,000,000  |  failed 9,999,950,000,000  |  duration 999m59s                                          [;m│[0m
+[;m│[0m  not sent 9,999,950,000,000                                                                                        [;m│[0m
+[;m│[0m                                                                                                                    [;m│[0m
+[;m│[0m  method                                       sent            failed   sent/s      p50      p90      p95      p99  [;m│[0m
+[;m│[0m  ...lanceWithAVeryLongNameIndeed 9,999,950,000,000 9,999,950,000,000 99999999 >999m59s >999m59s >999m59s >999m59s  [;m│[0m
+[;m│[0m    overload                                        9,999,950,000,000          >999m59s >999m59s >999m59s >999m59s  [;m│[0m
+[;m│[0m  ...lanceWithAVeryLongNameIndeed 9,999,950,000,000 9,999,950,000,000 99999999 >999m59s >999m59s >999m59s >999m59s  [;m│[0m
+[;m│[0m    overload                                        9,999,950,000,000          >999m59s >999m59s >999m59s >999m59s  [;m│[0m
+[;m│[0m                                                                                                                    [;m│[0m
+[;m│[0m  > not sent 9999950000000: cause unknown 9999950000000 (a defect of the tool; please report it).                   [;m│[0m
+[;m│[0m                                                                                                                    [;m│[0m
+[;m│[0m  > A method's percentiles are the time to serve a call: successes, and timeouts as lower bounds. The rows under    [;m│[0m
+[;m│[0m    it time the other answers: "overload": the status says overloaded or unavailable (RESOURCE_EXHAUSTED,           [;m│[0m
+[;m│[0m    UNAVAILABLE), from the target or a proxy in front of it; a proxy with no live backend says the same;            [;m│[0m
+[;m│[0m                                                                                                                    [;m│[0m
+[;m│[0m  enter to exit                                                                                           LeetTest  [;m│[0m
+[;m│[0m                                                                                                                    [;m│[0m
+[;m│[0m                                                                                                                    [;m│[0m
+[;m│[0m                                                                                                                    [;m│[0m
+[;m│[0m                                                                                                                    [;m│[0m
+[;m│[0m                                                                                                                    [;m│[0m
+[;m│[0m                                                                                                                    [;m│[0m
+[;m│[0m                                                                                                                    [;m│[0m
+[;m│[0m                                                                                                                    [;m│[0m
+[;m│[0m                                                                                                                    [;m│[0m
+[;m│[0m                                                                                                                    [;m│[0m
+[;m│[0m                                                                                                                    [;m│[0m
+[;m│[0m                                                                                                                    [;m│[0m
+[;m│[0m                                                                                                                    [;m│[0m
+[;m│[0m                                                                                                                    [;m│[0m
+[;m│[0m                                                                                                                    [;m│[0m
+[;m+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────+[0m

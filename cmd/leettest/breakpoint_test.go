@@ -190,6 +190,18 @@ func TestRun_ASearchOfTwoCallsIsRefused(t *testing.T) {
 	}
 }
 
+// The screen only in a terminal and without -output json; the stderr lines
+// otherwise — as in #153.
+func TestSearchScreenOnlyInATerminalWithText(t *testing.T) {
+	for _, tc := range []struct {
+		interactive, json, want bool
+	}{{true, false, true}, {true, true, false}, {false, false, false}, {false, true, false}} {
+		if got := searchScreen(tc.interactive, tc.json); got != tc.want {
+			t.Errorf("terminal %v, json %v: screen %v, want %v", tc.interactive, tc.json, got, tc.want)
+		}
+	}
+}
+
 // The exit code of each outcome: findings are 0, invalid is 2 as an invalid
 // run, a soft stop 3.
 func TestSearchExitCodes(t *testing.T) {
