@@ -16,10 +16,12 @@ package grpcsender
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"net"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -360,10 +362,18 @@ func isLostStatus(out engine.Outcome) bool {
 	return out.Category == engine.CategoryCutOff && out.Heard && out.Code == "Unknown" && !out.CodeFromTarget
 }
 
-// pausedRetry holds the transparent retry's OutHeader for 10 ms, which makes
-// grpc-go#9443 certain instead of one in hundreds: the retry's stream is then
-// gone before its answer is read.
-type pausedRetry struct{ retry atomic.Bool }
+// pausedRetry holds the transparent retry's OutHeader until the stand reports
+// that the client has processed the retry's answer, which makes grpc-go#9443
+// certain instead of one in hundreds: the retry's stream is then gone before
+// the caller goroutine goes on. The order is by construction, not by time: the
+// stand follows its answer with a PING, grpc-go's reader answers it only after
+// every frame before it, and the caller goroutine held here blocks neither the
+// reader nor the writer.
+type pausedRetry struct {
+	retry     atomic.Bool
+	processed chan struct{}
+	never     atomic.Bool
+}
 
 func (*pausedRetry) TagRPC(ctx context.Context, _ *stats.RPCTagInfo) context.Context { return ctx }
 func (*pausedRetry) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context {
@@ -376,10 +386,41 @@ func (p *pausedRetry) HandleRPC(_ context.Context, s stats.RPCStats) {
 	case *stats.Begin:
 		p.retry.Store(v.IsTransparentRetryAttempt)
 	case *stats.OutHeader:
-		if p.retry.Load() {
-			time.Sleep(10 * time.Millisecond)
+		if !p.retry.Load() {
+			return
+		}
+		select {
+		case <-p.processed:
+		case <-time.After(2 * time.Second):
+			p.never.Store(true)
 		}
 	}
+}
+
+var lostStatusPings atomic.Uint64
+
+// lostStatusStand serves one connection: the first stream is refused on its
+// HEADERS, the second answered with answer (nil: refused too), and the answer
+// is followed by a PING that p.processed waits for.
+func lostStatusStand(conn net.Conn, p *pausedRetry, answer func(fr *http2.Framer, stream uint32)) {
+	var payload [8]byte
+	binary.BigEndian.PutUint64(payload[:], lostStatusPings.Add(1))
+	var once sync.Once
+
+	serveRawFrames(conn, func(fr *http2.Framer, stream uint32, n int) {
+		if n > 1 && answer != nil {
+			answer(fr, stream)
+		} else {
+			_ = fr.WriteRSTStream(stream, http2.ErrCodeRefusedStream)
+		}
+		if n > 1 {
+			_ = fr.WritePing(false, payload)
+		}
+	}, nil, func(data [8]byte) {
+		if data == payload {
+			once.Do(func() { close(p.processed) })
+		}
+	})
 }
 
 // lostStatusCalls sends calls calls, each over a fresh connection to a stand
@@ -389,34 +430,32 @@ func lostStatusCalls(t *testing.T, calls int, answer func(fr *http2.Framer, stre
 	t.Helper()
 
 	var outs []engine.Outcome
-	for range calls {
+	for i := range calls {
 		lis := bufconn.Listen(1024 * 1024)
 		t.Cleanup(func() { _ = lis.Close() })
+		pause := &pausedRetry{processed: make(chan struct{})}
 		go func() {
 			for {
 				conn, err := lis.Accept()
 				if err != nil {
 					return
 				}
-				go serveRawData(conn, func(fr *http2.Framer, stream uint32, n int) {
-					if n > 1 && answer != nil {
-						answer(fr, stream)
-
-						return
-					}
-					_ = fr.WriteRSTStream(stream, http2.ErrCodeRefusedStream)
-				}, nil)
+				go lostStatusStand(conn, pause, answer)
 			}
 		}()
 		sender := New(Options{Target: "passthrough:///bufnet", DialOptions: []grpc.DialOption{
 			grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return lis.DialContext(ctx) }),
-			grpc.WithStatsHandler(&pausedRetry{}),
+			grpc.WithStatsHandler(pause),
 		}})
 		t.Cleanup(func() { _ = sender.Close() })
 		if err := sender.Connect(bounded(t)); err != nil {
 			t.Fatalf("connect: %v", err)
 		}
-		outs = append(outs, sendWithin(t, sender, time.Second))
+		out := sendWithin(t, sender, time.Second)
+		if pause.never.Load() {
+			t.Fatalf("call %d: the client never acknowledged the stand's PING after the retry's answer", i)
+		}
+		outs = append(outs, out)
 	}
 
 	return outs

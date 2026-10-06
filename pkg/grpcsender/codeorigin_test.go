@@ -89,6 +89,12 @@ func rawTargetOnData(t *testing.T, onData func(fr *http2.Framer, stream uint32) 
 }
 
 func serveRawData(conn net.Conn, onHeaders func(fr *http2.Framer, stream uint32, n int), onData func(*http2.Framer, uint32) bool) {
+	serveRawFrames(conn, onHeaders, onData, nil)
+}
+
+// serveRawFrames is serveRawData that also hands every PING ACK the client
+// sends to onPingAck (nil: ignored).
+func serveRawFrames(conn net.Conn, onHeaders func(fr *http2.Framer, stream uint32, n int), onData func(*http2.Framer, uint32) bool, onPingAck func(data [8]byte)) {
 	defer conn.Close()
 
 	preface := make([]byte, len(http2.ClientPreface))
@@ -114,6 +120,8 @@ func serveRawData(conn net.Conn, onHeaders func(fr *http2.Framer, stream uint32,
 		case *http2.PingFrame:
 			if !f.IsAck() {
 				_ = fr.WritePing(true, f.Data)
+			} else if onPingAck != nil {
+				onPingAck(f.Data)
 			}
 		case *http2.HeadersFrame:
 			n++
