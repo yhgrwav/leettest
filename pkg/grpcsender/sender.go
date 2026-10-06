@@ -419,7 +419,9 @@ func (s *Sender) Send(ctx context.Context, req engine.Request) (engine.Outcome, 
 
 	times := call.read()
 	category := categorize(err, times.answered, !times.sentAt.IsZero())
-	code, fromTarget := status.Code(err), times.answered && !refusedReply(err, times.answered)
+	// A refused stream's UNAVAILABLE is grpc-go's word for the target's
+	// REFUSED_STREAM: the refusal came from the target.
+	code, fromTarget := status.Code(err), (times.answered && !refusedReply(err, times.answered)) || refusedStream(err)
 	if err != nil && call.reply.over {
 		// Our codec refused the reply: whatever status the target sent after
 		// it, and whether it had arrived yet, the call is ours to fail.
@@ -446,7 +448,7 @@ func (s *Sender) Send(ctx context.Context, req engine.Request) (engine.Outcome, 
 		CodeFromTarget: fromTarget,
 		// A trailer that only copies or echoes our deadline is grpc-go on the
 		// target answering by itself: it does not show the target alive.
-		Heard: times.heard || call.reply.over ||
+		Heard: times.heard || call.reply.over || refusedStream(err) ||
 			(times.answered && !expiredCopy(code, times, req.Deadline) && !echoOfOurDeadline(code, times, req.Deadline)),
 	}
 	if notSent {

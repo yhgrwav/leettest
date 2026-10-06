@@ -280,7 +280,7 @@ The rest are plain counters.
 | `methods[].failure_codes` | []object | Failed calls by gRPC code |
 | `methods[].failure_codes[].code` | string | The canonical code name (`UNAVAILABLE`); the list may grow |
 | `methods[].failure_codes[].count` | int | How many |
-| `methods[].failure_codes[].from_target` | bool | `true` — the status came over the wire, `false` — the client set the code |
+| `methods[].failure_codes[].from_target` | bool | `true` — the target sent the refusal: a status over the wire or REFUSED_STREAM, `false` — the client set the code |
 | `methods[].silent_from_s` | int? | The second from which the target answered none of the calls sent; `null` — no silence |
 | `methods[].silent_sent_rps` | int? | Calls sent in the second before it (in the first, if the silence starts there) |
 | `methods[].silent_planned_rps_low`, `methods[].silent_planned_rps_high` | int? | The planned rate of the stages in that second; `null` also when no stage ran in it |
