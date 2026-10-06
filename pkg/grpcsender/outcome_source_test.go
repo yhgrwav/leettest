@@ -426,6 +426,10 @@ func lostStatusCalls(t *testing.T, calls int, answer func(fr *http2.Framer, stre
 // the status lost. Nothing says what the target would have answered, so the
 // call is "no status came back" and the code is not the target's. Before this
 // it was the client's error and the target a silent one.
+//
+// Ground: signal grpc-go v1.84.0 — https://github.com/grpc/grpc-go/issues/9443:
+// a bare io.EOF after a refused transparent retry, the status lost. A failure
+// on "no longer makes grpc-go return a bare EOF" says grpc-go fixed it.
 func TestSend_AStatusLostAfterARefusedRetryIsNoStatus(t *testing.T) {
 	for i, out := range lostStatusCalls(t, 20, nil) {
 		if !errors.Is(out.Err, io.EOF) {
@@ -440,6 +444,11 @@ func TestSend_AStatusLostAfterARefusedRetryIsNoStatus(t *testing.T) {
 
 // The retry answered with a status loses it the same way: it must not be read
 // as the target's own answer (#75 does not let attempt 1 stand for it either).
+//
+// Ground: signal grpc-go v1.84.0 — https://github.com/grpc/grpc-go/issues/9443:
+// the same bare io.EOF when the retry was answered trailers-only (experiment
+// of 2026-10-06). A failure on "no longer makes grpc-go return a bare EOF"
+// says grpc-go fixed it.
 func TestSend_AStatusLostOnAnAnsweredRetryIsNotTheTargets(t *testing.T) {
 	for _, tc := range []struct {
 		name string
