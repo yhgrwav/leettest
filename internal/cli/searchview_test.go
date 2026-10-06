@@ -319,6 +319,9 @@ func TestSearchView_TheErrorHintPointsToNoTabTheSearchLacks(t *testing.T) {
 func TestSearchView_NeverTallerThanTheTerminalWhileTheTableCanYield(t *testing.T) {
 	m := failing(t)
 	m.base.height = 7 // far too short: only the table's count is left of it
+	if s := m.View(); strings.Contains(s, " held") || !strings.Contains(s, "6 earlier runs") {
+		t.Fatalf("a terminal with no room for the table still shows rows:\n%s", s)
+	}
 	h0 := linesOf(m.View())
 	m.base.height = 0
 	full := linesOf(m.View())
@@ -341,11 +344,14 @@ func TestSearchView_NeverTallerThanTheTerminalWhileTheTableCanYield(t *testing.T
 // first with a count.
 func TestSearchView_TheFinalScreenYieldsItsRowsToTheTerminal(t *testing.T) {
 	m := searchStates(t)["final"]
+	rows := len(outcomes["broke"].res.Steps)
 	m.base.height = 7
+	if s := m.View(); strings.Contains(s, "recovered") || !strings.Contains(s, fmt.Sprintf("%d earlier runs", rows)) {
+		t.Fatalf("a terminal with no room for the table still shows rows:\n%s", s)
+	}
 	h0 := linesOf(m.View())
 	m.base.height = 0
 	full := linesOf(m.View())
-	rows := len(outcomes["broke"].res.Steps)
 	for h := h0; h < full; h++ {
 		m.base.height = h
 		s := m.View()

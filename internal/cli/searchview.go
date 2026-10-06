@@ -248,7 +248,7 @@ func (m *searchModel) body(inner int) string {
 	if b.height > 0 {
 		// The frame, the blank lines around the table, the table heading and
 		// the footer.
-		room = b.height - frameHeight - used - 2 - 1 - 1
+		room = max(0, b.height-frameHeight-used-2-1-1)
 	}
 	out.WriteString(m.table(room))
 	out.WriteString("\n\n")
