@@ -284,6 +284,83 @@ func TestSearchView_ShowsTheTabsItsArrowsSwitch(t *testing.T) {
 	}
 }
 
+// failing is a search state in the step with more than 5% of the calls failed.
+func failing(t *testing.T) *searchModel {
+	t.Helper()
+
+	m := searchStates(t)["step"]
+	send(m, searchStepMsg{step: held(305)})
+	m.base.snapshot = engine.Snapshot{Elapsed: 30 * time.Second, Sent: 1000, Failed: 100}
+
+	return m
+}
+
+func linesOf(s string) int { return strings.Count(s, "\n") + 1 }
+
+// The search has a summary and settings, no per-method tab: its hint about
+// the errors points nowhere else.
+func TestSearchView_TheErrorHintPointsToNoTabTheSearchLacks(t *testing.T) {
+	m := failing(t)
+	for _, width := range []int{120, 100, 80} {
+		m.base.width = width
+		s := m.View()
+		if !strings.Contains(s, "5%") {
+			t.Errorf("width %d: no hint about the errors:\n%s", width, s)
+		}
+		if strings.Contains(s, "method") {
+			t.Errorf("width %d: the hint names a tab the search lacks:\n%s", width, s)
+		}
+	}
+}
+
+// A view is never taller than the terminal while it can be shorter: the
+// table's rows give way first, counted in one line, the newest kept; the
+// header with the step stays on the screen.
+func TestSearchView_NeverTallerThanTheTerminalWhileTheTableCanYield(t *testing.T) {
+	m := failing(t)
+	m.base.height = 0
+	rows := len(m.rows)
+	h0 := linesOf(m.View()) - rows + 1 // the view with the table's counter line alone
+	for h := h0; h <= h0+rows+4; h++ {
+		m.base.height = h
+		s := m.View()
+		if n := linesOf(s); n > h {
+			t.Errorf("height %d: %d lines:\n%s", h, n, s)
+		}
+		if !strings.Contains(s, "step 6 of at most") {
+			t.Errorf("height %d: the header lost the step:\n%s", h, s)
+		}
+		if got := rowsOf(s); len(got) > 0 && !strings.Contains(got[len(got)-1], "305") {
+			t.Errorf("height %d: the newest row is not last: %v", h, got)
+		}
+	}
+}
+
+// The final screen yields the same way: the outcome stays, the oldest rows go
+// first with a count.
+func TestSearchView_TheFinalScreenYieldsItsRowsToTheTerminal(t *testing.T) {
+	m := searchStates(t)["final"]
+	m.base.height = 0
+	rows := len(outcomes["broke"].res.Steps)
+	h0 := linesOf(m.View()) - rows + 1
+	for h := h0; h < h0+rows; h++ {
+		m.base.height = h
+		s := m.View()
+		if n := linesOf(s); n > h {
+			t.Errorf("height %d: %d lines:\n%s", h, n, s)
+		}
+		if !strings.Contains(s, "held 244 rps, broke at 305 rps") {
+			t.Errorf("height %d: the outcome is gone:\n%s", h, s)
+		}
+		if got := rowsOf(s); len(got) > 0 && !strings.HasPrefix(got[len(got)-1], "repeat") {
+			t.Errorf("height %d: the newest row is not last: %v", h, got)
+		}
+		if len(rowsOf(s)) < rows && !strings.Contains(s, "earlier runs") {
+			t.Errorf("height %d: rows went without a count:\n%s", h, s)
+		}
+	}
+}
+
 // No line of any state is wider than the screen.
 func TestSearchView_FitsEveryWidth(t *testing.T) {
 	for name, m := range searchStates(t) {
