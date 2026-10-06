@@ -160,7 +160,13 @@ func verdicts(listPath, planPath, resultsDir string, stdout, stderr io.Writer) e
 		Include []matrixEntry `json:"include"`
 	}
 	if err = json.Unmarshal(rawPlan, &matrix); err != nil {
-		return fmt.Errorf("%s: %w", planPath, err)
+		// The plan job failed and wrote nothing: no job was planned, so every
+		// branch is red, and the report must still get to open its issues.
+		fmt.Fprintf(stderr, "stressplan: %s: %v\n", planPath, err)
+		matrix.Include = nil
+	}
+	if len(matrix.Include) == 0 {
+		fmt.Fprintf(stderr, "stressplan: %s: no job planned\n", planPath)
 	}
 	planned := make([]stressplan.Job, 0, len(matrix.Include))
 	for _, e := range matrix.Include {

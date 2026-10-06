@@ -123,17 +123,25 @@ jobs:
         run: |
           mkdir -p results
           printf '%s\n' "$MATRIX" > plan.json
-          go run ./test/stressplan/cmd/stressplan verdicts .github/stress-branches plan.json results > verdicts.txt
+          file_issue() {
+            open=$(gh issue list --state open --search "\"$1\" in:title" --json number --jq '.[0].number')
+            if [ -n "$open" ]; then
+              gh issue comment "$open" --body "$2"
+            else
+              gh issue create --title "$1" --body "$2"
+            fi
+          }
+          # The list could not be read, so no branch can be judged: say so on
+          # main's issue before the step fails, or the run goes quiet.
+          if ! go run ./test/stressplan/cmd/stressplan verdicts .github/stress-branches plan.json results > verdicts.txt; then
+            title=$(go run ./test/stressplan/cmd/stressplan title main || echo "Stress run failed on main")
+            file_issue "$title" "Run: $RUN. The stress run could not plan or judge its branches; see the plan and report logs."
+            exit 1
+          fi
           cat verdicts.txt
           while read -r branch verdict <&3; do
             [ "$verdict" = red ] || continue
             title=$(go run ./test/stressplan/cmd/stressplan title "$branch")
             red=$(cat results/*.txt 2>/dev/null | grep "^stress $branch@" | grep -v "$(printf '\tsuccess$')" | cut -f1 | paste -sd, - || true)
-            body="Run: $RUN. Red: ${red:-a job of this branch wrote no result}. The failing tests are in the run's artifacts."
-            open=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number')
-            if [ -n "$open" ]; then
-              gh issue comment "$open" --body "$body"
-            else
-              gh issue create --title "$title" --body "$body"
-            fi
+            file_issue "$title" "Run: $RUN. Red: ${red:-a job of this branch wrote no result}. The failing tests are in the run's artifacts."
           done 3< verdicts.txt
