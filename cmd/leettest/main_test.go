@@ -890,6 +890,21 @@ func runStopped(t *testing.T, presses int, callLines string) result {
 func runSignalled(t *testing.T, callLines string, signal func(stops, aborts chan<- struct{}), extra ...string) result {
 	t.Helper()
 
+	cfg := fmt.Sprintf("app:\n  target:\n    ip: localhost\n    port: 1\nload:\n  calls:\n    - method: %s\n      rps: 50\n      duration: 1m\n%s",
+		checkMethod, callLines)
+	path := filepath.Join(t.TempDir(), "leettest.yaml")
+	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	return runSignalledOn(t, path, signal, extra...)
+}
+
+// runSignalledOn runs the config at path against the fake target and calls
+// signal once the first run has calls in flight.
+func runSignalledOn(t *testing.T, path string, signal func(stops, aborts chan<- struct{}), extra ...string) result {
+	t.Helper()
+
 	// Pressed only once calls are in flight, so an abort has something to cut.
 	started := make(chan struct{})
 	runStarting = func(eng *engine.Engine) {
@@ -905,13 +920,6 @@ func runSignalled(t *testing.T, callLines string, signal func(stops, aborts chan
 		}()
 	}
 	t.Cleanup(func() { runStarting = func(*engine.Engine) {} })
-
-	cfg := fmt.Sprintf("app:\n  target:\n    ip: localhost\n    port: 1\nload:\n  calls:\n    - method: %s\n      rps: 50\n      duration: 1m\n%s",
-		checkMethod, callLines)
-	path := filepath.Join(t.TempDir(), "leettest.yaml")
-	if err := os.WriteFile(path, []byte(cfg), 0o600); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
 
 	dir := t.TempDir()
 	t.Setenv("APPDATA", dir)

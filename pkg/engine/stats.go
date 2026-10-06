@@ -256,6 +256,9 @@ type Report struct {
 	// Planned is how long the schedule was meant to run; Duration how long it
 	// did.
 	Planned time.Duration
+	// Scheduled is how many calls the plan schedules after the warmup: the
+	// window Sent, Failed and NotSent count in, whatever the run managed.
+	Scheduled int
 	// CapHit is set when the run stopped on the in-flight cap.
 	CapHit *CapHit
 	// StartLagP99 and StartLagMax are how late calls started against their

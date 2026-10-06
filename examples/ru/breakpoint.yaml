@@ -1,0 +1,23 @@
+# Поиск точки отказа на эталонном стенде с известной ёмкостью, из корня репозитория:
+#   go run ./test/stand/cmd/stand -capacity 270 -delay 20ms
+#   leettest -c examples/ru/breakpoint.yaml
+# Стенд отдаёт 270 вызовов в секунду: поиск должен удержать ступень до этого предела и сломаться на
+# следующей. Абсолютный шаг вместо множителя: breakpoint-step.yaml.
+
+app:
+  target:
+    ip: 127.0.0.1
+    port: 50051
+  tls: false
+
+load:
+  calls:                            # ровно один вызов, без rps и duration: их задаёт поиск
+    - method: grpc.health.v1.Health/Check
+      timeout: 500ms
+  breakpoint:
+    from: 100                       # первая ступень, rps
+    to: 400                         # выше не идём
+    factor: 1.25                    # каждая ступень — прошлая × factor
+    settle: 2s                      # начало ступени, не идущее в вердикт
+    hold: 10s                       # длина ступени
+    p99_limit: 200ms                # ступень ломается на p99 выше него; без него — выше 3× лучшего выдержанного

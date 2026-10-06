@@ -53,7 +53,10 @@ type JSONRun struct {
 // thing that may be null: a value the run did not produce, never a zero that
 // could pass for a measurement. Durations are whole microseconds.
 type JSONReport struct {
-	SchemaVersion   int    `json:"schema_version"`
+	SchemaVersion int `json:"schema_version"`
+	// Mode is "run" here; a breaking-point search writes "breakpoint" and
+	// another object (BreakpointReport).
+	Mode            string `json:"mode"`
 	LeetTestVersion string `json:"leettest_version"`
 	Target          string `json:"target"`
 	Outcome         string `json:"outcome"`
@@ -256,6 +259,7 @@ func NewJSONReport(run JSONRun) JSONReport {
 	r := &run.Run.Report
 	out := JSONReport{
 		SchemaVersion:     JSONSchemaVersion,
+		Mode:              ModeRun,
 		LeetTestVersion:   run.Version,
 		Target:            run.Target,
 		Outcome:           run.Outcome,

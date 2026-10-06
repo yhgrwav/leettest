@@ -211,6 +211,7 @@ unten den Typ „percentile?" hat.
 | Feld | Typ | Bedeutung |
 |---|---|---|
 | `schema_version` | int | Schemaversion, derzeit `1` |
+| `mode` | string | `run` bei einem gewöhnlichen Lauf, `breakpoint` bei der Suche nach dem Bruchpunkt — nicht veröffentlicht |
 | `leettest_version` | string | Die Version des Werkzeugs; ein Build aus dem Quellcode gibt den Commit an |
 | `target` | string | Die Zieladresse aus der Konfiguration, `fake target` mit `-fake` |
 | `outcome` | string | `complete`, `invalid`, `incomplete` — entspricht Exit-Code `0`, `2`, `3` |
@@ -305,3 +306,27 @@ etwas geschah. Anders als die Summen enthält sie jeden Aufruf. Zum Abgleich: `�
 | `methods[].seconds[].lag_calls`, `methods[].seconds[].lag_sum_us`, `methods[].seconds[].lag_max_us` | int | Über die in dieser Sekunde geplanten Aufrufe: Anzahl, Summe und Maximum der Startverspätung |
 | `methods[].seconds[].observed_calls` | int | Davon die erfolgreichen |
 | `methods[].seconds[].observed_lag_sum_us`, `methods[].seconds[].transport_wait_sum_us`, `methods[].seconds[].service_time_sum_us` | int | Über die erfolgreichen: Summe der Startverspätung, der Wartezeit vor dem Senden (Verbindung und Stream), der Zeit vom Senden bis zur Antwort. Zusammen — ihre Latenzen |
+
+### Suche nach dem Bruchpunkt: `mode: "breakpoint"`
+
+Die Suche schreibt ein anderes Objekt: `schema_version`, `leettest_version`, `target` und
+`started_at` wie beim Lauf oben, die übrigen Felder eines gewöhnlichen Laufs stehen nicht auf der
+obersten Ebene. Jeder Lauf liegt mit seinem vollständigen Bericht in `breakpoint.runs`.
+
+| Feld | Typ | Bedeutung |
+|---|---|---|
+| `method` | string | Die Methode, die die Suche belastet hat — nicht veröffentlicht |
+| `breakpoint` | object | Ergebnis der Suche — nicht veröffentlicht |
+| `breakpoint.outcome` | string | Geschlossene Liste: `broke`, `broke_at_first`, `held_all`, `run_limit`, `stopped`, `invalid` — nicht veröffentlicht |
+| `breakpoint.held_rps` | int? | Die höchste Rate, die das Ziel gehalten hat; `null` — keine gehalten — nicht veröffentlicht |
+| `breakpoint.broke_rps` | int? | Die niedrigste Rate, bei der das Ziel brach oder ein Lauflimit die Suche stoppte; `null` — es brach nicht — nicht veröffentlicht |
+| `breakpoint.why` | string? | Ursache des Laufs, der die Suche beendet hat, aus einer geschlossenen Liste: `errors`, `p99_limit`, `p99_vs_base`, `connection`, `no_recovery`, `generator`, `in_flight_cap`, `stream_limit`, `stream_wait`, `clock_step`, `request_errors`; `null` — keine Ursache — nicht veröffentlicht |
+| `breakpoint.notes` | []string | Hinweise der Suche, Text für Menschen in ASCII; nicht auswerten — nicht veröffentlicht |
+| `breakpoint.runs` | []object | Alle Läufe der Reihe nach — nicht veröffentlicht |
+| `breakpoint.runs[].kind` | string | `step`, `repeat` oder `probe` — nicht veröffentlicht |
+| `breakpoint.runs[].planned_rps` | int | Geplante Rate des Laufs — nicht veröffentlicht |
+| `breakpoint.runs[].sent_rps` | int | Rate, mit der die Aufrufe tatsächlich hinausgingen: gehalten gilt nur, was gesendet wurde — nicht veröffentlicht |
+| `breakpoint.runs[].broken` | bool | `true` — der Lauf hat das Ziel gebrochen — nicht veröffentlicht |
+| `breakpoint.runs[].recovered` | bool? | Bei einem `probe`: das Ziel ist innerhalb des 1,5-Fachen des p99 der Basis zurück; bei `step` und `repeat` `null` — nicht veröffentlicht |
+| `breakpoint.runs[].why` | string? | Ursache des Laufs, dieselbe geschlossene Liste wie bei `breakpoint.why`; `null` — keine Ursache — nicht veröffentlicht |
+| `breakpoint.runs[].report` | object | Vollständiger Bericht dieses Laufs, dasselbe Objekt wie das JSON eines gewöhnlichen Laufs (Felder oben) — nicht veröffentlicht |

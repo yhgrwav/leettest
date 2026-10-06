@@ -540,3 +540,28 @@ func TestJSON_SilentPlannedRPSGoesWithTheSilence(t *testing.T) {
 		}
 	}
 }
+
+// breakpointSchemaLines are the search's own fields: each run's report is the
+// plain run's schema, already pinned by schema_v1.txt, so it stays one object.
+func breakpointSchemaLines() []string {
+	var all, own []string
+	schemaLines(reflect.TypeFor[BreakpointReport](), "", &all)
+	for _, l := range all {
+		if !strings.HasPrefix(l, "breakpoint.runs[].report.") {
+			own = append(own, l)
+		}
+	}
+
+	return own
+}
+
+func TestBreakpointJSONSchema_MatchesVersion1(t *testing.T) {
+	want, err := os.ReadFile("testdata/schema_breakpoint_v1.txt")
+	if err != nil {
+		t.Fatalf("read golden schema: %v", err)
+	}
+
+	if g, w := strings.Join(breakpointSchemaLines(), "\n"), strings.TrimSpace(string(want)); g != w {
+		t.Errorf("the search's JSON types do not match schema v1: a rename, removal or type change needs schema_version 2.\ngot:\n%s\n\nwant:\n%s", g, w)
+	}
+}

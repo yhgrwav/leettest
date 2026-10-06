@@ -262,7 +262,10 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 	}
 
 	// A config error does not wait for the network: checked before connecting.
-	if err = engine.CheckOptions(opts); err != nil {
+	// A search has no rate of its own: each step's engine is checked as it
+	// is built, and a cap too low for a step ends the search there.
+	search := cfg.Load.Breakpoint != nil
+	if err = engine.CheckOptions(opts); err != nil && !search {
 		return withBudgetAdvice(err, opts)
 	}
 
@@ -290,6 +293,21 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 			fmt.Fprintf(stderr, "%s: %v; the method was not checked before the run and sends an "+
 				"empty message\n", m.Method, m.Err)
 		}
+	}
+
+	if search {
+		capSet := false
+		flags.Visit(func(f *flag.Flag) { capSet = capSet || f.Name == "max-in-flight" })
+		connectWithin := *connectTimeout
+		if *fake {
+			connectWithin = 0
+		}
+
+		return runSearch(ctx, abort, &stopper, searchSetup{
+			cfg: cfg, configPath: *configPath, target: target, sender: sender, calls: opts.Calls,
+			unchecked: unchecked, maxInFlight: *maxInFlight, capSet: capSet, connect: connectWithin,
+			json: *output == "json", stepBefore: stepBefore,
+		}, stdout, stderr)
 	}
 
 	eng, err := engine.New(opts)

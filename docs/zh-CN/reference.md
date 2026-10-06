@@ -184,6 +184,7 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | 字段 | 类型 | 含义 |
 |---|---|---|
 | `schema_version` | int | 结构版本，目前为 `1` |
+| `mode` | string | 普通运行为 `run`，崩溃点搜索为 `breakpoint` — 未发布 |
 | `leettest_version` | string | 工具版本；从源码构建时为提交哈希 |
 | `target` | string | 配置中的目标地址，使用 `-fake` 时为 `fake target` |
 | `outcome` | string | `complete`、`invalid`、`incomplete`——对应退出码 `0`、`2`、`3` |
@@ -276,3 +277,26 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `methods[].seconds[].lag_calls`、`methods[].seconds[].lag_sum_us`、`methods[].seconds[].lag_max_us` | int | 对计划在该秒的调用：数量、启动延迟之和与最大值 |
 | `methods[].seconds[].observed_calls` | int | 其中成功的调用 |
 | `methods[].seconds[].observed_lag_sum_us`、`methods[].seconds[].transport_wait_sum_us`、`methods[].seconds[].service_time_sum_us` | int | 对成功的调用：启动延迟之和、发送前等待（连接和流）之和、从发送到应答的时间之和。三者相加即为它们的延迟 |
+
+### 崩溃点搜索：`mode: "breakpoint"`
+
+搜索输出的是另一种对象：`schema_version`、`leettest_version`、`target`、`started_at` 与上面的运行相同，
+普通运行的其他字段不在顶层。每次运行连同它自己的完整报告都在 `breakpoint.runs` 中。
+
+| 字段 | 类型 | 含义 |
+|---|---|---|
+| `method` | string | 搜索所施压的方法 — 未发布 |
+| `breakpoint` | object | 搜索结果 — 未发布 |
+| `breakpoint.outcome` | string | 封闭列表：`broke`、`broke_at_first`、`held_all`、`run_limit`、`stopped`、`invalid` — 未发布 |
+| `breakpoint.held_rps` | int? | 目标撑住的最高速率；`null` — 没有撑住的 — 未发布 |
+| `breakpoint.broke_rps` | int? | 目标崩溃或运行上限使搜索停下的最低速率；`null` — 未崩溃 — 未发布 |
+| `breakpoint.why` | string? | 结束搜索的那次运行的原因，来自封闭列表：`errors`、`p99_limit`、`p99_vs_base`、`connection`、`no_recovery`、`generator`、`in_flight_cap`、`stream_limit`、`stream_wait`、`clock_step`、`request_errors`；`null` — 没有原因 — 未发布 |
+| `breakpoint.notes` | []string | 搜索的说明，面向人的 ASCII 文本；不要解析 — 未发布 |
+| `breakpoint.runs` | []object | 按顺序列出所有运行 — 未发布 |
+| `breakpoint.runs[].kind` | string | `step`、`repeat` 或 `probe` — 未发布 |
+| `breakpoint.runs[].planned_rps` | int | 该次运行的计划速率 — 未发布 |
+| `breakpoint.runs[].sent_rps` | int | 调用实际发出的速率：只有实际发出的才算撑住 — 未发布 |
+| `breakpoint.runs[].broken` | bool | `true` — 该次运行使目标崩溃 — 未发布 |
+| `breakpoint.runs[].recovered` | bool? | 对 `probe`：目标回到基线 p99 的 1.5 倍以内；`step` 和 `repeat` 为 `null` — 未发布 |
+| `breakpoint.runs[].why` | string? | 该次运行的原因，与 `breakpoint.why` 相同的封闭列表；`null` — 没有原因 — 未发布 |
+| `breakpoint.runs[].report` | object | 这次运行的完整报告，与普通运行的 JSON 是同一种对象（字段见上）— 未发布 |

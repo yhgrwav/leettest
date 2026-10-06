@@ -1,4 +1,5 @@
 schema_version int
+mode string
 leettest_version string
 target string
 outcome string
