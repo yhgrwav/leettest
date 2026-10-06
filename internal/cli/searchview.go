@@ -223,6 +223,9 @@ func (m *searchModel) body(inner int) string {
 		return out.String()
 	}
 
+	out.WriteString(b.tabBar(inner))
+	out.WriteString("\n\n")
+
 	var top strings.Builder
 	switch {
 	case !m.coolUntil.IsZero():
