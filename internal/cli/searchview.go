@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -69,6 +70,7 @@ type searchModel struct {
 
 func newSearchModel(target, method string, plan breakpoint.Plan, connect time.Duration, settings *Settings, stopper *Stopper) *searchModel {
 	base := &model{target: target, stopper: stopper, runPanel: newRunPanel(plan.Settle), settings: settings}
+	base.search = true
 	base.applySettings()
 	base.tabs = []string{base.text.Summary(), base.text.Settings()}
 
@@ -135,6 +137,7 @@ func (m *searchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case searchRunMsg:
 		// A fresh panel per run: nothing of the last run is drawn on this one.
 		panel := newRunPanel(m.plan.Settle)
+		panel.search = true
 		panel.text, panel.styles, panel.width = m.base.text, m.base.styles, m.base.width
 		m.base.runPanel = panel
 		m.base.engine = msg.eng
@@ -214,9 +217,7 @@ func (m *searchModel) body(inner int) string {
 	out.WriteString("\n\n")
 
 	if m.result != nil {
-		var report bytes.Buffer
-		PrintBreakpoint(&report, BreakpointRun{Method: m.method, Plan: m.plan, Result: *m.result})
-		out.WriteString(strings.TrimRight(report.String(), "\n"))
+		out.WriteString(m.finalReport(strings.Count(out.String(), "\n"), inner))
 		out.WriteString("\n\n")
 		out.WriteString(b.footer())
 
@@ -243,17 +244,58 @@ func (m *searchModel) body(inner int) string {
 	out.WriteString(top.String())
 	out.WriteString("\n\n")
 
-	room := 0
+	room := -1
 	if b.height > 0 {
 		// The frame, the blank lines around the table, the table heading and
 		// the footer.
-		room = b.height - frameHeight - used - 2 - 1 - 2
+		room = b.height - frameHeight - used - 2 - 1 - 1
 	}
 	out.WriteString(m.table(room))
 	out.WriteString("\n\n")
 	out.WriteString(b.footer())
 
 	return out.String()
+}
+
+// finalReport is the search's text report, below the given number of lines. On
+// a terminal too short for it the table's oldest rows go first, counted in one
+// line; the outcome above the table stays.
+func (m *searchModel) finalReport(above, inner int) string {
+	var report bytes.Buffer
+	PrintBreakpoint(&report, BreakpointRun{Method: m.method, Plan: m.plan, Result: *m.result})
+	lines := strings.Split(strings.TrimRight(report.String(), "\n"), "\n")
+
+	// A line the frame wraps takes more than one.
+	wrap := lipgloss.NewStyle().Width(inner)
+	cost := func(l string) int { return strings.Count(wrap.Render(l), "\n") + 1 }
+	used := 0
+	for _, l := range lines {
+		used += cost(l)
+	}
+
+	// The frame, the lines above, the report, a blank line and the footer.
+	over := frameHeight + above + used + 2 - m.base.height
+	head := slices.IndexFunc(lines, func(l string) bool { return strings.HasPrefix(strings.TrimSpace(l), "kind") })
+	if m.base.height <= 0 || over <= 0 || head < 0 {
+		return strings.Join(lines, "\n")
+	}
+
+	end := head + 1
+	for end < len(lines) && strings.TrimSpace(lines[end]) != "" {
+		end++
+	}
+	drop := 0
+	for over > 0 && head+1+drop < end {
+		over -= cost(lines[head+1+drop])
+		if drop == 0 {
+			over++ // the count takes a line of its own
+		}
+		drop++
+	}
+	counter := "  " + m.base.styles.muted.Render(fmt.Sprintf("%s %d earlier runs", ellipsis, drop))
+	kept := append(slices.Clone(lines[:head+1]), counter)
+
+	return strings.Join(append(kept, lines[head+1+drop:]...), "\n")
 }
 
 // header is the status line and the search's place: which run of which
@@ -303,12 +345,13 @@ func (m *searchModel) place() string {
 }
 
 // table is the runs so far in at most room lines below the heading (no
-// limit at 0): the newest kept, the oldest counted.
+// limit when room is negative): the newest kept, the oldest counted; with no
+// room at all, only the count.
 func (m *searchModel) table(room int) string {
 	rows := m.rows
 	hidden := 0
-	if room > 0 && len(rows) > room {
-		keep := max(room-1, 1)
+	if room >= 0 && len(rows) > room {
+		keep := max(room-1, 0)
 		hidden = len(rows) - keep
 		rows = rows[hidden:]
 	}
@@ -323,5 +366,10 @@ func (m *searchModel) table(room int) string {
 	}
 	head, rest, _ := strings.Cut(table, "\n")
 
-	return head + "\n" + m.base.styles.muted.Render(fmt.Sprintf("%s %d earlier runs", ellipsis, hidden)) + "\n" + rest
+	out := head + "\n" + m.base.styles.muted.Render(fmt.Sprintf("%s %d earlier runs", ellipsis, hidden))
+	if rest == "" {
+		return out
+	}
+
+	return out + "\n" + rest
 }

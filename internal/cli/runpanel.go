@@ -39,8 +39,10 @@ type runPanel struct {
 	// done once a second; a person cannot tell that from every frame.
 	percentilesAt time.Time
 	warmup        time.Duration
-	overall       history
-	perMethod     map[string]*history
+	// search is a run inside a breaking-point search: it has no per-method tab.
+	search    bool
+	overall   history
+	perMethod map[string]*history
 }
 
 func newRunPanel(warmup time.Duration) runPanel {
@@ -237,6 +239,10 @@ func (m *runPanel) note() (full, short string) {
 		return m.text.WarmupNote(formatDuration(m.warmup-s.Elapsed), s.WarmupSent), m.text.WarmupNoteShort(s.WarmupSent)
 	}
 	if s.Sent > 0 && float64(s.Failed)/float64(s.Sent) > 0.05 {
+		if m.search {
+			return m.text.SearchErrorsNote(), m.text.SearchErrorsNoteShort()
+		}
+
 		return m.text.ErrorsNote(), m.text.ErrorsNoteShort()
 	}
 	if s.InFlight > 0 && float64(s.InFlight) > m.totalTarget() {

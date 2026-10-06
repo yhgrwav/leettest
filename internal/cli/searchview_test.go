@@ -318,10 +318,11 @@ func TestSearchView_TheErrorHintPointsToNoTabTheSearchLacks(t *testing.T) {
 // header with the step stays on the screen.
 func TestSearchView_NeverTallerThanTheTerminalWhileTheTableCanYield(t *testing.T) {
 	m := failing(t)
+	m.base.height = 7 // far too short: only the table's count is left of it
+	h0 := linesOf(m.View())
 	m.base.height = 0
-	rows := len(m.rows)
-	h0 := linesOf(m.View()) - rows + 1 // the view with the table's counter line alone
-	for h := h0; h <= h0+rows+4; h++ {
+	full := linesOf(m.View())
+	for h := h0; h <= full+2; h++ {
 		m.base.height = h
 		s := m.View()
 		if n := linesOf(s); n > h {
@@ -340,10 +341,12 @@ func TestSearchView_NeverTallerThanTheTerminalWhileTheTableCanYield(t *testing.T
 // first with a count.
 func TestSearchView_TheFinalScreenYieldsItsRowsToTheTerminal(t *testing.T) {
 	m := searchStates(t)["final"]
+	m.base.height = 7
+	h0 := linesOf(m.View())
 	m.base.height = 0
+	full := linesOf(m.View())
 	rows := len(outcomes["broke"].res.Steps)
-	h0 := linesOf(m.View()) - rows + 1
-	for h := h0; h < h0+rows; h++ {
+	for h := h0; h < full; h++ {
 		m.base.height = h
 		s := m.View()
 		if n := linesOf(s); n > h {
