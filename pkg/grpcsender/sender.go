@@ -52,6 +52,9 @@ var (
 	// client certificate looks from the client.
 	ErrClosedAfterHandshake = errors.New("the target closed the connection right after the TLS handshake; " +
 		"it may require a client certificate or refuse the one given")
+	// ErrIdleShorterThanConnect is an IdleTimeout shorter than the time
+	// Connect has: the idle timer would cut the first dial before it ends.
+	ErrIdleShorterThanConnect = errors.New("idle timeout is shorter than the time to connect")
 )
 
 // Options describes the target and how to reach it.
@@ -78,6 +81,14 @@ type Options struct {
 	// A larger reply fails the call as a bad response with
 	// ErrResponseTooLarge. A call in flight may buffer up to twice this.
 	MaxResponseBytes int
+	// IdleTimeout closes the connection after this long without calls
+	// (grpc.WithIdleTimeout); 0 keeps grpc-go's default. Connect refuses one
+	// shorter than the time its ctx leaves it, or set without a deadline:
+	// the idle timer would cut the first dial before it ends, and Connect
+	// would hang to its deadline. An idle timeout given in DialOptions is
+	// not seen by this check; with both set, this one is applied after
+	// DialOptions and wins.
+	IdleTimeout time.Duration
 	// DialOptions are passed through for cases the fields above do not cover,
 	// such as custom credentials or an in-process dialer in tests. Custom
 	// transport credentials replace the sender's own, which read the stream
@@ -112,6 +123,36 @@ type Sender struct {
 	// check it: both set by Connect.
 	limit int
 	call  []grpc.CallOption
+}
+
+// checkIdle refuses an idle timeout shorter than the time ctx leaves Connect:
+// equal or longer, Connect gives up first and the idle timer never cuts its
+// dial.
+func checkIdle(ctx context.Context, idle time.Duration) error {
+	if idle <= 0 {
+		return nil
+	}
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return fmt.Errorf("%w: idle timeout %v, but connect has no deadline; "+
+			"set a connect timeout or drop the idle timeout", ErrIdleShorterThanConnect, idle)
+	}
+	if left := time.Until(deadline); idle < left {
+		return fmt.Errorf("%w: idle timeout %v, connect timeout %v; "+
+			"raise the idle timeout or shorten the connect timeout", ErrIdleShorterThanConnect, idle, ceilMillis(left))
+	}
+
+	return nil
+}
+
+// ceilMillis rounds d up to a whole millisecond: what is left of a timeout
+// set in milliseconds reads back as that timeout while under 1ms has passed.
+func ceilMillis(d time.Duration) time.Duration {
+	if r := d % time.Millisecond; r > 0 {
+		return d - r + time.Millisecond
+	}
+
+	return d
 }
 
 // defaultMaxResponse is grpc-go's own default, kept when no limit is given.
@@ -173,7 +214,13 @@ func (s *Sender) Connect(ctx context.Context) error {
 	if limit < 0 || limit > math.MaxInt32 {
 		return fmt.Errorf("%w: %d", ErrMaxResponseOutOfRange, limit)
 	}
+	if err := checkIdle(ctx, s.opts.IdleTimeout); err != nil {
+		return err
+	}
 	dialOpts = append(dialOpts, s.opts.DialOptions...)
+	if s.opts.IdleTimeout > 0 {
+		dialOpts = append(dialOpts, grpc.WithIdleTimeout(s.opts.IdleTimeout))
+	}
 
 	conn, err := grpc.NewClient(s.opts.Target, dialOpts...)
 	if err != nil {
