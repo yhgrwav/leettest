@@ -195,9 +195,19 @@ type Connections struct {
 // LinkReport is what one connection of several went through.
 type LinkReport struct {
 	Address string
-	// Calls counts the measured calls assigned to the connection, sent or not;
-	// Failed those not a success, aborted ones apart; StreamWaited those over
-	// the stream-wait floor; P99 is over the calls that have a latency.
+	// Calls counts the measured calls assigned to the connection, sent or not,
+	// warmup left out: the connections add up to Report.Sent + Report.NotSent.
+	//
+	// Failed is the connection's sent calls that were not a success, aborted
+	// ones apart (Report.Failed's rule), and its unsent calls that timed out
+	// waiting for the connection itself (NotSentConnection). An unsent call
+	// held back by the generator or by a full stream is not the connection's
+	// failure: the first says nothing of it, the second is a limit the run hit.
+	// So the connections add up to Report.Failed + Report.NotSentConnection.
+	//
+	// StreamWaited counts the sent calls over the stream-wait floor, as
+	// Report.StreamWaited does, and the connections add up to it. P99 is the run's
+	// percentile rule over the calls that have a latency.
 	Calls        int
 	Failed       int
 	StreamWaited int

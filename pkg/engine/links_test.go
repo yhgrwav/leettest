@@ -101,7 +101,10 @@ func eachOf(t *testing.T, r Report) []LinkReport {
 
 // Ground: contract — what a connection's row says is the library's API: a call counts for the
 // connection it was assigned to, sent or not, warmup excluded; a failure is anything but a
-// success and an abort, as Report.Failed counts it.
+// success and an abort, as Report.Failed counts it, and an unsent call that waited for the
+// connection itself. An unsent call held back by the generator or by a full stream is a call of
+// the connection, not its failure. Mutations "Failed counts any unsent call" and "Failed counts
+// no unsent call" turn it red.
 func TestStats_EachLinkCountsTheCallsAssignedToIt(t *testing.T) {
 	eng, start := linkedEngine(t, linkedSender{addrs: addrs3()[:2]})
 
@@ -118,6 +121,14 @@ func TestStats_EachLinkCountsTheCallsAssignedToIt(t *testing.T) {
 	unsent := onLink(1, start, Outcome{Category: CategoryTimeout, NotSent: true, NotSentOn: BlockedOnConnection})
 	unsent.DoneAt = unsent.Deadline
 	record(unsent)
+	// Held back by the generator, or by a stream the target had none free: calls of the
+	// connection, no failure of it.
+	lagged := onLink(1, start, Outcome{Category: CategoryTimeout, NotSent: true, NotSentOn: BlockedOnGenerator})
+	lagged.DoneAt = lagged.Deadline
+	record(lagged)
+	full := onLink(1, start, Outcome{Category: CategoryTimeout, NotSent: true, NotSentOn: BlockedOnStream})
+	full.DoneAt = full.Deadline
+	record(full)
 	// The run's abort is nobody's fault: counted as a call, not as a failure.
 	record(onLink(1, start, Outcome{Category: CategoryAborted}))
 	// The warmup is on neither connection, a failure of it included.
@@ -125,7 +136,9 @@ func TestStats_EachLinkCountsTheCallsAssignedToIt(t *testing.T) {
 	warm.ScheduledAt = start
 	record(warm)
 
-	got := eachOf(t, finish(eng, start))
+	report := finish(eng, start)
+
+	got := eachOf(t, report)
 	if len(got) != 2 {
 		t.Fatalf("%d entries, want 2", len(got))
 	}
@@ -133,11 +146,21 @@ func TestStats_EachLinkCountsTheCallsAssignedToIt(t *testing.T) {
 	for i, want := range []struct {
 		addr          string
 		calls, failed int
-	}{{"10.0.0.1:443", 3, 0}, {"10.0.0.2:443", 6, 3}} {
+	}{{"10.0.0.1:443", 3, 0}, {"10.0.0.2:443", 8, 3}} {
 		if got[i].Address != want.addr || got[i].Calls != want.calls || got[i].Failed != want.failed {
 			t.Errorf("connection %d: %s, %d calls, %d failed; want %s, %d, %d",
 				i+1, got[i].Address, got[i].Calls, got[i].Failed, want.addr, want.calls, want.failed)
 		}
+	}
+
+	// The rows add up to the run: every measured call is on one connection, and the failures are
+	// the run's plus the unsent calls that waited for a connection.
+	if calls := got[0].Calls + got[1].Calls; calls != report.Sent+report.NotSent {
+		t.Errorf("connections add up to %d calls, the run sent %d and left %d unsent", calls, report.Sent, report.NotSent)
+	}
+	if failed := got[0].Failed + got[1].Failed; failed != report.Failed+report.NotSentConnection {
+		t.Errorf("connections add up to %d failed, the run has %d failed and %d unsent for a connection",
+			failed, report.Failed, report.NotSentConnection)
 	}
 }
 

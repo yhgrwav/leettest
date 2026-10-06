@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
 	"github.com/yhgrwav/leettest/pkg/engine"
@@ -124,23 +125,112 @@ func (c *connTracker) announced(h handshake) {
 	c.heard++
 }
 
-func (c *connTracker) report() (engine.Connections, bool) {
+// trackerView is a copy of what a connTracker has counted.
+type trackerView struct {
+	handshakes, heard int
+	first, last       handshake
+	changes           int
+}
+
+func (c *connTracker) view() trackerView {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.heard == 0 {
+	return trackerView{handshakes: c.handshakes, heard: c.heard, first: c.first, last: c.last, changes: c.changes}
+}
+
+func (c *connTracker) report() (engine.Connections, bool) {
+	v := c.view()
+	if v.heard == 0 {
 		return engine.Connections{}, false
 	}
 
 	// grpc-go's default pick_first balancer keeps one connection per target.
 	return engine.Connections{
-		Open:           1,
-		Reconnects:     c.handshakes - 1,
-		LimitAnnounced: c.last.announced,
-		FirstLimit:     c.first.limit,
-		LastLimit:      c.last.limit,
-		LimitChanges:   c.changes,
+		Open:              1,
+		Reconnects:        v.handshakes - 1,
+		LimitAnnounced:    v.last.announced,
+		FirstLimit:        v.first.limit,
+		LastLimit:         v.last.limit,
+		LimitChanges:      v.changes,
+		InFlightLimit:     int(v.last.limit),
+		InFlightAnnounced: v.last.announced,
 	}, true
+}
+
+// mergeLinks is what the connections of one sender say together: the counts
+// added, and each connection's own limits in Each. The scalar limit fields stay
+// zero: one connection's limit is not the run's, and an average is no one's.
+// The in-flight bound is the sum of the limits, known only when every
+// connection announced one. False when no handshake was read on any of them.
+func mergeLinks(links []*link, resolved []string) (engine.Connections, bool) {
+	c := engine.Connections{
+		Open:              len(links),
+		Resolved:          resolved,
+		Each:              make([]engine.LinkReport, len(links)),
+		InFlightAnnounced: true,
+	}
+
+	known := false
+
+	for i, l := range links {
+		v := l.tracker.view()
+		known = known || v.heard > 0
+
+		announced := v.heard > 0 && v.last.announced
+		c.Each[i] = engine.LinkReport{
+			Address:        l.address,
+			LimitAnnounced: announced,
+			FirstLimit:     v.first.limit,
+			LastLimit:      v.last.limit,
+			LimitChanges:   v.changes,
+		}
+
+		if v.handshakes > 0 {
+			c.Reconnects += v.handshakes - 1
+		}
+
+		c.LimitChanges += v.changes
+
+		if announced {
+			c.InFlightLimit += int(v.last.limit)
+		} else {
+			c.InFlightAnnounced = false
+		}
+	}
+
+	if !known {
+		return engine.Connections{}, false
+	}
+
+	if !c.InFlightAnnounced {
+		c.InFlightLimit = 0
+	}
+
+	c.LimitAnnounced = c.InFlightAnnounced
+
+	return c, true
+}
+
+// link is one connection of the sender and what is tracked about it.
+type link struct {
+	// address is what the connection dials; set when there are several.
+	address string
+	// client is set once, before the link is used, and never changed.
+	client  *grpc.ClientConn
+	tracker *connTracker
+	ready   readyWindow
+	// streams tells a wait for a stream from a delay on our side.
+	streams *streamGauge
+	// stopWatch ends the connection watcher; watched closes when it has.
+	stopWatch context.CancelFunc
+	watched   chan struct{}
+}
+
+func newLink(address string) *link {
+	tracker := &connTracker{}
+
+	return &link{address: address, tracker: tracker, streams: &streamGauge{limit: tracker.limit}}
 }
 
 // settingsConn reads the target's first frame as it passes. After it, a
@@ -235,12 +325,34 @@ func (w *readyWindow) throughout(begun time.Time) bool {
 // handshake passed through the sender's own credentials, as with credentials
 // of the caller's in DialOptions. See engine.ConnectionReporter.
 func (s *Sender) Connections() (engine.Connections, bool) {
+	s.mu.RLock()
+	links, resolved := s.links, s.resolved
+	s.mu.RUnlock()
+
+	if len(links) > 1 {
+		return mergeLinks(links, resolved)
+	}
+
 	return s.tracker.report()
 }
 
 // Links reports the address of each connection by index; nil with one. See
 // engine.LinkReporter.
-func (s *Sender) Links() []string { return nil }
+func (s *Sender) Links() []string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if len(s.links) < 2 {
+		return nil
+	}
+
+	out := make([]string, len(s.links))
+	for i, l := range s.links {
+		out[i] = l.address
+	}
+
+	return out
+}
 
 // limit is the stream limit of the last handshake heard; MaxUint32, the
 // client's own quota, when none was announced or none was heard.
@@ -293,12 +405,26 @@ func (g *streamGauge) fullSince(since time.Time) bool {
 	return g.full || !g.leftFull.Before(since)
 }
 
-// OpenStreams is how many streams are open now: headers out, call not over.
-// Zero once every call has returned; anything else is a stream counted in and
-// never out, which would read every later delay as a wait for a stream.
+// OpenStreams is how many streams are open now, on all connections: headers
+// out, call not over. Zero once every call has returned; anything else is a
+// stream counted in and never out, which would read every later delay as a
+// wait for a stream.
 func (s *Sender) OpenStreams() int {
-	s.streams.mu.Lock()
-	defer s.streams.mu.Unlock()
+	s.mu.RLock()
+	links := s.links
+	s.mu.RUnlock()
 
-	return int(s.streams.open)
+	if len(links) < 2 {
+		links = []*link{s.link}
+	}
+
+	open := 0
+
+	for _, l := range links {
+		l.streams.mu.Lock()
+		open += int(l.streams.open)
+		l.streams.mu.Unlock()
+	}
+
+	return open
 }

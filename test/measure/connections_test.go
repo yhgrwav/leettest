@@ -280,9 +280,11 @@ func TestConnections_ADeadBackendIsNotRerouted(t *testing.T) {
 		t.Errorf("connection 2: %d calls, %d failed, want 600 and 600", each[1].Calls, each[1].Failed)
 	}
 
+	// Not UnsentTimedOut: it counts the unsent calls held back by the generator on
+	// both connections too, and those are nobody's failure.
 	m := report.Methods[0]
-	if m.Unanswered+m.TimedOut+m.UnsentTimedOut != each[1].Failed {
-		t.Errorf("%d unreachable, %d timed out, %d timed out unsent: want all %d failures to be one of them",
-			m.Unanswered, m.TimedOut, m.UnsentTimedOut, each[1].Failed)
+	if m.Unanswered+m.TimedOut+report.NotSentConnection != each[1].Failed {
+		t.Errorf("%d unreachable, %d timed out, %d unsent waiting for a connection: want all %d failures to be one of them",
+			m.Unanswered, m.TimedOut, report.NotSentConnection, each[1].Failed)
 	}
 }

@@ -368,6 +368,11 @@ func TestConnect_ASchemeTargetIsNotResolvedAndKeepsItsAuthority(t *testing.T) {
 		t.Errorf("links %v, want the target twice, as given", got)
 	}
 
+	// The target is the one address it stands for: it is not resolved, so nothing else is known.
+	if conns, ok := two.Connections(); !ok || !slices.Equal(conns.Resolved, []string{target}) {
+		t.Errorf("resolved %v (known %v), want the target alone", conns.Resolved, ok)
+	}
+
 	seen := b.seenAuthorities()
 	if len(seen) != 3 || seen[1] != seen[0] || seen[2] != seen[0] {
 		t.Errorf("authorities %q, want the one connection's authority on every call of two", seen)
@@ -633,6 +638,13 @@ func TestSend_ALateCallKeepsItsLink(t *testing.T) {
 	if each[0].Calls != 5 || each[1].Calls != 5 {
 		t.Errorf("calls %d and %d, want 5 and 5: late calls are calls of the connection they were handed", each[0].Calls, each[1].Calls)
 	}
+
+	// The generator's lateness is no failure of either backend: both are healthy. Mutations
+	// "Failed counts any unsent call" turns this red.
+	if each[0].Failed != 0 || each[1].Failed != 0 {
+		t.Errorf("failed %d and %d, want 0 and 0: a call the generator handed over late says nothing of its connection",
+			each[0].Failed, each[1].Failed)
+	}
 }
 
 // Ground: contract — each connection has its own stream limit and its own wait for a stream: a
@@ -670,7 +682,6 @@ func TestConnections_EachConnectionHasItsOwnStreamLimit(t *testing.T) {
 // stream gauge", with the limit of link 1, turns it red.
 func TestSend_AnUnsentCallIsBlamedOnItsOwnConnection(t *testing.T) {
 	hold := &holdingTarget{entered: make(chan struct{}, 4), release: make(chan struct{})}
-	t.Cleanup(func() { close(hold.release) })
 
 	bs := []*backend{
 		newBackend(t, "10.0.0.1:443", slowTarget{}),
@@ -678,13 +689,22 @@ func TestSend_AnUnsentCallIsBlamedOnItsOwnConnection(t *testing.T) {
 	}
 	sender := mustConnect(t, 2, bs, Options{})
 
+	// Registered after the connect's own cleanup, so it runs before it: the check
+	// that no stream is left open comes once the held call has returned.
+	var held sync.WaitGroup
+
+	t.Cleanup(func() {
+		close(hold.release)
+		held.Wait()
+	})
+
 	send := func() (engine.Outcome, error) { return sender.Send(bounded(t), request(time.Now())) }
 
 	if _, err := send(); err != nil {
 		t.Fatalf("send to link 1: %v", err)
 	}
 
-	go func() { _, _ = send() }()
+	held.Go(func() { _, _ = send() })
 
 	select {
 	case <-hold.entered:
@@ -738,6 +758,10 @@ func TestConnections_DifferentLimitsAreNotAveraged(t *testing.T) {
 			}
 			if tt.wantInFlight && got.InFlightLimit != 5 {
 				t.Errorf("in flight limit %d, want 5", got.InFlightLimit)
+			}
+			// A sum with a term missing is a number that lies: 4 would read as the bound.
+			if !tt.wantInFlight && got.InFlightLimit != 0 {
+				t.Errorf("in flight limit %d, want 0: one connection announced none, the bound is unknown", got.InFlightLimit)
 			}
 
 			if len(got.Each) != 2 || !got.Each[0].LimitAnnounced || got.Each[0].LastLimit != 4 || got.Each[1].LimitAnnounced != tt.wantInFlight {
@@ -847,5 +871,32 @@ func TestConnections_AnAbortedCallKeepsItsLink(t *testing.T) {
 	}
 	if each[0].Failed != 0 || each[1].Failed != 0 {
 		t.Errorf("failed %d and %d, want 0 and 0: an abort is not a failure of the connection", each[0].Failed, each[1].Failed)
+	}
+}
+
+// Ground: contract — a target that refuses our (missing) client certificate closes right after
+// the handshake: at several connections the failed start says so, as at one, and names the
+// connection. Mutation "the failure of a connection ignores the silent handshake" turns it red.
+func TestConnect_ARefusedClientCertificateIsNamedAtSeveralConnections(t *testing.T) {
+	const host = "leettest.test"
+
+	cert, pool := selfSignedFor(t, host)
+	_, clientPool := selfSigned(t)
+
+	server := []grpc.ServerOption{grpc.Creds(credentials.NewTLS(&tls.Config{
+		Certificates: []tls.Certificate{cert},
+		ClientCAs:    clientPool,
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		MinVersion:   tls.VersionTLS12,
+	}))}
+	bs := pair(t, slowTarget{}, server, server)
+
+	_, err := connectTo(t, 2, bs, Options{Target: host + ":443", TLS: true, RootCAs: pool})
+	if !errors.Is(err, ErrClosedAfterHandshake) {
+		t.Fatalf("connect: %v, want ErrClosedAfterHandshake", err)
+	}
+
+	if !strings.Contains(err.Error(), " of 2 to 10.0.0.") {
+		t.Errorf("error %q, want it to name the connection of 2 and its address", err)
 	}
 }

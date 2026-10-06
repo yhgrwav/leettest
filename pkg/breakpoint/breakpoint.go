@@ -491,9 +491,14 @@ func (s *search) waits(rps int, r engine.Report) (broken bool, cause Cause, why 
 		return false, NoCause, ""
 	case side == engine.SideTarget:
 		return true, CauseConnection, fmt.Sprintf("the connection to the target was not ready for %d calls at %d rps", r.ConnectionCauseCalls, rps)
-	case wait == engine.WaitStream && r.Connections != nil && r.Connections.LimitAnnounced:
+	case wait == engine.WaitStream && r.Connections != nil && r.Connections.InFlightAnnounced && r.Connections.Open > 1:
+		// The limit of the run is what the connections allow together; one
+		// that announced none leaves it unknown, and the wait stays a wait.
+		return false, CauseStreamLimit, fmt.Sprintf("stream limits of %d connections (%d in flight) reached at %d rps; the target above that is untested",
+			r.Connections.Open, r.Connections.InFlightLimit, rps)
+	case wait == engine.WaitStream && r.Connections != nil && r.Connections.InFlightAnnounced:
 		return false, CauseStreamLimit, fmt.Sprintf("stream limit %d of a single connection reached at %d rps; the target above that is untested",
-			r.Connections.LastLimit, rps)
+			r.Connections.InFlightLimit, rps)
 	case wait == engine.WaitStream:
 		return false, CauseStreamWait, fmt.Sprintf("calls waited for a stream at %d rps; the target above that is untested", rps)
 	default:
