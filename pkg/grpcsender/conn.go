@@ -238,6 +238,10 @@ func (s *Sender) Connections() (engine.Connections, bool) {
 	return s.tracker.report()
 }
 
+// Links reports the address of each connection by index; nil with one. See
+// engine.LinkReporter.
+func (s *Sender) Links() []string { return nil }
+
 // limit is the stream limit of the last handshake heard; MaxUint32, the
 // client's own quota, when none was announced or none was heard.
 func (c *connTracker) limit() uint32 {

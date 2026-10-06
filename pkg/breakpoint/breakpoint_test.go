@@ -410,7 +410,10 @@ func TestSearch_AStreamLimitIsTheRunsAndSaysSo(t *testing.T) {
 		r := capacity(10000)(rps)
 		if rps >= 195 {
 			r.NotSent, r.NotSentStream, r.StreamTailCalls = 3, 3, 3
-			r.Connections = &engine.Connections{Open: 1, LimitAnnounced: true, FirstLimit: 1, LastLimit: 1}
+			r.Connections = &engine.Connections{
+				Open: 1, LimitAnnounced: true, FirstLimit: 1, LastLimit: 1,
+				InFlightLimit: 1, InFlightAnnounced: true,
+			}
 		}
 
 		return r
@@ -420,6 +423,53 @@ func TestSearch_AStreamLimitIsTheRunsAndSaysSo(t *testing.T) {
 		t.Fatalf("%v, want RunLimit", res.Outcome)
 	}
 	want := "stream limit 1 of a single connection reached at 195 rps; the target above that is untested"
+	if why := res.Steps[len(res.Steps)-1].Why; why != want {
+		t.Errorf("why %q, want %q", why, want)
+	}
+}
+
+// streamLimited is a target whose steps from 195 rps on wait for a stream, over conns.
+func streamLimited(conns engine.Connections) func(rps int) engine.Report {
+	return func(rps int) engine.Report {
+		r := capacity(10000)(rps)
+		if rps >= 195 {
+			r.NotSent, r.NotSentStream, r.StreamTailCalls = 3, 3, 3
+			r.Connections = &conns
+		}
+
+		return r
+	}
+}
+
+// With several connections the run's limit is what they allow together, and
+// the line says whose it is.
+func TestSearch_TheStreamLimitsOfSeveralConnectionsAreTheRunsTogether(t *testing.T) {
+	var asked []int
+	target := streamLimited(engine.Connections{Open: 2, LimitAnnounced: true, InFlightLimit: 5, InFlightAnnounced: true})
+
+	res, _ := Search(t.Context(), plan, fake(target, &asked))
+	if res.Outcome != RunLimit || res.Cause != CauseStreamLimit || len(res.Steps) == 0 {
+		t.Fatalf("%v, cause %v, want RunLimit by the stream limit", res.Outcome, res.Cause)
+	}
+
+	want := "stream limits of 2 connections (5 in flight) reached at 195 rps; the target above that is untested"
+	if why := res.Steps[len(res.Steps)-1].Why; why != want {
+		t.Errorf("why %q, want %q", why, want)
+	}
+}
+
+// One connection announcing a limit is not the run's: another that announced
+// none has no limit, so the sum is unknown and the wait is only a wait.
+func TestSearch_ALimitOfOneConnectionIsNotTheRunsWhenAnotherAnnouncedNone(t *testing.T) {
+	var asked []int
+	target := streamLimited(engine.Connections{Open: 2, LimitAnnounced: true, LastLimit: 4, InFlightAnnounced: false})
+
+	res, _ := Search(t.Context(), plan, fake(target, &asked))
+	if res.Outcome != RunLimit || res.Cause != CauseStreamWait || len(res.Steps) == 0 {
+		t.Fatalf("%v, cause %v, want RunLimit by a stream wait", res.Outcome, res.Cause)
+	}
+
+	want := "calls waited for a stream at 195 rps; the target above that is untested"
 	if why := res.Steps[len(res.Steps)-1].Why; why != want {
 		t.Errorf("why %q, want %q", why, want)
 	}

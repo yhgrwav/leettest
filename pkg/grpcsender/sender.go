@@ -102,6 +102,11 @@ type Options struct {
 	// balancing policy other than pick_first the connection lines and the
 	// "limited by the run" verdict are wrong: they assume one connection.
 	DialOptions []grpc.DialOption
+	// Connections is how many connections the sender opens; 0 means 1.
+	Connections int
+	// Lookup resolves Target (host:port) to host:port addresses when there
+	// are two or more connections; nil resolves by DNS.
+	Lookup func(ctx context.Context, target string) ([]string, error)
 }
 
 // Sender delivers calls to a real gRPC target.
@@ -222,7 +227,18 @@ func (s *Sender) Connect(ctx context.Context) error {
 		dialOpts = append(dialOpts, grpc.WithIdleTimeout(s.opts.IdleTimeout))
 	}
 
-	conn, err := grpc.NewClient(s.opts.Target, dialOpts...)
+	// STUB of the red commit: one connection to the first address Lookup gives,
+	// what a target resolving to several addresses gets today.
+	dial := s.opts.Target
+	if s.opts.Lookup != nil {
+		addrs, err := s.opts.Lookup(ctx, s.opts.Target)
+		if err != nil || len(addrs) == 0 {
+			return fmt.Errorf("stub: %w", err)
+		}
+		dial = "passthrough:///" + addrs[0]
+	}
+
+	conn, err := grpc.NewClient(dial, dialOpts...)
 	if err != nil {
 		return fmt.Errorf("connect to %s: %w", s.opts.Target, err)
 	}
