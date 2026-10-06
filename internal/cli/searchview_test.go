@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/yhgrwav/leettest/pkg/breakpoint"
 	"github.com/yhgrwav/leettest/pkg/engine"
 )
@@ -242,6 +243,43 @@ func TestSearchView_TheFinalScreenIsTheReport(t *testing.T) {
 		if !strings.Contains(s, claim) {
 			t.Errorf("the final screen does not say %q:\n%s", claim, s)
 		}
+	}
+}
+
+// The footer offers the arrows, so the running screen shows the tabs and which
+// one is open, as the plain run's does; the final screen switches nothing and
+// shows none.
+func TestSearchView_ShowsTheTabsItsArrowsSwitch(t *testing.T) {
+	ansi := regexp.MustCompile("\x1b\\[[0-9;]*m")
+	tabLine := func(s string) string {
+		for _, line := range strings.Split(ansi.ReplaceAllString(s, ""), "\n") {
+			if strings.Contains(line, "summary") && strings.Contains(line, "settings") {
+				return line
+			}
+		}
+
+		return ""
+	}
+
+	m := searchStates(t)["step"]
+	if tabLine(m.View()) == "" {
+		t.Fatalf("no tab bar on the running screen:\n%s", m.View())
+	}
+	if strings.Contains(m.View(), "Palette") {
+		t.Errorf("the settings are open before any arrow:\n%s", m.View())
+	}
+
+	pressKey(m.base, tea.KeyRight)
+	s := m.View()
+	if tabLine(s) == "" {
+		t.Errorf("the tab bar is gone after the arrow:\n%s", s)
+	}
+	if !strings.Contains(s, "Palette") {
+		t.Errorf("the arrow did not open the settings tab:\n%s", s)
+	}
+
+	if tabLine(searchStates(t)["final"].View()) != "" {
+		t.Errorf("the final screen shows tabs it cannot switch")
 	}
 }
 
