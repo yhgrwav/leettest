@@ -461,52 +461,75 @@ func lostStatusCalls(t *testing.T, calls int, answer func(fr *http2.Framer, stre
 	return outs
 }
 
+// checkLostStatusCalls holds every call to one of two outcomes. grpc-go#9443
+// is a race the stand makes the common case but cannot make certain: a call
+// either comes back as a bare io.EOF and is "no status came back" (the code is
+// not the target's), or grpc-go kept the status and the call is that status's
+// own outcome, which isReal says. Anything else fails. At least one call must
+// be the bare EOF, or grpc-go no longer loses the status.
+func checkLostStatusCalls(t *testing.T, outs []engine.Outcome, isReal func(engine.Outcome) bool) {
+	t.Helper()
+
+	bare := 0
+	for i, out := range outs {
+		switch {
+		case errors.Is(out.Err, io.EOF):
+			bare++
+			if !isLostStatus(out) {
+				t.Errorf("call %d: bare EOF as category %v, code %s from the target %v, heard %v; want cut off, Unknown, not from the target, heard",
+					i, out.Category, out.Code, out.CodeFromTarget, out.Heard)
+			}
+		case isReal(out):
+		default:
+			t.Errorf("call %d: neither a bare EOF nor the status's own outcome: category %v, code %s from the target %v, heard %v, err %v",
+				i, out.Category, out.Code, out.CodeFromTarget, out.Heard, out.Err)
+		}
+	}
+	t.Logf("bare EOF %d of %d", bare, len(outs))
+	if bare == 0 {
+		t.Fatalf("no call of %d came back as a bare EOF: grpc-go no longer returns a bare EOF here — #9443 fixed?", len(outs))
+	}
+}
+
 // grpc-go#9443: a call whose retry was refused comes back as a bare io.EOF,
 // the status lost. Nothing says what the target would have answered, so the
 // call is "no status came back" and the code is not the target's. Before this
-// it was the client's error and the target a silent one.
+// it was the client's error and the target a silent one. When grpc-go keeps
+// the status instead, the target refused the call: overload, from the target.
 //
 // Ground: signal grpc-go v1.84.0 — https://github.com/grpc/grpc-go/issues/9443:
-// a bare io.EOF after a refused transparent retry, the status lost. A failure
-// on "no longer makes grpc-go return a bare EOF" says grpc-go fixed it.
+// a bare io.EOF after a refused transparent retry, the status lost, in most
+// calls. A run with no bare EOF at all says grpc-go fixed it.
 func TestSend_AStatusLostAfterARefusedRetryIsNoStatus(t *testing.T) {
-	for i, out := range lostStatusCalls(t, 20, nil) {
-		if !errors.Is(out.Err, io.EOF) {
-			t.Fatalf("call %d: err = %v; the stand no longer makes grpc-go return a bare EOF", i, out.Err)
-		}
-		if !isLostStatus(out) {
-			t.Errorf("call %d: category %v, code %s from the target %v, heard %v; want cut off, Unknown, not from the target, heard",
-				i, out.Category, out.Code, out.CodeFromTarget, out.Heard)
-		}
-	}
+	checkLostStatusCalls(t, lostStatusCalls(t, 20, nil), func(out engine.Outcome) bool {
+		return out.Category == engine.CategoryOverload && out.Code == codes.Unavailable.String() && out.CodeFromTarget && out.Heard
+	})
 }
 
 // The retry answered with a status loses it the same way: it must not be read
 // as the target's own answer (#75 does not let attempt 1 stand for it either).
+// When grpc-go keeps the status, the call is that status's own outcome.
 //
 // Ground: signal grpc-go v1.84.0 — https://github.com/grpc/grpc-go/issues/9443:
 // the same bare io.EOF when the retry was answered trailers-only (experiment
-// of 2026-10-06). A failure on "no longer makes grpc-go return a bare EOF"
-// says grpc-go fixed it.
+// of 2026-10-06), in most calls. A run with no bare EOF at all says grpc-go
+// fixed it.
 func TestSend_AStatusLostOnAnAnsweredRetryIsNotTheTargets(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		code codes.Code
+		real func(engine.Outcome) bool
 	}{
-		{"NOT_FOUND", codes.NotFound},
-		{"OK without a reply", codes.OK},
+		{"NOT_FOUND", codes.NotFound, func(out engine.Outcome) bool {
+			return out.Category == engine.CategoryClientFault && out.Code == codes.NotFound.String() && out.CodeFromTarget
+		}},
+		{"OK without a reply", codes.OK, func(out engine.Outcome) bool {
+			return out.Category == engine.CategoryServerFault && out.Code == codes.Internal.String() && !out.CodeFromTarget
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			outs := lostStatusCalls(t, 20, func(fr *http2.Framer, stream uint32) { trailersOnly(fr, stream, tc.code) })
-			for i, out := range outs {
-				if !errors.Is(out.Err, io.EOF) {
-					t.Fatalf("call %d: err = %v; the stand no longer makes grpc-go return a bare EOF", i, out.Err)
-				}
-				if !isLostStatus(out) {
-					t.Errorf("call %d: category %v, code %s from the target %v, heard %v; want cut off, Unknown, not from the target, heard",
-						i, out.Category, out.Code, out.CodeFromTarget, out.Heard)
-				}
-			}
+			checkLostStatusCalls(t, outs, tc.real)
 		})
 	}
 }
