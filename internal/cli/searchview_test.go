@@ -238,8 +238,10 @@ func TestSearchView_AShortScreenKeepsTheNewestRows(t *testing.T) {
 // The final screen is the search's report.
 func TestSearchView_TheFinalScreenIsTheReport(t *testing.T) {
 	s := searchStates(t)["final"].View()
-	if !strings.Contains(s, outcomes["broke"].headline) {
-		t.Errorf("no headline on the final screen:\n%s", s)
+	for _, claim := range strings.Split(outcomes["broke"].says, "|") {
+		if !strings.Contains(s, claim) {
+			t.Errorf("the final screen does not say %q:\n%s", claim, s)
+		}
 	}
 }
 
