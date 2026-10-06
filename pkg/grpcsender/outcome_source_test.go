@@ -471,7 +471,8 @@ func checkLostStatusCalls(t *testing.T, outs []engine.Outcome, isReal func(engin
 	t.Helper()
 
 	bare := 0
-	for i, out := range outs {
+	for i := range outs {
+		out := outs[i]
 		switch {
 		case errors.Is(out.Err, io.EOF):
 			bare++
