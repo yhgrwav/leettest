@@ -128,6 +128,41 @@ func TestVerdicts_AllReportedIsGreen(t *testing.T) {
 	}
 }
 
+// The plan job failed, so the report step has no matrix: that is no job
+// planned, every listed branch red and the plan file named — not an error that
+// ends the step before any issue is opened.
+func TestVerdicts_ANoPlanIsEveryBranchRed(t *testing.T) {
+	for name, content := range map[string]string{"empty": "\n", "not JSON": "{\"include\": [", "no matrix": "null\n"} {
+		t.Run(name, func(t *testing.T) {
+			list := write(t, "stress-branches", "main\nrelease/v0.1\n")
+			plan := write(t, "plan.json", content)
+
+			code, out, errOut := runCmd(t, "verdicts", list, plan, t.TempDir())
+			if code != 0 {
+				t.Fatalf("exit %d: %s", code, errOut)
+			}
+			if want := "main red\nrelease/v0.1 red\n"; out != want {
+				t.Errorf("verdicts:\n%s\nwant:\n%s", out, want)
+			}
+			if !strings.Contains(errOut, "plan.json") {
+				t.Errorf("stderr %q does not name the plan file", errOut)
+			}
+		})
+	}
+}
+
+// A list the report cannot read is the one thing it cannot judge: exit 1, and
+// the workflow opens the issue for it.
+func TestVerdicts_AnUnreadableListIsAnError(t *testing.T) {
+	list := write(t, "stress-branches", "main\nrelease/v0.2 # cut\n")
+	plan := write(t, "plan.json", planJSON)
+
+	code, out, errOut := runCmd(t, "verdicts", list, plan, t.TempDir())
+	if code != 1 || out != "" || !strings.Contains(errOut, "release/v0.2 # cut") {
+		t.Errorf("exit %d, stdout %q, stderr %q, want 1, nothing, the line named", code, out, errOut)
+	}
+}
+
 func TestTag_ExitCodeFollowsTheBranchTip(t *testing.T) {
 	tipOnly := write(t, "pointsat.txt", "  origin/release/v0.1\n")
 	mainOnly := write(t, "pointsat.txt", "  origin/main\n")
