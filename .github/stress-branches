@@ -1,0 +1,6 @@
+# Branches the scheduled stress run checks, one per line. Each is checked on
+# its own commit with the Go versions of its own ci.yml and release.yml.
+# A branch enters at its cut and leaves with its last tag; change this list
+# only by a pull request into main (the schedule reads it from there).
+main
+release/v0.1
