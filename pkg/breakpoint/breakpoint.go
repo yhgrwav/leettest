@@ -1,0 +1,402 @@
+// Copyright 2026 yhgrwav
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package breakpoint
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"math"
+	"time"
+
+	"github.com/yhgrwav/leettest/pkg/engine"
+)
+
+var ErrPlan = errors.New("breaking-point plan")
+
+// Plan is a rising profile: rates from From up to To, each step Factor times
+// the last (or Step more, when Step is set), each held for Hold, of which the
+// first Settle is out of the step's verdict.
+type Plan struct {
+	From, To int
+	// Factor is the geometric step, 1.25 when zero and Step is zero.
+	Factor float64
+	// Step is an absolute step in rps; it excludes Factor.
+	Step   int
+	Settle time.Duration
+	Hold   time.Duration
+	// Timeout is the calls' deadline. A broken step is repeated after a
+	// cooldown of max(Timeout, Settle) without load, so the target's queue
+	// left from the first try does not confirm the break.
+	Timeout time.Duration
+	// MaxInFlight is the in-flight cap. Zero: each step gets the smallest it
+	// can run with (engine.InFlightNeed). Set and too low for a step: the
+	// search stops there with RunLimit, keeping what held below.
+	MaxInFlight int
+	// P99Limit, when set, breaks a step whose p99 is above it. Without it a
+	// step breaks on the knee: p99 over KneeRatio times the baseline, the
+	// lowest p99 of the steps that held before it.
+	P99Limit time.Duration
+}
+
+const (
+	// FailShare breaks a step whose failed calls are this share or more of
+	// the sent ones. Hypothesis, docs/decisions.md.
+	FailShare = 0.01
+	// KneeRatio breaks a step whose p99 is over this many times the
+	// baseline, when no P99Limit is set. Hypothesis, docs/decisions.md.
+	KneeRatio = 3
+)
+
+// Rates are the step rates of the plan, rounded to whole rps, none over To,
+// each above the last: next = max(prev+1, round(prev×Factor)).
+func (p Plan) Rates() ([]int, error) {
+	switch {
+	case p.From < 1:
+		return nil, fmt.Errorf("%w: from %d, want at least 1 rps", ErrPlan, p.From)
+	case p.To < p.From:
+		return nil, fmt.Errorf("%w: to %d is below from %d", ErrPlan, p.To, p.From)
+	case p.Factor != 0 && p.Step != 0:
+		return nil, fmt.Errorf("%w: factor and step both set; set one", ErrPlan)
+	case p.Factor != 0 && p.Factor <= 1:
+		return nil, fmt.Errorf("%w: factor %v, want over 1", ErrPlan, p.Factor)
+	case p.Step < 0:
+		return nil, fmt.Errorf("%w: step %d, want over 0", ErrPlan, p.Step)
+	case p.Hold <= 0:
+		return nil, fmt.Errorf("%w: no hold", ErrPlan)
+	case p.Settle < 0 || 2*p.Settle >= p.Hold:
+		return nil, fmt.Errorf("%w: settle %v, want under half the hold %v", ErrPlan, p.Settle, p.Hold)
+	}
+
+	factor := p.Factor
+	if factor == 0 {
+		factor = 1.25
+	}
+	rates := []int{p.From}
+	for {
+		prev := rates[len(rates)-1]
+		next := prev + p.Step
+		if p.Step == 0 {
+			next = max(prev+1, int(math.Round(float64(prev)*factor)))
+		}
+		if next > p.To || next <= prev {
+			return rates, nil
+		}
+		rates = append(rates, next)
+	}
+}
+
+// RunStep runs one step: rps for hold, the first settle of it out of the
+// statistics (as warm-up), with an in-flight cap of maxInFlight, and returns
+// the run's report.
+type RunStep func(ctx context.Context, rps int, settle, hold time.Duration, maxInFlight int) (engine.Report, error)
+
+const (
+	// ProbeCalls is how many calls a recovery probe at the first step's rate
+	// holds for at least, so its p99 rests on 5 tail calls; it holds a
+	// second at the least.
+	ProbeCalls = 500
+	// MaxProbes is how many probes a broken step waits for the target to
+	// recover before its repeat.
+	MaxProbes = 5
+	// Recovered is how close to the baseline a probe's p99 must come.
+	Recovered = 1.5
+)
+
+// Outcome is what the search found.
+type Outcome int
+
+const (
+	// BrokeBetween: the target held at Result.Held and broke at Result.Broke.
+	BrokeBetween Outcome = iota + 1
+	// BrokeAtFirst: the first step already broke: the limit is at or below
+	// Result.Broke.
+	BrokeAtFirst
+	// HeldThroughout: no step broke; the limit is above Result.Held.
+	HeldThroughout
+	// RunLimit: the run, not the target, gave out at Result.Broke —
+	// generator late, in-flight cap or the stream limit: nothing is said
+	// about the target above Result.Held.
+	RunLimit
+)
+
+// Step is one step's run and verdict.
+type Step struct {
+	RPS    int
+	Report engine.Report
+	// Broken says the step broke; Why names the criterion with its numbers.
+	Broken bool
+	Why    string
+	Kind   Kind
+}
+
+// Kind is what a run in Result.Steps was. Held and Broke come only from
+// RateStep and Repeat runs, never from a Probe.
+type Kind int
+
+const (
+	// RateStep is a step of the profile.
+	RateStep Kind = iota
+	// Repeat confirms or clears a broken step after the cooldown.
+	Repeat
+	// Probe checks at the first step's rate that the target has recovered.
+	Probe
+)
+
+func (k Kind) String() string {
+	switch k {
+	case Repeat:
+		return "repeat"
+	case Probe:
+		return "probe"
+	default:
+		return "step"
+	}
+}
+
+type Result struct {
+	Outcome     Outcome
+	Held, Broke int
+	Steps       []Step
+	// Notes say what the outcome does not: a step that broke once and held
+	// on its repeat, a knee with no baseline below it.
+	Notes []string
+}
+
+// Cooldown is the pause without load before a broken step is repeated.
+func (p Plan) Cooldown() time.Duration {
+	return max(p.Timeout, p.Settle)
+}
+
+// ProbeHold is how long a recovery probe at rps runs: max(1s, ProbeCalls/rps).
+func ProbeHold(rps int) time.Duration {
+	return max(time.Second, time.Duration(ProbeCalls)*time.Second/time.Duration(rps))
+}
+
+// Search runs the plan's steps from the lowest until one breaks and a repeat
+// of it breaks too, or the plan ends.
+func Search(ctx context.Context, plan Plan, run RunStep) (Result, error) {
+	rates, err := plan.Rates()
+	if err != nil {
+		return Result{}, err
+	}
+
+	s := search{plan: plan, run: run, first: rates[0]}
+	for i, rps := range rates {
+		step, err := s.step(ctx, rps, plan.Hold, RateStep)
+		if err != nil || s.limited(step) {
+			return s.res, err
+		}
+		if !step.Broken {
+			s.hold(step)
+
+			continue
+		}
+
+		if cooled := sleep(ctx, plan.Cooldown()); cooled != nil {
+			return s.res, cooled
+		}
+		if i > 0 {
+			var recovered bool
+			if recovered, err = s.probe(ctx); err != nil {
+				return s.res, err
+			}
+			if !recovered {
+				s.res.Notes = append(s.res.Notes, fmt.Sprintf("%d: broke and did not recover within %d probes of %v at %d rps",
+					rps, MaxProbes, ProbeHold(s.first), s.first))
+
+				return s.broke(rps, BrokeBetween), nil
+			}
+		}
+
+		repeat, err := s.step(ctx, rps, plan.Hold, Repeat)
+		if err != nil {
+			return s.res, err
+		}
+		if s.limited(repeat) {
+			return s.res, nil
+		}
+		if repeat.Broken {
+			if i == 0 {
+				s.res.Notes = append(s.res.Notes, "no lower step to check recovery against; start lower (from) for a reliable result")
+
+				return s.broke(rps, BrokeAtFirst), nil
+			}
+
+			return s.broke(rps, BrokeBetween), nil
+		}
+		s.res.Notes = append(s.res.Notes, fmt.Sprintf("%d broke once, held on repeat", rps))
+		s.hold(repeat)
+	}
+
+	s.res.Outcome = HeldThroughout
+
+	return s.res, nil
+}
+
+type search struct {
+	plan     Plan
+	run      RunStep
+	first    int
+	baseline time.Duration
+	res      Result
+}
+
+// step runs rps for hold and judges it, or names the cap that cannot run it.
+func (s *search) step(ctx context.Context, rps int, hold time.Duration, kind Kind) (Step, error) {
+	need := engine.InFlightNeed([]engine.Call{{
+		Timeout: s.plan.Timeout,
+		Stages:  []engine.Stage{{StartRPS: rps, TargetRPS: rps, Duration: hold}},
+	}})
+	step := Step{RPS: rps, Kind: kind}
+	if s.plan.MaxInFlight > 0 && need > s.plan.MaxInFlight {
+		step.Why = fmt.Sprintf("in-flight cap %d is too low for %d rps with timeout %v", s.plan.MaxInFlight, rps, s.plan.Timeout)
+		s.res.Steps = append(s.res.Steps, step)
+
+		return step, nil
+	}
+	if s.plan.MaxInFlight > 0 {
+		need = s.plan.MaxInFlight
+	}
+
+	report, err := s.run(ctx, rps, s.plan.Settle, hold, need)
+	if err != nil {
+		return step, err
+	}
+	step.Report = report
+	step.Broken, step.Why = s.waits(rps, report)
+	if step.Why == "" {
+		step.Broken, step.Why = s.broken(report)
+	}
+	s.res.Steps = append(s.res.Steps, step)
+
+	return step, nil
+}
+
+// limited ends the search on a step where the run gave out.
+func (s *search) limited(step Step) bool {
+	if step.Broken || step.Why == "" {
+		return false
+	}
+	s.res.Outcome, s.res.Broke = RunLimit, step.RPS
+
+	return true
+}
+
+func (s *search) hold(step Step) {
+	s.res.Held = step.RPS
+	if p99 := p99(step.Report); s.baseline == 0 || p99 < s.baseline {
+		s.baseline = p99
+	}
+}
+
+func (s *search) broke(rps int, outcome Outcome) Result {
+	s.res.Outcome, s.res.Broke = outcome, rps
+
+	return s.res
+}
+
+// waits judges a step by its client-side waits (engine.Report.WaitVerdict):
+// the run's side gave out — why without broken — or the target's side broke.
+// Nothing to say: "".
+func (s *search) waits(rps int, r engine.Report) (broken bool, why string) {
+	if r.CapHit != nil {
+		return false, fmt.Sprintf("in-flight cap reached at %d rps; the target above that is untested", rps)
+	}
+	cause, side, ok := r.WaitVerdict()
+	switch {
+	case !ok:
+		return false, ""
+	case side == engine.SideTarget:
+		return true, fmt.Sprintf("the connection to the target was not ready for %d calls at %d rps", r.ConnectionCauseCalls, rps)
+	case cause == engine.WaitStream && r.Connections != nil && r.Connections.LimitAnnounced:
+		return false, fmt.Sprintf("stream limit %d of a single connection reached at %d rps; the target above that is untested",
+			r.Connections.LastLimit, rps)
+	case cause == engine.WaitStream:
+		return false, fmt.Sprintf("calls waited for a stream at %d rps; the target above that is untested", rps)
+	default:
+		return false, fmt.Sprintf("the generator fell behind at %d rps; the target above that is untested", rps)
+	}
+}
+
+// broken judges a step the run held: failures, then the user's p99 limit or
+// the knee over the baseline.
+func (s *search) broken(r engine.Report) (broken bool, why string) {
+	if r.Sent > 0 && float64(r.Failed)/float64(r.Sent) >= FailShare {
+		return true, fmt.Sprintf("failed %d of %d calls (%.1f%%)", r.Failed, r.Sent, 100*float64(r.Failed)/float64(r.Sent))
+	}
+	got := p99(r)
+	if s.plan.P99Limit > 0 {
+		if got > s.plan.P99Limit {
+			return true, fmt.Sprintf("p99 %v over p99_limit %v", short(got), s.plan.P99Limit)
+		}
+
+		return false, ""
+	}
+	if s.baseline > 0 && got > KneeRatio*s.baseline {
+		return true, fmt.Sprintf("p99 %v = %.1f× baseline %v (no p99_limit set)", short(got), float64(got)/float64(s.baseline), short(s.baseline))
+	}
+
+	return false, ""
+}
+
+// probe runs up to MaxProbes probes at the first step's rate until one comes
+// within Recovered of the baseline.
+func (s *search) probe(ctx context.Context) (bool, error) {
+	for range MaxProbes {
+		step, err := s.step(ctx, s.first, ProbeHold(s.first), Probe)
+		if err != nil {
+			return false, err
+		}
+		if !step.Broken && step.Why == "" && float64(p99(step.Report)) <= Recovered*float64(s.baseline) {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// short rounds d to 3 significant digits for the text.
+func short(d time.Duration) time.Duration {
+	unit := time.Duration(1)
+	for d/unit >= 1000 {
+		unit *= 10
+	}
+
+	return d.Round(unit)
+}
+
+// p99 is the highest p99 over the methods.
+func p99(r engine.Report) time.Duration {
+	var top time.Duration
+	for i := range r.Methods {
+		if m := &r.Methods[i]; m.P99.Defined {
+			top = max(top, m.P99.Value)
+		}
+	}
+
+	return top
+}
+
+func sleep(ctx context.Context, d time.Duration) error {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
