@@ -254,7 +254,7 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `methods[].failure_codes` | []object | 按 gRPC 代码统计的失败调用 |
 | `methods[].failure_codes[].code` | string | 规范的代码名（`UNAVAILABLE`）；列表可能扩充 |
 | `methods[].failure_codes[].count` | int | 数量 |
-| `methods[].failure_codes[].from_target` | bool | `true`——状态经网络传回，`false`——代码由客户端设置 |
+| `methods[].failure_codes[].from_target` | bool | `true`——拒绝来自目标：经网络传回的状态或 REFUSED_STREAM，`false`——代码由客户端设置 |
 | `methods[].silent_from_s` | int? | 目标从哪一秒起不再应答任何已发出的调用；`null`——没有沉默 |
 | `methods[].silent_sent_rps` | int? | 在那之前一秒发出的调用数（如果沉默从第一秒开始，则为第一秒） |
 | `methods[].silent_planned_rps_low`、`methods[].silent_planned_rps_high` | int? | 那一秒各阶段的计划速率；那一秒没有阶段在运行时也为 `null` |

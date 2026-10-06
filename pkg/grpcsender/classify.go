@@ -56,6 +56,19 @@ func refusedReply(err error, answered bool) bool {
 	return !answered && status.Code(err) == codes.ResourceExhausted && strings.Contains(msg, sizeLimit)
 }
 
+// streamRefused is how grpc-go v1.84.0 words a stream the target reset with
+// REFUSED_STREAM (internal/transport/http2_client.go:1318, the same since
+// v1.20.0). It has no type of its own: the transport marks the stream
+// unprocessed internally and the caller gets this text under UNAVAILABLE.
+// Pinned by a test against grpc-go itself.
+const streamRefused = "stream terminated by RST_STREAM with error code: REFUSED_STREAM"
+
+// refusedStream reports whether the target refused the call's last stream
+// unprocessed (RFC 9113 §8.7): an answer from a live target, refusing work.
+func refusedStream(err error) bool {
+	return status.Code(err) == codes.Unavailable && strings.Contains(status.Convert(err).Message(), streamRefused)
+}
+
 // categorize maps a finished call onto the engine's categories. answered says
 // whether a status came back over the wire: the same code means different
 // things depending on who produced it. wentOut says whether the last attempt's
@@ -88,6 +101,10 @@ func categorize(err error, answered, wentOut bool) engine.Category {
 		switch {
 		case code == codes.DeadlineExceeded:
 			return engine.CategoryTimeout
+		case refusedStream(err):
+			// No status came back, but the target's refusal did: not
+			// processed, so not cut off.
+			return engine.CategoryOverload
 		case wentOut:
 			return engine.CategoryCutOff
 		case code == codes.Unavailable:
