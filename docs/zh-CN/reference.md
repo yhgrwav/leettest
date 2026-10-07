@@ -37,6 +37,7 @@ load:
 | `app.server_name` | 当服务证书不包含 `target` 中的地址时，用来校验证书的名称。需要 TLS |
 | `app.metadata` | 每次调用的请求头：`authorization`、`x-api-key` 等。`${NAME}` 取自环境变量 |
 | `app.max_response_size` | 一次调用接受的最大应答：`16MiB`、`512KB`。单位必填（`MB` = 10⁶ 字节，`MiB` = 2²⁰），小于 2 GiB。省略时为 4 MiB，与 gRPC 相同。更大的应答算作 `bad response`。在途的调用最多可能缓冲上限的两倍：默认每个最多 8 MiB |
+| `app.connections` | 向目标打开多少条连接，1 到 256 的整数。省略时为 1。调用在这些连接间轮流进行，报告打印一个 `Connections:` 块，每条连接一行——未发布 |
 | `load.warmup` | 前 N 秒不计入百分位和 `sent`：冷缓存会扭曲它们。预热调用确实会到达目标；报告用一行 `warm-up N sent (M failed), excluded from stats` 输出它们——`sent` 加上这一行就是压测机尝试过的全部调用。除计为 unreachable 或 client error 的调用外，目标都收到了；`cut off` 和超时的调用可能没有完整到达：不打开 HTTP/2 窗口（流量控制）的目标只会收到请求头，它的计数器可能看不到这次调用。计入 `duration`，必须短于每个调用 |
 | `load.calls[].method` | 方法全名：`package.Service/Method` |
 | `load.calls[].rps` | 该方法每秒的请求数 |
@@ -91,8 +92,12 @@ set”。
 只改变用来校验证书并写入 SNI 的名称；`:authority` 仍是 `target` 中的地址。不支持带密码的私钥：
 请事先解密。
 
-**一条连接。** 压测机对一个地址保持一条连接。如果 DNS 返回多个地址，或目标位于 L4 负载均衡器
-之后，只有一个后端承受负载，报告不会显示这一点。调用不会重试。
+**连接。** 默认压测机对一个地址保持一条连接。如果 DNS 返回多个地址，或目标位于 L4 负载均衡器
+之后，只有一个后端承受负载，报告不会显示这一点。`app.connections: N`（未发布）打开 N 条连接。
+DNS 解析为 M 个地址的名字在启动前解析一次，第 i 条连接使用第 i mod M 个地址：三条连接对两个
+地址是两条加一条。不为目标提供服务的地址（`localhost` 解析到 `::1`，而服务只监听 `127.0.0.1`）会
+中止启动并在错误中点名：请改用它的 IP。报告中的块按连接给出地址、调用数、失败比例和 p99，名字
+背后的宕机或缓慢的后端不会被平均掉。调用不会重试。
 服务下发的 service config 会被忽略：其中的重试和负载均衡策略不会生效。应用这些策略的生产客户端
 会看到不同的类别和 p99。
 
@@ -211,8 +216,18 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `connections` | object? | 连接；发送方不报告时为 `null` |
 | `connections.open` | int | 同时承载调用的连接数 |
 | `connections.reconnects` | int | 第一次之后成功的握手次数 |
-| `connections.first_limit`、`connections.last_limit` | int? | 第一次和最后一次握手时的 `MAX_CONCURRENT_STREAMS`；`null`——未声明（`0`——声明为零） |
+| `connections.first_limit`、`connections.last_limit` | int? | 第一次和最后一次握手时的 `MAX_CONCURRENT_STREAMS`；`null`——未声明（`0`——声明为零）。多条连接时始终为 `null`：每条连接有自己的上限 |
 | `connections.limit_changes` | int | 声明的上限与上一次不同的握手次数 |
+| `connections.resolved` | []string? | 目标对应的地址，按解析器的顺序：全部，即使连接更少。IP 地址就是它自己；一条连接时为 `null`——未发布 |
+| `connections.in_flight_limit` | int? | 目标允许同时在途的调用数：单条连接的上限，或所有连接上限之和；只要有连接未声明上限就为 `null`——未发布 |
+| `connections.per_connection` | []object? | 每条连接一个对象，编号与报告中的块一致；一条连接时为 `null`——未发布 |
+| `connections.per_connection[].address` | string | 连接的地址——未发布 |
+| `connections.per_connection[].calls` | int | 分配给该连接的调用，已发送与否，不含预热——未发布 |
+| `connections.per_connection[].failed` | int | 该连接的失败：运行的 `failed` 规则，加上因连接未就绪而未发出的调用——未发布 |
+| `connections.per_connection[].stream_waited`、`connections.per_connection[].not_sent_stream` | int | 该连接上等待空闲流的调用：等待后发出的，和等待中过期的——未发布 |
+| `connections.per_connection[].p99` | percentile? | 该连接调用的 p99；没有带延迟的调用时为 `null`——未发布 |
+| `connections.per_connection[].first_limit`、`connections.per_connection[].last_limit` | int? | 该连接第一次和最后一次握手时的流上限；`null`——未声明——未发布 |
+| `connections.per_connection[].limit_changes` | int | 该连接声明的上限与上一次不同的握手次数——未发布 |
 | `client_waits` | object | 在客户端侧等待超过阈值的调用，按原因（[README](README.md#阅读报告)） |
 | `client_waits.generator_calls`、`client_waits.stream_calls`、`client_waits.connection_calls` | int | 所有此类调用，无论是否发出。一个已发出的调用可能同时计入多个原因 |
 | `client_waits.generator_tail_calls`、`client_waits.stream_tail_calls`、`client_waits.connection_tail_calls` | int | 只统计 p99 尾部和未发出的调用：由它们决定 `tail_wait_cause` |

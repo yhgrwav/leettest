@@ -61,6 +61,7 @@ app:
     ip: localhost
     port: 50051
   tls: false
+  connections: 1 # not in v0.1.0; more than one loads several backends behind a name
 
 load:
   warmup: 5s
@@ -109,11 +110,14 @@ At the end — a report per method: sent, failed, `sent/s`, p50/p90/p95/p99.
 - Under a method with a `dataset` (not released) stands a `data:` line: how many requests of the
   file were used and how many times the most used one went out. It does not mean the target saw
   that many distinct requests.
-- The load goes over **one connection**, and it lands on **one backend**: behind an L4 balancer
-  (Kubernetes ClusterIP, NLB) and when DNS returns several addresses. "Does not hold X" is about
-  that backend, not the service, and the report will not show it. An L7 balancer that spreads
-  individual requests (Envoy, a gRPC ingress) spreads even one connection. The report prints how many times the connection
-  reconnected and which concurrent stream limit the target announced.
+- By default the load goes over **one connection**, and it lands on **one backend**: behind an L4
+  balancer (Kubernetes ClusterIP, NLB) and when DNS returns several addresses. "Does not hold X" is
+  about that backend, not the service, and the report will not show it. To load several, set
+  `app.connections` (not released): the report's `Connections:` block shows a row per connection —
+  address, calls, share failed and p99 — so a lagging backend is visible. An L7 balancer that
+  spreads individual requests (Envoy, a gRPC ingress) spreads even one connection. The report
+  prints how many times the connection reconnected and which concurrent stream limit the target
+  announced.
 
 **Categories.** Answers other than a success are split into rows, each with its own percentiles.
 The status may have come from a proxy in front of the target rather than from the target: nginx
