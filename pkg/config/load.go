@@ -52,6 +52,9 @@ func Parse(raw []byte) (*MasterConfig, error) {
 	if err := checkNumbers(raw); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrReadConfig, err)
 	}
+	if err := checkNullDataset(raw); err != nil {
+		return nil, err
+	}
 
 	var cfg MasterConfig
 	if err := yaml.UnmarshalWithOptions(raw, &cfg, yaml.Strict()); err != nil {

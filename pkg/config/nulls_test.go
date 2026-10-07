@@ -32,12 +32,16 @@ func TestParse_DatasetNullIsAnError(t *testing.T) {
 		"nothing after the colon": "      dataset:\n",
 		"a tilde":                 "      dataset: ~\n",
 		"the word null":           "      dataset: null\n",
+		"the word NULL":           "      dataset: NULL\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := config.Parse([]byte(datasetYAML(line)))
 
 			if !errors.Is(err, config.ErrEmptyDatasetPath) {
 				t.Fatalf("error = %v, want %v", err, config.ErrEmptyDatasetPath)
+			}
+			if errors.Is(err, config.ErrReadConfig) {
+				t.Errorf("error = %v, is a read error; the category is the empty path", err)
 			}
 			if want := "line 11:"; !strings.Contains(err.Error(), want) {
 				t.Errorf("error = %q, want it to carry %q", err, want)
