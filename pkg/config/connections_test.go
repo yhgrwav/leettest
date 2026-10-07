@@ -55,6 +55,63 @@ func TestLoad_ConnectionsAreReadWithinTheRange(t *testing.T) {
 	}
 }
 
+// Ground: contract — a refused value is printed as the user wrote it, so the user can see why a
+// number that looks whole is refused: 2.0 is not printed as 2, 1e2 and 0x10 are not read as the
+// numbers they stand for. A quoted value is printed without its quotes. Same rule as rps.
+func TestLoad_ConnectionsRefusedAsWritten(t *testing.T) {
+	for _, tc := range []struct {
+		written string
+		text    string
+	}{
+		{"2.0", "2.0"},
+		{"2.5", "2.5"},
+		{"two", "two"},
+		{"0", "0"},
+		{"257", "257"},
+		{"1e2", "1e2"},
+		{"0x10", "0x10"},
+		{`"2.0"`, "2.0"},
+	} {
+		_, err := config.Parse(withApp("  connections: " + tc.written + "\n"))
+		if !errors.Is(err, config.ErrInvalidConnections) {
+			t.Errorf("connections: %s: err = %v, want ErrInvalidConnections", tc.written, err)
+
+			continue
+		}
+		if !strings.HasSuffix(err.Error(), ": "+tc.text) {
+			t.Errorf("connections: %s: the error %q does not end with %q", tc.written, err, ": "+tc.text)
+		}
+	}
+}
+
+// Ground: contract — a quoted whole number is a number, as rps: "2" is.
+func TestLoad_ConnectionsQuotedIsANumber(t *testing.T) {
+	for _, written := range []string{`"2"`, `'2'`} {
+		cfg, err := config.Parse(withApp("  connections: " + written + "\n"))
+		if err != nil {
+			t.Errorf("connections: %s: %v", written, err)
+
+			continue
+		}
+		if cfg.App.Connections != 2 {
+			t.Errorf("connections: %s: Connections = %d, want 2", written, cfg.App.Connections)
+		}
+	}
+}
+
+// Ground: contract — the key with no value is the same as the key left out: 1. Green on the
+// current code by design; the inverse mutation (nothing becomes an error) turns it red.
+func TestLoad_ConnectionsNullIsOne(t *testing.T) {
+	cfg, err := config.Parse(withApp("  connections:\n"))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	if cfg.App.Connections != 1 {
+		t.Errorf("Connections = %d, want 1 for connections with no value", cfg.App.Connections)
+	}
+}
+
 // Ground: boundary — a count outside 1 to 256 or not a whole number is refused before the run,
 // by the field's name and its range: 0 would be "no connection", 257 one past the top, "two" and
 // 2.5 are not integers. Each is its own error, not a silent 1.
