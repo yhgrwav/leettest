@@ -39,13 +39,16 @@ race:
 # slots 120-160ms past their deadline, beyond the 100ms allowance, so the cap
 # is right to fire and there is nothing to check.
 # SearchFeed_ASlowScreenKeepsTheLagUnderAMillisecond: under -race on a full
-# ./... run the start lag p99 is 1ms or more in most of the 40 runs; the
-# generator is the slow part, and the test assumes it is not.
-# Run_ASearchNamesTheStandsCapacity (held 125/0, broke 156/100) and
-# Breakpoint_FindsTheStandsCapacity: the search names "the generator fell
-# behind", which is the right verdict on a starved generator, so there is
-# no capacity left to check.
-STRESS_SKIP := ^TestReport_SlotsHeldWithinTheAllowanceDoNotHitTheCap$$|^TestSearchFeed_ASlowScreenKeepsTheLagUnderAMillisecond$$|^TestRun_ASearchNamesTheStandsCapacity$$|^TestBreakpoint_FindsTheStandsCapacity$$
+# ./... run the start lag p99 is 1ms or more in 5 to 12 of 20 runs per job
+# (32 of 80 in two runs on main 449c1cd); the generator is the slow part, and
+# the test assumes it is not.
+# Run_ASearchNamesTheStandsCapacity (9 of 80, 1 to 3 per job; held 125/0,
+# broke 156/100) and Breakpoint_FindsTheStandsCapacity (7 of 80, 1 to 3 per
+# job): the search names "the generator fell behind", which is the right
+# verdict on a starved generator, so there is no capacity left to check.
+# Breakpoint_ATargetThatDoesNotRecoverIsNamedSo (4 of 80, 0 to 2 per job): the
+# search gives up with the run limit (no notes) on the same starved generator.
+STRESS_SKIP := ^TestReport_SlotsHeldWithinTheAllowanceDoNotHitTheCap$$|^TestSearchFeed_ASlowScreenKeepsTheLagUnderAMillisecond$$|^TestRun_ASearchNamesTheStandsCapacity$$|^TestBreakpoint_FindsTheStandsCapacity$$|^TestBreakpoint_ATargetThatDoesNotRecoverIsNamedSo$$
 
 stress:
 	go test -race -count=20 -timeout 90m -skip "$(STRESS_SKIP)" ./...
