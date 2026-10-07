@@ -62,6 +62,43 @@ func RequestBody(desc protoreflect.MessageDescriptor, data any) ([]byte, error) 
 	return proto.MarshalOptions{Deterministic: true}.Marshal(msg)
 }
 
+// recordBody builds one record of a dataset, the JSON of a line as written,
+// into the wire form of message desc. The bytes go to protojson as they are,
+// so an integer above 2^53 arrives as written, as it does from data.
+//
+// It says only whether the record fits: protojson's own text quotes the value,
+// an unknown key and a duplicate map key, and a record may hold a secret.
+func recordBody(desc protoreflect.MessageDescriptor, raw []byte) (body []byte, fits bool) {
+	msg := dynamicpb.NewMessage(desc)
+
+	if err := protojson.Unmarshal(raw, msg); err != nil {
+		return nil, false
+	}
+
+	// Deterministic, so every run of the same dataset sends the same bytes.
+	body, err := proto.MarshalOptions{Deterministic: true}.Marshal(msg)
+
+	return body, err == nil
+}
+
+// datasetBodies builds every record of call's dataset, in file order. The
+// first record that does not fit is the error, named by its line in the file.
+func datasetBodies(desc protoreflect.MessageDescriptor, call *config.Call) ([][]byte, error) {
+	bodies := make([][]byte, len(call.Records))
+
+	for i, record := range call.Records {
+		body, fits := recordBody(desc, record.JSON)
+		if !fits {
+			return nil, fmt.Errorf("%w: %s: dataset %s:%d: does not fit %s",
+				ErrRequestData, call.Method, call.Dataset, record.Line, desc.FullName())
+		}
+
+		bodies[i] = body
+	}
+
+	return bodies, nil
+}
+
 // Unchecked is a method nothing could be checked against before the run, and
 // why: reflection off, refused, or not answering.
 type Unchecked struct {
@@ -108,7 +145,7 @@ func AttachData(
 		// answer only costs the check, not the run. Which it was matters: a
 		// target that never enabled reflection is not the same as one that
 		// asked for credentials or did not answer in time.
-		case call.Data == nil && !errors.Is(resolveErr, descriptor.ErrMethodNotFound):
+		case call.Data == nil && call.Dataset == "" && !errors.Is(resolveErr, descriptor.ErrMethodNotFound):
 			if status.Code(resolveErr) == codes.Unauthenticated {
 				resolveErr = fmt.Errorf("target requires credentials; app.metadata is not set: %w", resolveErr)
 			}
@@ -124,6 +161,19 @@ func AttachData(
 			// Named here rather than left to the resolver: which method the
 			// run cannot make is ours to say, whoever resolves it.
 			errs = append(errs, fmt.Errorf("%s: %w", call.Method, resolveErr))
+
+			continue
+		}
+
+		if call.Dataset != "" {
+			bodies, err := datasetBodies(method.Input, call)
+			if err != nil {
+				errs = append(errs, err)
+
+				continue
+			}
+			// All or none: a half-built dataset is never handed to the engine.
+			calls[i].Payloads = bodies
 
 			continue
 		}

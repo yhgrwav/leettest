@@ -16,6 +16,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"regexp"
 	"slices"
@@ -96,8 +97,8 @@ func datasetCalls(records ...config.DatasetRecord) config.Call {
 	return config.Call{Method: datasetMethod, Dataset: datasetPath, Records: records}
 }
 
-func rec(line int, json string) config.DatasetRecord {
-	return config.DatasetRecord{Line: line, JSON: []byte(json)}
+func rec(line int, body string) config.DatasetRecord {
+	return config.DatasetRecord{Line: line, JSON: []byte(body)}
 }
 
 func recResolver(t *testing.T) *fakeResolver {
@@ -299,6 +300,30 @@ func TestAttachData_DatasetNeverPrintsTheValue(t *testing.T) {
 				t.Errorf("error %q holds what the record held", err)
 			}
 		})
+	}
+}
+
+// The two checks of a line do not agree on everything: config asks only whether
+// it is JSON (json.Valid), AttachData whether it fits the message (protojson).
+// A string with bytes that are not UTF-8 is JSON to the first and not a string
+// to the second; it must end as the same error as any other record that does not
+// fit, never as an accepted request or a panic.
+// Ground: signal google.golang.org/protobuf v1.36.12 — protojson refuses invalid
+// UTF-8 in a string field, and encoding/json's Valid does not; the test goes red
+// if a dependency changes either side.
+func TestAttachData_DatasetInvalidUTF8DoesNotFit(t *testing.T) {
+	line := "{\"name\":\"caf\xe9\"}"
+	if !json.Valid([]byte(line)) {
+		t.Fatalf("test setup: json.Valid refuses %q, so config would stop it before AttachData", line)
+	}
+
+	cfg, calls := loadOf(datasetCalls(rec(1, `{"id":1}`), rec(2, line)))
+
+	_, err := AttachData(t.Context(), recResolver(t), cfg, calls)
+
+	want := "request data does not fit the method: wallet.v1.Wallet/One: dataset data/users.jsonl:2: does not fit " + recName
+	if err == nil || err.Error() != want {
+		t.Errorf("error = %v, want %q", err, want)
 	}
 }
 

@@ -15,7 +15,6 @@
 package config
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -42,6 +41,8 @@ var (
 	ErrTLSFilesWithoutTLS  = errors.New("ca, cert, key and server_name need TLS: remove them or set app.tls: true")
 	ErrCertWithoutKey      = errors.New("cert and key go together: set both or neither")
 	ErrInvalidTimeout      = errors.New("timeout must be positive: without one, requests to a hung target pile up until the in-flight cap ends the run")
+	ErrDataAndDataset      = errors.New("data and dataset are both set; use one")
+	ErrEmptyDatasetPath    = errors.New("dataset must be the path of a file")
 	// ErrBreakpoint is a breakpoint section that cannot run as written.
 	ErrBreakpoint             = errors.New("invalid breakpoint")
 	ErrInvalidMaxResponseSize = errors.New("max_response_size must be a positive size below 2GiB with a unit: B, KB, MB, GB, KiB, MiB or GiB")
@@ -205,14 +206,6 @@ type Call struct {
 	Timeout    time.Duration  `yaml:"-"`
 }
 
-// DatasetRecord is one request of a dataset file: the JSON of its line as
-// written, and the number of that line, from 1, blank lines counted.
-// STUB of the red commit: nothing fills it yet.
-type DatasetRecord struct {
-	Line int
-	JSON json.RawMessage
-}
-
 // DefaultTimeout applies to a call that sets none. It is short on purpose: in an
 // open model a hung target holds rps × timeout requests in flight, and 2s keeps
 // 2500 RPS under the default cap of 5000.
@@ -306,6 +299,12 @@ func (c Call) Validate() error {
 	}
 	if c.RawTimeout != nil && *c.RawTimeout <= 0 {
 		errs = append(errs, fmt.Errorf("%w: %s", ErrInvalidTimeout, *c.RawTimeout))
+	}
+	if c.RawDataset != nil && strings.TrimSpace(*c.RawDataset) == "" {
+		errs = append(errs, ErrEmptyDatasetPath)
+	}
+	if c.RawDataset != nil && c.Data != nil {
+		errs = append(errs, ErrDataAndDataset)
 	}
 
 	return errors.Join(errs...)

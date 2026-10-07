@@ -140,6 +140,15 @@ type jsonCode struct {
 	FromTarget bool   `json:"from_target"`
 }
 
+// jsonDataset is how a call used its dataset file; the file as the config
+// wrote it, and the counts of engine.DatasetReport.
+type jsonDataset struct {
+	File    string `json:"file"`
+	Records int    `json:"records"`
+	Used    int    `json:"used"`
+	UsedMax int    `json:"used_max"`
+}
+
 type jsonMethod struct {
 	Method string `json:"method"`
 	// InvalidReason says the method measured nothing about load: request_error,
@@ -181,6 +190,7 @@ type jsonMethod struct {
 	SilentPlannedRPSLow   *int          `json:"silent_planned_rps_low"`
 	SilentPlannedRPSHigh  *int          `json:"silent_planned_rps_high"`
 	LastAnswerAtUS        *int64        `json:"last_answer_at_us"`
+	Dataset               *jsonDataset  `json:"dataset"`
 	Seconds               []jsonSecond  `json:"seconds"`
 }
 
@@ -385,6 +395,9 @@ func jsonMethodOf(m *engine.MethodReport, warmup time.Duration) jsonMethod {
 	if m.LastAnswerAt != nil {
 		at := micros(*m.LastAnswerAt)
 		out.LastAnswerAtUS = &at
+	}
+	if d := m.Dataset; d != nil {
+		out.Dataset = &jsonDataset{File: d.File, Records: d.Records, Used: d.Used, UsedMax: d.UsedMax}
 	}
 	for _, c := range m.FailureCodes {
 		name, ok := canonicalCodes[c.Code]

@@ -44,6 +44,7 @@ load:
 | `load.calls[].duration` | How long to load it: `30s`, `5m`, `1h` |
 | `load.calls[].timeout` | How long to wait for a reply. Left out — `2s`. Zero does not turn it off, it is an error |
 | `load.calls[].data` | The request body, see [below](#request-body). Left out — an empty message |
+| `load.calls[].dataset` | A file of request bodies instead of `data`, see [below](#a-different-request-each-call-a-dataset). Not together with `data` — not released |
 
 The config is read strictly: a typo in a field name is an error with the line number, a wrong
 value is an error with the call's number and method, not a run with an empty load. `rps` is a
@@ -156,6 +157,33 @@ with `data` will not start — the error says so plainly. A method without `data
 reflection too: there is nothing to check it with, and a warning says so — before the run on
 stderr and once more as a line in the report. The warning says why the check was not possible:
 reflection is off, it refused, or it did not answer at all.
+
+## A different request each call: a dataset
+
+```yaml
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 800
+      duration: 1m
+      dataset: wallets.jsonl
+```
+
+```
+{"wallet_id": "w-1", "currency": "USD"}
+{"wallet_id": "w-2", "currency": "EUR"}
+```
+
+`dataset` is a file of request bodies, one JSON per line, in the form `data` takes. A relative
+path is read from the config file's directory. Request one goes out with line one, request two
+with line two, and after the last line it starts over. Blank lines are skipped. The file is read
+and every line is checked against the method's message before the start, with `data`'s rules and
+reflection; an error names the line, `wallets.jsonl:3`, and never prints what the line holds. A
+file with no requests is an error.
+
+Under the method's row the report says how much of the file was used:
+`data: 3 of 3 requests from wallets.jsonl, each used up to 5 times`. That is how often a request
+was handed to the sender, not what the target saw: a request that stands twice in the file goes
+out twice, and a call that never reached the target is counted too. In a breaking-point search
+every step goes on where the one before ended, and the line counts the whole search.
 
 ## Flags
 
@@ -286,6 +314,11 @@ The rest are plain counters.
 | `methods[].silent_sent_rps` | int? | Calls sent in the second before it (in the first, if the silence starts there) |
 | `methods[].silent_planned_rps_low`, `methods[].silent_planned_rps_high` | int? | The planned rate of the stages in that second; `null` also when no stage ran in it |
 | `methods[].last_answer_at_us` | int? | When the last call the target answered went out; `null` — it never answered |
+| `methods[].dataset` | object? | The call's dataset file; `null` — it has none — not released |
+| `methods[].dataset.file` | string | The path as the config wrote it — not released |
+| `methods[].dataset.records` | int | Requests in the file — not released |
+| `methods[].dataset.used` | int | How many of them went out at least once — not released |
+| `methods[].dataset.used_max` | int | How many times the most used one went out; in a search, counted from its first step to the end of this run — not released |
 | `methods[].seconds` | []object | The per-second timeline, see below |
 
 ### Second: `methods[].seconds[]`

@@ -15,6 +15,8 @@
 package cli
 
 import (
+	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -23,15 +25,18 @@ import (
 )
 
 // CallsFromConfig turns the calls of a config into engine calls. A call with a
-// dataset gets one empty payload per record and a counter of its own; its
+// dataset gets one empty payload per record and a counter of its own, made
+// here once for the process: every run of a search goes on with it. The
 // records go in later, in AttachData. A config that names a dataset whose
-// records were never read (one from config.Parse) is an error here.
-// STUB of the red commit: datasets are not looked at yet.
+// records were never read (one from config.Parse) is an error here, never a
+// call that sends empty messages under the file's name.
 func CallsFromConfig(cfg *config.MasterConfig) ([]engine.Call, error) {
 	calls := make([]engine.Call, 0, len(cfg.Load.Calls))
 
+	var errs []error
+
 	for _, call := range cfg.Load.Calls {
-		calls = append(calls, engine.Call{
+		built := engine.Call{
 			// gRPC sends /pkg.Service/Method; the config writes it without the slash.
 			Method:  "/" + call.Method,
 			Timeout: call.Timeout,
@@ -40,7 +45,25 @@ func CallsFromConfig(cfg *config.MasterConfig) ([]engine.Call, error) {
 				TargetRPS: int(call.RPS),
 				Duration:  call.Duration,
 			}},
-		})
+		}
+
+		if call.Dataset != "" {
+			if len(call.Records) == 0 {
+				errs = append(errs, fmt.Errorf("%s: dataset %s: not read; load the config with LoadFile",
+					call.Method, call.Dataset))
+
+				continue
+			}
+
+			built.Payloads = make([][]byte, len(call.Records))
+			built.Dataset = &engine.DatasetRef{File: call.Dataset, Counter: engine.NewRecordCounter()}
+		}
+
+		calls = append(calls, built)
+	}
+
+	if err := errors.Join(errs...); err != nil {
+		return nil, err
 	}
 
 	return calls, nil
