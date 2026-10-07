@@ -33,6 +33,11 @@ func TestParse_DatasetNullIsAnError(t *testing.T) {
 		"a tilde":                 "      dataset: ~\n",
 		"the word null":           "      dataset: null\n",
 		"the word NULL":           "      dataset: NULL\n",
+		"an anchor on a tilde":    "      dataset: &a ~\n",
+		"an anchor on null":       "      dataset: &a null\n",
+		"a null tag":              "      dataset: !!null\n",
+		"a null tag and a tilde":  "      dataset: !!null ~\n",
+		"an anchor on a null tag": "      dataset: &a !!null\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := config.Parse([]byte(datasetYAML(line)))
@@ -122,6 +127,31 @@ load:
 	if errors.Is(err, config.ErrEmptyDatasetPath) {
 		t.Fatalf("error = %v, a metadata key named dataset was read as the call's dataset path", err)
 	}
+}
+
+// An explicit empty string is refused through the path check, not the null
+// check: no line. An alias is not followed: a null reached through one is
+// read as the key left out. Frozen as main does it.
+// Ground: characterization — the null rule unwraps anchors and tags, not strings or aliases.
+func TestParse_EmptyStringTagAndAliasAreUnchanged(t *testing.T) {
+	t.Run("a str tag on an empty string", func(t *testing.T) {
+		_, err := config.Parse([]byte(datasetYAML("      dataset: !!str \"\"\n")))
+
+		if !errors.Is(err, config.ErrEmptyDatasetPath) {
+			t.Fatalf("error = %v, want %v", err, config.ErrEmptyDatasetPath)
+		}
+		if strings.Contains(err.Error(), "line ") {
+			t.Errorf("error = %q, carries a line; main names the call, not the key", err)
+		}
+	})
+
+	t.Run("an alias of a null", func(t *testing.T) {
+		_, err := config.Parse([]byte(datasetYAML("      data: &a ~\n      dataset: *a\n")))
+
+		if err != nil {
+			t.Errorf("error = %v, want none: an alias is out of scope and read as before", err)
+		}
+	})
 }
 
 // A missing key stays valid.
