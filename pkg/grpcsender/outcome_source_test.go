@@ -16,10 +16,12 @@ package grpcsender
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"net"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -338,7 +340,7 @@ func TestSend_RefusedOnItsHeadersIsTheTargetsOverloadToo(t *testing.T) {
 		switch {
 		case out.Category == engine.CategoryOverload && out.CodeFromTarget && out.Heard:
 			overload++
-		case errors.Is(out.Err, io.EOF) && !out.CodeFromTarget && rec.refusals.Load()-before >= 2:
+		case errors.Is(out.Err, io.EOF) && rec.refusals.Load()-before >= 2 && isLostStatus(out):
 			t.Logf("call %d: bare EOF after a refused retry, grpc-go#9443", i)
 		default:
 			t.Errorf("call %d: category = %v (code %s from the target %v, heard %v, %v), want overload from the target, heard",
@@ -351,6 +353,187 @@ func TestSend_RefusedOnItsHeadersIsTheTargetsOverloadToo(t *testing.T) {
 	}
 	if overload < 1 {
 		t.Fatalf("all %d calls lost the status to grpc-go#9443", calls)
+	}
+}
+
+// isLostStatus is what a call whose status grpc-go#9443 lost reports: the
+// target was heard from, no status came back, the code is ours.
+func isLostStatus(out engine.Outcome) bool {
+	return out.Category == engine.CategoryCutOff && out.Heard && out.Code == "Unknown" && !out.CodeFromTarget
+}
+
+// pausedRetry holds the transparent retry's OutHeader until the stand reports
+// that the client has processed the retry's answer, which makes grpc-go#9443
+// certain instead of one in hundreds: the retry's stream is then gone before
+// the caller goroutine goes on. The order is by construction, not by time: the
+// stand follows its answer with a PING, grpc-go's reader answers it only after
+// every frame before it, and the caller goroutine held here blocks neither the
+// reader nor the writer.
+type pausedRetry struct {
+	retry     atomic.Bool
+	processed chan struct{}
+	never     atomic.Bool
+}
+
+func (*pausedRetry) TagRPC(ctx context.Context, _ *stats.RPCTagInfo) context.Context { return ctx }
+func (*pausedRetry) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context {
+	return ctx
+}
+func (*pausedRetry) HandleConn(context.Context, stats.ConnStats) {}
+
+func (p *pausedRetry) HandleRPC(_ context.Context, s stats.RPCStats) {
+	switch v := s.(type) {
+	case *stats.Begin:
+		p.retry.Store(v.IsTransparentRetryAttempt)
+	case *stats.OutHeader:
+		if !p.retry.Load() {
+			return
+		}
+		select {
+		case <-p.processed:
+		case <-time.After(2 * time.Second):
+			p.never.Store(true)
+		}
+	}
+}
+
+var lostStatusPings atomic.Uint64
+
+// lostStatusStand serves one connection: the first stream is refused on its
+// HEADERS, the second answered with answer (nil: refused too), and the answer
+// is followed by a PING that p.processed waits for.
+func lostStatusStand(conn net.Conn, p *pausedRetry, answer func(fr *http2.Framer, stream uint32)) {
+	var payload [8]byte
+	binary.BigEndian.PutUint64(payload[:], lostStatusPings.Add(1))
+	var once sync.Once
+
+	serveRawFrames(conn, func(fr *http2.Framer, stream uint32, n int) {
+		if n > 1 && answer != nil {
+			answer(fr, stream)
+		} else {
+			_ = fr.WriteRSTStream(stream, http2.ErrCodeRefusedStream)
+		}
+		if n > 1 {
+			_ = fr.WritePing(false, payload)
+		}
+	}, nil, func(data [8]byte) {
+		if data == payload {
+			once.Do(func() { close(p.processed) })
+		}
+	})
+}
+
+// lostStatusCalls sends calls calls, each over a fresh connection to a stand
+// that refuses the first stream on its HEADERS and answers the second with
+// answer (nil: refuses it too), and returns what each came back as.
+func lostStatusCalls(t *testing.T, calls int, answer func(fr *http2.Framer, stream uint32)) []engine.Outcome {
+	t.Helper()
+
+	var outs []engine.Outcome
+	for i := range calls {
+		lis := bufconn.Listen(1024 * 1024)
+		t.Cleanup(func() { _ = lis.Close() })
+		pause := &pausedRetry{processed: make(chan struct{})}
+		go func() {
+			for {
+				conn, err := lis.Accept()
+				if err != nil {
+					return
+				}
+				go lostStatusStand(conn, pause, answer)
+			}
+		}()
+		sender := New(Options{Target: "passthrough:///bufnet", DialOptions: []grpc.DialOption{
+			grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) { return lis.DialContext(ctx) }),
+			grpc.WithStatsHandler(pause),
+		}})
+		t.Cleanup(func() { _ = sender.Close() })
+		if err := sender.Connect(bounded(t)); err != nil {
+			t.Fatalf("connect: %v", err)
+		}
+		out := sendWithin(t, sender, time.Second)
+		if pause.never.Load() {
+			t.Fatalf("call %d: the client never acknowledged the stand's PING after the retry's answer", i)
+		}
+		outs = append(outs, out)
+	}
+
+	return outs
+}
+
+// checkLostStatusCalls holds every call to one of two outcomes. grpc-go#9443
+// is a race the stand makes the common case but cannot make certain: a call
+// either comes back as a bare io.EOF and is "no status came back" (the code is
+// not the target's), or grpc-go kept the status and the call is that status's
+// own outcome, which isReal says. Anything else fails. At least one call must
+// be the bare EOF, or grpc-go no longer loses the status.
+func checkLostStatusCalls(t *testing.T, outs []engine.Outcome, isReal func(engine.Outcome) bool) {
+	t.Helper()
+
+	bare := 0
+	for i := range outs {
+		out := outs[i]
+		switch {
+		case errors.Is(out.Err, io.EOF):
+			bare++
+			if !isLostStatus(out) {
+				t.Errorf("call %d: bare EOF as category %v, code %s from the target %v, heard %v; want cut off, Unknown, not from the target, heard",
+					i, out.Category, out.Code, out.CodeFromTarget, out.Heard)
+			}
+		case isReal(out):
+		default:
+			t.Errorf("call %d: neither a bare EOF nor the status's own outcome: category %v, code %s from the target %v, heard %v, err %v",
+				i, out.Category, out.Code, out.CodeFromTarget, out.Heard, out.Err)
+		}
+	}
+	t.Logf("bare EOF %d of %d", bare, len(outs))
+	if bare == 0 {
+		t.Fatalf("no call of %d came back as a bare EOF: grpc-go no longer returns a bare EOF here — #9443 fixed?", len(outs))
+	}
+}
+
+// grpc-go#9443: a call whose retry was refused comes back as a bare io.EOF,
+// the status lost. Nothing says what the target would have answered, so the
+// call is "no status came back" and the code is not the target's. Before this
+// it was the client's error and the target a silent one. When grpc-go keeps
+// the status instead, the target refused the call: overload, from the target.
+//
+// Ground: signal grpc-go v1.84.0 — https://github.com/grpc/grpc-go/issues/9443:
+// a bare io.EOF after a refused transparent retry, the status lost, in most
+// calls. A run with no bare EOF at all says grpc-go fixed it.
+func TestSend_AStatusLostAfterARefusedRetryIsNoStatus(t *testing.T) {
+	checkLostStatusCalls(t, lostStatusCalls(t, 20, nil), func(out engine.Outcome) bool {
+		return out.Category == engine.CategoryOverload && out.Code == codes.Unavailable.String() && out.CodeFromTarget && out.Heard
+	})
+}
+
+// The retry answered with a status loses it the same way: it must not be read
+// as the target's own answer (#75 does not let attempt 1 stand for it either).
+// When grpc-go keeps the status, the call is that status's own outcome.
+//
+// Ground: signal grpc-go v1.84.0 — https://github.com/grpc/grpc-go/issues/9443:
+// the same bare io.EOF when the retry was answered trailers-only (experiment
+// of 2026-10-06), in most calls. A run with no bare EOF at all says grpc-go
+// fixed it.
+func TestSend_AStatusLostOnAnAnsweredRetryIsNotTheTargets(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		code codes.Code
+		real func(engine.Outcome) bool
+	}{
+		{"NOT_FOUND", codes.NotFound, func(out engine.Outcome) bool {
+			return out.Category == engine.CategoryClientFault && out.Code == codes.NotFound.String() && out.CodeFromTarget
+		}},
+		// grpc-go's own "cardinality violation" on an OK with no message: the
+		// same outcome the call has without #9443.
+		{"OK without a reply", codes.OK, func(out engine.Outcome) bool {
+			return out.Category == engine.CategoryServerFault && out.Code == codes.Internal.String() && out.CodeFromTarget
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			outs := lostStatusCalls(t, 20, func(fr *http2.Framer, stream uint32) { trailersOnly(fr, stream, tc.code) })
+			checkLostStatusCalls(t, outs, tc.real)
+		})
 	}
 }
 
