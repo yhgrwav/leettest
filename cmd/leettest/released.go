@@ -19,6 +19,6 @@ package main
 func flagNames() []string {
 	return []string{
 		"c", "connect-timeout", "fake", "fake-delay", "fake-fail-ratio", "fake-jitter",
-		"max-in-flight", "output", "version",
+		"max-in-flight", "output", "plain", "version",
 	}
 }
