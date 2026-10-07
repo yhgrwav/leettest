@@ -465,14 +465,18 @@ func searchLags(t *testing.T, send func(any)) []time.Duration {
 }
 
 // On a host whose engine schedules exactly (Linux), a slow screen leaves the
-// start lag under 1ms outright.
-func TestSearchFeed_ASlowScreenKeepsTheLagUnderAMillisecond(t *testing.T) {
+// start lag under 20ms. That catches a screen delaying calls by 20-100ms,
+// which ASlowScreenDelaysNoCall's 100ms bound lets through. Each run holds
+// about 80 calls, so p99 is the single latest call. The host's own noise
+// (Docker --cpus=2, unloaded): at most 4.06ms in 599 runs, 0.39ms beside the
+// full tests of the other packages.
+func TestSearchFeed_ASlowScreenKeepsTheLagUnderTwentyMilliseconds(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("the absolute bound holds where the schedule is exact: Linux")
 	}
 	for i, lag := range searchLags(t, func(any) { time.Sleep(200 * time.Millisecond) }) {
-		if lag >= time.Millisecond {
-			t.Errorf("run %d: start lag p99 %v, want under 1ms", i, lag)
+		if lag >= 20*time.Millisecond {
+			t.Errorf("run %d: start lag p99 %v, want under 20ms", i, lag)
 		}
 	}
 }
