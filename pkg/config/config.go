@@ -84,11 +84,11 @@ type App struct {
 	RawMaxResponseSize *string           `yaml:"max_response_size"`
 	MaxResponseBytes   int               `yaml:"-"`
 	Metadata           map[string]string `yaml:"-"`
-	// RawConnections is the field as written, nil when it was left out.
+	// RawConnections is the value as written, nil when it was left out.
 	// Connections is how many connections the run opens to the target, 1 to
 	// 256; 1 when the file leaves it out.
-	RawConnections any `yaml:"connections"`
-	Connections    int `yaml:"-"`
+	RawConnections *ConnectionCount `yaml:"connections"`
+	Connections    int              `yaml:"-"`
 }
 
 type ConnectionStringTarget struct {
@@ -192,6 +192,16 @@ func (r *Rate) UnmarshalYAML(raw []byte) error {
 		return fmt.Errorf("%w: %s", ErrFractionalRPS, text)
 	}
 	*r = Rate(n)
+
+	return nil
+}
+
+// ConnectionCount is app.connections as written, quotes at the ends removed.
+// The number is read in resolveConnections, so a refusal can print the text.
+type ConnectionCount string
+
+func (c *ConnectionCount) UnmarshalYAML(raw []byte) error {
+	*c = ConnectionCount(strings.Trim(strings.TrimSpace(string(raw)), `"'`))
 
 	return nil
 }
