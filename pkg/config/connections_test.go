@@ -102,13 +102,16 @@ func TestLoad_ConnectionsQuotedIsANumber(t *testing.T) {
 // Ground: contract — the key with no value is the same as the key left out: 1. Green on the
 // current code by design; the inverse mutation (nothing becomes an error) turns it red.
 func TestLoad_ConnectionsNullIsOne(t *testing.T) {
-	cfg, err := config.Parse(withApp("  connections:\n"))
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
+	for _, written := range []string{"", " null", " ~"} {
+		cfg, err := config.Parse(withApp("  connections:" + written + "\n"))
+		if err != nil {
+			t.Errorf("connections:%s: %v", written, err)
 
-	if cfg.App.Connections != 1 {
-		t.Errorf("Connections = %d, want 1 for connections with no value", cfg.App.Connections)
+			continue
+		}
+		if cfg.App.Connections != 1 {
+			t.Errorf("connections:%s: Connections = %d, want 1", written, cfg.App.Connections)
+		}
 	}
 }
 

@@ -153,9 +153,9 @@ const (
 	maxConnections = 256
 )
 
-// resolveConnections reads app.connections, 1 when it is left out. A number
-// that is not a whole one (2.5, "two") is refused like one out of range, not
-// rounded or read as 1.
+// resolveConnections reads app.connections, 1 when it is left out. What is not
+// a whole number (2.0, 2.5, "two") is refused like one out of range, not
+// rounded or read as 1; the message prints the value as written.
 func (a *App) resolveConnections() error {
 	if a.RawConnections == nil {
 		a.Connections = minConnections
@@ -163,12 +163,13 @@ func (a *App) resolveConnections() error {
 		return nil
 	}
 
-	n, ok := a.RawConnections.(uint64)
-	if !ok || n < minConnections || n > maxConnections {
-		return fmt.Errorf("%w: %v", ErrInvalidConnections, a.RawConnections)
+	text := string(*a.RawConnections)
+	n, err := strconv.Atoi(text)
+	if err != nil || n < minConnections || n > maxConnections {
+		return fmt.Errorf("%w: %s", ErrInvalidConnections, text)
 	}
 
-	a.Connections = int(n)
+	a.Connections = n
 
 	return nil
 }
