@@ -58,7 +58,9 @@ func TestStats_NotSentStreamPerLink(t *testing.T) {
 
 	// The warmup is on no connection.
 	warm := unsentOn(0, start, BlockedOnStream)
-	warm.ScheduledAt = start
+	// Scheduled and begun in the warmup: on time, so it is a stream's unsent call by every rule but
+	// the one that leaves the warmup out.
+	warm.ScheduledAt, warm.BegunAt = start, start
 	record(warm)
 
 	report := finish(eng, start)
