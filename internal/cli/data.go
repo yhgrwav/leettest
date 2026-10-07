@@ -152,6 +152,11 @@ func AttachData(
 			unchecked = append(unchecked, Unchecked{Method: call.Method, Err: resolveErr})
 
 			continue
+		case errors.Is(resolveErr, descriptor.ErrReflectionUnsupported) && call.Dataset != "":
+			errs = append(errs, fmt.Errorf("%s: %w: the schema for its dataset comes from reflection; "+
+				"without dataset the method runs with an empty message", call.Method, resolveErr))
+
+			continue
 		case errors.Is(resolveErr, descriptor.ErrReflectionUnsupported):
 			errs = append(errs, fmt.Errorf("%s: %w: the schema for its data comes from reflection; "+
 				"without data the method runs with an empty message", call.Method, resolveErr))
