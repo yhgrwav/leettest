@@ -109,11 +109,53 @@ type jsonStartLag struct {
 }
 
 type jsonConns struct {
-	Open         int  `json:"open"`
-	Reconnects   int  `json:"reconnects"`
+	Open       int `json:"open"`
+	Reconnects int `json:"reconnects"`
+	// FirstLimit and LastLimit are the one connection's limits; with several
+	// they are null, the limits are per connection.
 	FirstLimit   *int `json:"first_limit"`
 	LastLimit    *int `json:"last_limit"`
 	LimitChanges int  `json:"limit_changes"`
+	// Resolved is the addresses the target stands for; null with one
+	// connection.
+	Resolved *[]string `json:"resolved"`
+	// InFlightLimit is the most calls the target lets the run have in flight:
+	// the one connection's limit, or the sum of all of them; null while any
+	// connection announced none.
+	InFlightLimit *int `json:"in_flight_limit"`
+	// PerConnection is one object per connection; null with one.
+	PerConnection *[]jsonLink `json:"per_connection"`
+}
+
+// jsonLink is one connection of several. Failed counts the calls that failed
+// on it and those that never went out because it was not ready;
+// StreamWaited and NotSentStream are the calls that waited for a stream and
+// those that expired waiting.
+type jsonLink struct {
+	Address       string        `json:"address"`
+	Calls         int           `json:"calls"`
+	Failed        int           `json:"failed"`
+	StreamWaited  int           `json:"stream_waited"`
+	NotSentStream int           `json:"not_sent_stream"`
+	P99           *jsonQuantile `json:"p99"`
+	FirstLimit    *int          `json:"first_limit"`
+	LastLimit     *int          `json:"last_limit"`
+	LimitChanges  int           `json:"limit_changes"`
+}
+
+// limitsOf is a connection's first and last limit as JSON tells them: both
+// null when it never announced one, the last null when only a change was seen.
+func limitsOf(announced bool, first, last uint32, changes int) (firstLimit, lastLimit *int) {
+	// 0 is a limit a target may announce: unannounced is null, not 0.
+	if announced || changes > 0 {
+		f, l := int(first), int(last)
+		firstLimit = &f
+		if announced {
+			lastLimit = &l
+		}
+	}
+
+	return firstLimit, lastLimit
 }
 
 type jsonLatency struct {
@@ -266,6 +308,7 @@ func answers(r engine.RefusalLatency) jsonAnswers {
 
 // NewJSONReport builds the JSON report of a finished run.
 func NewJSONReport(run JSONRun) JSONReport {
+	run.Run.Target = run.Target
 	r := &run.Run.Report
 	out := JSONReport{
 		SchemaVersion:     JSONSchemaVersion,
@@ -308,13 +351,29 @@ func NewJSONReport(run JSONRun) JSONReport {
 	}
 	if c := r.Connections; c != nil {
 		conns := &jsonConns{Open: c.Open, Reconnects: c.Reconnects, LimitChanges: c.LimitChanges}
-		// 0 is a limit a target may announce: unannounced is null, not 0.
-		if c.LimitAnnounced || c.LimitChanges > 0 {
-			first, last := int(c.FirstLimit), int(c.LastLimit)
-			conns.FirstLimit = &first
-			if c.LimitAnnounced {
-				conns.LastLimit = &last
+
+		if severalConnections(c) {
+			resolved := append([]string{}, c.Resolved...)
+			links := make([]jsonLink, len(c.Each))
+
+			for i := range c.Each {
+				l := &c.Each[i]
+				links[i] = jsonLink{
+					Address: l.Address, Calls: l.Calls, Failed: l.Failed, StreamWaited: l.StreamWaited,
+					NotSentStream: l.NotSentStream, P99: quantile(l.P99), LimitChanges: l.LimitChanges,
+				}
+				links[i].FirstLimit, links[i].LastLimit = limitsOf(l.LimitAnnounced, l.FirstLimit, l.LastLimit, l.LimitChanges)
 			}
+
+			conns.Resolved, conns.PerConnection = &resolved, &links
+
+			if c.InFlightAnnounced {
+				limit := c.InFlightLimit
+				conns.InFlightLimit = &limit
+			}
+		} else {
+			conns.FirstLimit, conns.LastLimit = limitsOf(c.LimitAnnounced, c.FirstLimit, c.LastLimit, c.LimitChanges)
+			conns.InFlightLimit = conns.LastLimit
 		}
 		out.Connections = conns
 	}

@@ -369,7 +369,7 @@ type Stats struct {
 // linkStats is what one connection carried, counted by the rules of the run's
 // totals.
 type linkStats struct {
-	calls, failed, streamWaited int
+	calls, failed, streamWaited, notSentStream int
 	// latency is the run's percentile rule over the connection's own calls that
 	// have one.
 	latency *metrics.Latencies
@@ -400,7 +400,7 @@ func (s *Stats) LinkCounts() []LinkReport {
 	out := make([]LinkReport, len(links))
 
 	for i, l := range links {
-		out[i] = LinkReport{Calls: l.calls, Failed: l.failed, StreamWaited: l.streamWaited}
+		out[i] = LinkReport{Calls: l.calls, Failed: l.failed, StreamWaited: l.streamWaited, NotSentStream: l.notSentStream}
 	}
 	s.mu.Unlock()
 
@@ -604,6 +604,10 @@ func (s *Stats) Record(r Result) {
 			s.notSentStream++
 			method.notSentStream++
 			stream = true
+
+			if link != nil {
+				link.notSentStream++
+			}
 		case BlockedOnConnection:
 			s.notSentConnection++
 			method.notSentConnection++

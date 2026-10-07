@@ -511,6 +511,7 @@ func (m *model) finalParts(width int) finalParts {
 	// tell the reader different things. The verdicts stand above the table.
 	finished := m.finished
 	finished.Report = report
+	finished.Target = m.target
 	for _, note := range runNotes(finished) {
 		block := strings.Split(m.styles.note.Render(wrapNote(note, width)), "\n")
 		if isVerdict(note) {

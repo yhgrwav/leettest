@@ -257,6 +257,7 @@ func reportNotes(report engine.Report, maxResponse string) []string {
 // host clock.
 func runNotes(run RunReport) []string {
 	notes := reportNotes(run.Report, run.MaxResponse)
+	notes = append(notes, connectionNotes(run.Target, run.Connections)...)
 
 	if clockGrew(run) {
 		notes = append(notes, fmt.Sprintf("invalid run: clock step changed during the run: %s before, %s after. The floor of\n"+

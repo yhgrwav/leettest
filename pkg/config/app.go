@@ -147,6 +147,32 @@ func (a *App) resolveMaxResponseSize() error {
 	return nil
 }
 
+// Connection counts the config accepts.
+const (
+	minConnections = 1
+	maxConnections = 256
+)
+
+// resolveConnections reads app.connections, 1 when it is left out. A number
+// that is not a whole one (2.5, "two") is refused like one out of range, not
+// rounded or read as 1.
+func (a *App) resolveConnections() error {
+	if a.RawConnections == nil {
+		a.Connections = minConnections
+
+		return nil
+	}
+
+	n, ok := a.RawConnections.(uint64)
+	if !ok || n < minConnections || n > maxConnections {
+		return fmt.Errorf("%w: %v", ErrInvalidConnections, a.RawConnections)
+	}
+
+	a.Connections = int(n)
+
+	return nil
+}
+
 func (a *App) validateTLSFiles() error {
 	if !a.UseTLS && (a.CA != "" || a.Cert != "" || a.Key != "" || a.ServerName != "") {
 		return ErrTLSFilesWithoutTLS

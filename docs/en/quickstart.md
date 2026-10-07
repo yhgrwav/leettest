@@ -62,6 +62,7 @@ app:
     authorization: Bearer ${LEETTEST_TOKEN}
     x-request-source: leettest-tour
   max_response_size: 1MiB
+  connections: 1
 
 load:
   warmup: 3s
@@ -97,6 +98,9 @@ load:
   ([`examples/wallets.jsonl`](../../examples/wallets.jsonl)): the first call goes out with the
   first line, the second with the second, and after the last line it starts over. Beside the
   method's row the report says how much of the file was used.
+- **`connections`** (not released) — how many connections carry the load (1 by default). Behind an L4
+  balancer one connection loads one backend; with N ≥ 2 the report adds a `Connections:` block, a
+  row per connection.
 
 Several methods are several calls, each at its own rate. One method, one call: the report is per
 method.

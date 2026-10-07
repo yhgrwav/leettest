@@ -510,6 +510,7 @@ func senderOptions(app *config.App) (grpcsender.Options, error) {
 		Metadata:         app.Metadata,
 		ServerName:       app.ServerName,
 		MaxResponseBytes: app.MaxResponseBytes,
+		Connections:      app.Connections,
 	}
 
 	if app.CA != "" {

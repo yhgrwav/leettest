@@ -76,6 +76,9 @@ func (m *MasterConfig) resolve() error {
 	if err := m.App.resolveMaxResponseSize(); err != nil {
 		return err
 	}
+	if err := m.App.resolveConnections(); err != nil {
+		return err
+	}
 	for i := range m.Load.Calls {
 		m.Load.Calls[i].ResolveTimeout()
 		if raw := m.Load.Calls[i].RawDataset; raw != nil {

@@ -38,6 +38,7 @@ load:
 | `app.server_name` | Der Name, gegen den das Zertifikat des Dienstes geprüft wird, wenn es die Adresse aus `target` nicht nennt. Braucht TLS |
 | `app.metadata` | Header jedes Aufrufs: `authorization`, `x-api-key` usw. `${NAME}` kommt aus einer Umgebungsvariable |
 | `app.max_response_size` | Die größte Antwort, die ein Aufruf annimmt: `16MiB`, `512KB`. Die Einheit ist Pflicht (`MB` = 10⁶ Bytes, `MiB` = 2²⁰), unter 2 GiB. Weggelassen — 4 MiB, wie in gRPC. Eine größere Antwort ist eine `bad response`. Ein laufender Aufruf kann bis zum Doppelten des Limits puffern: standardmäßig bis zu 8 MiB je Aufruf |
+| `app.connections` | Wie viele Verbindungen zum Ziel geöffnet werden, eine ganze Zahl von 1 bis 256. Weggelassen — 1. Die Aufrufe nehmen die Verbindungen reihum, der Bericht druckt einen Block `Connections:`, eine Zeile je Verbindung — nicht veröffentlicht |
 | `load.warmup` | Die ersten N Sekunden bleiben aus den Perzentilen und aus `sent`: kalte Caches verderben sie. Aufwärm-Aufrufe erreichen das Ziel durchaus; der Bericht gibt sie auf einer Zeile `warm-up N sent (M failed), excluded from stats` aus — `sent` plus diese Zeile ist jeder Aufruf, den der Generator versucht hat. Das Ziel bekam sie alle bis auf die als unreachable oder client error gezählten; `cut off` und abgelaufene haben es vielleicht nicht vollständig erreicht: Ein Ziel, das sein HTTP/2-Fenster nicht öffnet (Flusskontrolle), bekommt nur die Header, und seine Zähler sehen den Aufruf womöglich nicht. Zählt zu `duration`, kürzer als jeder Aufruf |
 | `load.calls[].method` | Der volle Methodenname: `package.Service/Method` |
 | `load.calls[].rps` | Anfragen pro Sekunde für diese Methode |
@@ -102,9 +103,15 @@ Ziel-Zertifikats lässt sich durch nichts abschalten. `server_name` ändert nur 
 das Zertifikat geprüft wird und der in SNI geht; `:authority` bleibt die Adresse aus `target`. Ein
 passwortgeschützter Schlüssel wird nicht unterstützt: Entschlüsseln Sie ihn vorher.
 
-**Eine Verbindung.** Der Generator hält eine Verbindung zu einer Adresse. Liefert DNS mehrere
-Adressen oder steht das Ziel hinter einem L4-Balancer, wird nur ein Backend belastet, und der Bericht
-zeigt das nicht. Aufrufe werden nicht wiederholt.
+**Verbindungen.** Standardmäßig hält der Generator eine Verbindung zu einer Adresse. Liefert DNS
+mehrere Adressen oder steht das Ziel hinter einem L4-Balancer, wird nur ein Backend belastet, und der
+Bericht zeigt das nicht. `app.connections: N` (nicht veröffentlicht) öffnet N Verbindungen. Ein Name,
+den DNS zu M Adressen auflöst, wird einmal vor dem Start aufgelöst, und Verbindung i geht an Adresse
+i mod M: drei Verbindungen auf zwei Adressen sind zwei und eine. Eine Adresse, die das Ziel nicht
+bedient (`localhost` zu `::1`, während der Server nur auf `127.0.0.1` lauscht), stoppt den Start und
+steht im Fehler: nehmen Sie ihre IP. Der Block im Bericht zeigt je Verbindung Adresse, Aufrufe,
+Fehleranteil und p99, damit ein totes oder langsames Backend hinter einem Namen nicht im Mittel
+untergeht. Aufrufe werden nicht wiederholt.
 Die Service Config des Dienstes wird ignoriert: Wiederholungen und Balancing-Strategie daraus werden
 nicht angewandt. Ein produktiver Client, der sie anwendet, sieht andere Kategorien und ein anderes
 p99.
@@ -238,8 +245,18 @@ unten den Typ „percentile?" hat.
 | `connections` | object? | Verbindungen; `null`, wenn der Sender sie nicht meldet |
 | `connections.open` | int | Wie viele Verbindungen gleichzeitig Aufrufe trugen |
 | `connections.reconnects` | int | Erfolgreiche Handshakes nach dem ersten |
-| `connections.first_limit`, `connections.last_limit` | int? | `MAX_CONCURRENT_STREAMS` beim ersten und letzten Handshake; `null` — nicht angekündigt (`0` — null angekündigt) |
+| `connections.first_limit`, `connections.last_limit` | int? | `MAX_CONCURRENT_STREAMS` beim ersten und letzten Handshake; `null` — nicht angekündigt (`0` — null angekündigt). Bei mehreren Verbindungen immer `null`: jede hat eigene Limits |
 | `connections.limit_changes` | int | Handshakes, die ein anderes Limit als das vorige ankündigten |
+| `connections.resolved` | []string? | Die Adressen, für die das Ziel steht, in der Reihenfolge des Resolvers: alle, auch bei weniger Verbindungen. Eine IP-Adresse steht für sich; `null` bei einer Verbindung — nicht veröffentlicht |
+| `connections.in_flight_limit` | int? | Wie viele Aufrufe das Ziel gleichzeitig in Flug erlaubt: das Limit der einen Verbindung oder die Summe aller Limits; `null`, solange eine Verbindung keines angekündigt hat — nicht veröffentlicht |
+| `connections.per_connection` | []object? | Ein Objekt je Verbindung, in der Nummerierung des Berichtsblocks; `null` bei einer Verbindung — nicht veröffentlicht |
+| `connections.per_connection[].address` | string | Die Adresse der Verbindung — nicht veröffentlicht |
+| `connections.per_connection[].calls` | int | Der Verbindung zugewiesene Aufrufe, gesendet oder nicht, ohne Warm-up — nicht veröffentlicht |
+| `connections.per_connection[].failed` | int | Die Fehler der Verbindung: die Regel von `failed` des Laufs plus die Aufrufe, die nicht hinausgingen, weil die Verbindung nicht bereit war — nicht veröffentlicht |
+| `connections.per_connection[].stream_waited`, `connections.per_connection[].not_sent_stream` | int | Aufrufe der Verbindung, die auf einen freien Stream warteten: die nach dem Warten hinausgingen und die beim Warten ihr Zeitlimit erreichten — nicht veröffentlicht |
+| `connections.per_connection[].p99` | percentile? | p99 der Aufrufe der Verbindung; `null` ohne einen Aufruf mit Latenz — nicht veröffentlicht |
+| `connections.per_connection[].first_limit`, `connections.per_connection[].last_limit` | int? | Das Stream-Limit der Verbindung beim ersten und letzten Handshake; `null` — nicht angekündigt — nicht veröffentlicht |
+| `connections.per_connection[].limit_changes` | int | Handshakes der Verbindung, die ein anderes Limit als das vorige ankündigten — nicht veröffentlicht |
 | `client_waits` | object | Aufrufe, die auf Client-Seite über der Schwelle warteten, nach Ursache ([README](README.md#den-bericht-lesen)) |
 | `client_waits.generator_calls`, `client_waits.stream_calls`, `client_waits.connection_calls` | int | Alle solchen Aufrufe, gesendet oder nicht. Ein gesendeter Aufruf kann für mehrere Ursachen zählen |
 | `client_waits.generator_tail_calls`, `client_waits.stream_tail_calls`, `client_waits.connection_tail_calls` | int | Nur im p99-Ende und unter den ungesendeten: Diese bestimmen `tail_wait_cause` |

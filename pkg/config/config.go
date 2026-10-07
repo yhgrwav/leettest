@@ -46,6 +46,9 @@ var (
 	// ErrBreakpoint is a breakpoint section that cannot run as written.
 	ErrBreakpoint             = errors.New("invalid breakpoint")
 	ErrInvalidMaxResponseSize = errors.New("max_response_size must be a positive size below 2GiB with a unit: B, KB, MB, GB, KiB, MiB or GiB")
+	// ErrInvalidConnections is app.connections outside 1 to 256 or not a whole
+	// number.
+	ErrInvalidConnections = errors.New("app.connections must be a whole number from 1 to 256")
 )
 
 type MasterConfig struct {
@@ -81,6 +84,11 @@ type App struct {
 	RawMaxResponseSize *string           `yaml:"max_response_size"`
 	MaxResponseBytes   int               `yaml:"-"`
 	Metadata           map[string]string `yaml:"-"`
+	// RawConnections is the field as written, nil when it was left out.
+	// Connections is how many connections the run opens to the target, 1 to
+	// 256; 1 when the file leaves it out.
+	RawConnections any `yaml:"connections"`
+	Connections    int `yaml:"-"`
 }
 
 type ConnectionStringTarget struct {

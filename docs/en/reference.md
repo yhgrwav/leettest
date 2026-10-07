@@ -38,6 +38,7 @@ load:
 | `app.server_name` | The name to check the service's certificate against when it does not name the address in `target`. Needs TLS |
 | `app.metadata` | Headers of every call: `authorization`, `x-api-key` and so on. `${NAME}` is taken from an environment variable |
 | `app.max_response_size` | The largest reply a call accepts: `16MiB`, `512KB`. The unit is required (`MB` = 10⁶ bytes, `MiB` = 2²⁰), below 2 GiB. Left out — 4 MiB, as in gRPC. A larger reply is a `bad response`. A call in flight may buffer up to twice the limit: by default up to 8 MiB each |
+| `app.connections` | How many connections to open to the target, a whole number from 1 to 256. Left out — 1. Calls take the connections in turn, and the report prints a `Connections:` block, a row per connection — not released |
 | `load.warmup` | The first N seconds stay out of the percentiles and of `sent`: cold caches spoil them. Warm-up calls do reach the target; the report prints them on a line `warm-up N sent (M failed), excluded from stats` — `sent` plus that line is every call the generator attempted. The target got all of them except those counted as unreachable or client error; `cut off` and timed-out ones may not have fully reached it: a target that does not open its HTTP/2 window (flow control) gets the headers only, and its counters may not see the call. Counts toward `duration`, shorter than any call |
 | `load.calls[].method` | The full method name: `package.Service/Method` |
 | `load.calls[].rps` | Requests per second for this method |
@@ -102,9 +103,14 @@ target's certificate cannot be turned off by anything. `server_name` changes onl
 certificate is checked against and that goes into SNI; `:authority` stays the address from
 `target`. A password-protected key is not supported: decrypt it beforehand.
 
-**One connection.** The generator holds one connection to one address. If DNS returns several
-addresses or the target is behind an L4 balancer, only one backend is loaded, and the report will
-not show it. Calls are not retried.
+**Connections.** By default the generator holds one connection to one address. If DNS returns
+several addresses or the target is behind an L4 balancer, only one backend is loaded, and the
+report will not show it. `app.connections: N` (not released) opens N connections. A name that DNS
+resolves to M addresses is resolved once before the start, and connection i goes to address i mod M:
+three connections over two addresses are two and one. An address that does not serve the target
+(`localhost` to `::1` while the server listens on `127.0.0.1` only) stops the start and is named in
+the error: use its IP. The report's block shows each connection's address, calls, share failed and
+p99, so a dead or slow backend behind a name is not averaged away. Calls are not retried.
 The service's service config is ignored: retries and the balancing policy from it are not
 applied. A production client that applies them will see other categories and p99.
 
@@ -264,8 +270,18 @@ measured calls only. The first column is the field's full path.
 | `connections` | object? | Connections; `null` when the sender does not report them |
 | `connections.open` | int | How many connections carried calls at once |
 | `connections.reconnects` | int | Successful handshakes after the first |
-| `connections.first_limit`, `connections.last_limit` | int? | `MAX_CONCURRENT_STREAMS` at the first and last handshake; `null` — not announced (`0` — announced zero) |
+| `connections.first_limit`, `connections.last_limit` | int? | `MAX_CONCURRENT_STREAMS` at the first and last handshake; `null` — not announced (`0` — announced zero). Always `null` with several connections: each has its own limits |
 | `connections.limit_changes` | int | Handshakes that announced a limit different from the one before |
+| `connections.resolved` | []string? | The addresses the target stands for, in the resolver's order: all of them, even with fewer connections. An IP address stands for itself; `null` with one connection — not released |
+| `connections.in_flight_limit` | int? | How many calls the target lets the run have in flight: the one connection's limit, or the sum of all the limits; `null` while any connection announced none — not released |
+| `connections.per_connection` | []object? | One object per connection, in the report block's numbering; `null` with one connection — not released |
+| `connections.per_connection[].address` | string | The connection's address — not released |
+| `connections.per_connection[].calls` | int | Calls assigned to the connection, sent or not, warm-up left out — not released |
+| `connections.per_connection[].failed` | int | The connection's failures: the run's `failed` rule plus the calls that never went out because the connection was not ready — not released |
+| `connections.per_connection[].stream_waited`, `connections.per_connection[].not_sent_stream` | int | The connection's calls that waited for a free stream: those that went out after waiting and those that expired waiting — not released |
+| `connections.per_connection[].p99` | percentile? | p99 of the connection's calls; `null` without a call that has a latency — not released |
+| `connections.per_connection[].first_limit`, `connections.per_connection[].last_limit` | int? | The connection's stream limit at its first and last handshake; `null` — not announced — not released |
+| `connections.per_connection[].limit_changes` | int | Handshakes of the connection that announced a limit different from the one before — not released |
 | `client_waits` | object | Calls that waited on the client side over the floor, by cause ([README](README.md#reading-the-report)) |
 | `client_waits.generator_calls`, `client_waits.stream_calls`, `client_waits.connection_calls` | int | All such calls, sent or not. A sent call can count for several causes |
 | `client_waits.generator_tail_calls`, `client_waits.stream_tail_calls`, `client_waits.connection_tail_calls` | int | Only among the p99 tail and the unsent: these pick `tail_wait_cause` |
