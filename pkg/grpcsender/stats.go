@@ -60,6 +60,11 @@ type callTimes struct {
 	// followed by a reset are the target alive. A trailer alone counts in
 	// Send, where its status is known.
 	heard bool
+	// retried says some attempt was grpc-go's transparent retry; refusedBefore,
+	// that an attempt of the call ended with the target's REFUSED_STREAM. Both
+	// outlive the retry: the call keeps what an earlier attempt showed.
+	retried       bool
+	refusedBefore bool
 }
 
 // callStats is where one call's timings are collected while the transport
@@ -152,6 +157,7 @@ func (h handler) HandleRPC(ctx context.Context, rpc stats.RPCStats) {
 		// nothing of the earlier attempt reached the target, and what counts is
 		// this attempt's. Other retries are off: see Connect. The call keeps
 		// waiting since its start; the wait for a stream starts again here.
+		call.times.retried = true
 		call.times.pickedAt = v.BeginTime
 		call.times.headerAt = time.Time{}
 		call.times.heard = false
@@ -188,6 +194,9 @@ func (h handler) HandleRPC(ctx context.Context, rpc stats.RPCStats) {
 			h.streams.closed(time.Now())
 		}
 		call.times.doneAt = v.EndTime
+		if refusedStream(v.Error) {
+			call.times.refusedBefore = true
+		}
 	}
 }
 

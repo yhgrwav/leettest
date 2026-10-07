@@ -20,6 +20,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"sync"
 	"sync/atomic"
@@ -597,6 +598,13 @@ func (s *Sender) Send(ctx context.Context, req engine.Request) (engine.Outcome, 
 	// A refused stream's UNAVAILABLE is grpc-go's word for the target's
 	// REFUSED_STREAM: the refusal came from the target.
 	code, fromTarget := status.Code(err), (times.answered && !refusedReply(err, times.answered)) || refusedStream(err)
+	if errors.Is(err, io.EOF) && times.retried {
+		// grpc-go lost the status of a call it retried transparently
+		// (grpc-go#9443): nothing says what the target answered, so no code of
+		// the target's is claimed. #75 forbids standing the first attempt's
+		// refusal in for it.
+		category, code, fromTarget = engine.CategoryCutOff, codes.Unknown, false
+	}
 	if err != nil && call.reply.over {
 		// Our codec refused the reply: whatever status the target sent after
 		// it, and whether it had arrived yet, the call is ours to fail.
@@ -624,7 +632,7 @@ func (s *Sender) Send(ctx context.Context, req engine.Request) (engine.Outcome, 
 		CodeFromTarget: fromTarget,
 		// A trailer that only copies or echoes our deadline is grpc-go on the
 		// target answering by itself: it does not show the target alive.
-		Heard: times.heard || call.reply.over || refusedStream(err) ||
+		Heard: times.heard || call.reply.over || refusedStream(err) || times.refusedBefore ||
 			(times.answered && !expiredCopy(code, times, req.Deadline) && !echoOfOurDeadline(code, times, req.Deadline)),
 	}
 	if notSent {
