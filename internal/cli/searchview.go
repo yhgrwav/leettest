@@ -183,7 +183,7 @@ func (m *searchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.base.width, m.base.height = msg.Width, msg.Height
 
-		return m, nil
+		return m, tea.ClearScreen
 
 	case tea.KeyMsg:
 		_, cmd := m.base.onKey(msg)

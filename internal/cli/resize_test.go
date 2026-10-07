@@ -20,11 +20,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// A resize makes the terminal reflow the alternate screen, and bubbletea's
-// renderer repaints only the lines it believes changed, so lines of the old
-// frame stay. Its maintainers' advice for this (charmbracelet/bubbletea#573)
-// is a clear-screen command on the size message: every screen that takes the
-// size must return it, and only then, not on every tick.
+// After a resize the renderer rewrites every line of the frame but erases
+// nothing outside it: rows below a frame that did not get shorter, and the
+// rest of a full-width line, keep what the terminal left there. Clearing the
+// screen on the size message (the workaround in charmbracelet/bubbletea#573)
+// removes them; on a tick it would flicker. Every screen that takes the size
+// must return it.
 func TestView_AResizeRepaintsTheWholeScreen(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
