@@ -30,7 +30,8 @@ import (
 // stream only where there are any. Its columns line up, the percentiles are the report's own
 // rule (formatQuantile), and the failures are the connection's own count (LinkReport.Failed),
 // over its own calls, not the run's. Mutations "denominator Report.Sent" (4.5%, not 12.5%) and
-// "one column not padded" turn it red.
+// "one column not padded" turn it red. The block is no element of runNotes or of the JSON
+// `notes`: mutation "the block is a note" turns it red.
 func TestReport_ConnectionsBlockIsExact(t *testing.T) {
 	slow := callsOn(addr2, 400, 50)
 	slow.StreamWaited, slow.NotSentStream, slow.P99 = 30, 7, exactUS(1_000_000)
@@ -61,6 +62,18 @@ func TestReport_ConnectionsBlockIsExact(t *testing.T) {
 	// After the stream lines, which say how many connections ran and what the target allows.
 	if i, j := strings.Index(text, "connections: 3;"), strings.Index(text, "Connections: 3 to"); i < 0 || j < i {
 		t.Errorf("the block (at %d) must come after the stream line (at %d):\n%s", j, i, text)
+	}
+
+	// Not a note: the notes are also the JSON `notes` (where the block would repeat
+	// `per_connection`) and the live view's final screen, which gets no new block.
+	_, listed := notesOf(t, "api.example.com:443", run)
+
+	for where, notes := range map[string][]string{"runNotes": runNotes(run), "JSON notes": listed} {
+		for _, note := range notes {
+			if strings.Contains(note, "Connections: ") {
+				t.Errorf("%s holds the block:\n%s", where, note)
+			}
+		}
 	}
 }
 

@@ -48,15 +48,17 @@ func streamVerdictOf(t *testing.T, report engine.Report) string {
 // limit is not the target's, and a sum or a minimum has to be named as one. At every place the
 // stream limit is told — the connections line, the verdict's heading, the in-flight bound, and
 // the final screen's one-phrase verdict — all connections announced, equal: "on each" and the
-// sum; different: "min to max" and the sum, by each connection's last limit; any not announced:
-// the "announced no limit" wording, never "0 streams". Mutation "the heading reads LastLimit"
-// (it says "allows 0 streams") turns it red.
+// sum; different: "min to max" and the sum, by each connection's last limit; none announced: the
+// "announced no limit" wording; some but not all: "announced by k of N", which says neither "no
+// limit" (the tail may stand on the announced one) nor "0 streams". Mutations "the heading reads
+// LastLimit" (it says "allows 0 streams") and "some announced reads as none" turn it red.
 func TestReport_StreamLimitsAtN(t *testing.T) {
 	for _, tc := range []struct {
 		name                         string
 		each                         []engine.LinkReport
 		line, heading, bound, phrase string
 		after                        []string
+		absent                       []string
 	}{
 		{
 			name: "4 and 1",
@@ -77,11 +79,22 @@ func TestReport_StreamLimitsAtN(t *testing.T) {
 			phrase: "limited by 2 connections: target allows 8 streams in all",
 		},
 		{
+			// Some announced, some not: "no limit" would say there is none anywhere, and the
+			// tail may have stood on the four streams of the connection that announced them.
 			name:    "4 and none",
 			each:    []engine.LinkReport{limited(addr1, 4, 4, 0), callsOn(addr2, 100, 0)},
+			line:    "connections: 2; stream limit announced by 1 of 2 connections.",
+			heading: "on 2 connections 48 of 50 sent calls waited for a stream (p99 130ms), and 1 of 2 connections announced a stream limit",
+			phrase:  "limited by 2 connections: stream limit announced by 1 of 2",
+			absent:  []string{"no stream limit announced", "announced no limit", "no limit"},
+		},
+		{
+			name:    "none and none",
+			each:    []engine.LinkReport{callsOn(addr1, 100, 0), callsOn(addr2, 100, 0)},
 			line:    "connections: 2; no stream limit announced.",
 			heading: "on 2 connections 48 of 50 sent calls waited for a stream (p99 130ms), and the target announced no limit",
 			phrase:  "limited by 2 connections: no stream limit announced",
+			absent:  []string{"stream limit announced by"},
 		},
 		{
 			name: "equal at the end, different at the start: by the last limits",
@@ -123,7 +136,7 @@ func TestReport_StreamLimitsAtN(t *testing.T) {
 			}
 
 			for _, said := range []string{strings.Join(lines, "\n"), verdict, phrase} {
-				for _, claim := range []string{"limit 0", "allows 0", " 0 streams", "above 0 ", "(0 in all)"} {
+				for _, claim := range append([]string{"limit 0", "allows 0", " 0 streams", "above 0 ", "(0 in all)"}, tc.absent...) {
 					if strings.Contains(said, claim) {
 						t.Errorf("%q in:\n%s", claim, said)
 					}
@@ -152,8 +165,10 @@ func changed(numbers ...uint32) []engine.LinkReport {
 
 // Ground: boundary — a connection that changed its limit gets a line of its own, numbered as the
 // block numbers them (from 1) and in that order; at most five lines, so the notes stay short
-// however many connections there are, then one line counting the rest. Exactly five has no "more"
-// line. A connection that did not change has no line. Mutation "cap 5 -> 6" turns it red.
+// however many connections there are, then one line counting the rest (no indent: the notes
+// print from the margin, as the lines above it do; "1 more connection", "1 time"). Exactly five
+// has no "more" line. A connection that did not change has no line. Mutation "cap 5 -> 6"
+// turns it red.
 func TestReport_LimitChangeLinesCapped(t *testing.T) {
 	line := func(i, last int) string {
 		return fmt.Sprintf("connection %d: target stream limit 4 to %d, changed 2 times", i, last)
@@ -167,8 +182,16 @@ func TestReport_LimitChangeLinesCapped(t *testing.T) {
 	}{
 		{"seven changed", changed(1, 2, 3, 4, 5, 6, 7), "connections: 7; target stream limits 1 to 7 (28 in all).", []string{
 			line(1, 1), line(2, 2), line(3, 3), line(4, 4), line(5, 5),
-			"  and 2 more connections changed their stream limit",
+			"and 2 more connections changed their stream limit",
 		}},
+		{"six changed", changed(1, 2, 3, 4, 5, 6), "connections: 6; target stream limits 1 to 6 (21 in all).", []string{
+			line(1, 1), line(2, 2), line(3, 3), line(4, 4), line(5, 5),
+			"and 1 more connection changed its stream limit",
+		}},
+		{"changed once", []engine.LinkReport{limited(addr1, 4, 3, 1), limited(addr2, 4, 4, 0)},
+			"connections: 2; target stream limits 3 to 4 (7 in all).", []string{
+				"connection 1: target stream limit 4 to 3, changed 1 time",
+			}},
 		{"exactly five", changed(1, 2, 3, 4, 5), "connections: 5; target stream limits 1 to 5 (15 in all).", []string{
 			line(1, 1), line(2, 2), line(3, 3), line(4, 4), line(5, 5),
 		}},
@@ -191,7 +214,7 @@ func TestReport_LimitChangeLinesCapped(t *testing.T) {
 
 			// Nothing past the end of the block says "connection N:" again.
 			for _, extra := range got[min(len(tc.want), len(got)):] {
-				if strings.HasPrefix(extra, "connection ") || strings.HasPrefix(extra, "  and ") {
+				if strings.HasPrefix(extra, "connection ") || strings.HasPrefix(extra, "and ") {
 					t.Errorf("a line beyond the cap: %q", extra)
 				}
 			}
