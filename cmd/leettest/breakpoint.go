@@ -233,7 +233,7 @@ func screenSettings() (*cli.Settings, error) {
 		return nil, err
 	}
 	if !settings.Configured() {
-		if err := cli.RunSetup(settings); err != nil {
+		if err := runSetup(settings); err != nil {
 			return nil, err
 		}
 	}

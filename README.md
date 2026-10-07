@@ -90,7 +90,7 @@ server reflection, поэтому `.proto` не нужен. Конфиг, адр
 32.0s  sent 25600  rps 800  in-flight 47  failed 51  not-sent 0  p99 43ms
 ```
 
-Отчёт идёт в stdout, прогресс и ошибки — в stderr.
+Отчёт идёт в stdout, прогресс и ошибки — в stderr. Без экрана (например, по ssh): `-plain` (не выпущено).
 
 ## Как читать отчёт
 

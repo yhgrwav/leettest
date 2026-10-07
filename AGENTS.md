@@ -25,7 +25,8 @@ often ends as an invalid run (`clock_step`, exit code 2). Measure on Linux.
 ### Run without a terminal
 
 With stderr not a terminal, LeetTest prints a progress line a second to stderr instead of the
-live view, and never waits for a key. Ask for JSON on stdout:
+live view, and never waits for a key. Behind a pseudo-terminal (a shell driven through a pty, ssh)
+add `-plain` (not released) for the same. Ask for JSON on stdout:
 
 ```console
 $ leettest -c load.yaml -output json > report.json
