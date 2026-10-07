@@ -333,8 +333,8 @@ The rest are plain counters.
 | `methods[].dataset` | object? | The call's dataset file; `null` — it has none — not released |
 | `methods[].dataset.file` | string | The path as the config wrote it — not released |
 | `methods[].dataset.records` | int | Requests in the file — not released |
-| `methods[].dataset.used` | int | How many of them went out at least once — not released |
-| `methods[].dataset.used_max` | int | How many times the most used one went out; in a search, counted from its first step to the end of this run — not released |
+| `methods[].dataset.used` | int | How many of them were handed to the sender at least once — not released |
+| `methods[].dataset.used_max` | int | How many times the most used one was handed to the sender; in a search, counted from its first step to the end of this run — not released |
 | `methods[].seconds` | []object | The per-second timeline, see below |
 
 ### Second: `methods[].seconds[]`
