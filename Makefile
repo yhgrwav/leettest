@@ -69,6 +69,8 @@ check:
 build:
 	go build -o bin/leettest ./cmd/leettest
 
+# demo, stand and run draw the live view, which needs a terminal: an IDE Run
+# window is not one and shows nothing. Run them from a terminal (make demo).
 demo:
 	go run ./cmd/leettest -c examples/stand.yaml -fake
 
