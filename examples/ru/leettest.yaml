@@ -3,7 +3,6 @@ app:
     ip: localhost
     port: 50051
   tls: false
-  connections: 1 # нет в v0.1.0; больше одного нагружает несколько бэкендов за именем
 
 load:
   warmup: 5s

@@ -54,7 +54,6 @@ app:
     ip: localhost
     port: 50051
   tls: false
-  connections: 1 # not in v0.1.0; more than one loads several backends behind a name
 
 load:
   warmup: 5s
