@@ -418,6 +418,7 @@ func (e *Engine) connections() *Connections {
 		}
 
 		each[i].Calls, each[i].Failed, each[i].StreamWaited, each[i].P99 = c.Calls, c.Failed, c.StreamWaited, c.P99
+		each[i].NotSentStream = c.NotSentStream
 	}
 
 	conns.Each = each
