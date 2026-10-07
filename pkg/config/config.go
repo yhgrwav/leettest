@@ -15,6 +15,7 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -193,9 +194,23 @@ type Call struct {
 	// Data is the request body as written, built into the method's message
 	// before the run; nil sends an empty message.
 	Data any `yaml:"data"`
+	// RawDataset is the field as written; nil means it was left out. Dataset is
+	// the path as written, kept for what prints it. Records are the file's
+	// requests, read by LoadFile; Parse reads no file and leaves them empty.
+	RawDataset *string         `yaml:"dataset"`
+	Dataset    string          `yaml:"-"`
+	Records    []DatasetRecord `yaml:"-"`
 	// RawTimeout is the field as written; nil means it was left out.
 	RawTimeout *time.Duration `yaml:"timeout"`
 	Timeout    time.Duration  `yaml:"-"`
+}
+
+// DatasetRecord is one request of a dataset file: the JSON of its line as
+// written, and the number of that line, from 1, blank lines counted.
+// STUB of the red commit: nothing fills it yet.
+type DatasetRecord struct {
+	Line int
+	JSON json.RawMessage
 }
 
 // DefaultTimeout applies to a call that sets none. It is short on purpose: in an

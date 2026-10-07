@@ -22,8 +22,12 @@ import (
 	"github.com/yhgrwav/leettest/pkg/engine"
 )
 
-// CallsFromConfig turns the calls of a parsed config into engine calls.
-func CallsFromConfig(cfg *config.MasterConfig) []engine.Call {
+// CallsFromConfig turns the calls of a config into engine calls. A call with a
+// dataset gets one empty payload per record and a counter of its own; its
+// records go in later, in AttachData. A config that names a dataset whose
+// records were never read (one from config.Parse) is an error here.
+// STUB of the red commit: datasets are not looked at yet.
+func CallsFromConfig(cfg *config.MasterConfig) ([]engine.Call, error) {
 	calls := make([]engine.Call, 0, len(cfg.Load.Calls))
 
 	for _, call := range cfg.Load.Calls {
@@ -39,7 +43,7 @@ func CallsFromConfig(cfg *config.MasterConfig) []engine.Call {
 		})
 	}
 
-	return calls
+	return calls, nil
 }
 
 // displayMethod shows a method the way the config names it: the engine carries

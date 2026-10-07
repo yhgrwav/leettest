@@ -84,7 +84,10 @@ func TestExamples_RunAgainstStand(t *testing.T) {
 			if err = sender.Connect(ctx); err != nil {
 				t.Fatalf("connect: %v", err)
 			}
-			calls := cli.CallsFromConfig(cfg)
+			calls, err := cli.CallsFromConfig(cfg)
+			if err != nil {
+				t.Fatalf("calls: %v", err)
+			}
 			unchecked, err := cli.AttachData(ctx, descriptor.NewReflectionResolver(sender.Conn()), cfg, calls)
 			if err != nil {
 				t.Fatalf("request bodies: %v", err)

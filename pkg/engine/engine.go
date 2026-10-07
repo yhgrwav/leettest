@@ -34,11 +34,44 @@ var (
 )
 
 type Call struct {
-	Method       string
-	Payload      []byte
+	Method string
+	// Payload is the request when the call has no dataset.
+	Payload []byte
+	// Payloads are the requests of a dataset call, one record each; request
+	// number S goes out with Payloads[S mod len]. Nil or empty: Payload.
+	Payloads [][]byte
+	// Dataset is set for a call whose Payloads are a file's records: what the
+	// report says of them. A pointer, so that the Call stays small to copy.
+	Dataset      *DatasetRef
 	Timeout      time.Duration
 	Stages       []Stage
 	KeepResponse bool
+}
+
+// DatasetRef is what the engine knows of a call's dataset besides the records.
+type DatasetRef struct {
+	// File is the path as the config wrote it; the report carries it.
+	File string
+	// Counter is S of the call, shared by every run that carries this Call
+	// (copies of it included); nil gives each run a count of its own.
+	Counter *RecordCounter
+}
+
+// RecordCounter counts the requests of one call the dispatcher has handed out,
+// for as long as it lives: a run continues the count of the one before it.
+// STUB of the red commit: it never counts.
+type RecordCounter struct {
+	n atomic.Int64
+}
+
+// NewRecordCounter is a counter at zero.
+func NewRecordCounter() *RecordCounter {
+	return &RecordCounter{}
+}
+
+// Handed is how many requests have been handed out so far.
+func (c *RecordCounter) Handed() int {
+	return int(c.n.Load())
 }
 
 type Options struct {

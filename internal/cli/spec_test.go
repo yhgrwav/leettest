@@ -35,7 +35,10 @@ func TestCallsFromConfig(t *testing.T) {
 		},
 	}
 
-	calls := cli.CallsFromConfig(cfg)
+	calls, err := cli.CallsFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("calls: %v", err)
+	}
 
 	if len(calls) != 2 {
 		t.Fatalf("calls = %d, want 2", len(calls))
