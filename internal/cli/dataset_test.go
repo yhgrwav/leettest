@@ -221,6 +221,44 @@ func TestAttachData_DatasetLineThatDoesNotFitNamesItsLine(t *testing.T) {
 	}
 }
 
+// The refusal names what the user wrote: for a dataset it is not "data", a
+// key the call does not have, and the method does not run with an empty
+// message "without data" but without the dataset. A call with data keeps the
+// old text.
+// Ground: contract — the text is ours (data.go switch); the wrapped error stays reflection's.
+func TestAttachData_DatasetNoReflectionNamesDataset(t *testing.T) {
+	prefix := datasetMethod + ": " + descriptor.ErrReflectionUnsupported.Error() + ": "
+
+	t.Run("dataset", func(t *testing.T) {
+		cfg, calls := loadOf(datasetCalls(rec(1, `{"id":1}`)))
+		resolver := &fakeResolver{err: descriptor.ErrReflectionUnsupported}
+
+		_, err := AttachData(t.Context(), resolver, cfg, calls)
+
+		want := prefix + "the schema for its dataset comes from reflection; " +
+			"without dataset the method runs with an empty message"
+		if err == nil || err.Error() != want {
+			t.Errorf("error = %v, want %q", err, want)
+		}
+		if !errors.Is(err, descriptor.ErrReflectionUnsupported) {
+			t.Errorf("error = %v, want it to wrap %v", err, descriptor.ErrReflectionUnsupported)
+		}
+	})
+
+	t.Run("data", func(t *testing.T) {
+		cfg, calls := loadOf(config.Call{Method: datasetMethod, Data: map[string]any{"id": 1}})
+		resolver := &fakeResolver{err: descriptor.ErrReflectionUnsupported}
+
+		_, err := AttachData(t.Context(), resolver, cfg, calls)
+
+		want := prefix + "the schema for its data comes from reflection; " +
+			"without data the method runs with an empty message"
+		if err == nil || err.Error() != want {
+			t.Errorf("error = %v, want %q", err, want)
+		}
+	})
+}
+
 // Without reflection a record cannot be built, and a call with a dataset must
 // not fall back to the empty message a call with no data runs with: a run of
 // 1000 empty requests under a report that says "data from users.jsonl".
