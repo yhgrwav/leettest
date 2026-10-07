@@ -79,11 +79,10 @@ var stderrIsTerminal = func(w io.Writer) bool {
 // runSetup is the first-run dialog; tests replace it to see whether it was asked.
 var runSetup = cli.RunSetup
 
-// liveView says whether the run draws the live screen.
-//
-// STUB of the red commit: the flag is ignored.
-func liveView(_, terminal bool) bool {
-	return terminal
+// liveView says whether the run draws the live screen: on a terminal, unless
+// -plain asks for the progress lines.
+func liveView(plain, terminal bool) bool {
+	return !plain && terminal
 }
 
 // runStarting is called once presses go to the stopper; tests use it to press

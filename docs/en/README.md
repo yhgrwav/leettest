@@ -94,7 +94,7 @@ progress line once a second:
 32.0s  sent 25600  rps 800  in-flight 47  failed 51  not-sent 0  p99 43ms
 ```
 
-The report goes to stdout, progress and errors to stderr.
+The report goes to stdout, progress and errors to stderr. No live screen (e.g. over ssh): `-plain` (not released).
 
 ## Reading the report
 
