@@ -199,6 +199,7 @@ every step goes on where the one before ended, and the line counts the whole sea
 | `-output` | Report format on stdout: `text` (the default) or `json` for scripts and CI |
 | `-connect-timeout` | How long to wait for a service that accepted the connection but stays silent. Default `10s`. A refused connection and a wrong address are not waited for |
 | `-max-in-flight` | Cap on requests waiting for a reply. Default `5000` |
+| `-plain` | No live screen: a progress line once a second on stderr, as without a terminal, and no first-run dialog. The report and exit codes are the same — not released |
 | `-fake` | Load a built-in stub instead of the service from the config — to look at the tool without a service. The report is marked `fake target` |
 | `-fake-delay`, `-fake-jitter`, `-fake-fail-ratio` | The stub's behavior. Only together with `-fake` |
 | `-version` | Print the version and exit. A build from source prints the commit |

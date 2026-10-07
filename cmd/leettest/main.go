@@ -70,6 +70,21 @@ var exitNow = func() {
 // orchestrator's SIGTERM and 130 from a person's Ctrl+C.
 var lastSignal atomic.Value
 
+// stderrIsTerminal says whether w is the process terminal; tests replace it
+// to stand in for one.
+var stderrIsTerminal = func(w io.Writer) bool {
+	return w == io.Writer(os.Stderr) && cli.Interactive()
+}
+
+// runSetup is the first-run dialog; tests replace it to see whether it was asked.
+var runSetup = cli.RunSetup
+
+// liveView says whether the run draws the live screen: on a terminal, unless
+// -plain asks for the progress lines.
+func liveView(plain, terminal bool) bool {
+	return !plain && terminal
+}
+
 // runStarting is called once presses go to the stopper; tests use it to press
 // during the run rather than during the connection.
 var runStarting = func(*engine.Engine) {}
@@ -188,7 +203,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 	flags := flag.NewFlagSet("leettest", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 
-	interactive := stderr == io.Writer(os.Stderr) && cli.Interactive()
+	terminal := stderrIsTerminal(stderr)
 	// The stopper writes from the signal goroutine while run writes too.
 	stderr = &lockedWriter{w: stderr}
 
@@ -202,11 +217,14 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		fakeFail       = flags.Float64("fake-fail-ratio", 0, "share of fake replies that fail, 0 to 1, with -fake")
 		showVersion    = flags.Bool("version", false, "print the version and exit")
 		output         = flags.String("output", "text", "report format on stdout: text, or json for scripts")
+		plain          = flags.Bool("plain", false, "no live screen: progress lines on stderr, as when stderr is not a terminal")
 	)
 
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
+
+	interactive := liveView(*plain, terminal)
 	if *showVersion {
 		info, _ := debug.ReadBuildInfo()
 		fmt.Fprintf(stdout, "leettest %s\n", versionString(version, info))
@@ -331,7 +349,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 
 	if !settings.Configured() {
 		if interactive {
-			if err := cli.RunSetup(settings); err != nil {
+			if err := runSetup(settings); err != nil {
 				return err
 			}
 		} else {
