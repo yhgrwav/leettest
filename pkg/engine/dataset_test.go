@@ -103,8 +103,8 @@ func answering() *recordingSender {
 	return &recordingSender{outcome: Outcome{Category: CategorySuccess}}
 }
 
-// runEngine runs one engine over call and returns its report.
-func runEngine(t *testing.T, call Call, warmup time.Duration, sender Sender) Report {
+// ranEngine runs one engine over call and returns it, to be asked for its report.
+func ranEngine(t *testing.T, call Call, warmup time.Duration, sender Sender) *Engine {
 	t.Helper()
 
 	eng, err := New(Options{Calls: []Call{call}, Sender: sender, MaxInFlight: 64, Warmup: warmup})
@@ -115,7 +115,14 @@ func runEngine(t *testing.T, call Call, warmup time.Duration, sender Sender) Rep
 		t.Fatalf("run: %v", err)
 	}
 
-	return eng.Report()
+	return eng
+}
+
+// runEngine runs one engine over call and returns its report.
+func runEngine(t *testing.T, call Call, warmup time.Duration, sender Sender) Report {
+	t.Helper()
+
+	return ranEngine(t, call, warmup, sender).Report()
 }
 
 // handOut runs the dispatcher over calls to the end and returns what it handed
@@ -241,6 +248,34 @@ func TestDispatcher_ARequestNotHandedOutIsNotCounted(t *testing.T) {
 	}
 }
 
+// Scheduler.Run is public and builds its requests as the dispatcher does, so it
+// hands out by the same rule: the count moves after each send, a call with a
+// counter goes on from it, one with none counts this run from the first record.
+// Without it every request of a library call would carry record 0.
+// Ground: contract — pkg/engine is a library API; Run is part of it.
+func TestScheduler_RunDatasetCyclesInOrder(t *testing.T) {
+	for name, counter := range map[string]*RecordCounter{"with a counter": NewRecordCounter(), "without one": nil} {
+		t.Run(name, func(t *testing.T) {
+			out := make(chan Request, 16)
+			if err := NewScheduler(datasetCall(3, counter, atRate(1000, 7))).Run(t.Context(), out); err != nil {
+				t.Fatalf("run: %v", err)
+			}
+			close(out)
+
+			var got []int
+			for req := range out {
+				got = append(got, recordNumber(req))
+			}
+			if want := []int{0, 1, 2, 0, 1, 2, 0}; !slices.Equal(got, want) {
+				t.Errorf("records handed out = %v, want %v", got, want)
+			}
+			if counter != nil && counter.Handed() != 7 {
+				t.Errorf("handed out = %d, want 7", counter.Handed())
+			}
+		})
+	}
+}
+
 // Ground: contract — a request built is not a request used: only the dispatcher
 // moves the count, once the request has left. Building the same request twice
 // gives the same record.
@@ -320,8 +355,10 @@ func TestEngine_DatasetCounterSurvivesRuns(t *testing.T) {
 	counter := NewRecordCounter()
 
 	first, second := answering(), answering()
-	r1 := runEngine(t, datasetCall(3, counter, atRate(100, 4)), 0, first)
-	r2 := runEngine(t, datasetCall(3, counter, atRate(100, 4)), 0, second)
+	e1 := ranEngine(t, datasetCall(3, counter, atRate(100, 4)), 0, first)
+	r1 := e1.Report()
+	e2 := ranEngine(t, datasetCall(3, counter, atRate(100, 4)), 0, second)
+	r2 := e2.Report()
 
 	if want := []int{0, 1, 2, 0}; !slices.Equal(first.records(), want) {
 		t.Errorf("first run sent %v, want %v", first.records(), want)
@@ -329,12 +366,20 @@ func TestEngine_DatasetCounterSurvivesRuns(t *testing.T) {
 	if want := []int{1, 2, 0, 1}; !slices.Equal(second.records(), want) {
 		t.Errorf("second run sent %v, want %v: it goes on where the first ended", second.records(), want)
 	}
-	if got, want := r1.Methods[0].Dataset, (&DatasetReport{File: "data/users.jsonl", Records: 3, Used: 3, UsedMax: 2}); got == nil || *got != *want {
-		t.Errorf("first report = %+v, want %+v", got, want)
+	firstWant := &DatasetReport{File: "data/users.jsonl", Records: 3, Used: 3, UsedMax: 2}
+	if got := r1.Methods[0].Dataset; got == nil || *got != *firstWant {
+		t.Errorf("first report = %+v, want %+v", got, firstWant)
 	}
 	// 8 handed out in all: cumulative to the end of the run.
 	if got, want := r2.Methods[0].Dataset, (&DatasetReport{File: "data/users.jsonl", Records: 3, Used: 3, UsedMax: 3}); got == nil || *got != *want {
 		t.Errorf("second report = %+v, want %+v", got, want)
+	}
+
+	// The first engine's report is asked for again after the second run: it
+	// states the count as at the end of its own run (2 = ceil(4/3)), not the 3
+	// the shared counter has reached by now.
+	if got := e1.Report().Methods[0].Dataset; got == nil || *got != *firstWant {
+		t.Errorf("first report asked for after the second run = %+v, want %+v: S as at the end of that run", got, firstWant)
 	}
 }
 
@@ -375,8 +420,9 @@ func TestEngine_ZeroPayloadsIsOneEmpty(t *testing.T) {
 	if n := counter.Handed(); n != 5 {
 		t.Errorf("handed out = %d, want 5", n)
 	}
-	if got := report.Methods[0].Dataset; got == nil || got.Records != 0 {
-		t.Errorf("dataset report = %+v, want one with no records", got)
+	// Nothing to use: no record used, none repeated, and no division by zero.
+	if got, want := report.Methods[0].Dataset, (&DatasetReport{File: "data/users.jsonl"}); got == nil || *got != *want {
+		t.Errorf("dataset report = %+v, want %+v: a file of no records", got, want)
 	}
 }
 
