@@ -27,6 +27,7 @@ import (
 	"math"
 	"math/big"
 	"net"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -318,7 +319,10 @@ func TestConnections_NameTheTargetsLimit(t *testing.T) {
 		want engine.Connections
 	}{
 		{"limit one", []grpc.ServerOption{grpc.MaxConcurrentStreams(1)},
-			engine.Connections{Open: 1, LimitAnnounced: true, FirstLimit: 1, LastLimit: 1}},
+			engine.Connections{
+				Open: 1, LimitAnnounced: true, FirstLimit: 1, LastLimit: 1,
+				InFlightLimit: 1, InFlightAnnounced: true,
+			}},
 		// grpc-go's server does not send the setting unless asked to.
 		{"no limit", nil, engine.Connections{Open: 1}},
 	}
@@ -331,7 +335,7 @@ func TestConnections_NameTheTargetsLimit(t *testing.T) {
 				t.Fatalf("send: %v", err)
 			}
 
-			if got, ok := sender.Connections(); !ok || got != tt.want {
+			if got, ok := sender.Connections(); !ok || !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("connections %+v, want %+v", got, tt.want)
 			}
 		})
@@ -635,8 +639,11 @@ func TestConnections_ReadTheLimitUnderTLS(t *testing.T) {
 		t.Fatalf("send: %v", err)
 	}
 
-	want := engine.Connections{Open: 1, LimitAnnounced: true, FirstLimit: 7, LastLimit: 7}
-	if got, ok := sender.Connections(); !ok || got != want {
+	want := engine.Connections{
+		Open: 1, LimitAnnounced: true, FirstLimit: 7, LastLimit: 7,
+		InFlightLimit: 7, InFlightAnnounced: true,
+	}
+	if got, ok := sender.Connections(); !ok || !reflect.DeepEqual(got, want) {
 		t.Errorf("connections %+v (known %v), want %+v", got, ok, want)
 	}
 }

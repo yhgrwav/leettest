@@ -16,6 +16,7 @@ package engine
 
 import (
 	"context"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -277,7 +278,7 @@ func TestEngine_ReportCarriesTheSendersConnections(t *testing.T) {
 			switch {
 			case (got == nil) != (tt.want == nil):
 				t.Fatalf("connections %v, want %v", got, tt.want)
-			case got != nil && *got != *tt.want:
+			case got != nil && !reflect.DeepEqual(*got, *tt.want):
 				t.Errorf("connections %+v, want %+v", *got, *tt.want)
 			}
 		})

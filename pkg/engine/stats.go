@@ -345,6 +345,59 @@ type Stats struct {
 	// waited counts calls over the floor for each cause: generator,
 	// connection, stream.
 	waited [3]int
+	// links is what each connection of several carried, set once before the
+	// run; nil with one connection, and then nothing is counted per
+	// connection.
+	links []*linkStats
+}
+
+// linkStats is what one connection carried, counted by the rules of the run's
+// totals.
+type linkStats struct {
+	calls, failed, streamWaited int
+	// latency is the run's percentile rule over the connection's own calls that
+	// have one.
+	latency *metrics.Latencies
+}
+
+// SetLinks turns on the count per connection for n of them, numbered as
+// Result.Link. Before the run; fewer than two leave it off.
+func (s *Stats) SetLinks(n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.links = nil
+	if n < 2 {
+		return
+	}
+
+	s.links = make([]*linkStats, n)
+	for i := range s.links {
+		s.links[i] = &linkStats{latency: metrics.NewLatencies()}
+	}
+}
+
+// LinkCounts is what each connection carried so far, by index; its address and
+// limits are not known here. Nil when the count per connection is off.
+func (s *Stats) LinkCounts() []LinkReport {
+	s.mu.Lock()
+	links := s.links
+	out := make([]LinkReport, len(links))
+
+	for i, l := range links {
+		out[i] = LinkReport{Calls: l.calls, Failed: l.failed, StreamWaited: l.streamWaited}
+	}
+	s.mu.Unlock()
+
+	if links == nil {
+		return nil
+	}
+
+	for i, l := range links {
+		out[i].P99 = l.latency.Snapshot().Percentile(0.99)
+	}
+
+	return out
 }
 
 type methodStats struct {
@@ -502,6 +555,14 @@ func (s *Stats) Record(r Result) {
 		return
 	}
 
+	// Only with links: a result's Link means nothing to a run of one
+	// connection.
+	var link *linkStats
+	if r.Link >= 0 && r.Link < len(s.links) {
+		link = s.links[r.Link]
+		link.calls++
+	}
+
 	if lag := r.QueueTime(); lag >= 0 {
 		s.startLag.Record(lag)
 		s.startLagMax = max(s.startLagMax, lag)
@@ -532,6 +593,14 @@ func (s *Stats) Record(r Result) {
 			s.notSentConnection++
 			method.notSentConnection++
 			conn = true
+
+			// A call that waited in vain for its connection is that
+			// connection's failure. Held back by the generator or a stream it
+			// is not: the first says nothing of the connection, the second is
+			// a limit of the run, not a broken backend.
+			if link != nil {
+				link.failed++
+			}
 		}
 		s.countWaits(gen, conn, stream)
 		s.mu.Unlock()
@@ -543,6 +612,10 @@ func (s *Stats) Record(r Result) {
 	failed := r.Category != CategorySuccess && r.Category != CategoryAborted
 	if failed {
 		s.failed++
+
+		if link != nil {
+			link.failed++
+		}
 	}
 	if r.Category == CategoryAborted {
 		s.aborted++
@@ -562,6 +635,10 @@ func (s *Stats) Record(r Result) {
 
 	if stream {
 		s.streamWait.Record(r.StreamWait)
+
+		if link != nil {
+			link.streamWaited++
+		}
 	}
 	s.countWaits(gen, conn, stream)
 
@@ -619,6 +696,9 @@ func (s *Stats) Record(r Result) {
 		threshold := r.CensorThreshold()
 		method.latency.RecordCensored(threshold)
 		method.served.RecordCensored(max(0, threshold-clientWait))
+		if link != nil {
+			link.latency.RecordCensored(threshold)
+		}
 		for _, w := range waited {
 			if w != nil {
 				w.RecordCensored(threshold)
@@ -640,6 +720,9 @@ func (s *Stats) Record(r Result) {
 	case CategorySuccess:
 		method.latency.Record(r.Latency())
 		method.served.Record(max(0, r.Latency()-clientWait))
+		if link != nil {
+			link.latency.Record(r.Latency())
+		}
 	case CategoryOverload:
 		method.overload.Record(r.Latency())
 	case CategoryServerFault:

@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"math"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"google.golang.org/grpc"
@@ -95,30 +96,60 @@ type Options struct {
 	// limit the target announces; Connections then reports nothing.
 	//
 	// The service config the target hands out through its resolver is
-	// ignored: the sender keeps one connection to one address, pick_first,
-	// and with several addresses in DNS loads that one backend only. A
-	// config given here with grpc.WithDefaultServiceConfig still applies:
-	// that is the caller's own choice, and the CLI offers none. With a load
-	// balancing policy other than pick_first the connection lines and the
-	// "limited by the run" verdict are wrong: they assume one connection.
+	// ignored: each connection of the sender is to one address, pick_first,
+	// and with several addresses in DNS and one connection it loads that one
+	// backend only: see Connections. A config given here with
+	// grpc.WithDefaultServiceConfig still applies: that is the caller's own
+	// choice, and the CLI offers none. With a load balancing policy other
+	// than pick_first the connection lines and the "limited by the run"
+	// verdict are wrong: they assume one address a connection.
 	DialOptions []grpc.DialOption
+	// Connections is how many connections the sender opens; 0 means 1. With one,
+	// grpc-go's own resolver and pick_first take Target as they always did.
+	// With two or more the sender resolves Target itself, once, and gives
+	// connection i the address i mod M of the M it got: three connections over
+	// two addresses are 2 + 1. It never looks the name up again, and a reconnect
+	// goes to the same address. Calls take the connections in turn, whatever
+	// their state: a slow, failed or full connection is not skipped, a skip
+	// would be a hidden retry.
+	//
+	// Target must then be host:port. A Target with a scheme (dns:///host:443)
+	// is not resolved by the sender: every connection dials it with its own
+	// resolver and pick_first, so all of them may land on one backend. Behind a
+	// name that resolves to an address that does not serve (localhost to ::1,
+	// the server on 127.0.0.1 only) Connect fails and names the address.
+	Connections int
+	// Lookup resolves Target (host:port) to host:port addresses, in the order
+	// to use them; none or an error fails Connect. nil resolves by DNS, each
+	// address once, in the resolver's order. It is asked once, and only for two
+	// or more connections and a Target that has no scheme and is no IP literal.
+	//
+	// With two or more connections connection i dials its address with
+	// grpc.WithAuthority(Target), placed before DialOptions: :authority and
+	// the name TLS verifies stay the one the user wrote. DialOptions may
+	// replace it, but grpc-go refuses credentials of the caller's that carry a
+	// ServerName other than Target (v1.84.0 clientconn.go:1958).
+	Lookup func(ctx context.Context, target string) ([]string, error)
 }
 
 // Sender delivers calls to a real gRPC target.
 type Sender struct {
 	opts Options
 
-	mu     sync.RWMutex
+	mu sync.RWMutex
+	// conn is the first connection's, the one reflection goes through; nil
+	// before Connect and after Close.
 	conn   *grpc.ClientConn
 	closed bool
 
-	tracker *connTracker
-	ready   readyWindow
-	// streams tells a wait for a stream from a delay on our side.
-	streams *streamGauge
-	// stopWatch ends the connection watcher; watched closes when it has.
-	stopWatch context.CancelFunc
-	watched   chan struct{}
+	// link is the first connection, the only one with one connection.
+	*link
+	// links is every connection, the first among them, when there are two or
+	// more; nil with one. resolved is the distinct addresses they go to.
+	links    []*link
+	resolved []string
+	// next numbers the calls that pick among links.
+	next atomic.Uint64
 	// limit is the largest reply a call accepts, and call the options that
 	// check it: both set by Connect.
 	limit int
@@ -162,9 +193,7 @@ const defaultMaxResponse = 4 << 20
 // Connect, before the run starts, so a wrong address fails immediately rather
 // than a minute into the load.
 func New(opts Options) *Sender {
-	tracker := &connTracker{}
-
-	return &Sender{opts: opts, tracker: tracker, streams: &streamGauge{limit: tracker.limit}}
+	return &Sender{opts: opts, link: newLink("")}
 }
 
 // Connect establishes the connection and waits for it to become usable, so an
@@ -190,9 +219,64 @@ func (s *Sender) Connect(ctx context.Context) error {
 		creds = credentials.NewTLS(tlsConfig(s.opts))
 	}
 
+	limit := s.opts.MaxResponseBytes
+	if limit == 0 {
+		limit = defaultMaxResponse
+	}
+	if limit < 0 || limit > math.MaxInt32 {
+		return fmt.Errorf("%w: %d", ErrMaxResponseOutOfRange, limit)
+	}
+	if err := checkIdle(ctx, s.opts.IdleTimeout); err != nil {
+		return err
+	}
+
+	if s.opts.Connections > 1 {
+		return s.connectMany(ctx, creds, limit)
+	}
+
+	conn, err := grpc.NewClient(s.opts.Target, s.dialOptions(s.link, creds, "")...)
+	if err != nil {
+		return fmt.Errorf("connect to %s: %w", s.opts.Target, err)
+	}
+	s.setLimit(limit)
+
+	if err := waitReady(ctx, conn); err != nil {
+		_ = conn.Close()
+
+		if s.opts.TLS && s.tracker.handshookSilently() {
+			return fmt.Errorf("connect to %s: %w: %w", s.opts.Target, ErrClosedAfterHandshake, err)
+		}
+
+		return fmt.Errorf("connect to %s: %w", s.opts.Target, err)
+	}
+
+	s.conn = conn
+	s.start(s.link, conn)
+
+	return nil
+}
+
+// setLimit sets the largest reply a call accepts and the options that check it.
+func (s *Sender) setLimit(limit int) {
+	s.limit = limit
+	// Our codec refuses a reply over the limit; grpc-go's own limit is set
+	// twice as high, so it only bounds the memory a reply can take. Past it
+	// grpc-go refuses first, in words that also mean the target refused our
+	// request. Per call rather than as the connection's default: a default
+	// costs grpc-go an allocation per call to merge with these.
+	s.call = []grpc.CallOption{
+		grpc.ForceCodec(&rawCodec{limit: limit}),
+		grpc.MaxCallRecvMsgSize(int(min(2*int64(limit), math.MaxInt32))),
+	}
+}
+
+// dialOptions are the options of one connection: its own tracker and gauge,
+// the same for every other. A non-empty authority is the :authority and the
+// name TLS verifies, placed before the caller's DialOptions so theirs win.
+func (s *Sender) dialOptions(l *link, creds credentials.TransportCredentials, authority string) []grpc.DialOption {
 	dialOpts := []grpc.DialOption{
-		grpc.WithTransportCredentials(trackingCreds{TransportCredentials: creds, tracker: s.tracker, serverName: s.opts.ServerName}),
-		grpc.WithStatsHandler(handler{streams: s.streams}),
+		grpc.WithTransportCredentials(trackingCreds{TransportCredentials: creds, tracker: l.tracker, serverName: s.opts.ServerName}),
+		grpc.WithStatsHandler(handler{streams: l.streams}),
 		// A retry by a service config policy may follow an attempt the target
 		// served, and would count one call for several. Transparent retries
 		// stay: they follow only attempts the target never processed.
@@ -207,63 +291,129 @@ func (s *Sender) Connect(ctx context.Context) error {
 		// them itself, and a run without metadata has nothing in the send path.
 		dialOpts = append(dialOpts, grpc.WithPerRPCCredentials(staticMetadata(s.opts.Metadata)))
 	}
-	limit := s.opts.MaxResponseBytes
-	if limit == 0 {
-		limit = defaultMaxResponse
-	}
-	if limit < 0 || limit > math.MaxInt32 {
-		return fmt.Errorf("%w: %d", ErrMaxResponseOutOfRange, limit)
-	}
-	if err := checkIdle(ctx, s.opts.IdleTimeout); err != nil {
-		return err
+	if authority != "" {
+		dialOpts = append(dialOpts, grpc.WithAuthority(authority))
 	}
 	dialOpts = append(dialOpts, s.opts.DialOptions...)
 	if s.opts.IdleTimeout > 0 {
 		dialOpts = append(dialOpts, grpc.WithIdleTimeout(s.opts.IdleTimeout))
 	}
 
-	conn, err := grpc.NewClient(s.opts.Target, dialOpts...)
+	return dialOpts
+}
+
+// connectMany opens Options.Connections connections, one per address in turn,
+// all at once, and returns when every one is ready; one failing closes them
+// all. The connections are published only then.
+func (s *Sender) connectMany(ctx context.Context, creds credentials.TransportCredentials, limit int) error {
+	n := s.opts.Connections
+
+	addrs, resolved, err := s.addresses(ctx, n)
 	if err != nil {
-		return fmt.Errorf("connect to %s: %w", s.opts.Target, err)
-	}
-	s.limit = limit
-	// Our codec refuses a reply over the limit; grpc-go's own limit is set
-	// twice as high, so it only bounds the memory a reply can take. Past it
-	// grpc-go refuses first, in words that also mean the target refused our
-	// request. Per call rather than as the connection's default: a default
-	// costs grpc-go an allocation per call to merge with these.
-	s.call = []grpc.CallOption{
-		grpc.ForceCodec(&rawCodec{limit: limit}),
-		grpc.MaxCallRecvMsgSize(int(min(2*int64(limit), math.MaxInt32))),
+		return err
 	}
 
-	if err := waitReady(ctx, conn); err != nil {
-		_ = conn.Close()
+	// The name the user wrote stays the :authority and what TLS verifies,
+	// though each connection dials an address. A target with a scheme has an
+	// authority of its own.
+	scheme := hasScheme(s.opts.Target)
+	authority := s.opts.Target
+	if scheme {
+		authority = ""
+	}
 
-		if s.opts.TLS && s.tracker.handshookSilently() {
-			return fmt.Errorf("connect to %s: %w: %w", s.opts.Target, ErrClosedAfterHandshake, err)
+	links := make([]*link, n)
+	conns := make([]*grpc.ClientConn, n)
+
+	closeAll := func() {
+		for _, conn := range conns {
+			if conn != nil {
+				_ = conn.Close()
+			}
+		}
+	}
+
+	for i := range links {
+		links[i] = s.link
+		if i > 0 {
+			links[i] = newLink("")
+		}
+		links[i].address = addrs[i]
+
+		dial := addrs[i]
+		if !scheme {
+			dial = "passthrough:///" + dial
 		}
 
-		return fmt.Errorf("connect to %s: %w", s.opts.Target, err)
+		conns[i], err = grpc.NewClient(dial, s.dialOptions(links[i], creds, authority)...)
+		if err != nil {
+			closeAll()
+
+			return fmt.Errorf("connect to %s: connection %d of %d to %s: %w", s.opts.Target, i+1, n, addrs[i], err)
+		}
 	}
 
-	s.conn = conn
+	s.setLimit(limit)
 
-	// Recorded here, not by the watcher: the run starts the moment Connect
-	// returns, before the watcher's goroutine may have run.
-	s.ready.entered(time.Now())
+	// Every connection is waited for, so that a start that fails has tried them
+	// all: the error is the first failure heard, and ctx bounds the rest.
+	var (
+		wg     sync.WaitGroup
+		once   sync.Once
+		failed error
+	)
 
-	watchCtx, stop := context.WithCancel(context.Background())
-	s.stopWatch, s.watched = stop, make(chan struct{})
+	for i, conn := range conns {
+		wg.Go(func() {
+			if err := waitReady(ctx, conn); err != nil {
+				once.Do(func() { failed = s.connectionError(links[i], i, n, err) })
+			}
+		})
+	}
 
-	go s.watch(watchCtx, conn, s.watched)
+	wg.Wait()
+
+	if failed != nil {
+		closeAll()
+
+		return failed
+	}
+
+	for i, l := range links {
+		s.start(l, conns[i])
+	}
+
+	s.conn, s.links, s.resolved = conns[0], links, resolved
 
 	return nil
 }
 
+// connectionError says which connection of n failed to come up and why.
+func (s *Sender) connectionError(l *link, i, n int, cause error) error {
+	if s.opts.TLS && l.tracker.handshookSilently() {
+		cause = fmt.Errorf("%w: %w", ErrClosedAfterHandshake, cause)
+	}
+
+	return fmt.Errorf("connect to %s: connection %d of %d to %s: %w", s.opts.Target, i+1, n, l.address, cause)
+}
+
+// start makes conn the link's and begins to watch it.
+func (s *Sender) start(l *link, conn *grpc.ClientConn) {
+	l.client = conn
+
+	// Recorded here, not by the watcher: the run starts the moment Connect
+	// returns, before the watcher's goroutine may have run.
+	l.ready.entered(time.Now())
+
+	watchCtx, stop := context.WithCancel(context.Background())
+	l.stopWatch, l.watched = stop, make(chan struct{})
+
+	go l.watch(watchCtx, conn, l.watched)
+}
+
 // watch records the connection's changes of state from READY, which Connect
 // has already recorded, until ctx ends or the connection shuts down.
-func (s *Sender) watch(ctx context.Context, conn *grpc.ClientConn, done chan<- struct{}) {
+func (l *link) watch(ctx context.Context, conn *grpc.ClientConn, done chan<- struct{}) {
 	defer close(done)
 
 	for state := connectivity.Ready; conn.WaitForStateChange(ctx, state); {
@@ -273,9 +423,9 @@ func (s *Sender) watch(ctx context.Context, conn *grpc.ClientConn, done chan<- s
 		case connectivity.Shutdown:
 			return
 		case connectivity.Ready:
-			s.ready.entered(time.Now())
+			l.ready.entered(time.Now())
 		default:
-			s.ready.left(time.Now())
+			l.ready.left(time.Now())
 		}
 	}
 }
@@ -333,7 +483,7 @@ func transportCause(ctx context.Context, conn *grpc.ClientConn) error {
 	return errors.New(status.Convert(err).Message())
 }
 
-// Close releases the connection. Calling it twice is safe.
+// Close releases every connection. Calling it twice is safe.
 func (s *Sender) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -344,13 +494,27 @@ func (s *Sender) Close() error {
 		return nil
 	}
 
-	conn := s.conn
 	s.conn = nil
 
-	err := conn.Close()
+	links := s.links
+	if len(links) < 2 {
+		links = []*link{s.link}
+	}
 
-	s.stopWatch()
-	<-s.watched
+	var err error
+
+	for _, l := range links {
+		// The first error as it is, so that one connection reports what it
+		// always did.
+		if cerr := l.client.Close(); err == nil {
+			err = cerr
+		} else if cerr != nil {
+			err = errors.Join(err, cerr)
+		}
+
+		l.stopWatch()
+		<-l.watched
+	}
 
 	return err
 }
@@ -360,7 +524,7 @@ func (s *Sender) Close() error {
 // category inside the outcome is data about the target.
 func (s *Sender) Send(ctx context.Context, req engine.Request) (engine.Outcome, error) {
 	s.mu.RLock()
-	conn, closed, callOpts, limit := s.conn, s.closed, s.call, s.limit
+	conn, closed, callOpts, limit, links := s.conn, s.closed, s.call, s.limit, s.links
 	s.mu.RUnlock()
 
 	switch {
@@ -368,6 +532,16 @@ func (s *Sender) Send(ctx context.Context, req engine.Request) (engine.Outcome, 
 		return engine.Outcome{}, ErrClosed
 	case conn == nil:
 		return engine.Outcome{}, ErrNotConnected
+	}
+
+	// With several connections the call takes its own first, before anything
+	// can return: every call, a late one too, is a call of the next
+	// connection in turn, and none is skipped for its state. A late call put
+	// on one connection would make that one look worse than it is.
+	l, index := s.link, 0
+	if len(links) > 1 {
+		index = int((s.next.Add(1) - 1) % uint64(len(links)))
+		l, conn = links[index], links[index].client
 	}
 
 	// A deadline already in the past is a timeout without touching the network:
@@ -378,6 +552,7 @@ func (s *Sender) Send(ctx context.Context, req engine.Request) (engine.Outcome, 
 		// Nothing on the connection's side had a chance to hold it: the
 		// generator handed it over too late.
 		return engine.Outcome{
+			Link:      index,
 			SentAt:    now,
 			NotSent:   true,
 			NotSentOn: engine.BlockedOnGenerator,
@@ -414,7 +589,7 @@ func (s *Sender) Send(ctx context.Context, req engine.Request) (engine.Outcome, 
 	// engine cannot tell a deliberate stop from a failure, and Ctrl+C would end
 	// the run with a non-zero exit code.
 	if err != nil && ctx.Err() != nil {
-		return engine.Outcome{}, fmt.Errorf("call aborted with %s: %w", status.Code(err), ctx.Err())
+		return engine.Outcome{Link: index}, fmt.Errorf("call aborted with %s: %w", status.Code(err), ctx.Err())
 	}
 
 	times := call.read()
@@ -436,6 +611,7 @@ func (s *Sender) Send(ctx context.Context, req engine.Request) (engine.Outcome, 
 	sentAt, doneAt, notSent := timestamps(times, category)
 
 	outcome := engine.Outcome{
+		Link:       index,
 		SentAt:     sentAt,
 		NotSent:    notSent,
 		StreamWait: times.streamWait(),
@@ -452,7 +628,7 @@ func (s *Sender) Send(ctx context.Context, req engine.Request) (engine.Outcome, 
 			(times.answered && !expiredCopy(code, times, req.Deadline) && !echoOfOurDeadline(code, times, req.Deadline)),
 	}
 	if notSent {
-		outcome.NotSentOn = s.blocker(conn, times)
+		outcome.NotSentOn = l.blocker(conn, times)
 	}
 	if call.reply.body != nil {
 		outcome.Response = *call.reply.body
@@ -486,8 +662,8 @@ func expiredCopy(code codes.Code, times callTimes, deadline time.Time) bool {
 	return !times.answeredAt.Before(times.sentAt.Add(budget * 9 / 10))
 }
 
-// Conn is the connection calls go through, for resolving method schemas over
-// it before the run. Nil before Connect.
+// Conn is a connection calls go through, for resolving method schemas over
+// it before the run: the first one with several. Nil before Connect.
 func (s *Sender) Conn() grpc.ClientConnInterface {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -528,12 +704,13 @@ func timestamps(call callTimes, category engine.Category) (sentAt, doneAt time.T
 // blocker says what an unsent call waited for. A connection not ready for all
 // of the call, or not ready now in case the watcher is behind, is the
 // connection. On a ready one it is a stream only if the connection was full at
-// some moment of the wait; otherwise the delay was ours.
-func (s *Sender) blocker(conn *grpc.ClientConn, t callTimes) engine.Blocker {
+// some moment of the wait; otherwise the delay was ours. Of the connection the
+// call was sent on, not of another.
+func (l *link) blocker(conn *grpc.ClientConn, t callTimes) engine.Blocker {
 	switch {
-	case t.begunAt.IsZero() || !s.ready.throughout(t.begunAt) || conn.GetState() != connectivity.Ready:
+	case t.begunAt.IsZero() || !l.ready.throughout(t.begunAt) || conn.GetState() != connectivity.Ready:
 		return engine.BlockedOnConnection
-	case s.streams.fullSince(t.waitFrom()):
+	case l.streams.fullSince(t.waitFrom()):
 		return engine.BlockedOnStream
 	default:
 		return engine.BlockedOnGenerator

@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -66,6 +67,9 @@ type Engine struct {
 	capHit atomic.Pointer[InFlightCapError]
 	// startedAt is when Run started, for the moment of a cap hit.
 	startedAt time.Time
+	// links is the address of each connection when the sender has two or more,
+	// asked once in New; nil otherwise.
+	links []string
 }
 
 // CheckOptions validates everything about the calls and limits that New does,
@@ -107,6 +111,14 @@ func New(opts Options) (*Engine, error) {
 		e.stats.SetWaitFloor(opts.WaitFloor)
 	}
 	e.targets = e.targetRates()
+
+	// The sender has connected by now: it is asked for its connections once.
+	if reporter, ok := opts.Sender.(LinkReporter); ok {
+		if links := reporter.Links(); len(links) > 1 {
+			e.links = slices.Clone(links)
+			e.stats.SetLinks(len(links))
+		}
+	}
 
 	return e, nil
 }
@@ -200,11 +212,7 @@ func (e *Engine) Report() Report {
 	}
 	report.StartedAt = e.startedAt
 
-	if r, ok := e.opts.Sender.(ConnectionReporter); ok {
-		if conns, known := r.Connections(); known {
-			report.Connections = &conns
-		}
-	}
+	report.Connections = e.connections()
 
 	if hit := e.capHit.Load(); hit != nil {
 		report.CapHit = &CapHit{At: hit.At.Sub(e.startedAt), Unsent: 1, OverDeadline: hit.OverDeadline}
@@ -226,6 +234,60 @@ func (e *Engine) Report() Report {
 	}
 
 	return report
+}
+
+// connections is what the sender says about its connections, with the engine's
+// count of what each of several carried joined in. Nil when the sender tells
+// nothing and has one connection.
+func (e *Engine) connections() *Connections {
+	var (
+		conns Connections
+		known bool
+	)
+
+	if r, ok := e.opts.Sender.(ConnectionReporter); ok {
+		conns, known = r.Connections()
+	}
+
+	counts := e.stats.LinkCounts()
+	if counts == nil {
+		if known {
+			return &conns
+		}
+
+		return nil
+	}
+
+	if !known {
+		// A sender that cannot vouch for its handshakes, such as one with
+		// credentials of the caller's, still has these connections: they are
+		// shown with no limit, which was not read.
+		conns = Connections{Open: len(e.links)}
+
+		for _, addr := range e.links {
+			if !slices.Contains(conns.Resolved, addr) {
+				conns.Resolved = append(conns.Resolved, addr)
+			}
+		}
+	}
+
+	// Never the sender's own slice: the engine adds its counts to a copy.
+	each := make([]LinkReport, len(counts))
+	if len(conns.Each) == len(counts) {
+		copy(each, conns.Each)
+	}
+
+	for i, c := range counts {
+		if each[i].Address == "" {
+			each[i].Address = e.links[i]
+		}
+
+		each[i].Calls, each[i].Failed, each[i].StreamWaited, each[i].P99 = c.Calls, c.Failed, c.StreamWaited, c.P99
+	}
+
+	conns.Each = each
+
+	return &conns
 }
 
 // ScheduledAfter counts the ticks the schedule of stages places at or after

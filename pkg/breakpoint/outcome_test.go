@@ -330,7 +330,10 @@ func TestSearch_EveryCauseIsReachable(t *testing.T) {
 		{CauseInFlightCap, plan, at195(func(r *engine.Report) { r.CapHit = &engine.CapHit{} })},
 		{CauseStreamLimit, plan, at195(func(r *engine.Report) {
 			r.NotSent, r.NotSentStream, r.StreamTailCalls = 3, 3, 3
-			r.Connections = &engine.Connections{Open: 1, LimitAnnounced: true, FirstLimit: 1, LastLimit: 1}
+			r.Connections = &engine.Connections{
+				Open: 1, LimitAnnounced: true, FirstLimit: 1, LastLimit: 1,
+				InFlightLimit: 1, InFlightAnnounced: true,
+			}
 		})},
 		{CauseStreamWait, plan, at195(func(r *engine.Report) {
 			r.NotSent, r.NotSentStream, r.StreamTailCalls = 3, 3, 3

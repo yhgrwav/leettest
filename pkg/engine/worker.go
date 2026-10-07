@@ -331,7 +331,10 @@ func (p *WorkerPool) send(r *poolRun, req Request, out chan<- Result, release fu
 		if at.Before(begunAt) {
 			at = begunAt
 		}
-		outcome = Outcome{Category: CategoryAborted, Err: err, SentAt: begunAt, DoneAt: at}
+		// The connection the sender had picked stays: an abort ends every call in
+		// flight at once, and without it all of them would be the first
+		// connection's.
+		outcome = Outcome{Category: CategoryAborted, Err: err, SentAt: begunAt, DoneAt: at, Link: outcome.Link}
 	}
 
 	if outcome.SentAt.IsZero() {
