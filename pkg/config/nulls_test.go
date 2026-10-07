@@ -149,7 +149,7 @@ func TestParse_EmptyStringTagAndAliasAreUnchanged(t *testing.T) {
 		_, err := config.Parse([]byte(datasetYAML("      data: &a ~\n      dataset: *a\n")))
 
 		if err != nil {
-			t.Errorf("error = %v, want none: an alias is out of scope and read as before", err)
+			t.Errorf("error = %v, want none: a known hole (the alias hides an empty path), out of scope here and read as before", err)
 		}
 	})
 }
