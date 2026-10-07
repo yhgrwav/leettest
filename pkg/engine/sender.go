@@ -18,6 +18,8 @@ import (
 	"context"
 	"strings"
 	"time"
+
+	"github.com/yhgrwav/leettest/pkg/metrics"
 )
 
 type Category int
@@ -118,6 +120,10 @@ type Outcome struct {
 	// sender that does not track it leaves it false, and a category that is
 	// a status from the target counts as heard anyway.
 	Heard bool
+	// Link is the index of the connection the call was assigned to: 0 for a
+	// sender with one connection. A call the sender returned an error for,
+	// after it had picked its connection, carries it too.
+	Link int
 }
 
 // Sender delivers one call to the target and reports what happened to it.
@@ -172,6 +178,52 @@ type Connections struct {
 	FirstLimit   uint32
 	LastLimit    uint32
 	LimitChanges int
+
+	// Resolved is the distinct addresses the connections went to, in the order
+	// the resolver gave them; nil with one connection.
+	Resolved []string
+	// Each is one entry per connection; nil with one connection.
+	Each []LinkReport
+	// InFlightLimit is the most calls the target lets the run have in flight
+	// and InFlightAnnounced says every connection's last handshake named a
+	// limit: with one connection LastLimit and LimitAnnounced, with several
+	// the sum of the connections' limits.
+	InFlightLimit     int
+	InFlightAnnounced bool
+}
+
+// LinkReport is what one connection of several went through.
+type LinkReport struct {
+	Address string
+	// Calls counts the measured calls assigned to the connection, sent or not,
+	// warmup left out: the connections add up to Report.Sent + Report.NotSent.
+	//
+	// Failed is the connection's sent calls that were not a success, aborted
+	// ones apart (Report.Failed's rule), and its unsent calls that timed out
+	// waiting for the connection itself (NotSentConnection). An unsent call
+	// held back by the generator or by a full stream is not the connection's
+	// failure: the first says nothing of it, the second is a limit the run hit.
+	// So the connections add up to Report.Failed + Report.NotSentConnection.
+	//
+	// StreamWaited counts the sent calls over the stream-wait floor, as
+	// Report.StreamWaited does, and the connections add up to it. P99 is the run's
+	// percentile rule over the calls that have a latency.
+	Calls        int
+	Failed       int
+	StreamWaited int
+	P99          metrics.Quantile
+
+	LimitAnnounced bool
+	FirstLimit     uint32
+	LastLimit      uint32
+	LimitChanges   int
+}
+
+// LinkReporter is a Sender with several connections. The engine asks once,
+// after the sender has connected: the addresses by connection index. Fewer
+// than two turn the per-connection report off.
+type LinkReporter interface {
+	Links() []string
 }
 
 // ConnectionReporter is a Sender that can say what connections it used. The
