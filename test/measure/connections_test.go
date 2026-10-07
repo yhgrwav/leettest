@@ -178,7 +178,9 @@ func measureSpread(t *testing.T, bs []*stand.Stand, opts grpcsender.Options, aft
 }
 
 // checkEven asserts the 600/600 split of a run over two backends and that the
-// target held it: nothing timed out and the tail stayed short.
+// target held it: nothing timed out and the tail stayed far from the timeout.
+// The bound is no backlog, not a latency number: with one connection p99
+// reaches the timeout, with two it stays under a quarter of it.
 func checkEven(t *testing.T, got []int, report engine.Report) {
 	t.Helper()
 
@@ -190,8 +192,8 @@ func checkEven(t *testing.T, got []int, report engine.Report) {
 	if m.TimedOut != 0 {
 		t.Errorf("%d calls timed out: two backends of %d rps hold %d rps", m.TimedOut, backendCapacity, offeredRPS)
 	}
-	if !m.P99.Defined || m.P99.Value >= 50*time.Millisecond {
-		t.Errorf("p99 %+v, want under 50ms: the load is half of each backend's capacity", m.P99)
+	if !m.P99.Defined || m.P99.Value >= measureTimeout/4 {
+		t.Errorf("p99 %+v, want under %v: the load is half of each backend's capacity", m.P99, measureTimeout/4)
 	}
 }
 
