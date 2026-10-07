@@ -212,6 +212,11 @@ type LinkReport struct {
 	Failed       int
 	StreamWaited int
 	P99          metrics.Quantile
+	// NotSentStream counts the connection's calls that expired unsent waiting
+	// for a stream, by the rule of Report.NotSentStream.
+	//
+	// STUB of the red commit: never counted, always 0.
+	NotSentStream int
 
 	LimitAnnounced bool
 	FirstLimit     uint32
