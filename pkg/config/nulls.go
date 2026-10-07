@@ -26,8 +26,9 @@ import (
 var callDatasetPath = regexp.MustCompile(`^\$\.load\.calls\[\d+\]\.dataset$`)
 
 // checkNullDataset rejects `dataset:`, `dataset: ~` and `dataset: null` under
-// a call. The decoder reads each as the key left out, so the path is lost
-// without a word and the call runs with an empty message.
+// a call, also behind an anchor (`&a ~`) or a tag (`!!null`, `&a !!null`).
+// The decoder reads each as the key left out, so the path is lost without a
+// word and the call runs with an empty message. An alias is not followed.
 func checkNullDataset(raw []byte) error {
 	file, err := parser.ParseBytes(raw, 0)
 	if err != nil {
@@ -52,7 +53,21 @@ func (v *nullDatasetVisitor) Visit(node ast.Node) ast.Visitor {
 		return v
 	}
 
-	if _, null := pair.Value.(*ast.NullNode); null {
+	value := pair.Value
+	for {
+		switch wrapped := value.(type) {
+		case *ast.AnchorNode:
+			value = wrapped.Value
+			continue
+		case *ast.TagNode:
+			value = wrapped.Value
+			continue
+		}
+
+		break
+	}
+
+	if _, null := value.(*ast.NullNode); null {
 		v.errs = append(v.errs, fmt.Errorf("line %d: %w", pair.Key.GetToken().Position.Line, ErrEmptyDatasetPath))
 	}
 
