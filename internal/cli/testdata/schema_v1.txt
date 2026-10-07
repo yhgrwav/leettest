@@ -170,6 +170,11 @@ methods[].silent_sent_rps int?
 methods[].silent_planned_rps_low int?
 methods[].silent_planned_rps_high int?
 methods[].last_answer_at_us int?
+methods[].dataset object?
+methods[].dataset.file string
+methods[].dataset.records int
+methods[].dataset.used int
+methods[].dataset.used_max int
 methods[].seconds []object
 methods[].seconds[].warmup bool
 methods[].seconds[].begun int

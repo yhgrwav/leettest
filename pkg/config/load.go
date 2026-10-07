@@ -37,7 +37,12 @@ func LoadFile(path string) (*MasterConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg.App.relativeTo(filepath.Dir(path))
+	dir := filepath.Dir(path)
+	cfg.App.relativeTo(dir)
+
+	if err := cfg.readDatasets(dir); err != nil {
+		return nil, err
+	}
 
 	return cfg, nil
 }
@@ -73,6 +78,9 @@ func (m *MasterConfig) resolve() error {
 	}
 	for i := range m.Load.Calls {
 		m.Load.Calls[i].ResolveTimeout()
+		if raw := m.Load.Calls[i].RawDataset; raw != nil {
+			m.Load.Calls[i].Dataset = *raw
+		}
 	}
 
 	address, err := m.App.Target.CreateConnectionString()

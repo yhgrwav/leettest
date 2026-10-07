@@ -74,8 +74,7 @@ load:
       rps: 50
       duration: 40s
       timeout: 500ms
-      data:
-        wallet_id: w-42
+      dataset: wallets.jsonl
 ```
 
 - **`name`** — как прогон называется в заголовке.
@@ -92,6 +91,10 @@ load:
 - **`timeout`** — сколько ждать ответа (по умолчанию 2 с).
 - **`data`** — тело запроса обычным YAML. Схему инструмент берёт у сервиса через reflection,
   `.proto` не нужен. Ошибка в теле видна до старта.
+- **`dataset`** (не выпущено) — файл с телами запросов вместо `data`, по одному JSON на строку
+  ([`examples/ru/wallets.jsonl`](../../examples/ru/wallets.jsonl)): первый вызов уходит с первой
+  строкой, второй — со второй, после последней — снова с первой. Рядом со строкой метода отчёт
+  говорит, сколько файла использовано.
 
 Несколько методов — несколько вызовов, у каждого свой темп. Один метод — один вызов: отчёт идёт по
 методам.
@@ -135,6 +138,7 @@ sent 12950, failed 5248
 method                                           sent   failed    sent/s       p50       p90       p95       p99
 grpc.health.v1.Health/Check                     11100     4499       300    20.5ms    >500ms    >500ms    >500ms
 wallet.v1.WalletService/GetBalance               1850      749        50    20.5ms    >500ms    >500ms    >500ms
+  data: 4 of 4 requests from wallets.jsonl, each used up to 500 times
 
 warm-up 1050 sent, excluded from stats
 

@@ -49,13 +49,21 @@ func writeSearch(t *testing.T, addr string, methods ...string) string {
 func writeSearchOf(t *testing.T, addr, section, timeout string, methods ...string) string {
 	t.Helper()
 
+	return writeSearchWith(t, addr, section, timeout, "", methods...)
+}
+
+// writeSearchWith is writeSearchOf with callLines, indented as fields of a
+// call, added to each call.
+func writeSearchWith(t *testing.T, addr, section, timeout, callLines string, methods ...string) string {
+	t.Helper()
+
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
 		t.Fatalf("split %q: %v", addr, err)
 	}
 	var calls strings.Builder
 	for _, m := range methods {
-		fmt.Fprintf(&calls, "    - method: %s\n      timeout: %s\n", m, timeout)
+		fmt.Fprintf(&calls, "    - method: %s\n      timeout: %s\n%s", m, timeout, callLines)
 	}
 	cfg := fmt.Sprintf(`app:
   target:
@@ -77,8 +85,19 @@ load:
 // The quickstart's tour of the search: -fake never breaks, so the search
 // holds every step, says so under the method, exits 0, and tells before the
 // first step how long it can take.
+//
+// The call has a dataset of 3 records: every step is a run of its own, and the
+// count of the call goes on through all of them, never back to record 1 (the
+// counter is made once for the process, in the wiring, not by a run). The text
+// says the line once for the search; each run of the JSON carries the count to
+// its own end.
 func TestRun_ASearchOnTheFakeTarget(t *testing.T) {
-	res := runCLI(t.Context(), t, 60*time.Second, "-fake", "-c", writeSearch(t, closedPort(t), checkMethod))
+	dataset := writeDataset(t, "{\"service\":\"a\"}\n{\"service\":\"b\"}\n{\"service\":\"c\"}\n")
+	cfg := func() string {
+		return writeSearchWith(t, closedPort(t), quickSearch, "200ms", "      dataset: '"+dataset+"'\n", checkMethod)
+	}
+
+	res := runCLI(t.Context(), t, 60*time.Second, "-fake", "-c", cfg())
 	if res.err != nil {
 		t.Fatalf("run: %v\n%s", res.err, res.stderr)
 	}
@@ -88,8 +107,14 @@ func TestRun_ASearchOnTheFakeTarget(t *testing.T) {
 	if !strings.Contains(res.stderr, "breakpoint: up to 3 steps, at most ") {
 		t.Errorf("stderr lacks the plan line:\n%s", res.stderr)
 	}
+	// 15 + 19 + 24 requests handed out over the steps of 50, 63 and 79 rps held
+	// for 300ms (ticks i/rps below 300ms): 58, over 3 records is 20 at most.
+	if want := "  held every step up to 79 rps: the limit is above it\n" +
+		"  data: 3 of 3 requests from users.jsonl, each used up to 20 times\n\n"; !strings.Contains(res.stdout, want) {
+		t.Errorf("stdout lacks the data line under the headline, with the count of the whole search:\n%s", res.stdout)
+	}
 
-	res = runCLI(t.Context(), t, 60*time.Second, "-fake", "-output", "json", "-c", writeSearch(t, closedPort(t), checkMethod))
+	res = runCLI(t.Context(), t, 60*time.Second, "-fake", "-output", "json", "-c", cfg())
 	if res.err != nil {
 		t.Fatalf("json run: %v", res.err)
 	}
@@ -97,6 +122,34 @@ func TestRun_ASearchOnTheFakeTarget(t *testing.T) {
 	bp, _ := out["breakpoint"].(map[string]any)
 	if out["mode"] != "breakpoint" || bp == nil || bp["outcome"] != "held_all" || bp["held_rps"] != 79.0 {
 		t.Errorf("mode %v, breakpoint %v; want breakpoint, held_all at 79", out["mode"], bp)
+	}
+
+	runs, _ := bp["runs"].([]any)
+	if len(runs) != 3 {
+		t.Fatalf("runs = %d, want 3 steps", len(runs))
+	}
+	handed := 0
+	for k, r := range runs {
+		m := jsonAt(t, r, "report", "methods").([]any)[0].(map[string]any)
+		// Warm-up is part of what the dispatcher handed out; no call is left
+		// unsent on the fake target, but the count is of requests handed out.
+		for _, key := range []string{"sent", "not_sent", "warmup_sent", "warmup_not_sent"} {
+			handed += int(m[key].(float64))
+		}
+
+		d, ok := m["dataset"].(map[string]any)
+		if !ok {
+			t.Fatalf("run %d: dataset = %v, want an object", k, m["dataset"])
+		}
+		if d["file"] != dataset || d["records"] != 3.0 {
+			t.Errorf("run %d: dataset file %v, records %v; want %q and 3", k, d["file"], d["records"], dataset)
+		}
+		if want := float64(min(handed, 3)); d["used"] != want {
+			t.Errorf("run %d: used = %v, want %v after %d requests in all", k, d["used"], want, handed)
+		}
+		if want := float64((handed + 2) / 3); d["used_max"] != want {
+			t.Errorf("run %d: used_max = %v, want %v after %d requests in all: each run goes on where the last ended", k, d["used_max"], want, handed)
+		}
 	}
 }
 

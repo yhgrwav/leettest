@@ -235,6 +235,12 @@ func PrintBreakpoint(w io.Writer, run BreakpointRun) {
 	if why != "" {
 		fmt.Fprintf(w, "  %s\n", why)
 	}
+	// S is cumulative, so the last run's report holds the count of the search.
+	if len(res.Steps) > 0 {
+		if last := res.Steps[len(res.Steps)-1].Report; len(last.Methods) > 0 && last.Methods[0].Dataset != nil {
+			fmt.Fprintln(w, datasetLine(last.Methods[0].Dataset))
+		}
+	}
 	fmt.Fprintln(w)
 
 	verdicts := make([]string, len(res.Steps))

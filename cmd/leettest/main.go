@@ -253,8 +253,13 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 	// the run, the report prints the larger of the two.
 	stepBefore := clockStep()
 
+	calls, err := cli.CallsFromConfig(cfg)
+	if err != nil {
+		return err
+	}
+
 	opts := engine.Options{
-		Calls:       cli.CallsFromConfig(cfg),
+		Calls:       calls,
 		Sender:      sender,
 		MaxInFlight: *maxInFlight,
 		Warmup:      cfg.Load.Warmup,

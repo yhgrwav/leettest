@@ -99,6 +99,19 @@ func failureCodes(codes map[codeKey]int) []CodeCount {
 	return out
 }
 
+// DatasetReport is how a dataset call used its file: the records it holds, how
+// many of them went out at least once, and how many times the most used one was
+// handed out. All of it from S, the requests handed out in the whole process
+// to that moment, warm-up included.
+type DatasetReport struct {
+	File    string
+	Records int
+	// Used is min(S, Records).
+	Used int
+	// UsedMax is ceil(S / Records).
+	UsedMax int
+}
+
 type MethodReport struct {
 	Method string
 	Sent   int
@@ -110,6 +123,8 @@ type MethodReport struct {
 	P95    metrics.Quantile
 	P99    metrics.Quantile
 	Max    metrics.Quantile
+	// Dataset is nil for a call without a dataset.
+	Dataset *DatasetReport
 	// P99WithoutClientWaits is P99 of the same calls with each one's
 	// client-side waits taken out — start lag, the wait for a connection and
 	// for a stream: the time the target had them. After a resolver wait

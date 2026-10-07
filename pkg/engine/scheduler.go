@@ -31,7 +31,8 @@ var (
 type Request struct {
 	Method string
 	// Payload is encoded once before the run starts and shared by every
-	// request for this method; senders must treat it as read-only.
+	// request for this method, or by every request that carries the same
+	// record of a dataset; senders must treat it as read-only.
 	Payload     []byte
 	ScheduledAt time.Time
 	// Deadline is the absolute moment derived from ScheduledAt plus the
@@ -58,8 +59,11 @@ func (s *Scheduler) Run(ctx context.Context, out chan<- Request) error {
 
 	stageStart := time.Now()
 
+	// A dataset call with no counter counts this run from its first record.
+	run := &Scheduler{Call: counted(s.Call)}
+
 	for i, stage := range s.Call.Stages {
-		if err := s.runStage(ctx, out, stage, stageStart); err != nil {
+		if err := run.runStage(ctx, out, stage, stageStart); err != nil {
 			return fmt.Errorf("stage %d: %w", i, err)
 		}
 		stageStart = stageStart.Add(stage.Duration)
@@ -101,18 +105,21 @@ func (s *Scheduler) runStage(ctx context.Context, out chan<- Request, stage Stag
 			return err
 		}
 
+		// Built before the select, so a record is taken from S before the
+		// request leaves; S moves only after it has.
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		case out <- s.newRequest(scheduledAt):
 		}
+		s.Call.handedOut()
 	}
 }
 
 func (s *Scheduler) newRequest(scheduledAt time.Time) Request {
 	req := Request{
 		Method:       s.Call.Method,
-		Payload:      s.Call.Payload,
+		Payload:      s.Call.payload(),
 		ScheduledAt:  scheduledAt,
 		KeepResponse: s.Call.KeepResponse,
 	}

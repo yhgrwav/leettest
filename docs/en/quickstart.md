@@ -76,8 +76,7 @@ load:
       rps: 50
       duration: 40s
       timeout: 500ms
-      data:
-        wallet_id: w-42
+      dataset: wallets.jsonl
 ```
 
 - **`name`** — the run's name in the header.
@@ -94,6 +93,10 @@ load:
 - **`timeout`** — how long to wait for an answer (2 s by default).
 - **`data`** — the request body as plain YAML. The schema comes from the service through
   reflection, no `.proto`. A mistake in the body shows before the start.
+- **`dataset`** (not released) — a file of request bodies instead of `data`, one JSON per line
+  ([`examples/wallets.jsonl`](../../examples/wallets.jsonl)): the first call goes out with the
+  first line, the second with the second, and after the last line it starts over. Beside the
+  method's row the report says how much of the file was used.
 
 Several methods are several calls, each at its own rate. One method, one call: the report is per
 method.
@@ -136,6 +139,7 @@ sent 12950, failed 5248
 method                                           sent   failed    sent/s       p50       p90       p95       p99
 grpc.health.v1.Health/Check                     11100     4499       300    20.5ms    >500ms    >500ms    >500ms
 wallet.v1.WalletService/GetBalance               1850      749        50    20.5ms    >500ms    >500ms    >500ms
+  data: 4 of 4 requests from wallets.jsonl, each used up to 500 times
 
 warm-up 1050 sent, excluded from stats
 

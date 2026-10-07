@@ -29,5 +29,4 @@ load:
       rps: 50
       duration: 40s
       timeout: 500ms
-      data:
-        wallet_id: w-42
+      dataset: wallets.jsonl        # каждый вызов с новым запросом: по JSON на строку, по порядку, затем снова

@@ -109,15 +109,25 @@ type recorder struct {
 
 	mu     sync.Mutex
 	simple *testgrpc.SimpleRequest
-	socket *channelzpb.GetSocketRequest
+	// simples is every UnaryCall request, in the order they arrived.
+	simples []*testgrpc.SimpleRequest
+	socket  *channelzpb.GetSocketRequest
 }
 
 func (r *recorder) UnaryCall(_ context.Context, req *testgrpc.SimpleRequest) (*testgrpc.SimpleResponse, error) {
 	r.mu.Lock()
 	r.simple = proto.Clone(req).(*testgrpc.SimpleRequest)
+	r.simples = append(r.simples, r.simple)
 	r.mu.Unlock()
 
 	return &testgrpc.SimpleResponse{}, nil
+}
+
+func (r *recorder) allSimple() []*testgrpc.SimpleRequest {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return append([]*testgrpc.SimpleRequest(nil), r.simples...)
 }
 
 func (r *recorder) GetSocket(_ context.Context, req *channelzpb.GetSocketRequest) (*channelzpb.GetSocketResponse, error) {
@@ -649,8 +659,13 @@ func TestExampleConfigFitsTheDefaultInFlightCap(t *testing.T) {
 		t.Fatalf("load example: %v", err)
 	}
 
+	calls, err := cli.CallsFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("calls: %v", err)
+	}
+
 	_, err = engine.New(engine.Options{
-		Calls:       cli.CallsFromConfig(cfg),
+		Calls:       calls,
 		Sender:      engine.FakeSender{},
 		MaxInFlight: defaultMaxInFlight,
 	})

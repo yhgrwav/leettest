@@ -34,11 +34,108 @@ var (
 )
 
 type Call struct {
-	Method       string
-	Payload      []byte
+	Method string
+	// Payload is the request when the call has no dataset.
+	Payload []byte
+	// Payloads are the requests of a dataset call, one record each; request
+	// number S goes out with Payloads[S mod len]. Used only with Dataset; nil
+	// or empty: Payload.
+	Payloads [][]byte
+	// Dataset is set for a call whose Payloads are a file's records: what the
+	// report says of them. A pointer, so that the Call stays small to copy.
+	Dataset      *DatasetRef
 	Timeout      time.Duration
 	Stages       []Stage
 	KeepResponse bool
+}
+
+// payload is the body of the call's next request: the record at S mod n, where
+// S is the number of requests the call has handed out so far. Reading S moves
+// nothing, so building a request does not use up its record.
+func (c *Call) payload() []byte {
+	if c.Dataset == nil || len(c.Payloads) == 0 {
+		return c.Payload
+	}
+
+	return c.Payloads[c.Dataset.Counter.Handed()%len(c.Payloads)]
+}
+
+// handedOut counts one request of the call as handed out, once it has left the
+// dispatcher: a request built and never sent used no record.
+func (c *Call) handedOut() {
+	if c.Dataset != nil {
+		c.Dataset.Counter.add()
+	}
+}
+
+// DatasetRef is what the engine knows of a call's dataset besides the records.
+type DatasetRef struct {
+	// File is the path as the config wrote it; the report carries it.
+	File string
+	// Counter is S of the call, shared by every run that carries this Call
+	// (copies of it included); nil gives each run a count of its own.
+	Counter *RecordCounter
+}
+
+// counted is call with a counter of its own if it has a dataset and no counter:
+// the count of one run, dropped with it.
+func counted(call Call) Call {
+	if call.Dataset != nil && call.Dataset.Counter == nil {
+		ref := *call.Dataset
+		ref.Counter = NewRecordCounter()
+		call.Dataset = &ref
+	}
+
+	return call
+}
+
+// countedCalls is calls with every dataset call counted; calls itself when
+// there is nothing to add, a copy otherwise: the caller's slice is not touched.
+func countedCalls(calls []Call) []Call {
+	var out []Call
+
+	for i, call := range calls {
+		if call.Dataset == nil || call.Dataset.Counter != nil {
+			continue
+		}
+		if out == nil {
+			out = slices.Clone(calls)
+		}
+		out[i] = counted(call)
+	}
+
+	if out == nil {
+		return calls
+	}
+
+	return out
+}
+
+// RecordCounter counts the requests of one call the dispatcher has handed out,
+// for as long as it lives: a run continues the count of the one before it.
+// Only the dispatcher moves it; any goroutine may read it.
+type RecordCounter struct {
+	n atomic.Int64
+}
+
+// NewRecordCounter is a counter at zero.
+func NewRecordCounter() *RecordCounter {
+	return &RecordCounter{}
+}
+
+// Handed is how many requests have been handed out so far.
+func (c *RecordCounter) Handed() int {
+	if c == nil {
+		return 0
+	}
+
+	return int(c.n.Load())
+}
+
+func (c *RecordCounter) add() {
+	if c != nil {
+		c.n.Add(1)
+	}
 }
 
 type Options struct {
@@ -70,6 +167,9 @@ type Engine struct {
 	// links is the address of each connection when the sender has two or more,
 	// asked once in New; nil otherwise.
 	links []string
+	// handed is each dataset method's S as at the end of this run, set once at
+	// its end: the counter goes on with the next run, the report does not.
+	handed atomic.Pointer[map[string]int]
 }
 
 // CheckOptions validates everything about the calls and limits that New does,
@@ -100,6 +200,7 @@ func New(opts Options) (*Engine, error) {
 	if err := CheckOptions(opts); err != nil {
 		return nil, err
 	}
+	opts.Calls = countedCalls(opts.Calls)
 
 	e := &Engine{
 		opts:    opts,
@@ -226,6 +327,9 @@ func (e *Engine) Report() Report {
 			}
 
 			m.Timeout = call.Timeout
+			if call.Dataset != nil {
+				m.Dataset = e.datasetReport(call)
+			}
 			m.RPSLow, m.RPSHigh = ratesOver(call.Stages, 0, math.MaxInt64)
 			if m.SilentFrom != nil {
 				m.SilentPlannedLow, m.SilentPlannedHigh = ratesInWindow(call.Stages, *m.SilentFrom)
@@ -234,6 +338,37 @@ func (e *Engine) Report() Report {
 	}
 
 	return report
+}
+
+// datasetReport is how call used its file, from S at the end of this run: the
+// requests handed out in the process to that moment, warm-up included. While
+// the run is on, S is the counter's now.
+func (e *Engine) datasetReport(call Call) *DatasetReport {
+	s := call.Dataset.Counter.Handed()
+	if ended := e.handed.Load(); ended != nil {
+		s = (*ended)[call.Method]
+	}
+
+	n := len(call.Payloads)
+	report := &DatasetReport{File: call.Dataset.File, Records: n, Used: min(s, n)}
+	if n > 0 {
+		report.UsedMax = (s + n - 1) / n
+	}
+
+	return report
+}
+
+// noteHanded keeps each dataset call's S at the end of the run.
+func (e *Engine) noteHanded() {
+	ended := make(map[string]int)
+
+	for _, call := range e.opts.Calls {
+		if call.Dataset != nil {
+			ended[call.Method] = call.Dataset.Counter.Handed()
+		}
+	}
+
+	e.handed.Store(&ended)
 }
 
 // connections is what the sender says about its connections, with the engine's
@@ -421,6 +556,11 @@ func (e *Engine) Run(ctx context.Context) error {
 
 	sendErr := e.pool.Run(runCtx, requests, results)
 	cancel()
+
+	// The dispatcher has handed out its last request once it returns; S is read
+	// then, not while it may still move.
+	schedulers.Wait()
+	e.noteHanded()
 
 	close(results)
 	collector.Wait()

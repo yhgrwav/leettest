@@ -83,8 +83,9 @@ the service through gRPC server reflection, so no `.proto` is needed. The config
 methods and the request body are checked before the start: any error means exit 1 and not a single
 call to the target. The first `warmup` seconds stay out of the stats. Every call of a method goes
 out with the same body: for a write with an idempotency key the repeat path is measured, not
-creating the record. Every field, TLS, headers, the request body and flags are in the
-**[reference](reference.md)**.
+creating the record. A different request for each call: a file in `dataset` (not released), one
+JSON per line, in order, round and round. Every field, TLS, headers, the request body and flags
+are in the **[reference](reference.md)**.
 
 In a terminal the run goes full-screen, `q` to stop. Without a terminal (CI, redirected output) — a
 progress line once a second:
@@ -105,6 +106,9 @@ At the end — a report per method: sent, failed, `sent/s`, p50/p90/p95/p99.
   does not lower this number.
 - A percentile whose place calls cut off by the timeout could take is printed as a **lower
   bound**: `>2.0s`. Not a value, but "at least".
+- Under a method with a `dataset` (not released) stands a `data:` line: how many requests of the
+  file were used and how many times the most used one went out. It does not mean the target saw
+  that many distinct requests.
 - The load goes over **one connection**, and it lands on **one backend**: behind an L4 balancer
   (Kubernetes ClusterIP, NLB) and when DNS returns several addresses. "Does not hold X" is about
   that backend, not the service, and the report will not show it. An L7 balancer that spreads
