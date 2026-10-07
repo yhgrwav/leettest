@@ -179,8 +179,10 @@ type Connections struct {
 	LastLimit    uint32
 	LimitChanges int
 
-	// Resolved is the distinct addresses the connections went to, in the order
-	// the resolver gave them; nil with one connection.
+	// Resolved is the addresses the target stands for, in the order the
+	// resolver gave them: all of them, so with more addresses than connections
+	// some carried no call. An IP address or a target with a scheme stands for
+	// itself. Nil with one connection.
 	Resolved []string
 	// Each is one entry per connection; nil with one connection.
 	Each []LinkReport
@@ -212,6 +214,9 @@ type LinkReport struct {
 	Failed       int
 	StreamWaited int
 	P99          metrics.Quantile
+	// NotSentStream counts the connection's calls that expired unsent waiting
+	// for a stream, by the rule of Report.NotSentStream.
+	NotSentStream int
 
 	LimitAnnounced bool
 	FirstLimit     uint32

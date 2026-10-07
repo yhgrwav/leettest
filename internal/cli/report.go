@@ -40,6 +40,9 @@ type RunReport struct {
 	// ClockStepBefore is the step measured before the run, which set the
 	// engine's wait floor; 0 when not measured.
 	ClockStepBefore time.Duration
+	// Target is what the run went to, as the config wrote it; the report
+	// printers set it, the notes about connections name its host.
+	Target string
 }
 
 // ClockTooCoarse says the clock step is over a quarter of some method's p50.
@@ -52,6 +55,7 @@ func ClockTooCoarse(run RunReport) bool {
 // escapes.
 func PrintReport(w io.Writer, target string, run RunReport) {
 	w = asciiWriter{w: w}
+	run.Target = target
 	report := run.Report
 
 	fmt.Fprintf(w, "run finished: %s in %s\n", target, formatDuration(report.Duration))
@@ -87,6 +91,11 @@ func PrintReport(w io.Writer, target string, run RunReport) {
 
 	for _, note := range runNotes(run) {
 		fmt.Fprintf(w, "\n%s\n", note)
+	}
+	// Not a note: the notes are also the JSON report's and the live screen's,
+	// where the block would repeat per_connection or crowd the verdicts.
+	if block := connectionsBlock(target, report.Connections); block != "" {
+		fmt.Fprintf(w, "\n%s\n", block)
 	}
 	if note := uncheckedNote(run.Unchecked); note != "" {
 		fmt.Fprintf(w, "\n%s\n", note)

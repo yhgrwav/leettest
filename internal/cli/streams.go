@@ -153,17 +153,26 @@ func streamVerdict(report engine.Report) string {
 		fmt.Fprintf(&b, "\ncauses in the p99 tail, largest first: %s.", strings.Join(parts, "; "))
 	}
 
+	// A call that waited for a stream means the limit was reached; without one
+	// the limit says nothing about this run.
+	streamCause := slices.ContainsFunc(ranked, func(c cause) bool { return c.what == causeStream })
+
+	// Which backends are at their limit: the connections that waited.
+	if conns := report.Connections; streamCause && severalConnections(conns) {
+		if named := connectionsThatWaited(conns); named != "" {
+			fmt.Fprintf(&b, "\ncalls waited for a stream on %s.", named)
+		}
+	}
+
 	moved, _ := clientWaitsMoved(report)
 	if len(moved) > 0 {
 		fmt.Fprintf(&b, "\nThe printed p99 includes the wait for %d of %d methods.", len(moved), len(report.Methods))
 	}
 
-	// A call that waited for a stream means the limit was reached; without one
-	// the limit says nothing about this run.
-	streamCause := slices.ContainsFunc(ranked, func(c cause) bool { return c.what == causeStream })
-	if conns := report.Connections; streamCause && conns != nil && conns.LimitAnnounced {
-		inFlight := conns.Open * int(conns.LastLimit)
-		fmt.Fprintf(&b, " The target was not tested\nabove %s in flight.", plural(inFlight, "call"))
+	if conns := report.Connections; streamCause && conns != nil {
+		if inFlight, ok := inFlightBound(conns); ok {
+			fmt.Fprintf(&b, " The target was not tested\nabove %s in flight.", plural(inFlight, "call"))
+		}
 	}
 
 	return b.String()
@@ -179,7 +188,14 @@ func streamHeading(report engine.Report) string {
 	switch {
 	case conns == nil:
 		fmt.Fprintf(&b, "%s a stream (p99 %s)", waited, formatQuantile(report.StreamWaitP99))
-	case conns.LimitAnnounced:
+	case severalConnections(conns) && conns.InFlightAnnounced:
+		fmt.Fprintf(&b, "on %s the target allows %s in all\n(MAX_CONCURRENT_STREAMS), and %s one (p99 %s)",
+			plural(conns.Open, "connection"), plural(conns.InFlightLimit, "stream"),
+			waited, formatQuantile(report.StreamWaitP99))
+	case severalConnections(conns) && announcedBy(conns) > 0:
+		fmt.Fprintf(&b, "on %s %s a stream\n(p99 %s), and %d of %d connections announced a stream limit",
+			plural(conns.Open, "connection"), waited, formatQuantile(report.StreamWaitP99), announcedBy(conns), conns.Open)
+	case conns.LimitAnnounced && !severalConnections(conns):
 		fmt.Fprintf(&b, "on %s the target allows %s\n(MAX_CONCURRENT_STREAMS), and %s one (p99 %s)",
 			plural(conns.Open, "connection"), plural(int(conns.LastLimit), "stream"),
 			waited, formatQuantile(report.StreamWaitP99))
@@ -219,7 +235,11 @@ func shortStreamVerdict(report engine.Report) string {
 	switch {
 	case conns == nil:
 		return run + "calls waited for streams"
-	case conns.LimitAnnounced:
+	case severalConnections(conns) && conns.InFlightAnnounced:
+		return fmt.Sprintf("limited by %s: target allows %s in all", plural(conns.Open, "connection"), plural(conns.InFlightLimit, "stream"))
+	case severalConnections(conns) && announcedBy(conns) > 0:
+		return fmt.Sprintf("limited by %s: stream limit announced by %d of %d", plural(conns.Open, "connection"), announcedBy(conns), conns.Open)
+	case conns.LimitAnnounced && !severalConnections(conns):
 		return fmt.Sprintf("limited by %s: target allows %s",
 			plural(conns.Open, "connection"), plural(int(conns.LastLimit), "stream"))
 	default:
@@ -232,7 +252,9 @@ func shortStreamVerdict(report engine.Report) string {
 func streamNotes(report engine.Report) []string {
 	var notes []string
 
-	if c := report.Connections; c != nil {
+	if c := report.Connections; severalConnections(c) {
+		notes = append(notes, connectionsStreamLine(c))
+	} else if c != nil {
 		line := fmt.Sprintf("connections: %d", c.Open)
 		if c.Reconnects > 0 {
 			line += fmt.Sprintf(" (reconnects: %d)", c.Reconnects)
