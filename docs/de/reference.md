@@ -288,6 +288,11 @@ Die übrigen sind einfache Zähler.
 | `methods[].silent_sent_rps` | int? | In der Sekunde davor gesendete Aufrufe (in der ersten, wenn das Schweigen dort beginnt) |
 | `methods[].silent_planned_rps_low`, `methods[].silent_planned_rps_high` | int? | Die geplante Rate der Stufen in dieser Sekunde; `null` auch, wenn darin keine Stufe lief |
 | `methods[].last_answer_at_us` | int? | Wann der letzte Aufruf rausging, den das Ziel beantwortet hat; `null` — es hat nie geantwortet |
+| `methods[].dataset` | object? | Die Anfragedatei des Aufrufs; `null` — er hat keine — nicht veröffentlicht |
+| `methods[].dataset.file` | string | Der Pfad, wie ihn die Konfiguration schreibt — nicht veröffentlicht |
+| `methods[].dataset.records` | int | Anfragen in der Datei — nicht veröffentlicht |
+| `methods[].dataset.used` | int | Wie viele davon mindestens einmal rausgingen — nicht veröffentlicht |
+| `methods[].dataset.used_max` | int | Wie oft die am häufigsten genutzte rausging; in einer Suche — vom ersten Schritt bis zum Ende dieses Laufs — nicht veröffentlicht |
 | `methods[].seconds` | []object | Die Zeitleiste pro Sekunde, siehe unten |
 
 ### Sekunde: `methods[].seconds[]`

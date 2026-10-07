@@ -84,7 +84,10 @@ func TestExamples_RunAgainstStand(t *testing.T) {
 			if err = sender.Connect(ctx); err != nil {
 				t.Fatalf("connect: %v", err)
 			}
-			calls := cli.CallsFromConfig(cfg)
+			calls, err := cli.CallsFromConfig(cfg)
+			if err != nil {
+				t.Fatalf("calls: %v", err)
+			}
 			unchecked, err := cli.AttachData(ctx, descriptor.NewReflectionResolver(sender.Conn()), cfg, calls)
 			if err != nil {
 				t.Fatalf("request bodies: %v", err)
@@ -94,12 +97,19 @@ func TestExamples_RunAgainstStand(t *testing.T) {
 			}
 
 			for _, call := range calls {
-				now := time.Now()
-				out, err := sender.Send(ctx, engine.Request{
-					Method: call.Method, Payload: call.Payload, ScheduledAt: now, Deadline: now.Add(call.Timeout),
-				})
-				if err != nil || out.Category != engine.CategorySuccess {
-					t.Errorf("%s: category %v, error %v, status %v", call.Method, out.Category, err, out.Err)
+				// A dataset call sends each of its records, a plain one its body.
+				payloads := call.Payloads
+				if len(payloads) == 0 {
+					payloads = [][]byte{call.Payload}
+				}
+				for _, payload := range payloads {
+					now := time.Now()
+					out, err := sender.Send(ctx, engine.Request{
+						Method: call.Method, Payload: payload, ScheduledAt: now, Deadline: now.Add(call.Timeout),
+					})
+					if err != nil || out.Category != engine.CategorySuccess {
+						t.Errorf("%s: category %v, error %v, status %v", call.Method, out.Category, err, out.Err)
+					}
 				}
 			}
 		})

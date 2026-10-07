@@ -63,7 +63,8 @@ func (d *Dispatcher) Run(ctx context.Context, out chan<- Request) error {
 
 	var queue cursors
 	for _, call := range d.calls {
-		c := &cursor{call: call, stageStart: start}
+		// A dataset call with no counter counts this run from its first record.
+		c := &cursor{call: counted(call), stageStart: start}
 		if c.advance() {
 			queue = append(queue, c)
 		}
@@ -81,6 +82,10 @@ func (d *Dispatcher) Run(ctx context.Context, out chan<- Request) error {
 			return ctx.Err()
 		case out <- NewScheduler(c.call).newRequest(c.at):
 		}
+		// The count of the call is S, not c.i: that one starts over with each
+		// stage. It moves once the request has left, so a request built and
+		// never handed out used no record.
+		c.call.handedOut()
 
 		c.i++
 		if c.advance() {

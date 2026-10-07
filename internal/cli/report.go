@@ -74,6 +74,10 @@ func PrintReport(w io.Writer, target string, run RunReport) {
 			displayMethod(m.Method), m.Sent, m.Failed, m.RPS,
 			formatQuantile(m.P50), formatQuantile(m.P90), formatQuantile(m.P95), formatQuantile(m.P99))
 
+		if m.Dataset != nil {
+			fmt.Fprintln(w, datasetLine(m.Dataset))
+		}
+
 		for _, sub := range answerRows(m) {
 			r := sub.r
 			fmt.Fprintf(w, "%-44s %8s %8d %9s %9s %9s %9s %9s\n", "  "+sub.label, "", r.Count, "",

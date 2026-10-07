@@ -260,6 +260,11 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `methods[].silent_sent_rps` | int? | 在那之前一秒发出的调用数（如果沉默从第一秒开始，则为第一秒） |
 | `methods[].silent_planned_rps_low`、`methods[].silent_planned_rps_high` | int? | 那一秒各阶段的计划速率；那一秒没有阶段在运行时也为 `null` |
 | `methods[].last_answer_at_us` | int? | 目标应答过的最后一个调用的发出时刻；`null`——从未应答 |
+| `methods[].dataset` | object? | 该调用的请求文件；`null`——没有——未发布 |
+| `methods[].dataset.file` | string | 配置里写的路径——未发布 |
+| `methods[].dataset.records` | int | 文件中的请求数——未发布 |
+| `methods[].dataset.used` | int | 其中至少发出过一次的数量——未发布 |
+| `methods[].dataset.used_max` | int | 被用得最多的那条发出了几次；在搜索中——从第一步算到本次运行结束——未发布 |
 | `methods[].seconds` | []object | 按秒的时间线，见下文 |
 
 ### 秒：`methods[].seconds[]`
