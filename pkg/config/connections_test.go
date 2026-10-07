@@ -36,7 +36,8 @@ func TestLoad_ConnectionsDefaultsToOne(t *testing.T) {
 }
 
 // Ground: boundary — the range is 1 to 256 inclusive: the smallest, a few, and the largest are
-// read as written. A mutation moving the upper bound to 257 (or the lower to 2) turns it red.
+// read as written. A mutation moving the upper bound down to 255 (256 refused) or the lower up to 2 (1 refused)
+// turns it red; one moving the upper bound up to 257 is OutOfRange's.
 func TestLoad_ConnectionsAreReadWithinTheRange(t *testing.T) {
 	for _, tc := range []struct {
 		written string
