@@ -249,12 +249,29 @@ func PrintBreakpoint(w io.Writer, run BreakpointRun) {
 	}
 	fmt.Fprint(w, runsTable(run.Plan, res.Steps, verdicts, "  "))
 
-	if len(res.Notes) > 0 {
+	if notes := searchNotes(res); len(notes) > 0 {
 		fmt.Fprintln(w, "\nnotes:")
-		for _, n := range res.Notes {
+		for _, n := range notes {
 			fmt.Fprintf(w, "  - %s\n", n)
 		}
 	}
+}
+
+// searchNotes are the search's notes, the same in the text and in JSON, and,
+// where it found a break over one connection, the warning that the number is
+// one backend's behind an L4 balancer. A search that found no break or did not
+// finish is about something else; a sender that said nothing of its
+// connections gives no ground for it.
+func searchNotes(res breakpoint.Result) []string {
+	notes := append([]string{}, res.Notes...)
+
+	if (res.Outcome == breakpoint.BrokeBetween || res.Outcome == breakpoint.BrokeAtFirst) && len(res.Steps) > 0 {
+		if c := res.Steps[len(res.Steps)-1].Report.Connections; c != nil && c.Open == 1 {
+			notes = append(notes, oneConnectionSearchNote)
+		}
+	}
+
+	return notes
 }
 
 // BreakpointReport is the search as --output json writes it: mode
@@ -307,7 +324,7 @@ func NewBreakpointReport(run BreakpointRun) BreakpointReport {
 	bp := jsonBreakpoint{
 		Outcome: outcomeNames[res.Outcome],
 		Why:     causeName(res.Cause),
-		Notes:   append([]string{}, res.Notes...),
+		Notes:   searchNotes(res),
 		Runs:    make([]jsonRunBP, 0, len(res.Steps)),
 	}
 	switch res.Outcome {
