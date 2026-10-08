@@ -2,7 +2,7 @@
 
 [← Back to docs](README.md)
 
-> Translated from [docs/ru/problem.md](../ru/problem.md) at 9a08876, 2026-10-05. If they differ,
+> Translated from [docs/ru/problem.md](../ru/problem.md) at 67f8732, 2026-10-08. If they differ,
 > the Russian one is right.
 
 A load test exists to answer one question: **at what load does the service stop coping, and

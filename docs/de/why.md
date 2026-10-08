@@ -2,7 +2,7 @@
 
 [← Zur Übersicht](README.md)
 
-> Übersetzt aus [docs/ru/why.md](../ru/why.md) bei 9a08876, 2026-10-05. Bei Abweichungen gilt die
+> Übersetzt aus [docs/ru/why.md](../ru/why.md) bei 67f8732, 2026-10-08. Bei Abweichungen gilt die
 > russische Fassung.
 
 LeetTest ruht auf einem Grundsatz: Ein Lasttest ist nur dann etwas wert, wenn man seinem

@@ -2,7 +2,7 @@
 
 [← Zur Übersicht](README.md)
 
-> Übersetzt aus [docs/ru/problem.md](../ru/problem.md) bei 9a08876, 2026-10-05. Bei Abweichungen gilt die
+> Übersetzt aus [docs/ru/problem.md](../ru/problem.md) bei 67f8732, 2026-10-08. Bei Abweichungen gilt die
 > russische Fassung.
 
 Ein Lasttest soll eine Frage beantworten: **ab welcher Last hält der Dienst nicht mehr mit, und wo
