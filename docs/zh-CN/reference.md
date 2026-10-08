@@ -37,14 +37,14 @@ load:
 | `app.server_name` | 当服务证书不包含 `target` 中的地址时，用来校验证书的名称。需要 TLS |
 | `app.metadata` | 每次调用的请求头：`authorization`、`x-api-key` 等。`${NAME}` 取自环境变量 |
 | `app.max_response_size` | 一次调用接受的最大应答：`16MiB`、`512KB`。单位必填（`MB` = 10⁶ 字节，`MiB` = 2²⁰），小于 2 GiB。省略时为 4 MiB，与 gRPC 相同。更大的应答算作 `bad response`。在途的调用最多可能缓冲上限的两倍：默认每个最多 8 MiB |
-| `app.connections` | 向目标打开多少条连接，1 到 256 的整数。省略时为 1。调用在这些连接间轮流进行，报告打印一个 `Connections:` 块，每条连接一行——未发布 |
+| `app.connections` | 向目标打开多少条连接，1 到 256 的整数。省略时为 1。调用在这些连接间轮流进行，报告打印一个 `Connections:` 块，每条连接一行 |
 | `load.warmup` | 前 N 秒不计入百分位和 `sent`：冷缓存会扭曲它们。预热调用确实会到达目标；报告用一行 `warm-up N sent (M failed), excluded from stats` 输出它们——`sent` 加上这一行就是压测机尝试过的全部调用。除计为 unreachable 或 client error 的调用外，目标都收到了；`cut off` 和超时的调用可能没有完整到达：不打开 HTTP/2 窗口（流量控制）的目标只会收到请求头，它的计数器可能看不到这次调用。计入 `duration`，必须短于每个调用 |
 | `load.calls[].method` | 方法全名：`package.Service/Method` |
 | `load.calls[].rps` | 该方法每秒的请求数 |
 | `load.calls[].duration` | 施压时长：`30s`、`5m`、`1h` |
 | `load.calls[].timeout` | 等待应答的时长。省略时为 `2s`。零不会关闭超时，而是错误 |
 | `load.calls[].data` | 请求体，见[下文](#请求体)。省略时为空消息 |
-| `load.calls[].dataset` | 用请求体文件代替 `data`，见[下文](#每次调用不同的请求dataset)。不能与 `data` 同时使用 — 未发布 |
+| `load.calls[].dataset` | 用请求体文件代替 `data`，见[下文](#每次调用不同的请求dataset)。不能与 `data` 同时使用 |
 
 配置严格解析：字段名拼写错误会报错并给出行号，取值错误会报错并给出调用的序号和方法，而不是以空负载
 运行。`rps` 是整数：`10.5` 会被拒绝，而不是悄悄取整为十。`warmup` 必须短于每个调用，否则该调用
@@ -176,7 +176,7 @@ reflection 已关闭、拒绝了请求，或根本没有应答。
 | `-output` | stdout 上的报告格式：`text`（默认）或供脚本和 CI 使用的 `json` |
 | `-connect-timeout` | 服务接受了连接却不应答时等待多久。默认 `10s`。连接被拒绝和地址错误不会等待 |
 | `-max-in-flight` | 等待应答的请求数上限。默认 `5000` |
-| `-plain` | 不用实时屏幕：每秒一行进度输出到 stderr，与没有终端时相同，并且没有首次运行的对话。报告和退出码不变 — 未发布 |
+| `-plain` | 不用实时屏幕：每秒一行进度输出到 stderr，与没有终端时相同，并且没有首次运行的对话。报告和退出码不变 |
 | `-fake` | 用内置的桩代替配置中的服务施压——无需服务即可查看工具。报告会标记为 `fake target` |
 | `-fake-delay`、`-fake-jitter`、`-fake-fail-ratio` | 桩的行为。只能与 `-fake` 一起使用 |
 | `-version` | 输出版本并退出。从源码构建时输出提交哈希 |
@@ -215,7 +215,7 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | 字段 | 类型 | 含义 |
 |---|---|---|
 | `schema_version` | int | 结构版本，目前为 `1` |
-| `mode` | string | 普通运行为 `run`，崩溃点搜索为 `breakpoint` — 未发布 |
+| `mode` | string | 普通运行为 `run`，崩溃点搜索为 `breakpoint` |
 | `leettest_version` | string | 工具版本；从源码构建时为提交哈希 |
 | `target` | string | 配置中的目标地址，使用 `-fake` 时为 `fake target` |
 | `outcome` | string | `complete`、`invalid`、`incomplete`——对应退出码 `0`、`2`、`3` |
@@ -244,16 +244,16 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `connections.reconnects` | int | 第一次之后成功的握手次数 |
 | `connections.first_limit`、`connections.last_limit` | int? | 第一次和最后一次握手时的 `MAX_CONCURRENT_STREAMS`；`null`——未声明（`0`——声明为零）。多条连接时始终为 `null`：每条连接有自己的上限 |
 | `connections.limit_changes` | int | 声明的上限与上一次不同的握手次数 |
-| `connections.resolved` | []string? | 目标对应的地址，按解析器的顺序：全部，即使连接更少。IP 地址就是它自己；一条连接时为 `null`——未发布 |
-| `connections.in_flight_limit` | int? | 目标允许同时在途的调用数：单条连接的上限，或所有连接上限之和；只要有连接未声明上限就为 `null`——未发布 |
-| `connections.per_connection` | []object? | 每条连接一个对象，编号与报告中的块一致；一条连接时为 `null`——未发布 |
-| `connections.per_connection[].address` | string | 连接的地址——未发布 |
-| `connections.per_connection[].calls` | int | 分配给该连接的调用，已发送与否，不含预热——未发布 |
-| `connections.per_connection[].failed` | int | 该连接的失败：运行的 `failed` 规则，加上因连接未就绪而未发出的调用——未发布 |
-| `connections.per_connection[].stream_waited`、`connections.per_connection[].not_sent_stream` | int | 该连接上等待空闲流的调用：等待后发出的，和等待中过期的——未发布 |
-| `connections.per_connection[].p99` | percentile? | 该连接调用的 p99；没有带延迟的调用时为 `null`——未发布 |
-| `connections.per_connection[].first_limit`、`connections.per_connection[].last_limit` | int? | 该连接第一次和最后一次握手时的流上限；`null`——未声明——未发布 |
-| `connections.per_connection[].limit_changes` | int | 该连接声明的上限与上一次不同的握手次数——未发布 |
+| `connections.resolved` | []string? | 目标对应的地址，按解析器的顺序：全部，即使连接更少。IP 地址就是它自己；一条连接时为 `null` |
+| `connections.in_flight_limit` | int? | 目标允许同时在途的调用数：单条连接的上限，或所有连接上限之和；只要有连接未声明上限就为 `null` |
+| `connections.per_connection` | []object? | 每条连接一个对象，编号与报告中的块一致；一条连接时为 `null` |
+| `connections.per_connection[].address` | string | 连接的地址 |
+| `connections.per_connection[].calls` | int | 分配给该连接的调用，已发送与否，不含预热 |
+| `connections.per_connection[].failed` | int | 该连接的失败：运行的 `failed` 规则，加上因连接未就绪而未发出的调用 |
+| `connections.per_connection[].stream_waited`、`connections.per_connection[].not_sent_stream` | int | 该连接上等待空闲流的调用：等待后发出的，和等待中过期的 |
+| `connections.per_connection[].p99` | percentile? | 该连接调用的 p99；没有带延迟的调用时为 `null` |
+| `connections.per_connection[].first_limit`、`connections.per_connection[].last_limit` | int? | 该连接第一次和最后一次握手时的流上限；`null`——未声明 |
+| `connections.per_connection[].limit_changes` | int | 该连接声明的上限与上一次不同的握手次数 |
 | `client_waits` | object | 在客户端侧等待超过阈值的调用，按原因（[README](README.md#阅读报告)） |
 | `client_waits.generator_calls`、`client_waits.stream_calls`、`client_waits.connection_calls` | int | 所有此类调用，无论是否发出。一个已发出的调用可能同时计入多个原因 |
 | `client_waits.generator_tail_calls`、`client_waits.stream_tail_calls`、`client_waits.connection_tail_calls` | int | 只统计 p99 尾部和未发出的调用：由它们决定 `tail_wait_cause` |
@@ -301,11 +301,11 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `methods[].silent_sent_rps` | int? | 在那之前一秒发出的调用数（如果沉默从第一秒开始，则为第一秒） |
 | `methods[].silent_planned_rps_low`、`methods[].silent_planned_rps_high` | int? | 那一秒各阶段的计划速率；那一秒没有阶段在运行时也为 `null` |
 | `methods[].last_answer_at_us` | int? | 目标应答过的最后一个调用的发出时刻；`null`——从未应答 |
-| `methods[].dataset` | object? | 该调用的请求文件；`null`——没有——未发布 |
-| `methods[].dataset.file` | string | 配置里写的路径——未发布 |
-| `methods[].dataset.records` | int | 文件中的请求数——未发布 |
-| `methods[].dataset.used` | int | 其中至少发出过一次的数量——未发布 |
-| `methods[].dataset.used_max` | int | 被用得最多的那条发出了几次；在搜索中——从第一步算到本次运行结束——未发布 |
+| `methods[].dataset` | object? | 该调用的请求文件；`null`——没有 |
+| `methods[].dataset.file` | string | 配置里写的路径 |
+| `methods[].dataset.records` | int | 文件中的请求数 |
+| `methods[].dataset.used` | int | 其中至少发出过一次的数量 |
+| `methods[].dataset.used_max` | int | 被用得最多的那条发出了几次；在搜索中——从第一步算到本次运行结束 |
 | `methods[].seconds` | []object | 按秒的时间线，见下文 |
 
 ### 秒：`methods[].seconds[]`
@@ -331,18 +331,18 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 
 | 字段 | 类型 | 含义 |
 |---|---|---|
-| `method` | string | 搜索所施压的方法 — 未发布 |
-| `breakpoint` | object | 搜索结果 — 未发布 |
-| `breakpoint.outcome` | string | 封闭列表：`broke`、`broke_at_first`、`held_all`、`run_limit`、`stopped`、`invalid` — 未发布 |
-| `breakpoint.held_rps` | int? | 目标撑住的最高速率；`null` — 没有撑住的 — 未发布 |
-| `breakpoint.broke_rps` | int? | 目标崩溃或运行上限使搜索停下的最低速率；`null` — 未崩溃 — 未发布 |
-| `breakpoint.why` | string? | 结束搜索的那次运行的原因，来自封闭列表：`errors`、`p99_limit`、`p99_vs_base`、`connection`、`no_recovery`、`generator`、`in_flight_cap`、`stream_limit`、`stream_wait`、`clock_step`、`request_errors`；`null` — 没有原因 — 未发布 |
-| `breakpoint.notes` | []string | 搜索的说明，面向人的 ASCII 文本；不要解析 — 未发布 |
-| `breakpoint.runs` | []object | 按顺序列出所有运行 — 未发布 |
-| `breakpoint.runs[].kind` | string | `step`、`repeat` 或 `probe` — 未发布 |
-| `breakpoint.runs[].planned_rps` | int | 该次运行的计划速率 — 未发布 |
-| `breakpoint.runs[].sent_rps` | int | 调用实际发出的速率：只有实际发出的才算撑住 — 未发布 |
-| `breakpoint.runs[].broken` | bool | `true` — 该次运行使目标崩溃 — 未发布 |
-| `breakpoint.runs[].recovered` | bool? | 对 `probe`：目标回到基线 p99 的 1.5 倍以内；`step` 和 `repeat` 为 `null` — 未发布 |
-| `breakpoint.runs[].why` | string? | 该次运行的原因，与 `breakpoint.why` 相同的封闭列表；`null` — 没有原因 — 未发布 |
-| `breakpoint.runs[].report` | object | 这次运行的完整报告，与普通运行的 JSON 是同一种对象（字段见上）— 未发布 |
+| `method` | string | 搜索所施压的方法 |
+| `breakpoint` | object | 搜索结果 |
+| `breakpoint.outcome` | string | 封闭列表：`broke`、`broke_at_first`、`held_all`、`run_limit`、`stopped`、`invalid` |
+| `breakpoint.held_rps` | int? | 目标撑住的最高速率；`null` — 没有撑住的 |
+| `breakpoint.broke_rps` | int? | 目标崩溃或运行上限使搜索停下的最低速率；`null` — 未崩溃 |
+| `breakpoint.why` | string? | 结束搜索的那次运行的原因，来自封闭列表：`errors`、`p99_limit`、`p99_vs_base`、`connection`、`no_recovery`、`generator`、`in_flight_cap`、`stream_limit`、`stream_wait`、`clock_step`、`request_errors`；`null` — 没有原因 |
+| `breakpoint.notes` | []string | 搜索的说明，面向人的 ASCII 文本；不要解析 |
+| `breakpoint.runs` | []object | 按顺序列出所有运行 |
+| `breakpoint.runs[].kind` | string | `step`、`repeat` 或 `probe` |
+| `breakpoint.runs[].planned_rps` | int | 该次运行的计划速率 |
+| `breakpoint.runs[].sent_rps` | int | 调用实际发出的速率：只有实际发出的才算撑住 |
+| `breakpoint.runs[].broken` | bool | `true` — 该次运行使目标崩溃 |
+| `breakpoint.runs[].recovered` | bool? | 对 `probe`：目标回到基线 p99 的 1.5 倍以内；`step` 和 `repeat` 为 `null` |
+| `breakpoint.runs[].why` | string? | 该次运行的原因，与 `breakpoint.why` 相同的封闭列表；`null` — 没有原因 |
+| `breakpoint.runs[].report` | object | 这次运行的完整报告，与普通运行的 JSON 是同一种对象（字段见上） |
