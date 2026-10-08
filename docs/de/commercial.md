@@ -2,7 +2,7 @@
 
 [← Zur Übersicht](README.md)
 
-> Übersetzt aus [docs/ru/commercial.md](../ru/commercial.md) bei 9a08876, 2026-10-05. Bei Abweichungen gilt die
+> Übersetzt aus [docs/ru/commercial.md](../ru/commercial.md) bei 67f8732, 2026-10-08. Bei Abweichungen gilt die
 > russische Fassung.
 
 > Diese Seite beschreibt ein **beabsichtigtes** Modell. Nichts vom kostenpflichtigen Teil

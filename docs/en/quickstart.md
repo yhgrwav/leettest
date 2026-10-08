@@ -1,4 +1,4 @@
-> Translated from [docs/ru/quickstart.md](../ru/quickstart.md) at 9a08876, 2026-10-05. If they
+> Translated from [docs/ru/quickstart.md](../ru/quickstart.md) at 67f8732, 2026-10-08. If they
 > differ, the Russian one is right.
 
 # Quickstart

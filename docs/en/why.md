@@ -2,7 +2,7 @@
 
 [← Back to docs](README.md)
 
-> Translated from [docs/ru/why.md](../ru/why.md) at 9a08876, 2026-10-05. If they differ, the
+> Translated from [docs/ru/why.md](../ru/why.md) at 67f8732, 2026-10-08. If they differ, the
 > Russian one is right.
 
 LeetTest is built on one principle: a load test result is worth something only when it can

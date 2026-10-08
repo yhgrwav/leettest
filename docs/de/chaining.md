@@ -2,7 +2,7 @@
 
 [← Zur Übersicht](README.md)
 
-> Übersetzt aus [docs/ru/chaining.md](../ru/chaining.md) bei 9a08876, 2026-10-05. Bei Abweichungen gilt die
+> Übersetzt aus [docs/ru/chaining.md](../ru/chaining.md) bei 67f8732, 2026-10-08. Bei Abweichungen gilt die
 > russische Fassung.
 
 > **Status: geplant, funktioniert noch nicht.** Das Beispiel unten ist ein Entwurf des Formats,

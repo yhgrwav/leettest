@@ -1,4 +1,4 @@
-> 译自 [docs/ru/quickstart.md](../ru/quickstart.md)，对应 9a08876，2026-10-05。如有出入，以俄文版为准。
+> 译自 [docs/ru/quickstart.md](../ru/quickstart.md)，对应 67f8732，2026-10-08。如有出入，以俄文版为准。
 
 # 快速上手
 
@@ -55,6 +55,7 @@ app:
     authorization: Bearer ${LEETTEST_TOKEN}
     x-request-source: leettest-tour
   max_response_size: 1MiB
+  connections: 1
 
 load:
   warmup: 3s
@@ -69,8 +70,7 @@ load:
       rps: 50
       duration: 40s
       timeout: 500ms
-      data:
-        wallet_id: w-42
+      dataset: wallets.jsonl
 ```
 
 - **`name`**——运行在标题中的名称。
@@ -86,6 +86,11 @@ load:
 - **`timeout`**——等待应答的时长（默认 2 s）。
 - **`data`**——请求体，普通 YAML。结构通过 reflection 从服务获取，不需要 `.proto`。请求体中的
   错误会在启动前暴露。
+- **`dataset`**（未发布）——用请求体文件代替 `data`，每行一个 JSON
+  （[`examples/wallets.jsonl`](../../examples/wallets.jsonl)）：第一次调用用第一行，第二次用第二行，
+  用完最后一行后从头再来。报告在方法那一行旁边说明文件用了多少。
+- **`connections`**（未发布）——多少条连接承载负载（默认 1）。在 L4 负载均衡器后面，一条连接只给
+  一个后端施压；N ≥ 2 时报告会多出一个 `Connections:` 块，每条连接一行。
 
 多个方法就是多个调用，各有各的速率。一个方法对应一个调用：报告按方法给出。
 
@@ -125,6 +130,7 @@ sent 12950, failed 5248
 method                                           sent   failed    sent/s       p50       p90       p95       p99
 grpc.health.v1.Health/Check                     11100     4499       300    20.5ms    >500ms    >500ms    >500ms
 wallet.v1.WalletService/GetBalance               1850      749        50    20.5ms    >500ms    >500ms    >500ms
+  data: 4 of 4 requests from wallets.jsonl, each used up to 500 times
 
 warm-up 1050 sent, excluded from stats
 

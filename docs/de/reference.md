@@ -3,7 +3,7 @@
 [Русский](../ru/reference.md) · [English](../en/reference.md) · [Deutsch](reference.md) · [简体中文](../zh-CN/reference.md)
 [← Startseite](README.md)
 
-> Übersetzt aus [docs/ru/reference.md](../ru/reference.md) bei 9a08876, 2026-10-05. Bei
+> Übersetzt aus [docs/ru/reference.md](../ru/reference.md) bei 67f8732, 2026-10-08. Bei
 > Abweichungen gilt die russische Fassung.
 
 Jedes Konfigurationsfeld, jedes Flag und was das Werkzeug vor dem Start prüft. Wie man den Bericht
@@ -45,6 +45,7 @@ load:
 | `load.calls[].duration` | Wie lange sie belastet wird: `30s`, `5m`, `1h` |
 | `load.calls[].timeout` | Wie lange auf eine Antwort gewartet wird. Weggelassen — `2s`. Null schaltet es nicht ab, es ist ein Fehler |
 | `load.calls[].data` | Der Anfrage-Body, siehe [unten](#anfrage-body). Weggelassen — eine leere Nachricht |
+| `load.calls[].dataset` | Eine Datei mit Anfrage-Bodies statt `data`, siehe [unten](#bei-jedem-aufruf-eine-andere-anfrage-dataset). Zusammen mit `data` nicht erlaubt — nicht veröffentlicht |
 
 Die Konfiguration wird streng gelesen: Ein Tippfehler in einem Feldnamen ist ein Fehler mit der
 Zeilennummer, ein falscher Wert ein Fehler mit Nummer und Methode des Aufrufs, kein Lauf mit leerer
@@ -166,6 +167,34 @@ funktioniert auch ohne Reflection: Es gibt nichts, womit man sie prüfen könnte
 sagt das — vor dem Lauf auf stderr und noch einmal als Zeile im Bericht. Die Warnung sagt, warum die
 Prüfung nicht möglich war: Reflection ist aus, sie hat abgelehnt oder gar nicht geantwortet.
 
+## Bei jedem Aufruf eine andere Anfrage: dataset
+
+```yaml
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 800
+      duration: 1m
+      dataset: wallets.jsonl
+```
+
+```
+{"wallet_id": "w-1", "currency": "USD"}
+{"wallet_id": "w-2", "currency": "EUR"}
+```
+
+`dataset` ist eine Datei mit Anfrage-Bodies, ein JSON je Zeile, in derselben Form wie bei `data`. Ein
+relativer Pfad gilt ab dem Verzeichnis der Konfigurationsdatei. Die erste Anfrage geht mit der ersten
+Zeile raus, die zweite mit der zweiten, nach der letzten Zeile fängt es von vorn an. Leere Zeilen
+werden übersprungen. Die Datei wird gelesen, und jede Zeile wird vor dem Start gegen die Nachricht
+der Methode geprüft — nach den Regeln von `data` und über Reflection; ein Fehler nennt die Zeile,
+`wallets.jsonl:3`, und gibt nie aus, was in ihr steht. Eine Datei ohne Anfragen ist ein Fehler.
+
+Unter der Methodenzeile sagt der Bericht, wie viel der Datei benutzt wurde:
+`data: 3 of 3 requests from wallets.jsonl, each used up to 5 times`. Das ist, wie oft eine Anfrage
+dem Sender übergeben wurde, nicht, was das Ziel gesehen hat: Eine Anfrage, die zweimal in der Datei
+steht, geht zweimal raus, und ein Aufruf, der das Ziel nie erreicht hat, wird auch gezählt. In einer
+Suche nach dem Bruchpunkt macht jeder Schritt dort weiter, wo der vorige endete, und die Zeile zählt
+die ganze Suche.
+
 ## Flags
 
 | Flag | Was es tut |
@@ -174,6 +203,7 @@ Prüfung nicht möglich war: Reflection ist aus, sie hat abgelehnt oder gar nich
 | `-output` | Berichtsformat auf stdout: `text` (Standard) oder `json` für Skripte und CI |
 | `-connect-timeout` | Wie lange auf einen Dienst gewartet wird, der die Verbindung angenommen hat, aber schweigt. Standard `10s`. Auf eine abgelehnte Verbindung und eine falsche Adresse wird nicht gewartet |
 | `-max-in-flight` | Grenze für Anfragen, die auf eine Antwort warten. Standard `5000` |
+| `-plain` | Ohne Live-Bildschirm: eine Fortschrittszeile pro Sekunde auf stderr, wie ohne Terminal, und ohne den Dialog beim ersten Start. Der Bericht und die Exit-Codes sind dieselben — nicht veröffentlicht |
 | `-fake` | Statt des Dienstes aus der Konfiguration einen eingebauten Platzhalter belasten — um das Werkzeug ohne Dienst anzusehen. Der Bericht ist als `fake target` markiert |
 | `-fake-delay`, `-fake-jitter`, `-fake-fail-ratio` | Das Verhalten des Platzhalters. Nur zusammen mit `-fake` |
 | `-version` | Version ausgeben und beenden. Ein Build aus dem Quellcode gibt den Commit aus |
@@ -333,7 +363,7 @@ etwas geschah. Anders als die Summen enthält sie jeden Aufruf. Zum Abgleich: `�
 
 Die Suche schreibt ein anderes Objekt: `schema_version`, `leettest_version`, `target` und
 `started_at` wie beim Lauf oben, die übrigen Felder eines gewöhnlichen Laufs stehen nicht auf der
-obersten Ebene. Jeder Lauf liegt mit seinem vollständigen Bericht in `breakpoint.runs`.
+obersten Ebene. Jeder Lauf liegt mit seinem vollständigen Bericht in `breakpoint.runs` ([die Suche](README.md#suche-nach-dem-bruchpunkt)).
 
 | Feld | Typ | Bedeutung |
 |---|---|---|

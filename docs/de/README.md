@@ -14,7 +14,9 @@
 
 ---
 
-> Übersetzt aus [README.md](../../README.md) bei 9a08876, 2026-10-05. Bei Abweichungen gilt die
+> Das ist `main`: Hier gibt es Unveröffentlichtes, es ist mit „nicht veröffentlicht" markiert. Die Dokumentation der veröffentlichten Version steht im [letzten Release](https://github.com/yhgrwav/leettest/releases/latest).
+
+> Übersetzt aus [README.md](../../README.md) bei 67f8732, 2026-10-08. Bei Abweichungen gilt die
 > russische Fassung. Dazu ein Verzeichnis der deutschen Dokumentation, das im Original fehlt.
 
 > **Frühes Stadium.** Funktioniert: unäre Last auf einen echten Dienst, mehrere Methoden mit eigener
@@ -84,8 +86,9 @@ Der Methodenname ist der volle, `package.Service/Method`. Das Werkzeug holt das 
 Methoden und Anfrage-Body werden vor dem Start geprüft: Jeder Fehler heißt Exit-Code 1 und kein
 einziger Aufruf ans Ziel. Die ersten `warmup` Sekunden zählen nicht zur Statistik. Jeder Aufruf einer
 Methode geht mit demselben Body raus: Bei einem Schreibvorgang mit Idempotenzschlüssel wird der Weg
-der Wiederholung gemessen, nicht das Anlegen des Datensatzes. Alle Felder, TLS, Header, der
-Anfrage-Body und die Flags stehen in der **[Referenz](reference.md)**.
+der Wiederholung gemessen, nicht das Anlegen des Datensatzes. Eine andere Anfrage bei jedem Aufruf —
+eine Datei in `dataset` (nicht veröffentlicht): ein JSON je Zeile, der Reihe nach und im Kreis. Alle
+Felder, TLS, Header, der Anfrage-Body und die Flags stehen in der **[Referenz](reference.md)**.
 
 Im Terminal läuft der Lauf im Vollbild, `q` zum Anhalten. Ohne Terminal (CI, umgeleitete Ausgabe) —
 eine Fortschrittszeile pro Sekunde:
@@ -94,7 +97,8 @@ eine Fortschrittszeile pro Sekunde:
 32.0s  sent 25600  rps 800  in-flight 47  failed 51  not-sent 0  p99 43ms
 ```
 
-Der Bericht geht nach stdout, Fortschritt und Fehler nach stderr.
+Der Bericht geht nach stdout, Fortschritt und Fehler nach stderr. Ohne Bildschirm (zum Beispiel über
+ssh): `-plain` (nicht veröffentlicht).
 
 ## Den Bericht lesen
 
@@ -106,12 +110,17 @@ Am Ende — ein Bericht je Methode: gesendet, fehlgeschlagen, `sent/s`, p50/p90/
   hängt, senkt diese Zahl nicht.
 - Ein Perzentil, dessen Platz vom Timeout abgeschnittene Aufrufe einnehmen könnten, wird als
   **Untergrenze** ausgegeben: `>2.0s`. Kein Wert, sondern „mindestens".
-- Die Last läuft über **eine Verbindung** und landet auf **einem Backend**: hinter einem
-  L4-Balancer (Kubernetes ClusterIP, NLB) und wenn DNS mehrere Adressen liefert. „Hält X nicht"
-  betrifft dieses Backend, nicht den Dienst, und der Bericht zeigt das nicht. Ein L7-Balancer, der
-  einzelne Anfragen verteilt (Envoy, ein gRPC-Ingress), verteilt auch eine Verbindung. Der Bericht
-  gibt aus, wie oft die Verbindung neu aufgebaut wurde und welches Limit gleichzeitiger Streams das
-  Ziel angekündigt hat.
+- Unter einer Methode mit `dataset` (nicht veröffentlicht) steht eine Zeile `data:`: wie viele
+  Anfragen der Datei benutzt wurden und wie oft die am häufigsten benutzte rausging. Das heißt nicht,
+  dass das Ziel so viele verschiedene Anfragen gesehen hat.
+- Standardmäßig läuft die Last über **eine Verbindung** und landet auf **einem Backend**: hinter
+  einem L4-Balancer (Kubernetes ClusterIP, NLB) und wenn DNS mehrere Adressen liefert. „Hält X
+  nicht" betrifft dieses Backend, nicht den Dienst, und der Bericht zeigt das nicht. Um mehrere zu
+  belasten, setzen Sie `app.connections` (nicht veröffentlicht): Der Block `Connections:` im Bericht
+  zeigt je Verbindung eine Zeile — Adresse, Aufrufe, Fehleranteil und p99 —, sodass ein
+  zurückbleibendes Backend sichtbar wird. Ein L7-Balancer, der einzelne Anfragen verteilt (Envoy,
+  ein gRPC-Ingress), verteilt auch eine Verbindung. Der Bericht gibt aus, wie oft die Verbindung neu
+  aufgebaut wurde und welches Limit gleichzeitiger Streams das Ziel angekündigt hat.
 
 **Kategorien.** Antworten außer einem Erfolg werden in Zeilen aufgeteilt, jede mit eigenen
 Perzentilen. Der Status kann von einem Proxy vor dem Ziel stammen statt vom Ziel: nginx ohne
@@ -250,6 +259,50 @@ Sekunde keine Stufe lief. `planned_rps_low` und `_high` sind die Rate des ganzen
 Der Textbericht wird nur in ASCII ausgegeben. Zeichen außerhalb von ASCII, in einem Methodennamen
 oder im Fehlertext des Ziels, werden als `\uXXXX` ausgegeben (jenseits von U+FFFF als
 Surrogatpaar, wie in JSON). `notes` im JSON tragen denselben maskierten Text.
+
+### Suche nach dem Bruchpunkt
+
+Ein Abschnitt `load.breakpoint` (nicht veröffentlicht) statt `rps` und `duration` des Aufrufs:
+LeetTest erhöht die Last in Stufen und nennt die Stufe, die das Ziel gehalten hat, und die, bei der
+es brach. Genau ein Aufruf, ohne `rps`, `duration` und `load.warmup`.
+
+```yaml
+load:
+  calls:
+    - method: wallet.v1.WalletService/GetBalance
+      timeout: 500ms
+  breakpoint:
+    from: 100         # erste Stufe, rps
+    to: 2000          # höher geht es nicht
+    factor: 1.25      # nächste Stufe = letzte × factor; oder step: 100 — so viel rps mehr
+    settle: 5s        # Beginn einer Stufe, geht nicht ins Urteil ein; unter der Hälfte von hold
+    hold: 30s         # Länge einer Stufe
+    p99_limit: 200ms  # optional; ohne ihn bricht eine Stufe bei p99 über dem Dreifachen der besten gehaltenen
+```
+
+Eine Stufe bricht, wenn mindestens 1 % ihrer Aufrufe fehlschlugen oder ihr p99 die Grenze überschritt.
+Eine gebrochene Stufe wird nach einer Pause wiederholt und, außer der ersten, nach Proben auf der
+ersten Stufe: Das Ziel muss zu seinem früheren p99 zurückkehren. Eine Stufe gilt nur dann als
+gehalten, wenn der Generator das Geplante gesendet hat — mindestens 99,9 % der Aufrufe des
+Messfensters. Sonst ist es die Grenze des Laufs, nicht des Ziels. Vor der ersten Stufe steht in
+stderr eine Zeile `breakpoint: up to N steps, at most T`: wie viele Stufen und wie lange die Suche im
+schlimmsten Fall dauert. Eine Verbindung für die ganze Suche; reißt das Ziel sie ab, ist die Stufe
+gebrochen, einen Wiederaufbau gibt es nicht.
+
+Das Ergebnis (`outcome` im JSON) ist eine geschlossene Liste: `broke` (hielt X, brach bei Y),
+`broke_at_first` (brach schon bei der ersten Stufe — fangen Sie niedriger an), `held_all` (hielt alles
+bis `to`), `run_limit` (der Generator, das Limit einer Verbindung oder `-max-in-flight` war zu Ende:
+über das Ziel oberhalb ist nichts bekannt), `stopped` (Ctrl+C), `invalid` (eine Stufe war ein
+ungültiger Lauf). Die Ursache (`why`) ist ebenfalls eine geschlossene Liste: `errors`, `p99_limit`,
+`p99_vs_base`, `connection`, `no_recovery`, `generator`, `in_flight_cap`, `stream_limit`,
+`stream_wait`, `clock_step`, `request_errors` oder `null`. `held_rps` und `broke_rps` sind `null`,
+wo es keinen gibt. Im Suchmodus ist das JSON ein anderes Objekt: `mode: "breakpoint"`, keines der
+Felder eines gewöhnlichen Laufs auf der obersten Ebene, jeder Lauf mit seinem vollständigen Bericht
+in `breakpoint.runs` (nicht veröffentlicht; `kind`: `step`, `repeat`, `probe`; `planned_rps` und
+`sent_rps`). Ein gewöhnlicher Lauf schreibt `mode: "run"`.
+
+Exit-Codes: `0` für `broke`, `broke_at_first`, `held_all`, `run_limit` — das sind Befunde; `2` für
+`invalid`; `3` für das Anhalten mit einem einzelnen Ctrl+C.
 
 ## Noch nicht
 
