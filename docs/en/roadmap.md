@@ -12,18 +12,12 @@
 
 These are plans, not promised dates. What works today is in the [README](README.md).
 
-## Next version (v0.2)
+## Next version (v0.3)
 
-- **Finding the breaking point.** The tool raises the load in steps by itself and names the RPS at
-  which the service stopped coping, by a "broke" criterion set in advance.
-- **Different data in every call.** The request body changes from call to call instead of one per
-  method, so the load does not hit a single cache key or a single database row.
-- **Several connections.** Today the generator holds one connection, and behind a load balancer
-  one backend gets the load. `connections: N` is coming.
+- **`.proto` and protoset** for services without server reflection.
 
 ## Later
 
-- **`.proto` and protoset** for services without server reflection.
 - **Ramp-up** from zero to the target RPS.
 - **Pass/fail thresholds for CI**: the run fails if p99 or the error share is above a limit.
 - **[Call chaining](chaining.md)**: a field from one method's reply goes into another's request.
