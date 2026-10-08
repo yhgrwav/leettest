@@ -94,11 +94,11 @@ load:
 - **`timeout`** — how long to wait for an answer (2 s by default).
 - **`data`** — the request body as plain YAML. The schema comes from the service through
   reflection, no `.proto`. A mistake in the body shows before the start.
-- **`dataset`** (not released) — a file of request bodies instead of `data`, one JSON per line
+- **`dataset`** — a file of request bodies instead of `data`, one JSON per line
   ([`examples/wallets.jsonl`](../../examples/wallets.jsonl)): the first call goes out with the
   first line, the second with the second, and after the last line it starts over. Beside the
   method's row the report says how much of the file was used.
-- **`connections`** (not released) — how many connections carry the load (1 by default). Behind an L4
+- **`connections`** — how many connections carry the load (1 by default). Behind an L4
   balancer one connection loads one backend; with N ≥ 2 the report adds a `Connections:` block, a
   row per connection.
 

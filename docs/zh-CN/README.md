@@ -14,13 +14,12 @@
 
 ---
 
-> 这是 `main` 分支：这里有尚未发布的内容，标记为“未发布”。已发布版本的文档见[最新发布](https://github.com/yhgrwav/leettest/releases/latest)。
-
 > 译自 [README.md](../../README.md)，对应 67f8732，2026-10-08。如有出入，以俄文版为准。
 > 另附中文文档目录，俄文原文中没有。
 
-> **早期阶段。** 已可用：对真实服务施加 unary 负载，一次运行中多个方法各自设定 RPS，请求体来自
-> 配置，控制台报告和供脚本使用的 JSON。尚未提供：爬坡、CI 的通过/失败阈值、指标导出——
+> **早期阶段。** 已可用：对真实服务施加 unary 负载，一次运行中多个方法各自设定 RPS，
+> 找出崩溃点，每次调用使用不同数据（`dataset`），多个连接，控制台报告和供脚本使用的 JSON。
+> 尚未提供：爬坡、CI 的通过/失败阈值、指标导出——
 > **[接下来会有什么 →](roadmap.md)**。缺少某项功能——
 > [提交 issue](https://github.com/yhgrwav/leettest/issues/new/choose)。下文只描述已经可用的功能。
 
@@ -76,8 +75,8 @@ $ leettest -c leettest.yaml
 方法名使用全名 `package.Service/Method`。工具通过 gRPC server reflection 从服务获取方法的结构，
 因此不需要 `.proto`。配置、地址、方法和请求体都在启动前检查：任何错误都意味着退出码 1，且不会向
 目标发出任何调用。前 `warmup` 秒不计入统计。一个方法的每次调用都使用同一个请求体：对于带幂等键的
-写操作，测到的是重复请求的路径，而不是创建记录。每次调用使用不同的请求：用 `dataset` 指定文件
-（未发布），每行一个 JSON，按顺序循环使用。所有字段、TLS、请求头、请求体和命令行参数都在
+写操作，测到的是重复请求的路径，而不是创建记录。每次调用使用不同的请求：用 `dataset` 指定文件，
+每行一个 JSON，按顺序循环使用。所有字段、TLS、请求头、请求体和命令行参数都在
 **[参考手册](reference.md)**中。
 
 在终端中运行时全屏显示，按 `q` 停止。没有终端时（CI、重定向输出）——每秒一行进度：
@@ -86,7 +85,7 @@ $ leettest -c leettest.yaml
 32.0s  sent 25600  rps 800  in-flight 47  failed 51  not-sent 0  p99 43ms
 ```
 
-报告输出到 stdout，进度和错误输出到 stderr。没有屏幕时（例如通过 ssh）：`-plain`（未发布）。
+报告输出到 stdout，进度和错误输出到 stderr。没有屏幕时（例如通过 ssh）：`-plain`。
 
 ## 阅读报告
 
@@ -96,11 +95,11 @@ $ leettest -c leettest.yaml
 - `sent/s` 是已发送调用数除以发送时间：运行末尾挂起的目标不会拉低这个数字。
 - 如果被超时截断的调用可能占据某个百分位的位置，该百分位会以**下界**形式输出：`>2.0s`。这不是
   数值，而是“至少”。
-- 带 `dataset`（未发布）的方法下面有一行 `data:`：文件中的请求用了多少个，最常用的那个发出了
+- 带 `dataset` 的方法下面有一行 `data:`：文件中的请求用了多少个，最常用的那个发出了
   多少次。这并不表示目标看到了这么多不同的请求。
 - 默认情况下负载通过**一条连接**发出，并落在**一个后端**上：在 L4 负载均衡器（Kubernetes
   ClusterIP、NLB）后面，以及 DNS 返回多个地址时都是如此。“扛不住 X”说的是那个后端而不是整个
-  服务，报告不会显示这一点。要给多个后端施压，请设置 `app.connections`（未发布）：报告中的
+  服务，报告不会显示这一点。要给多个后端施压，请设置 `app.connections`：报告中的
   `Connections:` 块每条连接一行——地址、调用数、失败占比和 p99——落后的后端一目了然。按单个
   请求分发的 L7 负载均衡器（Envoy、gRPC ingress）即使只有一条连接也会分发。报告会输出连接重建的
   次数，以及目标声明的并发流上限。
@@ -216,7 +215,7 @@ stdout 可以直接交给 `jq`。只有运行确实发生时（代码 `0`、`2`�
 
 ### 崩溃点搜索
 
-调用中用 `load.breakpoint` 段（未发布）代替 `rps` 和 `duration`：LeetTest 分台阶提高负载，并指出
+调用中用 `load.breakpoint` 段代替 `rps` 和 `duration`：LeetTest 分台阶提高负载，并指出
 目标撑住了哪一级、在哪一级崩溃。只能有一个调用，且不能有 `rps`、`duration` 和 `load.warmup`。
 
 ```yaml
@@ -246,7 +245,7 @@ load:
 `no_recovery`、`generator`、`in_flight_cap`、`stream_limit`、`stream_wait`、`clock_step`、
 `request_errors` 或 `null`。没有对应值时，`held_rps` 和 `broke_rps` 为 `null`。在搜索模式下 JSON
 是另一种对象：`mode: "breakpoint"`，普通运行的字段都不在顶层，每次运行连同其完整报告放在
-`breakpoint.runs` 中（未发布；`kind`：`step`、`repeat`、`probe`；`planned_rps` 和 `sent_rps`）。
+`breakpoint.runs` 中（`kind`：`step`、`repeat`、`probe`；`planned_rps` 和 `sent_rps`）。
 普通运行写 `mode: "run"`。
 
 退出码：`broke`、`broke_at_first`、`held_all`、`run_limit` 为 `0`——它们是发现；`invalid` 为 `2`；

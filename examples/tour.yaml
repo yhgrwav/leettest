@@ -15,7 +15,7 @@ app:
     authorization: Bearer ${LEETTEST_TOKEN}
     x-request-source: leettest-tour
   max_response_size: 1MiB           # a bigger reply is a bad response, not a success
-  connections: 1                    # not released: N connections, calls take them in turn; the default is 1
+  connections: 1                    # N connections, calls take them in turn; the default is 1
 
 load:
   warmup: 3s                        # sent, but kept out of the percentiles
