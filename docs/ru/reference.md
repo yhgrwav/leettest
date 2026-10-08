@@ -35,14 +35,14 @@ load:
 | `app.server_name` | Имя, по которому проверять сертификат сервиса, если он не называет адрес из `target`. Нужен TLS |
 | `app.metadata` | Заголовки каждого вызова: `authorization`, `x-api-key` и т. п. `${ИМЯ}` берётся из переменной окружения |
 | `app.max_response_size` | Самый большой ответ, который примет вызов: `16MiB`, `512KB`. Единица обязательна (`MB` = 10⁶ байт, `MiB` = 2²⁰), меньше 2 GiB. Не указан — 4 MiB, как у gRPC. Ответ больше — `bad response`. Вызов в полёте держит в памяти до двух лимитов: по умолчанию до 8 MiB на каждый |
-| `app.connections` | Сколько соединений открыть к цели, целое от 1 до 256. Не указано — 1. Вызовы идут по соединениям по кругу, отчёт печатает блок `Connections:` — строку на соединение — не выпущено |
+| `app.connections` | Сколько соединений открыть к цели, целое от 1 до 256. Не указано — 1. Вызовы идут по соединениям по кругу, отчёт печатает блок `Connections:` — строку на соединение |
 | `load.warmup` | Первые N секунд не попадают в percentiles и в `sent`: холодные кеши их портят. Вызовы прогрева уходят к цели, отчёт печатает их строкой `warm-up N sent (M failed), excluded from stats` — `sent` плюс она равны всем вызовам, которые генератор попытался отправить. Цель получила их все, кроме посчитанных как unreachable и client error; `cut off` и вызовы с тайм-аутом могли дойти до неё не полностью: цель, которая не открывает окно HTTP/2 (flow control), получает только заголовки, и её счётчики могут вызов не увидеть. Входит в `duration`, короче любого вызова |
 | `load.calls[].method` | Полное имя метода: `пакет.Сервис/Метод` |
 | `load.calls[].rps` | Запросов в секунду для этого метода |
 | `load.calls[].duration` | Сколько его нагружать: `30s`, `5m`, `1h` |
 | `load.calls[].timeout` | Сколько ждать ответа. Не указан — `2s`. Ноль не отключает, а даёт ошибку |
 | `load.calls[].data` | Тело запроса, см. [ниже](#тело-запроса). Не указано — пустое сообщение |
-| `load.calls[].dataset` | Файл с телами запросов вместо `data`, см. [ниже](#каждый-раз-другой-запрос-dataset). Вместе с `data` нельзя — не выпущено |
+| `load.calls[].dataset` | Файл с телами запросов вместо `data`, см. [ниже](#каждый-раз-другой-запрос-dataset). Вместе с `data` нельзя |
 
 Конфиг читается строго: опечатка в имени поля — ошибка с номером строки, неверное значение —
 ошибка с номером вызова и его методом, а не прогон с пустой нагрузкой. `rps` — целое число:
@@ -190,7 +190,7 @@ reflection; ошибка называет строку, `wallets.jsonl:3`, и н
 | `-output` | Формат отчёта в stdout: `text` (по умолчанию) или `json` для скриптов и CI |
 | `-connect-timeout` | Сколько ждать сервис, который принял соединение, но молчит. По умолчанию `10s`. Отказ в соединении и неверный адрес не ждут |
 | `-max-in-flight` | Потолок запросов, ждущих ответа. По умолчанию `5000` |
-| `-plain` | Без живого экрана: строка прогресса раз в секунду в stderr, как без терминала, и без диалога первого запуска. Отчёт и коды выхода те же — не выпущено |
+| `-plain` | Без живого экрана: строка прогресса раз в секунду в stderr, как без терминала, и без диалога первого запуска. Отчёт и коды выхода те же |
 | `-fake` | Нагружать встроенную заглушку вместо сервиса из конфига — посмотреть на инструмент без сервиса. Отчёт помечен `fake target` |
 | `-fake-delay`, `-fake-jitter`, `-fake-fail-ratio` | Поведение заглушки. Только вместе с `-fake` |
 | `-version` | Напечатать версию и выйти. Собранное из исходников печатает коммит |
@@ -234,7 +234,7 @@ SIGTERM (`docker stop`, Kubernetes, отмена джоба в CI) сразу о
 | Поле | Тип | Что значит |
 |---|---|---|
 | `schema_version` | int | Версия схемы, сейчас `1` |
-| `mode` | string | `run` у обычного прогона, `breakpoint` у поиска точки отказа — не выпущено |
+| `mode` | string | `run` у обычного прогона, `breakpoint` у поиска точки отказа |
 | `leettest_version` | string | Версия инструмента; собранное из исходников — коммит |
 | `target` | string | Адрес цели из конфига, `fake target` при `-fake` |
 | `outcome` | string | `complete`, `invalid`, `incomplete` — совпадает с кодом выхода `0`, `2`, `3` |
@@ -263,16 +263,16 @@ SIGTERM (`docker stop`, Kubernetes, отмена джоба в CI) сразу о
 | `connections.reconnects` | int | Успешные рукопожатия после первого |
 | `connections.first_limit`, `connections.last_limit` | int? | `MAX_CONCURRENT_STREAMS` на первом и последнем рукопожатии; `null` — цель не объявила (`0` — объявила ноль). При нескольких соединениях всегда `null`: лимиты у каждого свои |
 | `connections.limit_changes` | int | Сколько рукопожатий объявили лимит, отличный от прежнего |
-| `connections.resolved` | []string? | Адреса, которым соответствует цель, в порядке резолвера: все, даже если соединений меньше. IP-адрес — он сам; `null` при одном соединении — не выпущено |
-| `connections.in_flight_limit` | int? | Сколько вызовов цель позволяет держать в полёте: лимит единственного соединения или сумма лимитов всех; `null`, пока хоть одно соединение лимит не объявило — не выпущено |
-| `connections.per_connection` | []object? | По объекту на соединение, в порядке номеров блока отчёта; `null` при одном соединении — не выпущено |
-| `connections.per_connection[].address` | string | Адрес соединения — не выпущено |
-| `connections.per_connection[].calls` | int | Вызовы, назначенные соединению, отправленные и нет, без прогрева — не выпущено |
-| `connections.per_connection[].failed` | int | Отказы соединения: по правилу `failed` прогона плюс вызовы, не ушедшие, потому что соединение не было готово — не выпущено |
-| `connections.per_connection[].stream_waited`, `connections.per_connection[].not_sent_stream` | int | Вызовы соединения, ждавшие свободный стрим: ушедшие после ожидания и не дождавшиеся — не выпущено |
-| `connections.per_connection[].p99` | перцентиль? | p99 вызовов соединения; `null` без вызовов с задержкой — не выпущено |
-| `connections.per_connection[].first_limit`, `connections.per_connection[].last_limit` | int? | Лимит стримов соединения на первом и последнем рукопожатии; `null` — не объявлен — не выпущено |
-| `connections.per_connection[].limit_changes` | int | Сколько рукопожатий соединения объявили лимит, отличный от прежнего — не выпущено |
+| `connections.resolved` | []string? | Адреса, которым соответствует цель, в порядке резолвера: все, даже если соединений меньше. IP-адрес — он сам; `null` при одном соединении |
+| `connections.in_flight_limit` | int? | Сколько вызовов цель позволяет держать в полёте: лимит единственного соединения или сумма лимитов всех; `null`, пока хоть одно соединение лимит не объявило |
+| `connections.per_connection` | []object? | По объекту на соединение, в порядке номеров блока отчёта; `null` при одном соединении |
+| `connections.per_connection[].address` | string | Адрес соединения |
+| `connections.per_connection[].calls` | int | Вызовы, назначенные соединению, отправленные и нет, без прогрева |
+| `connections.per_connection[].failed` | int | Отказы соединения: по правилу `failed` прогона плюс вызовы, не ушедшие, потому что соединение не было готово |
+| `connections.per_connection[].stream_waited`, `connections.per_connection[].not_sent_stream` | int | Вызовы соединения, ждавшие свободный стрим: ушедшие после ожидания и не дождавшиеся |
+| `connections.per_connection[].p99` | перцентиль? | p99 вызовов соединения; `null` без вызовов с задержкой |
+| `connections.per_connection[].first_limit`, `connections.per_connection[].last_limit` | int? | Лимит стримов соединения на первом и последнем рукопожатии; `null` — не объявлен |
+| `connections.per_connection[].limit_changes` | int | Сколько рукопожатий соединения объявили лимит, отличный от прежнего |
 | `client_waits` | object | Вызовы, ждавшие на стороне клиента дольше порога, по причинам ([README](../../README.md#как-читать-отчёт)) |
 | `client_waits.generator_calls`, `client_waits.stream_calls`, `client_waits.connection_calls` | int | Все такие вызовы, отправленные и нет. Отправленный может считаться за несколько причин |
 | `client_waits.generator_tail_calls`, `client_waits.stream_tail_calls`, `client_waits.connection_tail_calls` | int | Только среди вызовов хвоста p99 и неотправленных: по ним выбирается `tail_wait_cause` |
@@ -321,11 +321,11 @@ SIGTERM (`docker stop`, Kubernetes, отмена джоба в CI) сразу о
 | `methods[].silent_sent_rps` | int? | Сколько вызовов ушло за секунду до неё (за первую, если тишина с начала) |
 | `methods[].silent_planned_rps_low`, `methods[].silent_planned_rps_high` | int? | Плановый темп стадий в ту же секунду; `null` и тогда, когда стадий в ней не было |
 | `methods[].last_answer_at_us` | int? | Когда ушёл последний вызов, на который цель ответила; `null` — не ответила ни разу |
-| `methods[].dataset` | object? | Файл запросов вызова; `null` — у вызова его нет — не выпущено |
-| `methods[].dataset.file` | string | Путь, как он написан в конфиге — не выпущено |
-| `methods[].dataset.records` | int | Запросов в файле — не выпущено |
-| `methods[].dataset.used` | int | Сколько из них отдано отправителю хотя бы раз — не выпущено |
-| `methods[].dataset.used_max` | int | Сколько раз отдан отправителю самый частый; в поиске — с его первого шага до конца этого прогона — не выпущено |
+| `methods[].dataset` | object? | Файл запросов вызова; `null` — у вызова его нет |
+| `methods[].dataset.file` | string | Путь, как он написан в конфиге |
+| `methods[].dataset.records` | int | Запросов в файле |
+| `methods[].dataset.used` | int | Сколько из них отдано отправителю хотя бы раз |
+| `methods[].dataset.used_max` | int | Сколько раз отдан отправителю самый частый; в поиске — с его первого шага до конца этого прогона |
 | `methods[].seconds` | []object | Посекундная шкала, см. ниже |
 
 ### Секунда: `methods[].seconds[]`
@@ -352,18 +352,18 @@ SIGTERM (`docker stop`, Kubernetes, отмена джоба в CI) сразу о
 
 | Поле | Тип | Что значит |
 |---|---|---|
-| `method` | string | Метод, который нагружал поиск — не выпущено |
-| `breakpoint` | object | Итог поиска — не выпущено |
-| `breakpoint.outcome` | string | Закрытый список: `broke`, `broke_at_first`, `held_all`, `run_limit`, `stopped`, `invalid` — не выпущено |
-| `breakpoint.held_rps` | int? | Наибольший темп, который цель выдержала; `null` — выдержавшего нет — не выпущено |
-| `breakpoint.broke_rps` | int? | Наименьший темп, на котором цель сломалась или упёрся прогон; `null` — не ломалась — не выпущено |
-| `breakpoint.why` | string? | Причина прогона, закончившего поиск, из закрытого списка: `errors`, `p99_limit`, `p99_vs_base`, `connection`, `no_recovery`, `generator`, `in_flight_cap`, `stream_limit`, `stream_wait`, `clock_step`, `request_errors`; `null` — причины нет — не выпущено |
-| `breakpoint.notes` | []string | Заметки поиска, текст для человека в ASCII; не разбирать — не выпущено |
-| `breakpoint.runs` | []object | Все прогоны по порядку — не выпущено |
-| `breakpoint.runs[].kind` | string | `step`, `repeat` или `probe` — не выпущено |
-| `breakpoint.runs[].planned_rps` | int | Плановый темп прогона — не выпущено |
-| `breakpoint.runs[].sent_rps` | int | Темп, с которым вызовы реально ушли: держится только то, что отправлено — не выпущено |
-| `breakpoint.runs[].broken` | bool | `true` — прогон сломал цель — не выпущено |
-| `breakpoint.runs[].recovered` | bool? | У `probe`: цель вернулась к p99 в пределах 1,5 от исходного; у `step` и `repeat` — `null` — не выпущено |
-| `breakpoint.runs[].why` | string? | Причина прогона, тот же закрытый список, что у `breakpoint.why`; `null` — причины нет — не выпущено |
-| `breakpoint.runs[].report` | object | Полный отчёт этого прогона, тот же объект, что JSON обычного прогона (поля выше) — не выпущено |
+| `method` | string | Метод, который нагружал поиск |
+| `breakpoint` | object | Итог поиска |
+| `breakpoint.outcome` | string | Закрытый список: `broke`, `broke_at_first`, `held_all`, `run_limit`, `stopped`, `invalid` |
+| `breakpoint.held_rps` | int? | Наибольший темп, который цель выдержала; `null` — выдержавшего нет |
+| `breakpoint.broke_rps` | int? | Наименьший темп, на котором цель сломалась или упёрся прогон; `null` — не ломалась |
+| `breakpoint.why` | string? | Причина прогона, закончившего поиск, из закрытого списка: `errors`, `p99_limit`, `p99_vs_base`, `connection`, `no_recovery`, `generator`, `in_flight_cap`, `stream_limit`, `stream_wait`, `clock_step`, `request_errors`; `null` — причины нет |
+| `breakpoint.notes` | []string | Заметки поиска, текст для человека в ASCII; не разбирать |
+| `breakpoint.runs` | []object | Все прогоны по порядку |
+| `breakpoint.runs[].kind` | string | `step`, `repeat` или `probe` |
+| `breakpoint.runs[].planned_rps` | int | Плановый темп прогона |
+| `breakpoint.runs[].sent_rps` | int | Темп, с которым вызовы реально ушли: держится только то, что отправлено |
+| `breakpoint.runs[].broken` | bool | `true` — прогон сломал цель |
+| `breakpoint.runs[].recovered` | bool? | У `probe`: цель вернулась к p99 в пределах 1,5 от исходного; у `step` и `repeat` — `null` |
+| `breakpoint.runs[].why` | string? | Причина прогона, тот же закрытый список, что у `breakpoint.why`; `null` — причины нет |
+| `breakpoint.runs[].report` | object | Полный отчёт этого прогона, тот же объект, что JSON обычного прогона (поля выше) |

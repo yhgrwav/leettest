@@ -38,14 +38,14 @@ load:
 | `app.server_name` | The name to check the service's certificate against when it does not name the address in `target`. Needs TLS |
 | `app.metadata` | Headers of every call: `authorization`, `x-api-key` and so on. `${NAME}` is taken from an environment variable |
 | `app.max_response_size` | The largest reply a call accepts: `16MiB`, `512KB`. The unit is required (`MB` = 10⁶ bytes, `MiB` = 2²⁰), below 2 GiB. Left out — 4 MiB, as in gRPC. A larger reply is a `bad response`. A call in flight may buffer up to twice the limit: by default up to 8 MiB each |
-| `app.connections` | How many connections to open to the target, a whole number from 1 to 256. Left out — 1. Calls take the connections in turn, and the report prints a `Connections:` block, a row per connection — not released |
+| `app.connections` | How many connections to open to the target, a whole number from 1 to 256. Left out — 1. Calls take the connections in turn, and the report prints a `Connections:` block, a row per connection |
 | `load.warmup` | The first N seconds stay out of the percentiles and of `sent`: cold caches spoil them. Warm-up calls do reach the target; the report prints them on a line `warm-up N sent (M failed), excluded from stats` — `sent` plus that line is every call the generator attempted. The target got all of them except those counted as unreachable or client error; `cut off` and timed-out ones may not have fully reached it: a target that does not open its HTTP/2 window (flow control) gets the headers only, and its counters may not see the call. Counts toward `duration`, shorter than any call |
 | `load.calls[].method` | The full method name: `package.Service/Method` |
 | `load.calls[].rps` | Requests per second for this method |
 | `load.calls[].duration` | How long to load it: `30s`, `5m`, `1h` |
 | `load.calls[].timeout` | How long to wait for a reply. Left out — `2s`. Zero does not turn it off, it is an error |
 | `load.calls[].data` | The request body, see [below](#request-body). Left out — an empty message |
-| `load.calls[].dataset` | A file of request bodies instead of `data`, see [below](#a-different-request-each-call-a-dataset). Not together with `data` — not released |
+| `load.calls[].dataset` | A file of request bodies instead of `data`, see [below](#a-different-request-each-call-a-dataset). Not together with `data` |
 
 The config is read strictly: a typo in a field name is an error with the line number, a wrong
 value is an error with the call's number and method, not a run with an empty load. `rps` is a
@@ -199,7 +199,7 @@ every step goes on where the one before ended, and the line counts the whole sea
 | `-output` | Report format on stdout: `text` (the default) or `json` for scripts and CI |
 | `-connect-timeout` | How long to wait for a service that accepted the connection but stays silent. Default `10s`. A refused connection and a wrong address are not waited for |
 | `-max-in-flight` | Cap on requests waiting for a reply. Default `5000` |
-| `-plain` | No live screen: a progress line once a second on stderr, as without a terminal, and no first-run dialog. The report and exit codes are the same — not released |
+| `-plain` | No live screen: a progress line once a second on stderr, as without a terminal, and no first-run dialog. The report and exit codes are the same |
 | `-fake` | Load a built-in stub instead of the service from the config — to look at the tool without a service. The report is marked `fake target` |
 | `-fake-delay`, `-fake-jitter`, `-fake-fail-ratio` | The stub's behavior. Only together with `-fake` |
 | `-version` | Print the version and exit. A build from source prints the commit |
@@ -244,7 +244,7 @@ measured calls only. The first column is the field's full path.
 | Field | Type | Meaning |
 |---|---|---|
 | `schema_version` | int | Schema version, now `1` |
-| `mode` | string | `run` for a plain run, `breakpoint` for a breaking-point search — not released |
+| `mode` | string | `run` for a plain run, `breakpoint` for a breaking-point search |
 | `leettest_version` | string | The tool's version; a build from source gives the commit |
 | `target` | string | The target address from the config, `fake target` with `-fake` |
 | `outcome` | string | `complete`, `invalid`, `incomplete` — matches exit code `0`, `2`, `3` |
@@ -273,16 +273,16 @@ measured calls only. The first column is the field's full path.
 | `connections.reconnects` | int | Successful handshakes after the first |
 | `connections.first_limit`, `connections.last_limit` | int? | `MAX_CONCURRENT_STREAMS` at the first and last handshake; `null` — not announced (`0` — announced zero). Always `null` with several connections: each has its own limits |
 | `connections.limit_changes` | int | Handshakes that announced a limit different from the one before |
-| `connections.resolved` | []string? | The addresses the target stands for, in the resolver's order: all of them, even with fewer connections. An IP address stands for itself; `null` with one connection — not released |
-| `connections.in_flight_limit` | int? | How many calls the target lets the run have in flight: the one connection's limit, or the sum of all the limits; `null` while any connection announced none — not released |
-| `connections.per_connection` | []object? | One object per connection, in the report block's numbering; `null` with one connection — not released |
-| `connections.per_connection[].address` | string | The connection's address — not released |
-| `connections.per_connection[].calls` | int | Calls assigned to the connection, sent or not, warm-up left out — not released |
-| `connections.per_connection[].failed` | int | The connection's failures: the run's `failed` rule plus the calls that never went out because the connection was not ready — not released |
-| `connections.per_connection[].stream_waited`, `connections.per_connection[].not_sent_stream` | int | The connection's calls that waited for a free stream: those that went out after waiting and those that expired waiting — not released |
-| `connections.per_connection[].p99` | percentile? | p99 of the connection's calls; `null` without a call that has a latency — not released |
-| `connections.per_connection[].first_limit`, `connections.per_connection[].last_limit` | int? | The connection's stream limit at its first and last handshake; `null` — not announced — not released |
-| `connections.per_connection[].limit_changes` | int | Handshakes of the connection that announced a limit different from the one before — not released |
+| `connections.resolved` | []string? | The addresses the target stands for, in the resolver's order: all of them, even with fewer connections. An IP address stands for itself; `null` with one connection |
+| `connections.in_flight_limit` | int? | How many calls the target lets the run have in flight: the one connection's limit, or the sum of all the limits; `null` while any connection announced none |
+| `connections.per_connection` | []object? | One object per connection, in the report block's numbering; `null` with one connection |
+| `connections.per_connection[].address` | string | The connection's address |
+| `connections.per_connection[].calls` | int | Calls assigned to the connection, sent or not, warm-up left out |
+| `connections.per_connection[].failed` | int | The connection's failures: the run's `failed` rule plus the calls that never went out because the connection was not ready |
+| `connections.per_connection[].stream_waited`, `connections.per_connection[].not_sent_stream` | int | The connection's calls that waited for a free stream: those that went out after waiting and those that expired waiting |
+| `connections.per_connection[].p99` | percentile? | p99 of the connection's calls; `null` without a call that has a latency |
+| `connections.per_connection[].first_limit`, `connections.per_connection[].last_limit` | int? | The connection's stream limit at its first and last handshake; `null` — not announced |
+| `connections.per_connection[].limit_changes` | int | Handshakes of the connection that announced a limit different from the one before |
 | `client_waits` | object | Calls that waited on the client side over the floor, by cause ([README](README.md#reading-the-report)) |
 | `client_waits.generator_calls`, `client_waits.stream_calls`, `client_waits.connection_calls` | int | All such calls, sent or not. A sent call can count for several causes |
 | `client_waits.generator_tail_calls`, `client_waits.stream_tail_calls`, `client_waits.connection_tail_calls` | int | Only among the p99 tail and the unsent: these pick `tail_wait_cause` |
@@ -331,11 +331,11 @@ The rest are plain counters.
 | `methods[].silent_sent_rps` | int? | Calls sent in the second before it (in the first, if the silence starts there) |
 | `methods[].silent_planned_rps_low`, `methods[].silent_planned_rps_high` | int? | The planned rate of the stages in that second; `null` also when no stage ran in it |
 | `methods[].last_answer_at_us` | int? | When the last call the target answered went out; `null` — it never answered |
-| `methods[].dataset` | object? | The call's dataset file; `null` — it has none — not released |
-| `methods[].dataset.file` | string | The path as the config wrote it — not released |
-| `methods[].dataset.records` | int | Requests in the file — not released |
-| `methods[].dataset.used` | int | How many of them were handed to the sender at least once — not released |
-| `methods[].dataset.used_max` | int | How many times the most used one was handed to the sender; in a search, counted from its first step to the end of this run — not released |
+| `methods[].dataset` | object? | The call's dataset file; `null` — it has none |
+| `methods[].dataset.file` | string | The path as the config wrote it |
+| `methods[].dataset.records` | int | Requests in the file |
+| `methods[].dataset.used` | int | How many of them were handed to the sender at least once |
+| `methods[].dataset.used_max` | int | How many times the most used one was handed to the sender; in a search, counted from its first step to the end of this run |
 | `methods[].seconds` | []object | The per-second timeline, see below |
 
 ### Second: `methods[].seconds[]`
@@ -363,18 +363,18 @@ as in the run above, a plain run's other fields are not at the top level. Every 
 
 | Field | Type | What it means |
 |---|---|---|
-| `method` | string | The method the search loaded — not released |
-| `breakpoint` | object | The search's result — not released |
-| `breakpoint.outcome` | string | Closed list: `broke`, `broke_at_first`, `held_all`, `run_limit`, `stopped`, `invalid` — not released |
-| `breakpoint.held_rps` | int? | The highest rate the target held; `null` — none held — not released |
-| `breakpoint.broke_rps` | int? | The lowest rate the target broke at or a run limit stopped the search at; `null` — it did not break — not released |
-| `breakpoint.why` | string? | The cause of the run that ended the search, from a closed list: `errors`, `p99_limit`, `p99_vs_base`, `connection`, `no_recovery`, `generator`, `in_flight_cap`, `stream_limit`, `stream_wait`, `clock_step`, `request_errors`; `null` — no cause — not released |
-| `breakpoint.notes` | []string | The search's notes, text for people in ASCII; do not parse — not released |
-| `breakpoint.runs` | []object | Every run in order — not released |
-| `breakpoint.runs[].kind` | string | `step`, `repeat` or `probe` — not released |
-| `breakpoint.runs[].planned_rps` | int | The run's planned rate — not released |
-| `breakpoint.runs[].sent_rps` | int | The rate the calls actually went out at: only what was sent counts as held — not released |
-| `breakpoint.runs[].broken` | bool | `true` — the run broke the target — not released |
-| `breakpoint.runs[].recovered` | bool? | For a `probe`: the target is back within 1.5× of the baseline p99; `null` for a `step` and a `repeat` — not released |
-| `breakpoint.runs[].why` | string? | The run's cause, the same closed list as `breakpoint.why`; `null` — no cause — not released |
-| `breakpoint.runs[].report` | object | This run's full report, the same object as a plain run's JSON (fields above) — not released |
+| `method` | string | The method the search loaded |
+| `breakpoint` | object | The search's result |
+| `breakpoint.outcome` | string | Closed list: `broke`, `broke_at_first`, `held_all`, `run_limit`, `stopped`, `invalid` |
+| `breakpoint.held_rps` | int? | The highest rate the target held; `null` — none held |
+| `breakpoint.broke_rps` | int? | The lowest rate the target broke at or a run limit stopped the search at; `null` — it did not break |
+| `breakpoint.why` | string? | The cause of the run that ended the search, from a closed list: `errors`, `p99_limit`, `p99_vs_base`, `connection`, `no_recovery`, `generator`, `in_flight_cap`, `stream_limit`, `stream_wait`, `clock_step`, `request_errors`; `null` — no cause |
+| `breakpoint.notes` | []string | The search's notes, text for people in ASCII; do not parse |
+| `breakpoint.runs` | []object | Every run in order |
+| `breakpoint.runs[].kind` | string | `step`, `repeat` or `probe` |
+| `breakpoint.runs[].planned_rps` | int | The run's planned rate |
+| `breakpoint.runs[].sent_rps` | int | The rate the calls actually went out at: only what was sent counts as held |
+| `breakpoint.runs[].broken` | bool | `true` — the run broke the target |
+| `breakpoint.runs[].recovered` | bool? | For a `probe`: the target is back within 1.5× of the baseline p99; `null` for a `step` and a `repeat` |
+| `breakpoint.runs[].why` | string? | The run's cause, the same closed list as `breakpoint.why`; `null` — no cause |
+| `breakpoint.runs[].report` | object | This run's full report, the same object as a plain run's JSON (fields above) |
