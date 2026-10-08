@@ -222,10 +222,39 @@ func TestRun_ASearchWritesOnlyJSONToStdout(t *testing.T) {
 	if res.err != nil {
 		t.Fatalf("run: %v", res.err)
 	}
-	decodeOnly(t, res.stdout)
-	for _, line := range []string{"breakpoint: up to 3 steps", "50 rps: sent", "79 rps: sent"} {
-		if !strings.Contains(res.stderr, line) {
-			t.Errorf("stderr lacks %q:\n%s", line, res.stderr)
+	out := decodeOnly(t, res.stdout)
+	if !strings.Contains(res.stderr, "breakpoint: up to 3 steps") {
+		t.Errorf("stderr lacks the plan line:\n%s", res.stderr)
+	}
+
+	// How many steps the search ran is the target's and the machine's to
+	// decide; the claim is that each run the report names had its line on
+	// stderr.
+	bp, _ := out["breakpoint"].(map[string]any)
+	runs, _ := bp["runs"].([]any)
+	if len(runs) == 0 {
+		t.Fatalf("the report lists no runs:\n%s", res.stdout)
+	}
+	progress := map[int]int{}
+	for _, line := range strings.Split(res.stderr, "\n") {
+		var rps int
+		if _, err := fmt.Sscanf(line, "%d rps: sent", &rps); err == nil {
+			progress[rps]++
+		}
+	}
+	listed := map[int]int{}
+	for i, r := range runs {
+		run, _ := r.(map[string]any)
+		planned, ok := run["planned_rps"].(float64)
+		if !ok {
+			t.Fatalf("run %d has no planned_rps: %v", i, r)
+		}
+		listed[int(planned)]++
+	}
+	for rps, n := range listed {
+		if progress[rps] < n {
+			t.Errorf("the report lists %d run(s) at %d rps, stderr has %d \"%d rps: sent\" line(s):\n%s",
+				n, rps, progress[rps], rps, res.stderr)
 		}
 	}
 }
