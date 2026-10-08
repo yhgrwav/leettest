@@ -18,8 +18,8 @@
 > russische Fassung. Dazu ein Verzeichnis der deutschen Dokumentation, das im Original fehlt.
 
 > **Frühes Stadium.** Funktioniert: unäre Last auf einen echten Dienst, mehrere Methoden mit eigener
-> RPS in einem Lauf, Anfrage-Bodies aus der Konfiguration, ein Bericht in der Konsole und JSON für
-> Skripte. Noch nicht: Hochfahren, Pass/Fail-Schwellen für CI, Metrik-Export —
+> RPS in einem Lauf, Bruchpunkt-Suche, andere Daten in jedem Aufruf (`dataset`), mehrere
+> Verbindungen, ein Bericht in der Konsole und JSON für Skripte. Noch nicht: Hochfahren, Pass/Fail-Schwellen für CI, Metrik-Export —
 > **[was als Nächstes kommt →](roadmap.md)**. Fehlt Ihnen etwas —
 > [eröffnen Sie ein Issue](https://github.com/yhgrwav/leettest/issues/new/choose). Alles Folgende
 > beschreibt, was bereits funktioniert.

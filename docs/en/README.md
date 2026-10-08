@@ -18,7 +18,8 @@
 > one is right. Plus an index of English docs, not in the Russian source.
 
 > **Early stage.** Working now: unary load against a real service, several methods at their own
-> RPS in one run, request bodies from the config, a console report and JSON for scripts. Not yet:
+> RPS in one run, finding the breaking point, different data in every call (`dataset`), several
+> connections, a console report and JSON for scripts. Not yet:
 > ramp-up, pass/fail thresholds for CI, metrics export — **[what comes next →](roadmap.md)**.
 > Missing something — [open an issue](https://github.com/yhgrwav/leettest/issues/new/choose).
 > Everything below describes what already works.
