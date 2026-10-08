@@ -106,7 +106,7 @@ passwortgeschützter Schlüssel wird nicht unterstützt: Entschlüsseln Sie ihn 
 
 **Verbindungen.** Standardmäßig hält der Generator eine Verbindung zu einer Adresse. Liefert DNS
 mehrere Adressen oder steht das Ziel hinter einem L4-Balancer, wird nur ein Backend belastet, und der
-Bericht zeigt das nicht. `app.connections: N` (nicht veröffentlicht) öffnet N Verbindungen. Ein Name,
+Bericht zeigt das nicht. `app.connections: N` öffnet N Verbindungen. Ein Name,
 den DNS zu M Adressen auflöst, wird einmal vor dem Start aufgelöst, und Verbindung i geht an Adresse
 i mod M: drei Verbindungen auf zwei Adressen sind zwei und eine. Eine Adresse, die das Ziel nicht
 bedient (`localhost` zu `::1`, während der Server nur auf `127.0.0.1` lauscht), stoppt den Start und

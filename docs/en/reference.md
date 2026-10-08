@@ -105,7 +105,7 @@ certificate is checked against and that goes into SNI; `:authority` stays the ad
 
 **Connections.** By default the generator holds one connection to one address. If DNS returns
 several addresses or the target is behind an L4 balancer, only one backend is loaded, and the
-report will not show it. `app.connections: N` (not released) opens N connections. A name that DNS
+report will not show it. `app.connections: N` opens N connections. A name that DNS
 resolves to M addresses is resolved once before the start, and connection i goes to address i mod M:
 three connections over two addresses are two and one. An address that does not serve the target
 (`localhost` to `::1` while the server listens on `127.0.0.1` only) stops the start and is named in

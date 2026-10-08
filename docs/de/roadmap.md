@@ -12,19 +12,12 @@
 
 Das sind Pläne, keine zugesagten Termine. Was heute funktioniert, steht im [README](README.md).
 
-## Nächste Version (v0.2)
+## Nächste Version (v0.3)
 
-- **Den Bruchpunkt finden.** Das Werkzeug erhöht die Last selbst in Stufen und nennt die RPS, ab
-  der der Dienst nicht mehr mithält, nach einem vorher festgelegten Kriterium für „gebrochen".
-- **Andere Daten in jedem Aufruf.** Der Anfrage-Body ändert sich von Aufruf zu Aufruf statt einer
-  pro Methode, damit die Last nicht auf einem einzigen Cache-Schlüssel oder einer Datenbankzeile
-  landet.
-- **Mehrere Verbindungen.** Heute hält der Generator eine Verbindung, und hinter einem Load
-  Balancer bekommt ein Backend die Last. `connections: N` kommt.
+- **`.proto` und Protoset** für Dienste ohne Server Reflection.
 
 ## Später
 
-- **`.proto` und Protoset** für Dienste ohne Server Reflection.
 - **Hochfahren** von null auf die Ziel-RPS.
 - **Pass/Fail-Schwellen für CI**: Der Lauf schlägt fehl, wenn p99 oder der Fehleranteil über einer
   Grenze liegt.
