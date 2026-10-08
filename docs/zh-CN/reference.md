@@ -3,7 +3,7 @@
 [Русский](../ru/reference.md) · [English](../en/reference.md) · [Deutsch](../de/reference.md) · [简体中文](reference.md)
 [← 首页](README.md)
 
-> 译自 [docs/ru/reference.md](../ru/reference.md)，对应 9a08876，2026-10-05。如有出入，以俄文版为准。
+> 译自 [docs/ru/reference.md](../ru/reference.md)，对应 67f8732，2026-10-08。如有出入，以俄文版为准。
 
 每个配置字段、每个命令行参数，以及工具在启动前检查什么。如何阅读报告见
 [README](README.md#阅读报告)。
@@ -44,6 +44,7 @@ load:
 | `load.calls[].duration` | 施压时长：`30s`、`5m`、`1h` |
 | `load.calls[].timeout` | 等待应答的时长。省略时为 `2s`。零不会关闭超时，而是错误 |
 | `load.calls[].data` | 请求体，见[下文](#请求体)。省略时为空消息 |
+| `load.calls[].dataset` | 用请求体文件代替 `data`，见[下文](#每次调用不同的请求dataset)。不能与 `data` 同时使用 — 未发布 |
 
 配置严格解析：字段名拼写错误会报错并给出行号，取值错误会报错并给出调用的序号和方法，而不是以空负载
 运行。`rps` 是整数：`10.5` 会被拒绝，而不是悄悄取整为十。`warmup` 必须短于每个调用，否则该调用
@@ -143,6 +144,30 @@ DNS 解析为 M 个地址的名字在启动前解析一次，第 i 条连接使�
 用来检查它，并会有警告说明——运行前在 stderr 输出，并在报告中再写一行。警告会说明为什么无法检查：
 reflection 已关闭、拒绝了请求，或根本没有应答。
 
+## 每次调用不同的请求：dataset
+
+```yaml
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 800
+      duration: 1m
+      dataset: wallets.jsonl
+```
+
+```
+{"wallet_id": "w-1", "currency": "USD"}
+{"wallet_id": "w-2", "currency": "EUR"}
+```
+
+`dataset` 是请求体文件，每行一个 JSON，形式与 `data` 相同。相对路径从配置文件所在目录算起。第一个
+请求用第一行，第二个请求用第二行，用完最后一行后从头再来。空行会被跳过。启动前会读取文件，并把
+每一行对照方法的消息进行检查——按 `data` 的规则并通过 reflection；错误会指出行号，如
+`wallets.jsonl:3`，但绝不会打印那一行的内容。没有任何请求的文件是错误。
+
+报告在方法那一行下面说明文件用了多少：
+`data: 3 of 3 requests from wallets.jsonl, each used up to 5 times`。这是请求交给发送方的次数，而不是
+目标看到了什么：在文件中出现两次的请求会发出两次，没有到达目标的调用也会被计入。在崩溃点搜索中，
+每一级都从上一级结束的地方继续，这一行统计整个搜索。
+
 ## 命令行参数
 
 | 参数 | 作用 |
@@ -151,6 +176,7 @@ reflection 已关闭、拒绝了请求，或根本没有应答。
 | `-output` | stdout 上的报告格式：`text`（默认）或供脚本和 CI 使用的 `json` |
 | `-connect-timeout` | 服务接受了连接却不应答时等待多久。默认 `10s`。连接被拒绝和地址错误不会等待 |
 | `-max-in-flight` | 等待应答的请求数上限。默认 `5000` |
+| `-plain` | 不用实时屏幕：每秒一行进度输出到 stderr，与没有终端时相同，并且没有首次运行的对话。报告和退出码不变 — 未发布 |
 | `-fake` | 用内置的桩代替配置中的服务施压——无需服务即可查看工具。报告会标记为 `fake target` |
 | `-fake-delay`、`-fake-jitter`、`-fake-fail-ratio` | 桩的行为。只能与 `-fake` 一起使用 |
 | `-version` | 输出版本并退出。从源码构建时输出提交哈希 |
@@ -301,7 +327,7 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 ### 崩溃点搜索：`mode: "breakpoint"`
 
 搜索输出的是另一种对象：`schema_version`、`leettest_version`、`target`、`started_at` 与上面的运行相同，
-普通运行的其他字段不在顶层。每次运行连同它自己的完整报告都在 `breakpoint.runs` 中。
+普通运行的其他字段不在顶层。每次运行连同它自己的完整报告都在 `breakpoint.runs` 中（[搜索](README.md#崩溃点搜索)）。
 
 | 字段 | 类型 | 含义 |
 |---|---|---|

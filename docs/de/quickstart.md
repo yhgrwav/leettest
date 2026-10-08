@@ -1,4 +1,4 @@
-> Übersetzt aus [docs/ru/quickstart.md](../ru/quickstart.md) bei 9a08876, 2026-10-05. Bei
+> Übersetzt aus [docs/ru/quickstart.md](../ru/quickstart.md) bei 67f8732, 2026-10-08. Bei
 > Abweichungen gilt die russische Fassung.
 
 # Schnellstart
@@ -64,6 +64,7 @@ app:
     authorization: Bearer ${LEETTEST_TOKEN}
     x-request-source: leettest-tour
   max_response_size: 1MiB
+  connections: 1
 
 load:
   warmup: 3s
@@ -78,8 +79,7 @@ load:
       rps: 50
       duration: 40s
       timeout: 500ms
-      data:
-        wallet_id: w-42
+      dataset: wallets.jsonl
 ```
 
 - **`name`** — der Name des Laufs in der Kopfzeile.
@@ -98,6 +98,13 @@ load:
 - **`timeout`** — wie lange auf eine Antwort gewartet wird (standardmäßig 2 s).
 - **`data`** — der Anfrage-Body als einfaches YAML. Das Schema kommt über Reflection vom Dienst,
   kein `.proto`. Ein Fehler im Body zeigt sich vor dem Start.
+- **`dataset`** (nicht veröffentlicht) — eine Datei mit Anfrage-Bodies statt `data`, ein JSON je Zeile
+  ([`examples/wallets.jsonl`](../../examples/wallets.jsonl)): Der erste Aufruf geht mit der ersten
+  Zeile raus, der zweite mit der zweiten, nach der letzten fängt es von vorn an. Neben der
+  Methodenzeile sagt der Bericht, wie viel der Datei benutzt wurde.
+- **`connections`** (nicht veröffentlicht) — wie viele Verbindungen die Last tragen (standardmäßig 1).
+  Hinter einem L4-Balancer belastet eine Verbindung ein Backend; ab N ≥ 2 bekommt der Bericht einen
+  Block `Connections:`, eine Zeile je Verbindung.
 
 Mehrere Methoden sind mehrere Aufrufe, jeder mit eigener Rate. Eine Methode, ein Aufruf: Der Bericht
 ist je Methode.
@@ -142,6 +149,7 @@ sent 12950, failed 5248
 method                                           sent   failed    sent/s       p50       p90       p95       p99
 grpc.health.v1.Health/Check                     11100     4499       300    20.5ms    >500ms    >500ms    >500ms
 wallet.v1.WalletService/GetBalance               1850      749        50    20.5ms    >500ms    >500ms    >500ms
+  data: 4 of 4 requests from wallets.jsonl, each used up to 500 times
 
 warm-up 1050 sent, excluded from stats
 

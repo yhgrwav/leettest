@@ -2,7 +2,7 @@
 
 [← Zur Übersicht](README.md)
 
-> Übersetzt aus [docs/ru/feedback.md](../ru/feedback.md) bei 9a08876, 2026-10-05. Bei Abweichungen gilt die
+> Übersetzt aus [docs/ru/feedback.md](../ru/feedback.md) bei 67f8732, 2026-10-08. Bei Abweichungen gilt die
 > russische Fassung.
 
 Das Projekt ist jung, und Rückmeldung ist derzeit mehr wert als Code: Solange die Schnittstelle

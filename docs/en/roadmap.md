@@ -2,7 +2,7 @@
 
 [← Back to docs](README.md)
 
-> Translated from [docs/ru/roadmap.md](../ru/roadmap.md), 2026-10-05. If they differ, the Russian
+> Translated from [docs/ru/roadmap.md](../ru/roadmap.md) at 67f8732, 2026-10-08. If they differ, the Russian
 > one is right.
 
 > **Missing something? [Open an issue](https://github.com/yhgrwav/leettest/issues/new/choose)** —

@@ -2,7 +2,7 @@
 
 [← Zur Übersicht](README.md)
 
-> Übersetzt aus [docs/ru/roadmap.md](../ru/roadmap.md), 2026-10-05. Bei Abweichungen gilt die
+> Übersetzt aus [docs/ru/roadmap.md](../ru/roadmap.md) bei 67f8732, 2026-10-08. Bei Abweichungen gilt die
 > russische Fassung.
 
 > **Fehlt Ihnen etwas? [Eröffnen Sie ein Issue](https://github.com/yhgrwav/leettest/issues/new/choose)** —
