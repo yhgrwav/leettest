@@ -38,14 +38,14 @@ load:
 | `app.server_name` | Der Name, gegen den das Zertifikat des Dienstes geprüft wird, wenn es die Adresse aus `target` nicht nennt. Braucht TLS |
 | `app.metadata` | Header jedes Aufrufs: `authorization`, `x-api-key` usw. `${NAME}` kommt aus einer Umgebungsvariable |
 | `app.max_response_size` | Die größte Antwort, die ein Aufruf annimmt: `16MiB`, `512KB`. Die Einheit ist Pflicht (`MB` = 10⁶ Bytes, `MiB` = 2²⁰), unter 2 GiB. Weggelassen — 4 MiB, wie in gRPC. Eine größere Antwort ist eine `bad response`. Ein laufender Aufruf kann bis zum Doppelten des Limits puffern: standardmäßig bis zu 8 MiB je Aufruf |
-| `app.connections` | Wie viele Verbindungen zum Ziel geöffnet werden, eine ganze Zahl von 1 bis 256. Weggelassen — 1. Die Aufrufe nehmen die Verbindungen reihum, der Bericht druckt einen Block `Connections:`, eine Zeile je Verbindung — nicht veröffentlicht |
+| `app.connections` | Wie viele Verbindungen zum Ziel geöffnet werden, eine ganze Zahl von 1 bis 256. Weggelassen — 1. Die Aufrufe nehmen die Verbindungen reihum, der Bericht druckt einen Block `Connections:`, eine Zeile je Verbindung |
 | `load.warmup` | Die ersten N Sekunden bleiben aus den Perzentilen und aus `sent`: kalte Caches verderben sie. Aufwärm-Aufrufe erreichen das Ziel durchaus; der Bericht gibt sie auf einer Zeile `warm-up N sent (M failed), excluded from stats` aus — `sent` plus diese Zeile ist jeder Aufruf, den der Generator versucht hat. Das Ziel bekam sie alle bis auf die als unreachable oder client error gezählten; `cut off` und abgelaufene haben es vielleicht nicht vollständig erreicht: Ein Ziel, das sein HTTP/2-Fenster nicht öffnet (Flusskontrolle), bekommt nur die Header, und seine Zähler sehen den Aufruf womöglich nicht. Zählt zu `duration`, kürzer als jeder Aufruf |
 | `load.calls[].method` | Der volle Methodenname: `package.Service/Method` |
 | `load.calls[].rps` | Anfragen pro Sekunde für diese Methode |
 | `load.calls[].duration` | Wie lange sie belastet wird: `30s`, `5m`, `1h` |
 | `load.calls[].timeout` | Wie lange auf eine Antwort gewartet wird. Weggelassen — `2s`. Null schaltet es nicht ab, es ist ein Fehler |
 | `load.calls[].data` | Der Anfrage-Body, siehe [unten](#anfrage-body). Weggelassen — eine leere Nachricht |
-| `load.calls[].dataset` | Eine Datei mit Anfrage-Bodies statt `data`, siehe [unten](#bei-jedem-aufruf-eine-andere-anfrage-dataset). Zusammen mit `data` nicht erlaubt — nicht veröffentlicht |
+| `load.calls[].dataset` | Eine Datei mit Anfrage-Bodies statt `data`, siehe [unten](#bei-jedem-aufruf-eine-andere-anfrage-dataset). Zusammen mit `data` nicht erlaubt |
 
 Die Konfiguration wird streng gelesen: Ein Tippfehler in einem Feldnamen ist ein Fehler mit der
 Zeilennummer, ein falscher Wert ein Fehler mit Nummer und Methode des Aufrufs, kein Lauf mit leerer
@@ -106,7 +106,7 @@ passwortgeschützter Schlüssel wird nicht unterstützt: Entschlüsseln Sie ihn 
 
 **Verbindungen.** Standardmäßig hält der Generator eine Verbindung zu einer Adresse. Liefert DNS
 mehrere Adressen oder steht das Ziel hinter einem L4-Balancer, wird nur ein Backend belastet, und der
-Bericht zeigt das nicht. `app.connections: N` (nicht veröffentlicht) öffnet N Verbindungen. Ein Name,
+Bericht zeigt das nicht. `app.connections: N` öffnet N Verbindungen. Ein Name,
 den DNS zu M Adressen auflöst, wird einmal vor dem Start aufgelöst, und Verbindung i geht an Adresse
 i mod M: drei Verbindungen auf zwei Adressen sind zwei und eine. Eine Adresse, die das Ziel nicht
 bedient (`localhost` zu `::1`, während der Server nur auf `127.0.0.1` lauscht), stoppt den Start und
@@ -203,7 +203,7 @@ die ganze Suche.
 | `-output` | Berichtsformat auf stdout: `text` (Standard) oder `json` für Skripte und CI |
 | `-connect-timeout` | Wie lange auf einen Dienst gewartet wird, der die Verbindung angenommen hat, aber schweigt. Standard `10s`. Auf eine abgelehnte Verbindung und eine falsche Adresse wird nicht gewartet |
 | `-max-in-flight` | Grenze für Anfragen, die auf eine Antwort warten. Standard `5000` |
-| `-plain` | Ohne Live-Bildschirm: eine Fortschrittszeile pro Sekunde auf stderr, wie ohne Terminal, und ohne den Dialog beim ersten Start. Der Bericht und die Exit-Codes sind dieselben — nicht veröffentlicht |
+| `-plain` | Ohne Live-Bildschirm: eine Fortschrittszeile pro Sekunde auf stderr, wie ohne Terminal, und ohne den Dialog beim ersten Start. Der Bericht und die Exit-Codes sind dieselben |
 | `-fake` | Statt des Dienstes aus der Konfiguration einen eingebauten Platzhalter belasten — um das Werkzeug ohne Dienst anzusehen. Der Bericht ist als `fake target` markiert |
 | `-fake-delay`, `-fake-jitter`, `-fake-fail-ratio` | Das Verhalten des Platzhalters. Nur zusammen mit `-fake` |
 | `-version` | Version ausgeben und beenden. Ein Build aus dem Quellcode gibt den Commit aus |
@@ -248,7 +248,7 @@ unten den Typ „percentile?" hat.
 | Feld | Typ | Bedeutung |
 |---|---|---|
 | `schema_version` | int | Schemaversion, derzeit `1` |
-| `mode` | string | `run` bei einem gewöhnlichen Lauf, `breakpoint` bei der Suche nach dem Bruchpunkt — nicht veröffentlicht |
+| `mode` | string | `run` bei einem gewöhnlichen Lauf, `breakpoint` bei der Suche nach dem Bruchpunkt |
 | `leettest_version` | string | Die Version des Werkzeugs; ein Build aus dem Quellcode gibt den Commit an |
 | `target` | string | Die Zieladresse aus der Konfiguration, `fake target` mit `-fake` |
 | `outcome` | string | `complete`, `invalid`, `incomplete` — entspricht Exit-Code `0`, `2`, `3` |
@@ -277,16 +277,16 @@ unten den Typ „percentile?" hat.
 | `connections.reconnects` | int | Erfolgreiche Handshakes nach dem ersten |
 | `connections.first_limit`, `connections.last_limit` | int? | `MAX_CONCURRENT_STREAMS` beim ersten und letzten Handshake; `null` — nicht angekündigt (`0` — null angekündigt). Bei mehreren Verbindungen immer `null`: jede hat eigene Limits |
 | `connections.limit_changes` | int | Handshakes, die ein anderes Limit als das vorige ankündigten |
-| `connections.resolved` | []string? | Die Adressen, für die das Ziel steht, in der Reihenfolge des Resolvers: alle, auch bei weniger Verbindungen. Eine IP-Adresse steht für sich; `null` bei einer Verbindung — nicht veröffentlicht |
-| `connections.in_flight_limit` | int? | Wie viele Aufrufe das Ziel gleichzeitig in Flug erlaubt: das Limit der einen Verbindung oder die Summe aller Limits; `null`, solange eine Verbindung keines angekündigt hat — nicht veröffentlicht |
-| `connections.per_connection` | []object? | Ein Objekt je Verbindung, in der Nummerierung des Berichtsblocks; `null` bei einer Verbindung — nicht veröffentlicht |
-| `connections.per_connection[].address` | string | Die Adresse der Verbindung — nicht veröffentlicht |
-| `connections.per_connection[].calls` | int | Der Verbindung zugewiesene Aufrufe, gesendet oder nicht, ohne Warm-up — nicht veröffentlicht |
-| `connections.per_connection[].failed` | int | Die Fehler der Verbindung: die Regel von `failed` des Laufs plus die Aufrufe, die nicht hinausgingen, weil die Verbindung nicht bereit war — nicht veröffentlicht |
-| `connections.per_connection[].stream_waited`, `connections.per_connection[].not_sent_stream` | int | Aufrufe der Verbindung, die auf einen freien Stream warteten: die nach dem Warten hinausgingen und die beim Warten ihr Zeitlimit erreichten — nicht veröffentlicht |
-| `connections.per_connection[].p99` | percentile? | p99 der Aufrufe der Verbindung; `null` ohne einen Aufruf mit Latenz — nicht veröffentlicht |
-| `connections.per_connection[].first_limit`, `connections.per_connection[].last_limit` | int? | Das Stream-Limit der Verbindung beim ersten und letzten Handshake; `null` — nicht angekündigt — nicht veröffentlicht |
-| `connections.per_connection[].limit_changes` | int | Handshakes der Verbindung, die ein anderes Limit als das vorige ankündigten — nicht veröffentlicht |
+| `connections.resolved` | []string? | Die Adressen, für die das Ziel steht, in der Reihenfolge des Resolvers: alle, auch bei weniger Verbindungen. Eine IP-Adresse steht für sich; `null` bei einer Verbindung |
+| `connections.in_flight_limit` | int? | Wie viele Aufrufe das Ziel gleichzeitig in Flug erlaubt: das Limit der einen Verbindung oder die Summe aller Limits; `null`, solange eine Verbindung keines angekündigt hat |
+| `connections.per_connection` | []object? | Ein Objekt je Verbindung, in der Nummerierung des Berichtsblocks; `null` bei einer Verbindung |
+| `connections.per_connection[].address` | string | Die Adresse der Verbindung |
+| `connections.per_connection[].calls` | int | Der Verbindung zugewiesene Aufrufe, gesendet oder nicht, ohne Warm-up |
+| `connections.per_connection[].failed` | int | Die Fehler der Verbindung: die Regel von `failed` des Laufs plus die Aufrufe, die nicht hinausgingen, weil die Verbindung nicht bereit war |
+| `connections.per_connection[].stream_waited`, `connections.per_connection[].not_sent_stream` | int | Aufrufe der Verbindung, die auf einen freien Stream warteten: die nach dem Warten hinausgingen und die beim Warten ihr Zeitlimit erreichten |
+| `connections.per_connection[].p99` | percentile? | p99 der Aufrufe der Verbindung; `null` ohne einen Aufruf mit Latenz |
+| `connections.per_connection[].first_limit`, `connections.per_connection[].last_limit` | int? | Das Stream-Limit der Verbindung beim ersten und letzten Handshake; `null` — nicht angekündigt |
+| `connections.per_connection[].limit_changes` | int | Handshakes der Verbindung, die ein anderes Limit als das vorige ankündigten |
 | `client_waits` | object | Aufrufe, die auf Client-Seite über der Schwelle warteten, nach Ursache ([README](README.md#den-bericht-lesen)) |
 | `client_waits.generator_calls`, `client_waits.stream_calls`, `client_waits.connection_calls` | int | Alle solchen Aufrufe, gesendet oder nicht. Ein gesendeter Aufruf kann für mehrere Ursachen zählen |
 | `client_waits.generator_tail_calls`, `client_waits.stream_tail_calls`, `client_waits.connection_tail_calls` | int | Nur im p99-Ende und unter den ungesendeten: Diese bestimmen `tail_wait_cause` |
@@ -335,11 +335,11 @@ Die übrigen sind einfache Zähler.
 | `methods[].silent_sent_rps` | int? | In der Sekunde davor gesendete Aufrufe (in der ersten, wenn das Schweigen dort beginnt) |
 | `methods[].silent_planned_rps_low`, `methods[].silent_planned_rps_high` | int? | Die geplante Rate der Stufen in dieser Sekunde; `null` auch, wenn darin keine Stufe lief |
 | `methods[].last_answer_at_us` | int? | Wann der letzte Aufruf rausging, den das Ziel beantwortet hat; `null` — es hat nie geantwortet |
-| `methods[].dataset` | object? | Die Anfragedatei des Aufrufs; `null` — er hat keine — nicht veröffentlicht |
-| `methods[].dataset.file` | string | Der Pfad, wie ihn die Konfiguration schreibt — nicht veröffentlicht |
-| `methods[].dataset.records` | int | Anfragen in der Datei — nicht veröffentlicht |
-| `methods[].dataset.used` | int | Wie viele davon mindestens einmal rausgingen — nicht veröffentlicht |
-| `methods[].dataset.used_max` | int | Wie oft die am häufigsten genutzte rausging; in einer Suche — vom ersten Schritt bis zum Ende dieses Laufs — nicht veröffentlicht |
+| `methods[].dataset` | object? | Die Anfragedatei des Aufrufs; `null` — er hat keine |
+| `methods[].dataset.file` | string | Der Pfad, wie ihn die Konfiguration schreibt |
+| `methods[].dataset.records` | int | Anfragen in der Datei |
+| `methods[].dataset.used` | int | Wie viele davon mindestens einmal rausgingen |
+| `methods[].dataset.used_max` | int | Wie oft die am häufigsten genutzte rausging; in einer Suche — vom ersten Schritt bis zum Ende dieses Laufs |
 | `methods[].seconds` | []object | Die Zeitleiste pro Sekunde, siehe unten |
 
 ### Sekunde: `methods[].seconds[]`
@@ -367,18 +367,18 @@ obersten Ebene. Jeder Lauf liegt mit seinem vollständigen Bericht in `breakpoin
 
 | Feld | Typ | Bedeutung |
 |---|---|---|
-| `method` | string | Die Methode, die die Suche belastet hat — nicht veröffentlicht |
-| `breakpoint` | object | Ergebnis der Suche — nicht veröffentlicht |
-| `breakpoint.outcome` | string | Geschlossene Liste: `broke`, `broke_at_first`, `held_all`, `run_limit`, `stopped`, `invalid` — nicht veröffentlicht |
-| `breakpoint.held_rps` | int? | Die höchste Rate, die das Ziel gehalten hat; `null` — keine gehalten — nicht veröffentlicht |
-| `breakpoint.broke_rps` | int? | Die niedrigste Rate, bei der das Ziel brach oder ein Lauflimit die Suche stoppte; `null` — es brach nicht — nicht veröffentlicht |
-| `breakpoint.why` | string? | Ursache des Laufs, der die Suche beendet hat, aus einer geschlossenen Liste: `errors`, `p99_limit`, `p99_vs_base`, `connection`, `no_recovery`, `generator`, `in_flight_cap`, `stream_limit`, `stream_wait`, `clock_step`, `request_errors`; `null` — keine Ursache — nicht veröffentlicht |
-| `breakpoint.notes` | []string | Hinweise der Suche, Text für Menschen in ASCII; nicht auswerten — nicht veröffentlicht |
-| `breakpoint.runs` | []object | Alle Läufe der Reihe nach — nicht veröffentlicht |
-| `breakpoint.runs[].kind` | string | `step`, `repeat` oder `probe` — nicht veröffentlicht |
-| `breakpoint.runs[].planned_rps` | int | Geplante Rate des Laufs — nicht veröffentlicht |
-| `breakpoint.runs[].sent_rps` | int | Rate, mit der die Aufrufe tatsächlich hinausgingen: gehalten gilt nur, was gesendet wurde — nicht veröffentlicht |
-| `breakpoint.runs[].broken` | bool | `true` — der Lauf hat das Ziel gebrochen — nicht veröffentlicht |
-| `breakpoint.runs[].recovered` | bool? | Bei einem `probe`: das Ziel ist innerhalb des 1,5-Fachen des p99 der Basis zurück; bei `step` und `repeat` `null` — nicht veröffentlicht |
-| `breakpoint.runs[].why` | string? | Ursache des Laufs, dieselbe geschlossene Liste wie bei `breakpoint.why`; `null` — keine Ursache — nicht veröffentlicht |
-| `breakpoint.runs[].report` | object | Vollständiger Bericht dieses Laufs, dasselbe Objekt wie das JSON eines gewöhnlichen Laufs (Felder oben) — nicht veröffentlicht |
+| `method` | string | Die Methode, die die Suche belastet hat |
+| `breakpoint` | object | Ergebnis der Suche |
+| `breakpoint.outcome` | string | Geschlossene Liste: `broke`, `broke_at_first`, `held_all`, `run_limit`, `stopped`, `invalid` |
+| `breakpoint.held_rps` | int? | Die höchste Rate, die das Ziel gehalten hat; `null` — keine gehalten |
+| `breakpoint.broke_rps` | int? | Die niedrigste Rate, bei der das Ziel brach oder ein Lauflimit die Suche stoppte; `null` — es brach nicht |
+| `breakpoint.why` | string? | Ursache des Laufs, der die Suche beendet hat, aus einer geschlossenen Liste: `errors`, `p99_limit`, `p99_vs_base`, `connection`, `no_recovery`, `generator`, `in_flight_cap`, `stream_limit`, `stream_wait`, `clock_step`, `request_errors`; `null` — keine Ursache |
+| `breakpoint.notes` | []string | Hinweise der Suche, Text für Menschen in ASCII; nicht auswerten |
+| `breakpoint.runs` | []object | Alle Läufe der Reihe nach |
+| `breakpoint.runs[].kind` | string | `step`, `repeat` oder `probe` |
+| `breakpoint.runs[].planned_rps` | int | Geplante Rate des Laufs |
+| `breakpoint.runs[].sent_rps` | int | Rate, mit der die Aufrufe tatsächlich hinausgingen: gehalten gilt nur, was gesendet wurde |
+| `breakpoint.runs[].broken` | bool | `true` — der Lauf hat das Ziel gebrochen |
+| `breakpoint.runs[].recovered` | bool? | Bei einem `probe`: das Ziel ist innerhalb des 1,5-Fachen des p99 der Basis zurück; bei `step` und `repeat` `null` |
+| `breakpoint.runs[].why` | string? | Ursache des Laufs, dieselbe geschlossene Liste wie bei `breakpoint.why`; `null` — keine Ursache |
+| `breakpoint.runs[].report` | object | Vollständiger Bericht dieses Laufs, dasselbe Objekt wie das JSON eines gewöhnlichen Laufs (Felder oben) |

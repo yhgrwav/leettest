@@ -3,4 +3,3 @@
 # A branch enters at its cut and leaves with its last tag; change this list
 # only by a pull request into main (the schedule reads it from there).
 main
-release/v0.2

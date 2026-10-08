@@ -20,7 +20,8 @@
 > one is right. Plus an index of English docs, not in the Russian source.
 
 > **Early stage.** Working now: unary load against a real service, several methods at their own
-> RPS in one run, request bodies from the config, a console report and JSON for scripts. Not yet:
+> RPS in one run, finding the breaking point, different data in every call (`dataset`), several
+> connections, a console report and JSON for scripts. Not yet:
 > ramp-up, pass/fail thresholds for CI, metrics export — **[what comes next →](roadmap.md)**.
 > Missing something — [open an issue](https://github.com/yhgrwav/leettest/issues/new/choose).
 > Everything below describes what already works.
@@ -83,7 +84,7 @@ the service through gRPC server reflection, so no `.proto` is needed. The config
 methods and the request body are checked before the start: any error means exit 1 and not a single
 call to the target. The first `warmup` seconds stay out of the stats. Every call of a method goes
 out with the same body: for a write with an idempotency key the repeat path is measured, not
-creating the record. A different request for each call: a file in `dataset` (not released), one
+creating the record. A different request for each call: a file in `dataset`, one
 JSON per line, in order, round and round. Every field, TLS, headers, the request body and flags
 are in the **[reference](reference.md)**.
 
@@ -94,7 +95,7 @@ progress line once a second:
 32.0s  sent 25600  rps 800  in-flight 47  failed 51  not-sent 0  p99 43ms
 ```
 
-The report goes to stdout, progress and errors to stderr. No live screen (e.g. over ssh): `-plain` (not released).
+The report goes to stdout, progress and errors to stderr. No live screen (e.g. over ssh): `-plain`.
 
 ## Reading the report
 
@@ -106,13 +107,13 @@ At the end — a report per method: sent, failed, `sent/s`, p50/p90/p95/p99.
   does not lower this number.
 - A percentile whose place calls cut off by the timeout could take is printed as a **lower
   bound**: `>2.0s`. Not a value, but "at least".
-- Under a method with a `dataset` (not released) stands a `data:` line: how many requests of the
+- Under a method with a `dataset` stands a `data:` line: how many requests of the
   file were used and how many times the most used one went out. It does not mean the target saw
   that many distinct requests.
 - By default the load goes over **one connection**, and it lands on **one backend**: behind an L4
   balancer (Kubernetes ClusterIP, NLB) and when DNS returns several addresses. "Does not hold X" is
   about that backend, not the service, and the report will not show it. To load several, set
-  `app.connections` (not released): the report's `Connections:` block shows a row per connection —
+  `app.connections`: the report's `Connections:` block shows a row per connection —
   address, calls, share failed and p99 — so a lagging backend is visible. An L7 balancer that
   spreads individual requests (Envoy, a gRPC ingress) spreads even one connection. The report
   prints how many times the connection reconnected and which concurrent stream limit the target
@@ -248,7 +249,7 @@ the target's error text, are printed as `\uXXXX` (past U+FFFF as a surrogate pai
 
 ### Breaking-point search
 
-A `load.breakpoint` section (not released) instead of the call's `rps` and `duration`: LeetTest raises the load in
+A `load.breakpoint` section instead of the call's `rps` and `duration`: LeetTest raises the load in
 steps and names the step the target held and the step it broke at. Exactly one call, without `rps`,
 `duration` or `load.warmup`.
 
@@ -282,7 +283,7 @@ list too: `errors`, `p99_limit`, `p99_vs_base`, `connection`, `no_recovery`, `ge
 `in_flight_cap`, `stream_limit`, `stream_wait`, `clock_step`, `request_errors` or `null`.
 `held_rps` and `broke_rps` are `null` where there is none. In search mode the JSON is another
 object: `mode: "breakpoint"`, none of a plain run's top-level fields, each run with its full report
-in `breakpoint.runs` (not released; `kind`: `step`, `repeat`, `probe`; `planned_rps` and `sent_rps`). A plain run
+in `breakpoint.runs` (`kind`: `step`, `repeat`, `probe`; `planned_rps` and `sent_rps`). A plain run
 writes `mode: "run"`.
 
 Exit codes: `0` for `broke`, `broke_at_first`, `held_all`, `run_limit` — they are findings; `2` for
