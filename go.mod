@@ -10,7 +10,7 @@ require (
 	github.com/jhump/protoreflect v1.18.1
 	github.com/mattn/go-isatty v0.0.24
 	golang.org/x/net v0.59.0
-	golang.org/x/sys v0.48.0
+	golang.org/x/sys v0.49.0
 	google.golang.org/grpc v1.84.0
 	google.golang.org/protobuf v1.36.12
 )
