@@ -98,11 +98,11 @@ load:
 - **`timeout`** — wie lange auf eine Antwort gewartet wird (standardmäßig 2 s).
 - **`data`** — der Anfrage-Body als einfaches YAML. Das Schema kommt über Reflection vom Dienst,
   kein `.proto`. Ein Fehler im Body zeigt sich vor dem Start.
-- **`dataset`** (nicht veröffentlicht) — eine Datei mit Anfrage-Bodies statt `data`, ein JSON je Zeile
+- **`dataset`** — eine Datei mit Anfrage-Bodies statt `data`, ein JSON je Zeile
   ([`examples/wallets.jsonl`](../../examples/wallets.jsonl)): Der erste Aufruf geht mit der ersten
   Zeile raus, der zweite mit der zweiten, nach der letzten fängt es von vorn an. Neben der
   Methodenzeile sagt der Bericht, wie viel der Datei benutzt wurde.
-- **`connections`** (nicht veröffentlicht) — wie viele Verbindungen die Last tragen (standardmäßig 1).
+- **`connections`** — wie viele Verbindungen die Last tragen (standardmäßig 1).
   Hinter einem L4-Balancer belastet eine Verbindung ein Backend; ab N ≥ 2 bekommt der Bericht einen
   Block `Connections:`, eine Zeile je Verbindung.
 

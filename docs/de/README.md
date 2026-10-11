@@ -20,8 +20,8 @@
 > russische Fassung. Dazu ein Verzeichnis der deutschen Dokumentation, das im Original fehlt.
 
 > **Frühes Stadium.** Funktioniert: unäre Last auf einen echten Dienst, mehrere Methoden mit eigener
-> RPS in einem Lauf, Anfrage-Bodies aus der Konfiguration, ein Bericht in der Konsole und JSON für
-> Skripte. Noch nicht: Hochfahren, Pass/Fail-Schwellen für CI, Metrik-Export —
+> RPS in einem Lauf, Bruchpunkt-Suche, andere Daten in jedem Aufruf (`dataset`), mehrere
+> Verbindungen, ein Bericht in der Konsole und JSON für Skripte. Noch nicht: Hochfahren, Pass/Fail-Schwellen für CI, Metrik-Export —
 > **[was als Nächstes kommt →](roadmap.md)**. Fehlt Ihnen etwas —
 > [eröffnen Sie ein Issue](https://github.com/yhgrwav/leettest/issues/new/choose). Alles Folgende
 > beschreibt, was bereits funktioniert.
@@ -87,7 +87,7 @@ Methoden und Anfrage-Body werden vor dem Start geprüft: Jeder Fehler heißt Exi
 einziger Aufruf ans Ziel. Die ersten `warmup` Sekunden zählen nicht zur Statistik. Jeder Aufruf einer
 Methode geht mit demselben Body raus: Bei einem Schreibvorgang mit Idempotenzschlüssel wird der Weg
 der Wiederholung gemessen, nicht das Anlegen des Datensatzes. Eine andere Anfrage bei jedem Aufruf —
-eine Datei in `dataset` (nicht veröffentlicht): ein JSON je Zeile, der Reihe nach und im Kreis. Alle
+eine Datei in `dataset`: ein JSON je Zeile, der Reihe nach und im Kreis. Alle
 Felder, TLS, Header, der Anfrage-Body und die Flags stehen in der **[Referenz](reference.md)**.
 
 Im Terminal läuft der Lauf im Vollbild, `q` zum Anhalten. Ohne Terminal (CI, umgeleitete Ausgabe) —
@@ -98,7 +98,7 @@ eine Fortschrittszeile pro Sekunde:
 ```
 
 Der Bericht geht nach stdout, Fortschritt und Fehler nach stderr. Ohne Bildschirm (zum Beispiel über
-ssh): `-plain` (nicht veröffentlicht).
+ssh): `-plain`.
 
 ## Den Bericht lesen
 
@@ -110,13 +110,13 @@ Am Ende — ein Bericht je Methode: gesendet, fehlgeschlagen, `sent/s`, p50/p90/
   hängt, senkt diese Zahl nicht.
 - Ein Perzentil, dessen Platz vom Timeout abgeschnittene Aufrufe einnehmen könnten, wird als
   **Untergrenze** ausgegeben: `>2.0s`. Kein Wert, sondern „mindestens".
-- Unter einer Methode mit `dataset` (nicht veröffentlicht) steht eine Zeile `data:`: wie viele
+- Unter einer Methode mit `dataset` steht eine Zeile `data:`: wie viele
   Anfragen der Datei benutzt wurden und wie oft die am häufigsten benutzte rausging. Das heißt nicht,
   dass das Ziel so viele verschiedene Anfragen gesehen hat.
 - Standardmäßig läuft die Last über **eine Verbindung** und landet auf **einem Backend**: hinter
   einem L4-Balancer (Kubernetes ClusterIP, NLB) und wenn DNS mehrere Adressen liefert. „Hält X
   nicht" betrifft dieses Backend, nicht den Dienst, und der Bericht zeigt das nicht. Um mehrere zu
-  belasten, setzen Sie `app.connections` (nicht veröffentlicht): Der Block `Connections:` im Bericht
+  belasten, setzen Sie `app.connections`: Der Block `Connections:` im Bericht
   zeigt je Verbindung eine Zeile — Adresse, Aufrufe, Fehleranteil und p99 —, sodass ein
   zurückbleibendes Backend sichtbar wird. Ein L7-Balancer, der einzelne Anfragen verteilt (Envoy,
   ein gRPC-Ingress), verteilt auch eine Verbindung. Der Bericht gibt aus, wie oft die Verbindung neu
@@ -262,7 +262,7 @@ Surrogatpaar, wie in JSON). `notes` im JSON tragen denselben maskierten Text.
 
 ### Suche nach dem Bruchpunkt
 
-Ein Abschnitt `load.breakpoint` (nicht veröffentlicht) statt `rps` und `duration` des Aufrufs:
+Ein Abschnitt `load.breakpoint` statt `rps` und `duration` des Aufrufs:
 LeetTest erhöht die Last in Stufen und nennt die Stufe, die das Ziel gehalten hat, und die, bei der
 es brach. Genau ein Aufruf, ohne `rps`, `duration` und `load.warmup`.
 
@@ -298,7 +298,7 @@ ungültiger Lauf). Die Ursache (`why`) ist ebenfalls eine geschlossene Liste: `e
 `stream_wait`, `clock_step`, `request_errors` oder `null`. `held_rps` und `broke_rps` sind `null`,
 wo es keinen gibt. Im Suchmodus ist das JSON ein anderes Objekt: `mode: "breakpoint"`, keines der
 Felder eines gewöhnlichen Laufs auf der obersten Ebene, jeder Lauf mit seinem vollständigen Bericht
-in `breakpoint.runs` (nicht veröffentlicht; `kind`: `step`, `repeat`, `probe`; `planned_rps` und
+in `breakpoint.runs` (`kind`: `step`, `repeat`, `probe`; `planned_rps` und
 `sent_rps`). Ein gewöhnlicher Lauf schreibt `mode: "run"`.
 
 Exit-Codes: `0` für `broke`, `broke_at_first`, `held_all`, `run_limit` — das sind Befunde; `2` für
