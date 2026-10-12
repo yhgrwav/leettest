@@ -4,6 +4,8 @@
 
 > Übersetzt aus [docs/ru/why.md](../ru/why.md) bei 67f8732, 2026-10-08. Bei Abweichungen gilt die
 > russische Fassung.
+> **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
+> die [englische](../en/why.md).
 
 LeetTest ruht auf einem Grundsatz: Ein Lasttest ist nur dann etwas wert, wenn man seinem
 Ergebnis ohne Einschränkung vertrauen kann. Alles andere im Werkzeug folgt daraus.

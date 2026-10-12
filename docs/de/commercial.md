@@ -4,6 +4,8 @@
 
 > Übersetzt aus [docs/ru/commercial.md](../ru/commercial.md) bei 67f8732, 2026-10-08. Bei Abweichungen gilt die
 > russische Fassung.
+> **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
+> die [englische](../en/commercial.md).
 
 > Diese Seite beschreibt ein **beabsichtigtes** Modell. Nichts vom kostenpflichtigen Teil
 > existiert bisher, und es gibt keinen Zeitplan. Es steht hier, damit es später niemanden

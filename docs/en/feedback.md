@@ -2,7 +2,7 @@
 
 [← Back to docs](README.md)
 
-> Translated from [docs/ru/feedback.md](../ru/feedback.md) at 67f8732, 2026-10-08. If they
+> Translated from [docs/ru/feedback.md](../ru/feedback.md) at 1ea7819, 2026-10-12. If they
 > differ, the Russian one is right.
 
 The project is early, and right now feedback is worth more than code: while the interface is

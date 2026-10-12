@@ -4,6 +4,8 @@
 
 > Übersetzt aus [docs/ru/chaining.md](../ru/chaining.md) bei 67f8732, 2026-10-08. Bei Abweichungen gilt die
 > russische Fassung.
+> **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
+> die [englische](../en/chaining.md).
 
 > **Status: geplant, funktioniert noch nicht.** Das Beispiel unten ist ein Entwurf des Formats,
 > keine funktionierende Konfiguration.

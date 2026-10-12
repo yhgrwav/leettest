@@ -4,6 +4,8 @@
 
 > Übersetzt aus [docs/ru/pitfalls.md](../ru/pitfalls.md) bei 67f8732, 2026-10-08. Bei
 > Abweichungen gilt die russische Fassung.
+> **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
+> die [englische](../en/pitfalls.md).
 
 Eine Liste der Stellen, an denen Lastwerkzeuge lügen oder im Weg stehen, und wo wir jeweils stehen.
 

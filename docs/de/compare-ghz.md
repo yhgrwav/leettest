@@ -2,6 +2,8 @@
 
 > Übersetzt aus [docs/ru/compare-ghz.md](../ru/compare-ghz.md) bei 67f8732, 2026-10-08. Bei
 > Abweichungen gilt die russische Fassung.
+> **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
+> die [englische](../en/compare-ghz.md).
 
 Diese Seite vergleicht LeetTest mit [ghz](https://ghz.sh) auf einem Testserver mit bekanntem
 Verhalten. Die Frage ist eng: Wenn der Server stockt oder langsamer wird, zeigt der Bericht das?
