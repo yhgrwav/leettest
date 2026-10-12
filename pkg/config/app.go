@@ -28,6 +28,16 @@ import (
 // metadataKey is what HTTP/2 carries as a header name once lowercased.
 var metadataKey = regexp.MustCompile(`^[0-9a-z_.-]+$`)
 
+// transportOwned are the headers grpc-go writes on every call; a second one
+// from the config would go out next to its own.
+var transportOwned = map[string]bool{"content-type": true, "te": true}
+
+// notInHTTP2 are the connection-specific fields RFC 9113 section 8.2.2 forbids.
+var notInHTTP2 = map[string]bool{
+	"connection": true, "keep-alive": true, "proxy-connection": true,
+	"transfer-encoding": true, "upgrade": true,
+}
+
 // envRef is ${NAME}; "$${" before it writes a literal "${" instead.
 var envRef = regexp.MustCompile(`\$?\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 
@@ -51,6 +61,12 @@ func (a *App) resolveMetadata() error {
 			continue
 		case strings.HasPrefix(key, "grpc-"):
 			errs = append(errs, fmt.Errorf("%w: key %q: grpc- is reserved by gRPC", ErrInvalidMetadata, raw))
+			continue
+		case transportOwned[key]:
+			errs = append(errs, fmt.Errorf("%w: key %q: set by the gRPC transport", ErrInvalidMetadata, key))
+			continue
+		case notInHTTP2[key]:
+			errs = append(errs, fmt.Errorf("%w: key %q: not allowed in HTTP/2", ErrInvalidMetadata, key))
 			continue
 		case strings.HasSuffix(key, "-bin"):
 			errs = append(errs, fmt.Errorf("%w: key %q: binary metadata is not supported", ErrInvalidMetadata, raw))
