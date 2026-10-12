@@ -5,7 +5,7 @@
 
 本页在一台行为已知的测试服务器上对比 LeetTest 与 [ghz](https://ghz.sh)。问题很具体：当服务器
 卡住或变慢时，报告能否反映出来？
-与 ghz、k6 和 JMeter 的功能对比见[表格](why.md#与-ghz-k6-和-jmeter-的对比)。
+与 ghz、k6 和 JMeter 的功能对比见[表格](why.md#与-ghzk6-和-jmeter-的对比)。
 
 简而言之：
 
