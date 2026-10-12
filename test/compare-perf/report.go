@@ -80,8 +80,8 @@ func highestHeld(points []point) (held, broke int) {
 }
 
 func pointRows(w *strings.Builder, points []point) {
-	fmt.Fprintln(w, "| rate | runs held | arrived / planned | lowest second / rate | tool says sent | tool says failed |")
-	fmt.Fprintln(w, "|---|---|---|---|---|---|")
+	fmt.Fprintln(w, "| rate | runs held | arrived / planned (after the skipped head) | lowest second / rate | arrivals in the skipped head | tool says sent | tool says failed |")
+	fmt.Fprintln(w, "|---|---|---|---|---|---|---|")
 	for _, p := range points {
 		n := 0
 		for i := range p.runs {
@@ -89,13 +89,24 @@ func pointRows(w *strings.Builder, points []point) {
 				n++
 			}
 		}
-		fmt.Fprintf(w, "| %d | %d of %d | %s | %s | %s | %s |\n", p.rate, n, len(p.runs),
+		fmt.Fprintf(w, "| %d | %d of %d | %s | %s | %s | %s | %s |\n", p.rate, n, len(p.runs),
 			spread(collect(p.runs, func(r runOut) float64 { return r.Verdict.Share }), showFloat),
 			spread(collect(p.runs, func(r runOut) float64 { return r.Verdict.MinShare }), showFloat),
+			spread(collect(p.runs, func(r runOut) int { return r.Verdict.Head }), showInt),
 			spread(collect(p.runs, func(r runOut) int { return r.Reports.Sent }), showInt),
 			spread(collect(p.runs, func(r runOut) int { return r.Reports.Failed }), showInt))
 	}
 	fmt.Fprintln(w)
+}
+
+// connectionsNote says what each tool is given beyond the rate: connections
+// and the number of calls it may have in flight. LeetTest's cap is raised to
+// pass its own start check (rate × (timeout + 100 ms) + 1 must fit); against
+// a stand that answers at once it is not reached.
+func connectionsNote(f flags) string {
+	return fmt.Sprintf("connections: leettest 1, ghz 1, k6 one per virtual user (%d); in flight: leettest -max-in-flight "+
+		"= ceil(rate × %.1f) + 2 (its start check, not reached against a stand that answers at once), ghz -c 50, k6 %d virtual users",
+		f.k6VUs, (callTimeout + 100*time.Millisecond).Seconds(), f.k6VUs)
 }
 
 // row1Table writes each tool's ladder and, when the control ran, what it says
@@ -105,11 +116,11 @@ func row1Table(w *strings.Builder, f flags, results map[string][]point, ctl *con
 	limit, limited := ctl.standLimit()
 
 	fmt.Fprintf(w, "## Row 1: rate one core holds (stand answers at once)\n\n")
-	fmt.Fprintf(w, "Held: at least %.1f%% of the planned calls reach the stand within the run (plus %.1f%% of its length), and the lowest "+
-		"steady second is at least %.0f%% of the rate; a point holds when more than half of its %d runs do. "+
-		"Run %v each, tool container %d core(s), stand %d core(s). All tools climb the same steps together; "+
-		"connections: leettest 1, ghz 1, k6 one per virtual user (%d).\n\n",
-		heldShare*100, (1-heldShare)*100, steadyShare*100, f.runs, f.duration, f.toolCPUs, f.standCPUs, f.k6VUs)
+	fmt.Fprintf(w, "Held: the first %v of every run, counted from the first arrival at the stand, is left out for all tools; "+
+		"at least %.1f%% of the planned calls of the rest reach the stand within the run (plus %.1f%% of its length), and the lowest "+
+		"steady second of it is at least %.0f%% of the rate; a point holds when more than half of its %d runs do. "+
+		"Run %v each, tool container %d core(s), stand %d core(s). All tools climb the same steps together; %s.\n\n",
+		headSkip, heldShare*100, (1-heldShare)*100, steadyShare*100, f.runs, f.duration, f.toolCPUs, f.standCPUs, connectionsNote(f))
 
 	for _, tool := range f.tools {
 		held, broke := highestHeld(results[tool])
@@ -143,8 +154,9 @@ func row1Table(w *strings.Builder, f flags, results map[string][]point, ctl *con
 
 func row2Table(w *strings.Builder, f flags, results map[string][]runOut) {
 	fmt.Fprintf(w, "## Row 2: schedule accuracy at %d rps, measured at the stand\n\n", f.fixedRate)
-	fmt.Fprintf(w, "Steady seconds only (the first and the last second of each %v run are left out); median of %d runs "+
-		"and the range. Gap percentiles are nearest rank over the gaps between consecutive arrivals.\n\n", f.duration, f.runs)
+	fmt.Fprintf(w, "Steady seconds only (the first %v and the last second of each %v run are left out); median of %d runs "+
+		"and the range. Gap percentiles are nearest rank over the gaps between consecutive arrivals. %s.\n\n",
+		headSkip, f.duration, f.runs, connectionsNote(f))
 	fmt.Fprintln(w, "| tool | ideal gap | gap p50 | gap p99 | gap p99.9 | gap max | calls in a second, lowest | highest | std dev |")
 	fmt.Fprintln(w, "|---|---|---|---|---|---|---|---|---|")
 	for _, tool := range f.tools {
@@ -219,12 +231,14 @@ func plan(f flags) string {
 	} else {
 		fmt.Fprintf(&b, "row 1 control: off (-control-cpus 0), the stand's own limit is not checked\n")
 	}
-	fmt.Fprintf(&b, "held: a run holds with at least %.1f%% of the planned calls at the stand within the duration plus %.1f%% of it, "+
-		"and no steady second under %.0f%% of the rate\n", heldShare*100, (1-heldShare)*100, steadyShare*100)
+	fmt.Fprintf(&b, "held: the first %v of every run (from the first arrival at the stand) is skipped for all tools, its arrivals printed; "+
+		"a run holds with at least %.1f%% of the planned calls of the rest at the stand within the duration plus %.1f%% of it, "+
+		"and no steady second of it under %.0f%% of the rate (the last second is not judged)\n",
+		headSkip, heldShare*100, (1-heldShare)*100, steadyShare*100)
 	fmt.Fprintf(&b, "row 2: %d rps; row 3: %d rps, stand delay %v\n", f.fixedRate, f.latRate, f.latDelay)
 	fmt.Fprintf(&b, "tool call timeout %v; every tool: one container, --cpus=%d, GOMAXPROCS=%d, the stand's address as an IP\n",
 		callTimeout, f.toolCPUs, f.toolCPUs)
-	fmt.Fprintf(&b, "connections: leettest 1, ghz 1, k6 one per virtual user (%d)\n\n", f.k6VUs)
+	fmt.Fprintf(&b, "%s\n\n", connectionsNote(f))
 
 	fmt.Fprintf(&b, "stand:\n  docker %s\n\n", strings.Join(standRunArgs(prefix+"-stand-N", prefix+"-net", s, "<out>/bin", "<out>/runs/<run>"), " "))
 	for _, tool := range f.tools {

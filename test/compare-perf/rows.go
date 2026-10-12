@@ -86,8 +86,9 @@ func (h *harness) runPoint(ctx context.Context, stdout io.Writer, tool string, r
 	if err != nil {
 		return r, fmt.Errorf("row 1 %s on %d core(s) at %d rps, run %d: %w", tool, cpus, rate, n, err)
 	}
-	fmt.Fprintf(stdout, "row1 %-8s c%d %6d rps run %d: held %v, arrived %d of %d, lowest second %d, tool says sent %d failed %d %s\n",
-		tool, cpus, rate, n, r.Verdict.Held, r.Verdict.Arrived, r.Verdict.Planned, r.Verdict.MinSecond,
+	fmt.Fprintf(stdout, "row1 %-8s c%d %6d rps run %d: held %v, arrived %d of %d after the skipped head (%d arrivals in it), "+
+		"lowest second %d, tool says sent %d failed %d %s\n",
+		tool, cpus, rate, n, r.Verdict.Held, r.Verdict.Arrived, r.Verdict.Planned, r.Verdict.Head, r.Verdict.MinSecond,
 		r.Reports.Sent, r.Reports.Failed, r.Reports.Note)
 
 	return r, nil

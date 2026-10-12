@@ -25,16 +25,20 @@ import (
 	"time"
 )
 
-// The definition of "held" is this harness's, not a tool's: a point holds when
-// the stand received at least heldShare of the planned calls within the run
-// and no steady second fell below steadyShare of the planned rate. Both are
-// hypotheses until the final run shows they separate a tool that keeps up from
-// one that does not.
+// The definition of "held" is this harness's, not a tool's: the first headSkip
+// of every run is left out for all tools alike (connecting, starting virtual
+// users, dialling), and a point holds when the stand received at least
+// heldShare of the planned calls of the rest and no steady second of it fell
+// below steadyShare of the planned rate. Both shares are hypotheses until the
+// final run shows they separate a tool that keeps up from one that does not.
 const (
 	heldShare   = 0.999
-	steadyShare = 0.95
-	// minDuration leaves at least two steady seconds between the first and
-	// the last, which are skipped.
+	steadyShare = 0.99
+	// headSkip is the start of a run, counted from the first arrival at the
+	// stand, that no judgement looks at; the skipped arrivals are printed.
+	headSkip = 2 * time.Second
+	// minDuration leaves one steady second between the skipped head and the
+	// last second, which is skipped too.
 	minDuration = 4 * time.Second
 )
 
@@ -75,36 +79,41 @@ func readArrivals(path string) ([]time.Duration, error) {
 	return offs, nil
 }
 
-// steady is the arrivals of the seconds that count, [1s, whole seconds−1),
-// and how many seconds that is. The first second holds the tools' different
-// start-up, the last one their different stops.
+// steady is the arrivals of the seconds that count, [headSkip, whole
+// seconds−1), and how many seconds that is. The head holds the tools' different
+// start-up, the last second their different stops.
 func steady(offs []time.Duration, dur time.Duration) (window []time.Duration, seconds int) {
 	whole := int(dur / time.Second)
-	if whole < 4 {
+	first := int(headSkip / time.Second)
+	if whole < first+2 {
 		return nil, 0
 	}
-	from, to := time.Second, time.Duration(whole-1)*time.Second
+	from, to := headSkip, time.Duration(whole-1)*time.Second
 	for _, o := range offs {
 		if o >= from && o < to {
 			window = append(window, o)
 		}
 	}
 
-	return window, whole - 2
+	return window, whole - 1 - first
 }
 
 func perSecond(window []time.Duration, seconds int) []int {
 	counts := make([]int, seconds)
 	for _, o := range window {
-		counts[int(o/time.Second)-1]++
+		counts[int(o/time.Second)-int(headSkip/time.Second)]++
 	}
 
 	return counts
 }
 
-// verdict is row 1's judgement of one run.
+// verdict is row 1's judgement of one run. Planned and Arrived count the run
+// after the skipped head.
 type verdict struct {
 	Planned, Arrived int
+	// Head is the arrivals in the skipped first headSkip, of rate × headSkip
+	// planned.
+	Head int
 	// Share is Arrived/Planned.
 	Share float64
 	// MinSecond is the fewest arrivals in a steady second, MinShare that over
@@ -115,9 +124,12 @@ type verdict struct {
 }
 
 func judge(offs []time.Duration, rate int, dur time.Duration) verdict {
-	v := verdict{Planned: int(float64(rate) * dur.Seconds())}
+	v := verdict{Planned: int(float64(rate) * (dur - headSkip).Seconds())}
 	for _, o := range offs {
-		if o < dur+allowanceFor(dur) {
+		switch {
+		case o < headSkip:
+			v.Head++
+		case o < dur+allowanceFor(dur):
 			v.Arrived++
 		}
 	}

@@ -203,6 +203,25 @@ func TestRun_PlanPrintsEverySettingAndRunsNothing(t *testing.T) {
 	}
 }
 
+// What each tool is given beyond the rate is printed with its number, LeetTest's
+// raised in-flight cap like k6's virtual users and ghz's -c; so is the head
+// skipped for all of them.
+func TestPlanAndTables_PrintTheInFlightSettingsAndTheSkippedHead(t *testing.T) {
+	f, _ := parseFlags(nil, io.Discard)
+
+	var b strings.Builder
+	row1Table(&b, f, map[string][]point{}, nil)
+	row2Table(&b, f, map[string][]runOut{})
+
+	for name, text := range map[string]string{"plan": plan(f), "tables": b.String()} {
+		for _, want := range []string{"leettest -max-in-flight = ceil(rate × 5.1) + 2", "ghz -c 50", "k6 100 virtual users", "first 2s"} {
+			if !strings.Contains(text, want) {
+				t.Errorf("%s lack %q", name, want)
+			}
+		}
+	}
+}
+
 func TestPlan_ControlOffIsSaid(t *testing.T) {
 	f, _ := parseFlags([]string{"-control-cpus", "0"}, io.Discard)
 

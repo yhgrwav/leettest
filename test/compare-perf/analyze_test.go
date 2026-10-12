@@ -24,8 +24,69 @@ func even(rate int, dur time.Duration) []time.Duration {
 func TestJudge_AnEvenScheduleHolds(t *testing.T) {
 	v := judge(even(1000, 10*time.Second), 1000, 10*time.Second)
 
-	if !v.Held || v.Arrived != 10000 || v.Planned != 10000 || v.MinSecond != 1000 {
-		t.Errorf("verdict = %+v, want held with 10000 of 10000 and 1000 in the lowest second", v)
+	if !v.Held || v.Arrived != 8000 || v.Planned != 8000 || v.Head != 2000 || v.MinSecond != 1000 {
+		t.Errorf("verdict = %+v, want held with 8000 of 8000 after the 2 s head (2000 in it) and 1000 in the lowest second", v)
+	}
+}
+
+// k6 connects 100 virtual users at the start, ghz and LeetTest dial: the first
+// 2 s are not judged for any of them. Here the head runs at half the rate and
+// everything after it is on schedule.
+func TestJudge_ASlowStartInTheSkippedHeadStillHolds(t *testing.T) {
+	var offs []time.Duration
+	for _, o := range even(1000, 10*time.Second) {
+		if o >= headSkip || (o/time.Millisecond)%2 == 0 {
+			offs = append(offs, o)
+		}
+	}
+
+	v := judge(offs, 1000, 10*time.Second)
+	if !v.Held || v.Head != 1000 || v.Arrived != 8000 {
+		t.Errorf("verdict = %+v, want held, 1000 arrivals in the head and 8000 after it", v)
+	}
+}
+
+// The head is skipped, not forgiven: a lag after it is judged in full.
+func TestJudge_ALagRightAfterTheSkippedHeadDoesNotHold(t *testing.T) {
+	var offs []time.Duration
+	for _, o := range even(1000, 10*time.Second) {
+		if o >= headSkip && o < headSkip+time.Second && (o/time.Millisecond)%2 == 0 {
+			continue // half of the third second is missing
+		}
+		offs = append(offs, o)
+	}
+
+	v := judge(offs, 1000, 10*time.Second)
+	if v.Held || v.MinSecond != 500 {
+		t.Errorf("verdict = %+v, want not held with 500 in the lowest second", v)
+	}
+}
+
+// One second at 97 % in a minute is 0.05 % of the calls, inside heldShare, but
+// below the 99 % a steady second needs.
+func TestJudge_ASecondUnderNinetyNinePercentDoesNotHold(t *testing.T) {
+	var offs []time.Duration
+	for i, o := range even(1000, time.Minute) {
+		if o >= 10*time.Second && o < 11*time.Second && i%100 < 3 {
+			continue
+		}
+		offs = append(offs, o)
+	}
+
+	v := judge(offs, 1000, time.Minute)
+	if v.Share < heldShare {
+		t.Fatalf("share %.4f: the premise is that the share alone would hold", v.Share)
+	}
+	if v.Held || v.MinSecond != 970 {
+		t.Errorf("verdict = %+v, want not held with 970 in the lowest second", v)
+	}
+}
+
+func TestJudge_AFourSecondRunHasOneSteadySecond(t *testing.T) {
+	v := judge(even(1000, 4*time.Second), 1000, 4*time.Second)
+
+	if !v.Held || v.Planned != 2000 || v.MinSecond != 1000 {
+		t.Errorf("verdict = %+v, want held with 2000 planned and the one steady second full", v)
 	}
 }
 
@@ -75,16 +136,19 @@ func TestJudge_CallsArrivingAfterTheAllowanceAreNotInTheRun(t *testing.T) {
 	}
 }
 
-// A tool with 0.96 of the capacity the rate needs lags behind; a tool that
-// sends late calls after the end (LeetTest does, until a call's deadline) catches
-// up in the next second. Every call arrives, only after the run: ghz and k6
-// stop at the end and would count as missing 4%, so must this one.
+// A tool that falls behind in the last second (not judged second by second)
+// and sends the late calls after the end (LeetTest does, until a call's
+// deadline) has every call arrive, only after the run: ghz and k6 stop at the
+// end and would count as missing, so must this one.
 func TestJudge_ALagCaughtUpAfterTheRunEndsDoesNotHold(t *testing.T) {
 	const rate, dur = 10000, 20 * time.Second
 
 	var offs []time.Duration
-	for i := range 192000 { // 0.96 of the calls, on time at 9600 a second
-		offs = append(offs, time.Duration(i)*time.Second/9600)
+	for i := range 190000 { // on time to the 19th second
+		offs = append(offs, time.Duration(i)*time.Second/rate)
+	}
+	for i := range 2000 { // a fifth of the last second on time
+		offs = append(offs, 19*time.Second+time.Duration(i)*time.Second/2000)
 	}
 	for i := range 8000 { // the rest, sent in the 0.83 s after the end
 		offs = append(offs, dur+time.Duration(i)*830*time.Millisecond/8000)
@@ -138,8 +202,8 @@ func TestCollectRun_TheStandsNumbersAreSavedWhenTheToolsReportCannotBeRead(t *te
 	if jsonErr := json.Unmarshal(b, &saved); jsonErr != nil {
 		t.Fatal(jsonErr)
 	}
-	if !saved.Verdict.Held || saved.Verdict.Arrived != 5000 || saved.ReportError == "" || !got.Verdict.Held {
-		t.Errorf("saved %+v, want the stand's verdict (held, 5000 arrived) and the report's error named", saved)
+	if !saved.Verdict.Held || saved.Verdict.Arrived != 3000 || saved.ReportError == "" || !got.Verdict.Held {
+		t.Errorf("saved %+v, want the stand's verdict (held, 3000 arrived after the head) and the report's error named", saved)
 	}
 }
 
@@ -167,6 +231,26 @@ func TestFreshDir_WhatAnEarlierRunLeftIsGone(t *testing.T) {
 	}
 	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
 		t.Errorf("the folder is not there: %v", err)
+	}
+}
+
+// Row 2 looks at the same window as row 1: a start that bursts or crawls in the
+// first 2 s is not in the gaps.
+func TestMeasureSpacing_TheSkippedHeadIsNotInTheGaps(t *testing.T) {
+	var offs []time.Duration
+	for _, o := range even(1000, 10*time.Second) {
+		if o < headSkip {
+			o = o / 100 // the whole head in a burst
+		}
+		offs = append(offs, o)
+	}
+
+	sp, err := measureSpacing(offs, 1000, 10*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sp.GapMax != time.Millisecond || sp.Gaps != 6999 {
+		t.Errorf("gap max %v over %d gaps, want 1ms over 6999: the steady window starts at 2 s", sp.GapMax, sp.Gaps)
 	}
 }
 
