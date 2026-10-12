@@ -6,6 +6,10 @@
   color: 0e8a16
   description: Новая возможность
 
+- name: feedback
+  color: c5def5
+  description: Проблема, о которой сообщили через агента
+
 - name: ci
   color: 1d76db
   description: Сборка, пайплайны, релизы

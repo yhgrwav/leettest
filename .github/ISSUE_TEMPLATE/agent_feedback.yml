@@ -1,0 +1,100 @@
+name: Проблема (через агента)
+description: Что-то пошло не так при прогоне через ИИ-агента.
+title: "[агент] "
+labels: ["feedback"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Не раскрывая бизнес-деталей проекта, расскажите, что пошло не так. Адреса, имена
+        сервисов и методов, metadata, токены и содержимое конфига сюда не пишите.
+
+  - type: input
+    id: version
+    attributes:
+      label: Версия
+      description: Вывод `leettest --version`.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Платформа
+      options:
+        - Linux
+        - macOS
+        - Windows
+        - Другое
+    validations:
+      required: true
+
+  - type: input
+    id: arch
+    attributes:
+      label: Архитектура
+      description: Вывод `uname -m` или `GOARCH`.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: where
+    attributes:
+      label: Где запускали
+      options:
+        - Локально
+        - CI
+        - Контейнер
+    validations:
+      required: true
+
+  - type: input
+    id: exit_code
+    attributes:
+      label: Код выхода
+      description: При коде 2 — `invalid_reasons` из JSON.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Что случилось
+      options:
+        - Непонятное сообщение или документация
+        - Подозрительное число
+        - Падение или зависание
+        - Установка
+        - Другое
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Что ожидали
+    validations:
+      required: true
+
+  - type: textarea
+    id: got
+    attributes:
+      label: Что получилось
+    validations:
+      required: true
+
+  - type: textarea
+    id: note
+    attributes:
+      label: Заметка пользователя
+      description: Своими словами, не раскрывая бизнес-деталей проекта.
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: clean
+    attributes:
+      label: Перед отправкой
+      options:
+        - label: Адреса, имена методов, metadata и секреты убраны
+          required: true
