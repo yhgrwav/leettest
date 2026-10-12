@@ -121,6 +121,10 @@ the contract exactly, not the prose around it) and for pull requests (the change
 history).
 [AGENTS.md](AGENTS.md#docs) has the full rule.
 
+The README recording (`assets/demo.gif`) is rebuilt from `assets/demo.tape` with Docker:
+`GOOS=linux go build -o bin/ ./cmd/leettest ./test/stand/cmd/stand`, then
+`docker run --rm -v "$PWD:/vhs" ghcr.io/charmbracelet/vhs:v0.12.1 assets/demo.tape`.
+
 ## Contributor License Agreement
 
 **Pull requests are merged only after the author has signed the [CLA](CLA.md).** It is a license,
