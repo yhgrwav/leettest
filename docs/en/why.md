@@ -26,7 +26,7 @@ gRPC plugin: JMeter itself does not do gRPC [20][21].
 | A service without reflection: schema from `.proto` or protoset | 🟢 [3] | 🟢 [15] | 🟢 [21] | 🔴 [roadmap](roadmap.md#next-version-v03) |
 | Several methods, each at its own RPS, in one run | 🔴 one method [1] | 🟡 scenarios in a script [10] | 🟡 thread groups [22] | 🟢 |
 | Load described without code of your own | 🟢 flags, JSON, TOML [2] | 🔴 JavaScript [10] | 🟢 `.jmx` plan [28] | 🟢 YAML |
-| Ramp-up: RPS grows over time | 🟢 [7] | 🟢 [16] | 🟡 experimental [23] | 🔴 [roadmap](roadmap.md#later) |
+| Ramp-up to a target RPS, then steady load | 🟢 [7] | 🟢 [16] | 🟡 experimental [23] | 🔴 [roadmap](roadmap.md#later) |
 | Thresholds and an exit code for CI | 🔴 [8] | 🟢 [17] | 🔴 [20][26] | 🔴 [roadmap](roadmap.md#later) |
 | A response field goes into the next request | 🔴 [9] | 🟡 script [18] | 🟢 post-processors [27] | 🔴 [roadmap](roadmap.md#later) |
 | Finding the load at which the target breaks | 🔴 [8] | 🟡 script [19] | 🔴 [20] | 🟢 steps |
@@ -36,11 +36,11 @@ gRPC plugin: JMeter itself does not do gRPC [20][21].
 | What we check | ghz | k6 | JMeter | LeetTest |
 |---|---|---|---|---|
 | Load does not drop when the target slows down (open model) | 🟡 `--async`, not the default [4] | 🟡 its own executor, not the default [11] | 🟡 experimental, not the default [23] | 🟢 the only model |
-| Latency from the scheduled moment: waiting at the generator is included | 🔴 from the send [5] | 🔴 from the send, the rest in `dropped_iterations` [12][13] | 🔴 from the send [24] | 🟢 |
-| Failed and timed-out calls are in the percentiles | 🟡 `--count-errors`, not the default [6] | 🟢 [13] | 🟢 [25] | 🟢 timed-out ones as a lower bound |
+| The generator's own lag is counted in latency | 🔴 no: from the send [5] | 🔴 no: from the send, unsent ones in `dropped_iterations` [12][13] | 🔴 no: from the send [24] | 🟢 |
+| Failed and timed-out calls are in the percentiles | 🟡 `--count-errors`, not the default [6] | 🟢 [13] | 🟢 [25] | 🟢 failed ones in their own per-category percentiles, timed-out ones as a lower bound |
 
-The open model by default, latency from the scheduled moment and breakpoint search are the rows
-where none of ghz, k6 and JMeter has a 🟢. LeetTest does not yet have ramp-up, CI thresholds, call
+The open model by default, counting the generator's lag and breakpoint search are the rows
+where none of ghz, k6 and JMeter has a 🟢. LeetTest does not yet have ramp-up to a target RPS, CI thresholds, call
 chaining or running without reflection; the order is in the [roadmap](roadmap.md).
 
 ## Load that mirrors production
@@ -88,7 +88,7 @@ defect.
 ## Sources
 
 Versions: ghz v0.121.0 (latest release), k6 v2.3.0, JMeter 5.6.3 with the jmeter-grpc-request
-plugin v1.2.6. Checked 2026-10-12. Source code is cited at the version's tag, k6 documentation at
+plugin v2.0.2. Checked 2026-10-12. Source code is cited at the version's tag, k6 documentation at
 commit [`b5fdef3`](https://github.com/grafana/k6-docs/tree/b5fdef340160ab85c28de9b918726a6729dbc0f1/docs/sources/k6/v2.3.x).
 
 **ghz**
@@ -155,9 +155,10 @@ commit [`b5fdef3`](https://github.com/grafana/k6-docs/tree/b5fdef340160ab85c28de
 20. The JMeter 5.6.3 component reference has no gRPC sampler (the word gRPC does not occur in it),
     no percentile thresholds and no breakpoint search —
     [`xdocs/usermanual/component_reference.xml`](https://github.com/apache/jmeter/blob/rel/v5.6.3/xdocs/usermanual/component_reference.xml).
-21. The jmeter-grpc-request plugin v1.2.6: unary calls only, the input is a folder of `.proto`
-    files; the [repository is archived](https://github.com/zalopay-oss/jmeter-grpc-request) —
-    [README L19, L28–L29](https://github.com/zalopay-oss/jmeter-grpc-request/blob/v1.2.6/README.md#L19).
+21. The jmeter-grpc-request plugin v2.0.2, a continuation of the archived zalopay-oss one; JMeter
+    Plugins Manager installs it: unary calls only, the input is a folder of `.proto` files —
+    [README L19, L28](https://github.com/bakthava/jmeter-grpc-request/blob/v2.0.2/README.md#L19),
+    [Plugins Manager](https://github.com/undera/jmeter-plugins/blob/cdaa5ac7d27f081787f57d69133e8c34b14b133f/site/dat/repo/various.json#L1752-L1826).
 22. One plan can hold several thread groups; the Constant Throughput Timer and the Open Model
     Thread Group each set a rate per group —
     [`component_reference.xml` L5153](https://github.com/apache/jmeter/blob/rel/v5.6.3/xdocs/usermanual/component_reference.xml#L5153),
