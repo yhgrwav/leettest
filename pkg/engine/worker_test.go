@@ -404,39 +404,59 @@ func TestPoolFreesSlotBeforeResultIsDelivered(t *testing.T) {
 	out := make(chan Result)
 
 	pool := NewWorkerPool(sender, 1)
+	r := newPoolRun(t.Context(), 1)
+	defer r.close()
 
 	done := make(chan error, 1)
-	go func() { done <- pool.Run(context.Background(), in, out) }()
+	go func() { done <- r.dispatch(pool, in, out) }()
 
 	in <- Request{ScheduledAt: time.Now()}
-	<-sent
+	awaitStep(t, sent, "the first send to start")
 
 	// Nobody reads out, so the first result is still queued. The slot it used
 	// must already be free: in-flight means "in flight", not "waiting to be
-	// recorded".
-	waitForNoneInFlight(t, pool)
+	// recorded". The count of calls and the slot go back one after the other,
+	// so wait for both, or the second request meets a slot still taken.
+	waitForSlotsFree(t, pool, r)
 
 	// With the slot free, a second request must launch even though the
 	// collector has read nothing.
 	in <- Request{ScheduledAt: time.Now()}
-	<-sent
+	awaitStep(t, sent, "the second send to start")
 
-	<-out
-	<-out
+	awaitStep(t, out, "the first result")
+	awaitStep(t, out, "the second result")
 	close(in)
 
-	if err := <-done; err != nil {
+	if err := awaitStep(t, done, "dispatch to return"); err != nil {
 		t.Fatalf("run: %v, want nil: a busy result consumer must not hold in-flight slots", err)
 	}
 }
 
-func waitForNoneInFlight(t *testing.T, pool *WorkerPool) {
+// awaitStep receives from ch, failing the test within seconds instead of
+// hanging until the package timeout when the step never happens.
+func awaitStep[T any](t *testing.T, ch <-chan T, step string) T {
+	t.Helper()
+
+	select {
+	case v := <-ch:
+		return v
+	case <-time.After(2 * time.Second):
+		t.Fatalf("timed out waiting for %s", step)
+
+		var zero T
+
+		return zero
+	}
+}
+
+func waitForSlotsFree(t *testing.T, pool *WorkerPool, r *poolRun) {
 	t.Helper()
 
 	deadline := time.After(2 * time.Second)
 
 	for {
-		if pool.inFlightCount() == 0 {
+		if pool.inFlightCount() == 0 && len(r.slots) == 0 {
 			return
 		}
 

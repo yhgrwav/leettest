@@ -58,10 +58,12 @@ func dialing(idle time.Duration, dial func(context.Context, string) (net.Conn, e
 // timer never cuts its dial. No deadline is unbounded time, so any idle
 // timeout is shorter.
 func TestConnect_AnIdleTimeoutShorterThanTheConnectIsRefused(t *testing.T) {
+	before := time.Now()
 	ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
 	defer cancel()
 	start := time.Now()
 	err := stalled(100 * time.Millisecond).Connect(ctx)
+	elapsed := time.Since(before)
 	if !errors.Is(err, ErrIdleShorterThanConnect) || time.Since(start) > 100*time.Millisecond {
 		t.Fatalf("after %v: %v, want ErrIdleShorterThanConnect at once", time.Since(start), err)
 	}
@@ -70,10 +72,21 @@ func TestConnect_AnIdleTimeoutShorterThanTheConnectIsRefused(t *testing.T) {
 			t.Errorf("%q does not say %q", err, want)
 		}
 	}
-	// What is left of 300ms, rounded up: the timeout the user set, not
-	// 299.987ms or 299ms.
-	if !strings.Contains(err.Error(), "connect timeout 300ms;") {
-		t.Errorf("%q does not give the connect timeout as 300ms", err)
+	// What is left of 300ms, rounded up to a whole ms: 300ms when under 1ms
+	// passed, never 299.987ms. On a loaded runner a few ms pass, so the number
+	// is bounded by the time that did.
+	_, after, found := strings.Cut(err.Error(), "connect timeout ")
+	shown, _, _ := strings.Cut(after, ";")
+	got, perr := time.ParseDuration(shown)
+	switch {
+	case !found || perr != nil:
+		t.Errorf("%q does not give the connect timeout (%v)", err, perr)
+	case got%time.Millisecond != 0:
+		t.Errorf("connect timeout %v is not a whole number of milliseconds", got)
+	case got > 300*time.Millisecond:
+		t.Errorf("connect timeout %v is more than the 300ms set", got)
+	case got < ceilMillis(300*time.Millisecond-elapsed):
+		t.Errorf("connect timeout %v is less than what was left of 300ms after %v", got, elapsed)
 	}
 
 	// The deadline at the idle timeout leaves Connect a little less than it.
