@@ -1,4 +1,5 @@
 > 译自 [docs/ru/quickstart.md](../ru/quickstart.md)，对应 67f8732，2026-10-08。如有出入，以俄文版为准。
+> **可能滞后：**中文版在每次发布前同步，最新内容请看[英文版](../en/quickstart.md)。
 
 # 快速上手
 

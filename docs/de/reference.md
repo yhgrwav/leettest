@@ -5,6 +5,8 @@
 
 > Übersetzt aus [docs/ru/reference.md](../ru/reference.md) bei 67f8732, 2026-10-08. Bei
 > Abweichungen gilt die russische Fassung.
+> **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
+> die [englische](../en/reference.md).
 
 Jedes Konfigurationsfeld, jedes Flag und was das Werkzeug vor dem Start prüft. Wie man den Bericht
 liest, steht im [README](README.md#den-bericht-lesen).

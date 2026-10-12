@@ -2,7 +2,7 @@
 
 [← Back to docs](README.md)
 
-> Translated from [docs/ru/commercial.md](../ru/commercial.md) at 67f8732, 2026-10-08. If they
+> Translated from [docs/ru/commercial.md](../ru/commercial.md) at b7a685c, 2026-10-12. If they
 > differ, the Russian one is right.
 
 > This page describes an **intended** model. None of the paid part exists yet and there is no

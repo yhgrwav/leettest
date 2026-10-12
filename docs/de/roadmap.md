@@ -4,6 +4,8 @@
 
 > Übersetzt aus [docs/ru/roadmap.md](../ru/roadmap.md) bei 67f8732, 2026-10-08. Bei Abweichungen gilt die
 > russische Fassung.
+> **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
+> die [englische](../en/roadmap.md).
 
 > **Fehlt Ihnen etwas? [Eröffnen Sie ein Issue](https://github.com/yhgrwav/leettest/issues/new/choose)** —
 > beschreiben Sie die Aufgabe, die Sie lösen. Fragen ohne konkrete Aufgabe gehören in die

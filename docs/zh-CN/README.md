@@ -4,7 +4,7 @@
 
 **不说谎的 gRPC 压测。**
 
-[Русский](../ru/) · [English](../en/) · [Deutsch](../de/) · [简体中文](../zh-CN/)
+[Русский](../ru/) · [English](../en/) · [Deutsch](../de/) · [简体中文](../zh-CN/)（Deutsch 和简体中文可能滞后）
 [![CI](https://github.com/yhgrwav/leettest/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/yhgrwav/leettest/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/yhgrwav/leettest.svg)](https://pkg.go.dev/github.com/yhgrwav/leettest)
 [![Go version](https://img.shields.io/github/go-mod/go-version/yhgrwav/leettest)](../../go.mod)
@@ -18,6 +18,7 @@
 
 > 译自 [README.md](../../README.md)，对应 67f8732，2026-10-08。如有出入，以俄文版为准。
 > 另附中文文档目录，俄文原文中没有。
+> **可能滞后：**中文版在每次发布前同步，最新内容请看[英文版](../en/README.md)。
 
 > **早期阶段。** 已可用：对真实服务施加 unary 负载，一次运行中多个方法各自设定 RPS，
 > 找出崩溃点，每次调用使用不同数据（`dataset`），多个连接，控制台报告和供脚本使用的 JSON。

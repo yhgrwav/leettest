@@ -2,7 +2,7 @@
 
 [← Back to docs](README.md)
 
-> Translated from [docs/ru/chaining.md](../ru/chaining.md) at 67f8732, 2026-10-08. If they
+> Translated from [docs/ru/chaining.md](../ru/chaining.md) at b7a685c, 2026-10-12. If they
 > differ, the Russian one is right.
 
 > **Status: planned, not working yet.** The example below is a draft of the format, not a working

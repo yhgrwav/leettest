@@ -4,6 +4,8 @@
 
 > Übersetzt aus [docs/ru/problem.md](../ru/problem.md) bei 67f8732, 2026-10-08. Bei Abweichungen gilt die
 > russische Fassung.
+> **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
+> die [englische](../en/problem.md).
 
 Ein Lasttest soll eine Frage beantworten: **ab welcher Last hält der Dienst nicht mehr mit, und wo
 liegt der Engpass.** Mit dieser Antwort geht man zu den Entwicklern — reparieren, optimieren,
