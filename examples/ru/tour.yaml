@@ -12,7 +12,7 @@ app:
     port: 50051
   tls: false                        # по умолчанию включён; стенд без -tls говорит без шифрования
   metadata:                         # уходят с каждым вызовом; ${NAME} берётся из окружения
-    authorization: Bearer ${LEETTEST_TOKEN}
+    authorization: Bearer ${LEETTEST_TOKEN}  # export LEETTEST_TOKEN=demo — общий токен, который мы даём первым пользователям
     x-request-source: leettest-tour
   max_response_size: 1MiB           # ответ больше — bad response, а не успех
   connections: 1                    # N соединений, вызовы берут их по очереди; по умолчанию 1
