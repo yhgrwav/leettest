@@ -20,12 +20,11 @@ queues) from client data, in code or in text.
 ### From zero to a report
 
 1. **Install** the release binary (curl and tar; no Go). Linux and macOS; Windows has a `.zip`.
+   The script verifies the checksum and installs into `~/.local/bin` (`LEETTEST_INSTALL_DIR`
+   changes it, `LEETTEST_VERSION` pins a tag); it exits 1 with a message on any failure.
    ```sh
-   V=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/yhgrwav/leettest/releases/latest); V=${V##*/v}
-   A=leettest_${V}_$(uname -s | tr A-Z a-z)_$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/').tar.gz
-   U=https://github.com/yhgrwav/leettest/releases/download/v$V
-   curl -fsSL -O $U/$A -O $U/checksums.txt && grep " $A\$" checksums.txt | sha256sum -c - &&   # macOS: shasum -a 256 -c -
-   mkdir -p ~/.local/bin && tar -xzf $A -C ~/.local/bin leettest && export PATH=$HOME/.local/bin:$PATH
+   curl -fsSL https://raw.githubusercontent.com/yhgrwav/leettest/main/install.sh | sh
+   export PATH="$HOME/.local/bin:$PATH"   # the script cannot change your shell's PATH
    leettest -version
    ```
    Or `go install github.com/yhgrwav/leettest/cmd/leettest@latest` (Go 1.26+; an older Go with

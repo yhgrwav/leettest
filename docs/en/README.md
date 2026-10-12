@@ -30,8 +30,15 @@ The project is growing: what works today is below, what comes next is in the [ro
 
 ## Install
 
-Download the archive for your system from the [releases page](https://github.com/yhgrwav/leettest/releases/latest)
-(Linux, macOS, Windows; amd64 and arm64), unpack it and put `leettest` on your `PATH`. Or with Go 1.26+:
+Linux and macOS (amd64 and arm64) — one command:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/yhgrwav/leettest/main/install.sh | sh
+```
+
+The script installs the latest release into `~/.local/bin`, verifies the checksum and, if that
+directory is not on your `PATH`, prints the line for your shell profile. On Windows, take the
+archive from the [releases page](https://github.com/yhgrwav/leettest/releases/latest). Or with Go 1.26+:
 
 ```sh
 go install github.com/yhgrwav/leettest/cmd/leettest@latest
