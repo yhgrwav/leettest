@@ -130,26 +130,287 @@ load:
 }
 
 // An explicit empty string is refused through the path check, not the null
-// check: no line. An alias is not followed: a null reached through one is
-// read as the key left out. Frozen as main does it.
-// Ground: characterization — the null rule unwraps anchors and tags, not strings or aliases.
-func TestParse_EmptyStringTagAndAliasAreUnchanged(t *testing.T) {
-	t.Run("a str tag on an empty string", func(t *testing.T) {
-		_, err := config.Parse([]byte(datasetYAML("      dataset: !!str \"\"\n")))
+// check: no line. Frozen as main does it.
+// Ground: characterization — the null rule unwraps anchors and tags, not strings.
+func TestParse_EmptyStringTagIsUnchanged(t *testing.T) {
+	_, err := config.Parse([]byte(datasetYAML("      dataset: !!str \"\"\n")))
 
-		if !errors.Is(err, config.ErrEmptyDatasetPath) {
-			t.Fatalf("error = %v, want %v", err, config.ErrEmptyDatasetPath)
+	if !errors.Is(err, config.ErrEmptyDatasetPath) {
+		t.Fatalf("error = %v, want %v", err, config.ErrEmptyDatasetPath)
+	}
+	if strings.Contains(err.Error(), "line ") {
+		t.Errorf("error = %q, carries a line; main names the call, not the key", err)
+	}
+}
+
+// An alias that resolves to a null is the same lost path as a direct null: it
+// is refused with the direct form's error, at the dataset key's line. The
+// anchor sits on line 11 (the call's data), the alias on line 12.
+// Ground: contract — П13, no config silently ignored; the error value, text and line are what callers see.
+func TestParse_DatasetAliasOfNullIsAnError(t *testing.T) {
+	for name, lines := range map[string]string{
+		"an anchor on a tilde":        "      data: &a ~\n      dataset: *a\n",
+		"an anchor on null":           "      data: &a null\n      dataset: *a\n",
+		"an anchor on a null tag":     "      data: &a !!null ~\n      dataset: *a\n",
+		"an anchor with no value":     "      data: &a\n      dataset: *a\n",
+		"a null tag on the alias":     "      data: &a ~\n      dataset: !!null *a\n",
+		"a str tag on the null alias": "      data: &a ~\n      dataset: !!str *a\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := config.Parse([]byte(datasetYAML(lines)))
+
+			if !errors.Is(err, config.ErrEmptyDatasetPath) {
+				t.Fatalf("error = %v, want %v", err, config.ErrEmptyDatasetPath)
+			}
+			if errors.Is(err, config.ErrReadConfig) {
+				t.Errorf("error = %v, is a read error; the category is the empty path", err)
+			}
+			if want := "line 12: " + config.ErrEmptyDatasetPath.Error(); err.Error() != want {
+				t.Errorf("error = %q, want the direct form's text %q", err, want)
+			}
+		})
+	}
+}
+
+// The alias is followed from the second call to an anchor in the first: the
+// line is that of the alias, not of the anchor.
+// Ground: contract — the line is the one place the user is sent to.
+func TestParse_DatasetAliasOfNullInASecondCallNamesItsLine(t *testing.T) {
+	second := "      data: &a ~\n" +
+		"    - method: wallet.v1.WalletService/GetHistory\n" +
+		"      rps: 10\n" +
+		"      duration: 1s\n" +
+		"      dataset: *a\n"
+
+	_, err := config.Parse([]byte(datasetYAML(second)))
+
+	if !errors.Is(err, config.ErrEmptyDatasetPath) {
+		t.Fatalf("error = %v, want %v", err, config.ErrEmptyDatasetPath)
+	}
+	if want := "line 15:"; !strings.Contains(err.Error(), want) {
+		t.Errorf("error = %q, want it to carry %q", err, want)
+	}
+	if strings.Contains(err.Error(), "line 11:") {
+		t.Errorf("error = %q, names the anchor's line", err)
+	}
+}
+
+// wantDuplicateAnchor checks the refusal of an anchor name defined twice: the
+// sentinel, not a read error, and the whole text with both lines.
+func wantDuplicateAnchor(t *testing.T, err error, want string) {
+	t.Helper()
+
+	if !errors.Is(err, config.ErrDuplicateAnchor) {
+		t.Fatalf("error = %v, want %v", err, config.ErrDuplicateAnchor)
+	}
+	if errors.Is(err, config.ErrReadConfig) {
+		t.Errorf("error = %v, is a read error; the category is the duplicate anchor", err)
+	}
+	if err.Error() != want {
+		t.Errorf("error = %q, want %q", err, want)
+	}
+}
+
+// The likeliest repeat is the same name on each call's request body: the
+// decoder would hand the second body to the first call, and the run's numbers
+// would be about another request. An anchor on a mapping is refused like one
+// on a scalar.
+// Ground: contract — П13; the error value, text and both lines are what callers see.
+func TestParse_AnchorOnAMappingDefinedTwiceIsAnError(t *testing.T) {
+	calls := "      data: &req\n" +
+		"        id: 1\n" +
+		"    - method: wallet.v1.WalletService/GetHistory\n" +
+		"      rps: 10\n" +
+		"      duration: 1s\n" +
+		"      data: &req\n" +
+		"        id: 2\n"
+
+	_, err := config.Parse([]byte(datasetYAML(calls)))
+
+	wantDuplicateAnchor(t, err, "line 16: anchor &req is already defined at line 11; give it another name")
+}
+
+// An anchor name defined twice is refused, whatever the values: the decoder
+// resolves an alias to the last definition in the document, not the nearest
+// one before it, so a reused name silently swaps a value. Scenario A: a null
+// and then a path under one name, the alias between them.
+// Ground: contract — П13; the error value, text and both lines are what callers see.
+func TestParse_AnchorDefinedTwiceIsAnError_NullThenPath(t *testing.T) {
+	calls := "      data: &a ~\n" +
+		"      dataset: *a\n" +
+		"    - method: wallet.v1.WalletService/GetHistory\n" +
+		"      rps: 10\n" +
+		"      duration: 1s\n" +
+		"      data: &a x.jsonl\n"
+
+	_, err := config.Parse([]byte(datasetYAML(calls)))
+
+	wantDuplicateAnchor(t, err, "line 16: anchor &a is already defined at line 11; give it another name")
+}
+
+// Scenario B: a path and then a null under one name. The config looks valid
+// (the alias is the path), but the decoder gives the call the later null and
+// the path is lost; it is refused as well. The anchor is the first call's
+// data, the alias is the second call's dataset (data and dataset in one call
+// are refused), the second anchor is the third call's data.
+// Ground: contract — П13; no rule of the form "a repeat is fine when the decoder happens to get it right".
+func TestParse_AnchorDefinedTwiceIsAnError_PathThenNull(t *testing.T) {
+	calls := "      data: &a x.jsonl\n" +
+		"    - method: wallet.v1.WalletService/GetHistory\n" +
+		"      rps: 10\n" +
+		"      duration: 1s\n" +
+		"      dataset: *a\n" +
+		"    - method: wallet.v1.WalletService/Transfer\n" +
+		"      rps: 10\n" +
+		"      duration: 1s\n" +
+		"      data: &a ~\n"
+
+	_, err := config.Parse([]byte(datasetYAML(calls)))
+
+	wantDuplicateAnchor(t, err, "line 19: anchor &a is already defined at line 11; give it another name")
+}
+
+// The same with the first anchor in app.metadata: the decoder happens to
+// resolve this one right, and it is refused all the same.
+// Ground: contract — П13; one rule for every anchor.
+func TestParse_AnchorDefinedTwiceIsAnError_PathThenNullInMetadata(t *testing.T) {
+	raw := `
+app:
+  target:
+    ip: localhost
+    port: 50051
+  metadata:
+    k: &a x.jsonl
+load:
+  calls:
+    - method: ` + datasetMethod + `
+      rps: 10
+      duration: 1s
+      dataset: *a
+    - method: wallet.v1.WalletService/GetHistory
+      rps: 10
+      duration: 1s
+      data: &a ~
+`
+
+	_, err := config.Parse([]byte(raw))
+
+	wantDuplicateAnchor(t, err, "line 17: anchor &a is already defined at line 7; give it another name")
+}
+
+// The rule is not limited to the calls or to the dataset: two anchors of one
+// name among app.metadata values are refused, with no alias in sight.
+// Ground: contract — П13; the rule covers the whole config.
+func TestParse_AnchorDefinedTwiceInMetadataIsAnError(t *testing.T) {
+	raw := `
+app:
+  target:
+    ip: localhost
+    port: 50051
+  metadata:
+    first: &m one
+    second: &m two
+load:
+  calls:
+    - method: ` + datasetMethod + `
+      rps: 10
+      duration: 1s
+`
+
+	_, err := config.Parse([]byte(raw))
+
+	wantDuplicateAnchor(t, err, "line 8: anchor &m is already defined at line 7; give it another name")
+}
+
+// Two different names are two anchors: each alias is its own anchor's value.
+// Ground: characterization — only a repeated name is refused.
+func TestParse_DifferentAnchorNamesAreAccepted(t *testing.T) {
+	raw := `
+app:
+  target:
+    ip: localhost
+    port: 50051
+  metadata:
+    first: &p x.jsonl
+    second: &q y.jsonl
+load:
+  calls:
+    - method: ` + datasetMethod + `
+      rps: 10
+      duration: 1s
+      dataset: *p
+    - method: wallet.v1.WalletService/GetHistory
+      rps: 10
+      duration: 1s
+      dataset: *q
+`
+
+	cfg, err := config.Parse([]byte(raw))
+
+	if err != nil {
+		t.Fatalf("error = %v, want none: two names are two anchors", err)
+	}
+	if got := cfg.Load.Calls[0].Dataset; got != "x.jsonl" {
+		t.Errorf("first call dataset = %q, want %q", got, "x.jsonl")
+	}
+	if got := cfg.Load.Calls[1].Dataset; got != "y.jsonl" {
+		t.Errorf("second call dataset = %q, want %q", got, "y.jsonl")
+	}
+	if got, want := cfg.App.Metadata["first"]+" "+cfg.App.Metadata["second"], "x.jsonl y.jsonl"; got != want {
+		t.Errorf("metadata first and second = %q, want %q", got, want)
+	}
+}
+
+// An alias to a path is a path: a config that reuses one dataset file for two
+// calls keeps working. A null alias used outside a call's dataset is not
+// touched.
+// Ground: characterization — only a null reached as load.calls[i].dataset is refused.
+func TestParse_DatasetAliasOfAPathIsAccepted(t *testing.T) {
+	t.Run("a path shared by two calls", func(t *testing.T) {
+		calls := "      dataset: &p x.jsonl\n" +
+			"    - method: wallet.v1.WalletService/GetHistory\n" +
+			"      rps: 10\n" +
+			"      duration: 1s\n" +
+			"      dataset: *p\n"
+
+		cfg, err := config.Parse([]byte(datasetYAML(calls)))
+
+		if err != nil {
+			t.Fatalf("error = %v, want none: an alias to a path is a path", err)
 		}
-		if strings.Contains(err.Error(), "line ") {
-			t.Errorf("error = %q, carries a line; main names the call, not the key", err)
+		if got := len(cfg.Load.Calls); got != 2 {
+			t.Fatalf("calls = %d, want 2", got)
+		}
+		if got := cfg.Load.Calls[1].Dataset; got != "x.jsonl" {
+			t.Errorf("second call dataset = %q, want %q: an alias to a path is that path", got, "x.jsonl")
 		}
 	})
 
-	t.Run("an alias of a null", func(t *testing.T) {
-		_, err := config.Parse([]byte(datasetYAML("      data: &a ~\n      dataset: *a\n")))
+	t.Run("a path shared by two calls behind a str tag", func(t *testing.T) {
+		calls := "      dataset: &p x.jsonl\n" +
+			"    - method: wallet.v1.WalletService/GetHistory\n" +
+			"      rps: 10\n" +
+			"      duration: 1s\n" +
+			"      dataset: !!str *p\n"
+
+		cfg, err := config.Parse([]byte(datasetYAML(calls)))
 
 		if err != nil {
-			t.Errorf("error = %v, want none: a known hole (the alias hides an empty path), out of scope here and read as before", err)
+			t.Fatalf("error = %v, want none: an alias to a path is a path", err)
+		}
+		if got := len(cfg.Load.Calls); got != 2 {
+			t.Fatalf("calls = %d, want 2", got)
+		}
+		if got := cfg.Load.Calls[1].Dataset; got != "x.jsonl" {
+			t.Errorf("second call dataset = %q, want %q: an alias to a path is that path", got, "x.jsonl")
+		}
+	})
+
+	t.Run("a null alias outside the dataset", func(t *testing.T) {
+		_, err := config.Parse([]byte(datasetYAML("      data: &a ~\n      timeout: *a\n")))
+
+		if errors.Is(err, config.ErrEmptyDatasetPath) {
+			t.Fatalf("error = %v, a null alias outside load.calls[i].dataset was read as an empty dataset path", err)
 		}
 	})
 }

@@ -43,6 +43,8 @@ var (
 	ErrInvalidTimeout      = errors.New("timeout must be positive: without one, requests to a hung target pile up until the in-flight cap ends the run")
 	ErrDataAndDataset      = errors.New("data and dataset are both set; use one")
 	ErrEmptyDatasetPath    = errors.New("dataset must be the path of a file")
+	// ErrDuplicateAnchor is a YAML anchor name defined twice in the config.
+	ErrDuplicateAnchor = errors.New("anchor is already defined")
 	// ErrBreakpoint is a breakpoint section that cannot run as written.
 	ErrBreakpoint             = errors.New("invalid breakpoint")
 	ErrInvalidMaxResponseSize = errors.New("max_response_size must be a positive size below 2GiB with a unit: B, KB, MB, GB, KiB, MiB or GiB")

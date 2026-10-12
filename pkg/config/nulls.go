@@ -25,17 +25,25 @@ import (
 
 var callDatasetPath = regexp.MustCompile(`^\$\.load\.calls\[\d+\]\.dataset$`)
 
-// checkNullDataset rejects `dataset:`, `dataset: ~` and `dataset: null` under
-// a call, also behind an anchor (`&a ~`) or a tag (`!!null`, `&a !!null`).
-// The decoder reads each as the key left out, so the path is lost without a
-// word and the call runs with an empty message. An alias is not followed.
-func checkNullDataset(raw []byte) error {
+// checkTree runs the checks the decoder cannot make. An anchor name defined
+// twice is refused first (see collectAnchors), so every alias has one anchor.
+// Then it rejects `dataset:`, `dataset: ~` and `dataset: null` under a call,
+// also behind an anchor (`&a ~`) or a tag (`!!null`, `&a !!null`), and an alias
+// (`*a`, also behind a tag) of an anchor that marks a null. The decoder reads
+// each as the key left out, so the path is lost without a word and the call
+// runs with an empty message. An alias with no anchor is the decoder's error.
+func checkTree(raw []byte) error {
 	file, err := parser.ParseBytes(raw, 0)
 	if err != nil {
 		return err
 	}
 
-	var v nullDatasetVisitor
+	anchors, err := collectAnchors(file)
+	if err != nil {
+		return err
+	}
+
+	v := nullDatasetVisitor{anchors: anchors}
 	for _, doc := range file.Docs {
 		ast.Walk(&v, doc)
 	}
@@ -44,7 +52,8 @@ func checkNullDataset(raw []byte) error {
 }
 
 type nullDatasetVisitor struct {
-	errs []error
+	anchors map[string]ast.Node
+	errs    []error
 }
 
 func (v *nullDatasetVisitor) Visit(node ast.Node) ast.Visitor {
@@ -54,17 +63,25 @@ func (v *nullDatasetVisitor) Visit(node ast.Node) ast.Visitor {
 	}
 
 	value := pair.Value
+	followed := map[string]bool{}
+unwrap:
 	for {
 		switch wrapped := value.(type) {
 		case *ast.AnchorNode:
 			value = wrapped.Value
-			continue
 		case *ast.TagNode:
 			value = wrapped.Value
-			continue
+		case *ast.AliasNode:
+			name := wrapped.Value.String()
+			target, defined := v.anchors[name]
+			if !defined || followed[name] {
+				return v
+			}
+			followed[name] = true
+			value = target
+		default:
+			break unwrap
 		}
-
-		break
 	}
 
 	if _, null := value.(*ast.NullNode); null {
