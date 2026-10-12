@@ -23,12 +23,15 @@ coping, and where is the bottleneck.** It applies load that looks like productio
 methods at once, each at its own RPS — and measures so that the numbers don't lie while the
 service degrades. No `.proto`, no codegen, no scripts.
 
-<img src="../../assets/demo.gif" width="100%" alt="A LeetTest run in a terminal: the load screen, the target freezing for three seconds, the report showing the unanswered calls and a p99 above 2 seconds">
-
 Priorities, in order: the numbers don't lie; the tool is pleasant to use — an unclear error
 message is as much a defect as a wrong number; the generator never becomes the bottleneck.
 
 The project is growing: what works today is below, what comes next is in the [roadmap](roadmap.md).
+
+This is what a run looks like: mid-load the service freezes for three seconds — the screen shows
+the calls in flight piling up, and the report counts the ones left without an answer.
+
+<img src="../../assets/demo.gif" width="100%" alt="A LeetTest run in a terminal: the load screen, the target freezing for three seconds, the report showing the unanswered calls and a p99 above 2 seconds">
 
 ## Install
 
