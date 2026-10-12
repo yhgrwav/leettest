@@ -10,11 +10,19 @@
 #                         $LEETTEST_BASE_URL/download/<tag>/<file> (the layout of GitHub releases)
 #   archive               leettest_<version without v>_<linux|darwin>_<amd64|arm64>.tar.gz,
 #                         next to checksums.txt, as goreleaser publishes them
-#   exit status           0 installed; 1 any refusal, with a message, nothing installed
+#   exit status           0 installed; 1 any refusal, with a message, nothing installed (except a
+#                         binary that does not run: it stays, see below)
 #   missing tool          curl, tar, or both sha256sum and shasum absent: the script's own message
 #                         names the tool ("curl is required"), not the shell's "not found"
 #   unknown version       LEETTEST_VERSION with no release: exit 1, the tag named in the message,
 #                         no fallback to the latest release
+#   Rosetta               Darwin with uname -m x86_64 and `sysctl -n hw.optional.arm64` printing 1
+#                         installs the arm64 archive; any other answer, or no sysctl, amd64
+#   binary does not run   `leettest -version` failing after the copy: exit 1, "installed
+#                         <dir>/leettest, but it does not run ..." (the file is there, and is
+#                         left), no "Installed" line
+#   failed install        a failing cp, chmod or mv, or TERM/INT after the copy, leaves no temp copy
+#                         in the directory
 #   latest                resolved by asking https://github.com/yhgrwav/leettest/releases/latest,
 #                         never the API or the list of releases (a pre-release can head the list)
 #   temp files            a temp directory under $TMPDIR, removed on success and on refusal
@@ -96,12 +104,94 @@ EOF
 	chmod +x "$work/shim/uname"
 }
 
+# shim_sysctl VALUE: a sysctl in $work/shim (after shim_uname or shim_fail) that answers
+# `sysctl -n hw.optional.arm64` with VALUE (0 or 1), or, for VALUE "fail", fails the way macOS on
+# Intel does (unknown oid, status 1). Any other call fails.
+shim_sysctl() {
+	cat >"$work/shim/sysctl" <<EOF
+#!/bin/sh
+if [ "\$*" = "-n hw.optional.arm64" ]; then
+	if [ "$1" = fail ]; then
+		echo "sysctl: unknown oid 'hw.optional.arm64'" >&2
+		exit 1
+	fi
+	echo $1
+	exit 0
+fi
+echo "unexpected sysctl call: \$*" >&2
+exit 1
+EOF
+	chmod +x "$work/shim/sysctl"
+}
+
+# shim_fail TOOL: an empty $work/shim holding only a TOOL that always fails with status 1.
+shim_fail() {
+	rm -rf "$work/shim"
+	mkdir -p "$work/shim"
+	printf '#!/bin/sh\necho "%s: refused" >&2\nexit 1\n' "$1" >"$work/shim/$1"
+	chmod +x "$work/shim/$1"
+}
+
+# shim_cp_partial: an empty $work/shim holding a cp that writes the first bytes of the source to the
+# target and fails with status 1.
+shim_cp_partial() {
+	rm -rf "$work/shim"
+	mkdir -p "$work/shim"
+	cat >"$work/shim/cp" <<'EOF'
+#!/bin/sh
+head -c 10 "$1" >"$2"
+echo "cp: no space left on device" >&2
+exit 1
+EOF
+	chmod +x "$work/shim/cp"
+}
+
+# shim_cp_term: an empty $work/shim holding a cp that copies for real, then sends TERM to its
+# parent (the shell running install.sh) and succeeds.
+shim_cp_term() {
+	real_cp=$(command -v cp)
+	rm -rf "$work/shim"
+	mkdir -p "$work/shim"
+	cat >"$work/shim/cp" <<EOF
+#!/bin/sh
+"$real_cp" "\$@" || exit 1
+kill -TERM "\$PPID"
+exit 0
+EOF
+	chmod +x "$work/shim/cp"
+}
+
 sha256() {
 	if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1"; else shasum -a 256 "$1"; fi
 }
 
-# fixture TAG: archives for every platform in $work/fixture/download/TAG, each holding a fake
+# old_install DIR: an earlier install in DIR, whose `leettest` prints "leettest v0.0.1 old".
+old_install() {
+	mkdir -p "$1"
+	printf '#!/bin/sh\necho "leettest v0.0.1 old"\n' >"$1/leettest"
+	chmod +x "$1/leettest"
+}
+
+# expect_installed DIR WANT: DIR/leettest is executable and prints WANT.
+expect_installed() {
+	if [ -x "$1/leettest" ]; then
+		got=$("$1/leettest" -version)
+		[ "$got" = "$2" ] || fail "installed binary says '$got', want '$2'"
+	else
+		fail "$1/leettest is missing or not executable"
+	fi
+}
+
+# expect_no_stray DIR: nothing but leettest in DIR (no temp copy left from the install).
+expect_no_stray() {
+	stray=$(find "$1" -mindepth 1 -maxdepth 1 ! -name leettest 2>/dev/null)
+	[ -z "$stray" ] || fail "left in $1: $stray"
+}
+
+# fixture TAG [KIND]: archives for every platform in $work/fixture/download/TAG, each holding a fake
 # `leettest` that prints "leettest TAG <os>_<arch>", plus LICENSE and README.md as the real ones do.
+# KIND exit1: the fake exits 1 on every call; badinterp: its interpreter does not exist (what a
+# binary built for another architecture or on a noexec mount looks like to sh).
 fixture() {
 	tag=$1
 	ver=${tag#v}
@@ -111,7 +201,11 @@ fixture() {
 	for pair in linux_amd64 linux_arm64 darwin_amd64 darwin_arm64; do
 		pkg=$work/pkg/$pair
 		mkdir -p "$pkg"
-		printf '#!/bin/sh\necho "leettest %s %s"\n' "$tag" "$pair" >"$pkg/leettest"
+		case ${2:-} in
+		exit1) printf '#!/bin/sh\necho "cannot run here" >&2\nexit 1\n' >"$pkg/leettest" ;;
+		badinterp) printf '#!/nonexistent/interpreter\n' >"$pkg/leettest" ;;
+		*) printf '#!/bin/sh\necho "leettest %s %s"\n' "$tag" "$pair" >"$pkg/leettest" ;;
+		esac
 		chmod +x "$pkg/leettest"
 		echo license >"$pkg/LICENSE"
 		echo readme >"$pkg/README.md"
@@ -191,6 +285,7 @@ for combo in "Linux x86_64 linux_amd64" "Linux aarch64 linux_arm64" "Linux arm64
 	p_pair=${rest#* }
 	start "platform $p_os $p_arch"
 	shim_uname "$p_os" "$p_arch"
+	shim_sysctl 0 # an Intel Mac, even when this host is an arm64 one
 	dir=$work/p/$p_os-$p_arch/bin
 	run "PATH=$work/shim:$PATH" "LEETTEST_INSTALL_DIR=$dir" LEETTEST_VERSION=v9.9.9 \
 		"LEETTEST_BASE_URL=file://$work/fixture"
@@ -344,6 +439,179 @@ expect_no_binary "$dir"
 if ! grep -F v0.0.0-nope "$work/out" | grep -v '^curl:' >/dev/null; then
 	fail "no message of the script names v0.0.0-nope"
 fi
+
+# --- Apple silicon under Rosetta (offline) ----------------------------------------------------
+# An x86_64 shell on an arm64 Mac reports uname -m x86_64; `sysctl -n hw.optional.arm64` prints 1
+# there. The native binary is the right one. Anything else, or no sysctl, keeps amd64.
+
+for mode in 1 0 fail missing; do
+	start "Darwin x86_64, sysctl $mode"
+	shim_uname Darwin x86_64
+	case "$mode" in
+	missing)
+		limited_path
+		path=$work/shim:$limited
+		want=darwin_amd64
+		;;
+	*)
+		shim_sysctl "$mode"
+		path=$work/shim:$PATH
+		want=darwin_amd64
+		if [ "$mode" = 1 ]; then want=darwin_arm64; fi
+		;;
+	esac
+	dir=$work/rosetta-$mode/bin
+	run "PATH=$path" "LEETTEST_INSTALL_DIR=$dir" LEETTEST_VERSION=v9.9.9 "LEETTEST_BASE_URL=file://$work/fixture"
+	expect_status 0
+	expect_installed "$dir" "leettest v9.9.9 $want"
+done
+
+# Linux has no Rosetta: the answer of sysctl (which may exist there) does not matter.
+start "Linux x86_64, sysctl 1"
+shim_uname Linux x86_64
+shim_sysctl 1
+dir=$work/rosetta-linux/bin
+run "PATH=$work/shim:$PATH" "LEETTEST_INSTALL_DIR=$dir" LEETTEST_VERSION=v9.9.9 \
+	"LEETTEST_BASE_URL=file://$work/fixture"
+expect_status 0
+expect_installed "$dir" "leettest v9.9.9 linux_amd64"
+
+# The real thing, where it can be had: an arm64 Mac (the macos-latest runner) pretending to be
+# Intel, with its own sysctl.
+if [ "$host_os" = Darwin ] && [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = 1 ]; then
+	start "Darwin x86_64 shell on this arm64 Mac, real sysctl"
+	shim_uname Darwin x86_64
+	dir=$work/rosetta-real/bin
+	run "PATH=$work/shim:$PATH" "LEETTEST_INSTALL_DIR=$dir" LEETTEST_VERSION=v9.9.9 \
+		"LEETTEST_BASE_URL=file://$work/fixture"
+	expect_status 0
+	expect_installed "$dir" "leettest v9.9.9 darwin_arm64"
+elif [ "$host_os" = Darwin ]; then
+	printf 'INFO real sysctl: hw.optional.arm64 = "%s" on %s %s\n' \
+		"$(sysctl -n hw.optional.arm64 2>&1 | head -1)" "$host_os" "$host_arch"
+fi
+
+# --- installed, but does not run (offline) ----------------------------------------------------
+# The file is in place, and the message says so; "Installed" is never printed for it. The
+# binary stays where it is for the user to inspect.
+
+for kind in exit1 badinterp; do
+	start "installed binary does not run: $kind"
+	fixture v9.9.9 "$kind"
+	dir=$work/norun-$kind/bin
+	reset_tmp
+	run "TMPDIR=$work/tmp" "LEETTEST_INSTALL_DIR=$dir" LEETTEST_VERSION=v9.9.9 \
+		"LEETTEST_BASE_URL=file://$work/fixture"
+	expect_status 1
+	expect_out "installed $dir/leettest, but it does not run"
+	reject_out "Installed"
+	[ -e "$dir/leettest" ] || fail "the binary was deleted"
+	expect_no_stray "$dir"
+	expect_tmp_empty
+done
+
+# --- no stray temp file when the install itself fails (offline) -------------------------------
+
+for tool in chmod mv; do
+	start "$tool fails: nothing but a message is left"
+	fixture v9.9.9
+	shim_fail "$tool"
+	dir=$work/stray-$tool/bin
+	reset_tmp
+	run "PATH=$work/shim:$PATH" "TMPDIR=$work/tmp" "LEETTEST_INSTALL_DIR=$dir" LEETTEST_VERSION=v9.9.9 \
+		"LEETTEST_BASE_URL=file://$work/fixture"
+	expect_status 1
+	expect_out "install.sh:"
+	expect_no_binary "$dir"
+	expect_no_stray "$dir"
+	expect_tmp_empty
+done
+
+# A copy that dies halfway (disk full) leaves the first bytes in the temp file.
+start "cp fails halfway: nothing but a message is left"
+fixture v9.9.9
+shim_cp_partial
+dir=$work/stray-cp/bin
+reset_tmp
+run "PATH=$work/shim:$PATH" "TMPDIR=$work/tmp" "LEETTEST_INSTALL_DIR=$dir" LEETTEST_VERSION=v9.9.9 \
+	"LEETTEST_BASE_URL=file://$work/fixture"
+expect_status 1
+expect_out "install.sh:"
+expect_no_binary "$dir"
+expect_no_stray "$dir"
+expect_tmp_empty
+
+# Ctrl-C or TERM between the copy and the move: cleanup, not the failure branches, removes the temp
+# copy.
+start "TERM after the copy: nothing is left"
+fixture v9.9.9
+shim_cp_term
+dir=$work/stray-term/bin
+reset_tmp
+run "PATH=$work/shim:$PATH" "TMPDIR=$work/tmp" "LEETTEST_INSTALL_DIR=$dir" LEETTEST_VERSION=v9.9.9 \
+	"LEETTEST_BASE_URL=file://$work/fixture"
+expect_status 1
+expect_no_binary "$dir"
+expect_no_stray "$dir"
+expect_tmp_empty
+
+# The earlier install survives the failure and the cleanup of the temp copy (the stray-file check
+# is red until the fix; the survival of the old binary is a guard).
+start "chmod fails over an existing install: the old one stays"
+fixture v9.9.9
+shim_fail chmod
+dir=$work/stray-old/bin
+old_install "$dir"
+run "PATH=$work/shim:$PATH" "LEETTEST_INSTALL_DIR=$dir" LEETTEST_VERSION=v9.9.9 \
+	"LEETTEST_BASE_URL=file://$work/fixture"
+expect_status 1
+expect_installed "$dir" "leettest v0.0.1 old"
+expect_no_stray "$dir"
+
+# --- guards (green before any fix): upgrade and the PATH hint, offline ------------------------
+
+start "upgrade replaces an older install"
+fixture v9.9.9
+dir=$work/upgrade/bin
+old_install "$dir"
+reset_tmp
+run "TMPDIR=$work/tmp" "LEETTEST_INSTALL_DIR=$dir" LEETTEST_VERSION=v9.9.9 \
+	"LEETTEST_BASE_URL=file://$work/fixture"
+expect_status 0
+expect_installed "$dir" "leettest v9.9.9 ${os}_${arch}"
+expect_out "leettest v9.9.9 ${os}_${arch}"
+expect_no_stray "$dir"
+expect_tmp_empty
+
+start "checksum mismatch leaves the older install untouched"
+fixture v9.9.9
+break_sums
+dir=$work/upgrade-bad/bin
+old_install "$dir"
+reset_tmp
+run "TMPDIR=$work/tmp" "LEETTEST_INSTALL_DIR=$dir" LEETTEST_VERSION=v9.9.9 \
+	"LEETTEST_BASE_URL=file://$work/fixture"
+expect_status 1
+expect_out "checksum"
+expect_installed "$dir" "leettest v0.0.1 old"
+expect_no_stray "$dir"
+expect_tmp_empty
+
+start "PATH hint, directory not on PATH"
+fixture v9.9.9
+dir=$work/hint/bin
+run "LEETTEST_INSTALL_DIR=$dir" LEETTEST_VERSION=v9.9.9 "LEETTEST_BASE_URL=file://$work/fixture"
+expect_status 0
+expect_out "export PATH=\"$dir:\$PATH\""
+
+start "PATH hint, directory on PATH"
+dir=$work/hint-on/bin
+mkdir -p "$dir"
+run "PATH=$dir:$PATH" "LEETTEST_INSTALL_DIR=$dir" LEETTEST_VERSION=v9.9.9 \
+	"LEETTEST_BASE_URL=file://$work/fixture"
+expect_status 0
+reject_out "export PATH"
+reject_out "not in your PATH"
 
 # A download cut short must do nothing: the script runs from stdin, so a prefix of it is what sh
 # sees. Cut at every tenth of its size (mid-line too) and with only the last line removed.
