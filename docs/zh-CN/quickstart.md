@@ -19,25 +19,55 @@ Windows 也受支持，但测量效果更差：它的时钟步长约 0.5 ms，�
 
 ## 1. 安装
 
-```console
-$ go install github.com/yhgrwav/leettest/cmd/leettest@latest
-$ leettest -version
+两种方式，任选其一。这些命令在 Linux 或 macOS 终端中可原样运行。
+
+**1. 预编译二进制文件**（Linux 和 macOS；amd64 与 arm64）——不需要 Go，只需 `curl` 和 `tar`：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/yhgrwav/leettest/main/install.sh | sh
 ```
 
-需要 Go 1.26 或更高版本。Linux、macOS 和 Windows（amd64 与 arm64）的预编译二进制文件在 Releases
-页面。
+脚本会把最新发布版安装到 `~/.local/bin` 并校验校验和。如果该目录不在 `PATH` 中，脚本会打印一行
+`export PATH=...`：在当前终端运行它，想长期生效就把它写进 shell 配置文件。`LEETTEST_INSTALL_DIR`
+指定其他目录，`LEETTEST_VERSION` 指定其他版本；变量写在 `sh` 之前，而不是 `curl` 之前：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/yhgrwav/leettest/main/install.sh | LEETTEST_VERSION=v0.2.0 sh
+```
+
+Windows 的 `.zip` 在[发布页面](https://github.com/yhgrwav/leettest/releases/latest)。
+
+**2. 通过 Go**：Go 1.26 或更高版本（[安装](https://go.dev/doc/install)；较旧的 Go 在
+`GOTOOLCHAIN=auto` 下会自行下载合适的版本）：
+
+```sh
+go install github.com/yhgrwav/leettest/cmd/leettest@latest
+export PATH="$PATH:$(go env GOPATH)/bin"
+```
+
+检查，两种方式通用：
+
+```sh
+leettest -version
+```
 
 ## 2. 目标：参考测试台
 
 体验时不需要自己的服务：仓库里有一个参考测试台，一个行为由你设定的 gRPC 服务。它应答
 `grpc.health.v1.Health/Check` 和 `wallet.v1.WalletService`，并像真实服务一样提供 reflection。
 
-```console
-$ git clone https://github.com/yhgrwav/leettest && cd leettest
-$ go run ./test/stand/cmd/stand -delay 20ms -hang-from 25s -life 60s
+体验在同一个终端中继续，并从克隆构建：需要 `git` 和 Go 1.26+，同一份克隆里的测试台和 `leettest`
+与其配置完全匹配。
+
+```sh
+git clone --depth 1 https://github.com/yhgrwav/leettest && cd leettest
+go build -o bin/ ./cmd/leettest ./test/stand/cmd/stand
+bin/stand -delay 20ms -hang-from 25s -life 3m > stand.log 2>&1 &
+sleep 1
 ```
 
-测试台在 20 ms 内应答，在第一次调用 25 秒后完全停止应答——这就是一个在负载下倒下的服务的样子。
+测试台在后台运行（`sleep 1` 给它一点时间开始监听），3 分钟后自行停止（`-life 3m`：预热、40 秒运行
+和一些余量）。测试台在 20 ms 内应答，在第一次调用 25 秒后完全停止应答——这就是一个在负载下倒下的服务的样子。
 正确答案事先已知，因此可以看出报告是否说了实话。
 
 ## 3. 配置
@@ -97,9 +127,9 @@ load:
 
 ## 4. 运行
 
-```console
-$ export LEETTEST_TOKEN=demo
-$ leettest -c examples/tour.yaml
+```sh
+export LEETTEST_TOKEN=demo
+bin/leettest -c examples/tour.yaml
 ```
 
 启动前，LeetTest 会连接目标，通过 reflection 检查每个方法，构建请求体，并检查在途上限
@@ -115,9 +145,14 @@ $ leettest -c examples/tour.yaml
 `test/stand/certs`，并要求客户端证书；[`examples/tour-tls.yaml`](../../examples/tour-tls.yaml)
 指向这些文件：
 
-```console
-$ go run ./test/stand/cmd/stand -mtls -delay 20ms -life 30s
-$ leettest -c examples/tour-tls.yaml
+§2 的测试台占用同一个端口，所以先停掉它再启动下一个：`kill %%` 结束本终端最后一个后台命令（如果测试台
+已自行停止，`2>/dev/null` 会隐藏错误）：
+
+```sh
+kill %% 2>/dev/null; sleep 1
+bin/stand -mtls -delay 20ms -life 3m > stand.log 2>&1 &
+sleep 1
+bin/leettest -c examples/tour-tls.yaml
 ```
 
 ## 5. 报告
@@ -169,22 +204,32 @@ is a lower bound: the real tail lies above it. Raise the timeout to see it.
 
 ## 6. 目标的其他行为
 
-同一份配置对另一种模式的测试台——报告会显示什么：
+同一份配置对另一种模式的测试台——报告会显示什么。每个代码块先停掉上一个测试台（同 §4），再启动新的
+测试台并运行；§4 中的 `LEETTEST_TOKEN` 已经设置好。
 
-```console
-$ go run ./test/stand/cmd/stand -delay 20ms -freeze-at 10s -freeze-for 2s -life 60s
+```sh
+kill %% 2>/dev/null; sleep 1
+bin/stand -delay 20ms -freeze-at 10s -freeze-for 2s -life 3m > stand.log 2>&1 &
+sleep 1
+bin/leettest -c examples/tour.yaml
 ```
 超时 500 ms 时冻结 2 秒：p50 和 p90 保持在 21 ms 左右，暂停期间到达的调用没有得到应答——约 4%
 `got no answer within 500ms`，p99 输出为 `>500ms`。百分位不做平均：短暂冻结体现在尾部，而不会被
 均值抹平。
 
-```console
-$ go run ./test/stand/cmd/stand -delay 20ms -fail-every 10 -life 60s
+```sh
+kill %% 2>/dev/null; sleep 1
+bin/stand -delay 20ms -fail-every 10 -life 3m > stand.log 2>&1 &
+sleep 1
+bin/leettest -c examples/tour.yaml
 ```
 每第十个调用返回 `RESOURCE_EXHAUSTED`：类别为 `overload`，其代码出现在 “sent by the target” 行。
 
-```console
-$ go run ./test/stand/cmd/stand -delay 150ms -max-streams 1 -life 60s
+```sh
+kill %% 2>/dev/null; sleep 1
+bin/stand -delay 150ms -max-streams 1 -life 3m > stand.log 2>&1 &
+sleep 1
+bin/leettest -c examples/tour.yaml
 ```
 目标每条连接只允许一个流，并且每个应答保持 150 ms：通过一条连接每秒最多只能应答 6–7 个调用。
 报告会说明调用卡在哪里：`connections: 1; target stream limit 1` 和
@@ -193,9 +238,9 @@ $ go run ./test/stand/cmd/stand -delay 150ms -max-streams 1 -life 60s
 
 ## 7. 脚本与 CI
 
-```console
-$ leettest -c load.yaml -output json > report.json
-$ echo $?
+```sh
+leettest -c load.yaml -output json > report.json
+echo $?
 ```
 
 JSON 是版本化的（`schema_version`）；结论以字段而不是文本给出：`invalid_reasons`、
@@ -216,11 +261,12 @@ JSON 是版本化的（`schema_version`）；结论以字段而不是文本给�
 
 ## 8. 完全没有服务
 
-```console
-$ leettest -c examples/leettest.yaml -fake -fake-delay 30ms -fake-jitter 10ms
+```sh
+bin/leettest -c examples/leettest.yaml -fake -fake-delay 30ms -fake-jitter 10ms
 ```
 
-`-fake` 加载内置的假目标代替服务——无需服务即可查看界面和报告。报告会标记为 `fake target`。
+`-fake` 加载内置的假目标代替服务——无需服务即可查看界面和报告。配置来自克隆（`examples/leettest.yaml`），
+其中的 `target` 会被忽略。报告会标记为 `fake target`。
 
 ## 下一步
 
