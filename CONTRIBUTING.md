@@ -119,6 +119,11 @@ detail that changes the result or whether it can be trusted stays. Reference det
 reference. The same goes for tests (check the meaning — outcome, numbers, the claim made — and
 the contract exactly, not the prose around it) and for pull requests (the change, not the review
 history).
+
+Every capability a guide shows is a command to copy: a fenced block that runs as is (no `$ `
+prompt, no `[...]` optional parts, no `/path/to`; a placeholder only when it cannot be avoided,
+with a line saying what to put there), followed by what the reader will see.
+
 [AGENTS.md](AGENTS.md#docs) has the full rule.
 
 The README recording (`assets/demo.gif`) is rebuilt from `assets/demo.tape` with Docker:

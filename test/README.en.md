@@ -28,18 +28,26 @@ go run ./test/stand/cmd/stand -delay 20ms -hang-from 8s
 go run ./test/stand/cmd/stand -delay 20ms -fail-every 10
 go run ./test/stand/cmd/stand -delay 150ms -max-streams 1
 go run ./test/stand/cmd/stand -delay 20ms -capacity 270
+go run ./test/stand/cmd/stand -tls
+go run ./test/stand/cmd/stand -mtls
+go run ./test/stand/cmd/stand -mtls -certs test/stand/certs/second
 ```
 
+Run them from the repository root. At start the stand prints the address and the mode, for example
+`stand on 127.0.0.1:50051 (mutual TLS, certificates in test/stand/certs): …`.
+
 The methods are `grpc.health.v1.Health/Check`, `wallet.v1.WalletService/GetBalance` and
-`/Transfer`, the default address `127.0.0.1:50051`, no TLS. `-tls` serves TLS, `-mtls` also
-requires a client certificate: at start the stand writes a CA, its certificate and a client one
-(ECDSA P-256, valid a day) into `-certs`, by default `test/stand/certs` under the working
-directory — run it from the repository root. Times
-in flags count from the first call to arrive. Without `-life` the stand runs until Ctrl+C.
-`-max-streams n` is the limit of concurrent streams per connection the stand announces to the
-client; it combines with any behaviour. `0` announces no limit at all. `-capacity n` is a stand of
-known capacity: it serves at most `n` calls a second, first come first served; above that calls
-wait in a queue.
+`/Transfer`, the default address `127.0.0.1:50051`, no TLS. Times in flags count from the first
+call to arrive. Without `-life` the stand runs until Ctrl+C; `-life 20s` exits after 20 seconds
+and prints the summary.
+
+- `-tls` serves TLS; `-mtls` also requires a client certificate. At start the stand writes a CA,
+  its certificate and a client one (ECDSA P-256, valid a day) into `-certs`, by default
+  `test/stand/certs` under the working directory.
+- `-max-streams n` is the limit of concurrent streams per connection the stand announces to the
+  client; it combines with any behaviour. `0` announces no limit at all.
+- `-capacity n` is a stand of known capacity: it serves at most `n` calls a second, first come
+  first served; above that calls wait in a queue.
 
 **`measure/`** — substitution tests: the full path (scheduler → worker pool → gRPC sender →
 metrics) against the stand, the report's numbers checked against what the stand did.
