@@ -11,6 +11,15 @@
 #   archive               leettest_<version without v>_<linux|darwin>_<amd64|arm64>.tar.gz,
 #                         next to checksums.txt, as goreleaser publishes them
 #   exit status           0 installed; 1 any refusal, with a message, nothing installed
+#   missing tool          curl, tar, or both sha256sum and shasum absent: the script's own message
+#                         names the tool ("curl is required"), not the shell's "not found"
+#   unknown version       LEETTEST_VERSION with no release: exit 1, the tag named in the message,
+#                         no fallback to the latest release
+#   latest                resolved by asking https://github.com/yhgrwav/leettest/releases/latest,
+#                         never the API or the list of releases (a pre-release can head the list)
+#   temp files            a temp directory under $TMPDIR, removed on success and on refusal
+#   checksum tool         sha256sum or shasum -a 256, whichever exists, either alone is enough
+#   tools used            POSIX utilities, gzip (for tar), curl, tar, sha256sum or shasum
 #
 # Cases that need no network use a local fixture served through file://; cases against real
 # releases are marked "network" and need `gh` authenticated (GH_TOKEN) for the expected tag.
@@ -100,22 +109,63 @@ fixture() {
 	rm -rf "$work/pkg"
 }
 
-# limited_path [curl|tar|sha]: sets $limited to a directory of symlinks to the only tools install.sh
-# may use (POSIX utilities, gzip for tar, curl, tar, sha256sum or shasum), without the named one; "sha" leaves out
-# both checksum tools. Everything else on the real PATH stays out of reach.
+# limited_path [TOOL...]: sets $limited to a directory of symlinks to the only tools install.sh may
+# use (see "tools used" above), without the named ones (curl, tar, sha256sum, shasum). Everything
+# else on the real PATH stays out of reach.
 limited_path() {
 	d=$work/limited
 	rm -rf "$d"
 	mkdir -p "$d"
 	for t in sh uname mktemp rm mkdir cp mv chmod cat grep sed tr awk head cut dirname basename \
 		install ls id printf gzip curl tar sha256sum shasum; do
-		case "${1:-}:$t" in
-		curl:curl | tar:tar | sha:sha256sum | sha:shasum) continue ;;
-		esac
+		skip=0
+		for x in "$@"; do
+			if [ "$x" = "$t" ]; then skip=1; fi
+		done
+		if [ "$skip" -eq 1 ]; then continue; fi
 		p=$(command -v "$t" 2>/dev/null) || continue
 		case "$p" in /*) ln -s "$p" "$d/$t" ;; esac
 	done
 	limited=$d
+}
+
+# spy_curl: replaces curl in $limited with a wrapper that logs its arguments to $work/curl.log and
+# runs the real curl.
+spy_curl() {
+	real=$(command -v curl)
+	rm -f "$limited/curl" "$work/curl.log"
+	cat >"$limited/curl" <<EOF
+#!/bin/sh
+echo "\$*" >>"$work/curl.log"
+exec "$real" "\$@"
+EOF
+	chmod +x "$limited/curl"
+}
+
+# reset_tmp: an empty $work/tmp to use as TMPDIR.
+reset_tmp() {
+	rm -rf "$work/tmp"
+	mkdir -p "$work/tmp"
+}
+
+expect_tmp_empty() {
+	if [ -n "$(ls -A "$work/tmp")" ]; then fail "temp files left in TMPDIR: $(ls -A "$work/tmp")"; fi
+}
+
+expect_log() {
+	grep -F -- "$1" "$work/curl.log" >/dev/null 2>&1 || fail "curl was never asked for: $1"
+}
+
+reject_log() {
+	if grep -F -- "$1" "$work/curl.log" >/dev/null 2>&1; then fail "curl was asked for: $1"; fi
+}
+
+# break_sums: the checksum of the current host's archive in the fixture no longer matches.
+break_sums() {
+	(
+		cd "$work/fixture/download/v9.9.9" || exit 1
+		sed "s/^[0-9a-f]\{8\}/00000000/" checksums.txt >checksums.bad && mv checksums.bad checksums.txt
+	)
 }
 
 # --- each platform maps to its archive (offline) ---------------------------------------------
@@ -145,9 +195,17 @@ done
 
 start "default directory is \$HOME/.local/bin"
 mkdir -p "$work/home"
-run "HOME=$work/home" LEETTEST_VERSION=v9.9.9 "LEETTEST_BASE_URL=file://$work/fixture"
+reset_tmp
+run "HOME=$work/home" "TMPDIR=$work/tmp" LEETTEST_VERSION=v9.9.9 "LEETTEST_BASE_URL=file://$work/fixture"
 expect_status 0
 [ -x "$work/home/.local/bin/leettest" ] || fail "$work/home/.local/bin/leettest is missing"
+expect_tmp_empty
+
+host_arch=$(uname -m)
+host_os=$(uname -s)
+case "$host_os" in Darwin) os=darwin ;; *) os=linux ;; esac
+case "$host_arch" in aarch64 | arm64) arch=arm64 ;; *) arch=amd64 ;; esac
+file=leettest_9.9.9_${os}_${arch}.tar.gz
 
 # --- refusals (offline) -----------------------------------------------------------------------
 
@@ -175,20 +233,14 @@ expect_no_binary "$dir"
 
 start "checksum mismatch"
 fixture v9.9.9
-host_arch=$(uname -m)
-host_os=$(uname -s)
-case "$host_os" in Darwin) os=darwin ;; *) os=linux ;; esac
-case "$host_arch" in aarch64 | arm64) arch=arm64 ;; *) arch=amd64 ;; esac
-file=leettest_9.9.9_${os}_${arch}.tar.gz
-(
-	cd "$work/fixture/download/v9.9.9" || exit 1
-	sed "s/^[0-9a-f]\{8\}/00000000/" checksums.txt >checksums.bad && mv checksums.bad checksums.txt
-)
+break_sums
 dir=$work/sum/bin
-run "LEETTEST_INSTALL_DIR=$dir" LEETTEST_VERSION=v9.9.9 "LEETTEST_BASE_URL=file://$work/fixture"
+reset_tmp
+run "TMPDIR=$work/tmp" "LEETTEST_INSTALL_DIR=$dir" LEETTEST_VERSION=v9.9.9 "LEETTEST_BASE_URL=file://$work/fixture"
 expect_status 1
 expect_out "checksum"
 expect_no_binary "$dir"
+expect_tmp_empty
 
 start "archive missing from checksums.txt"
 fixture v9.9.9
@@ -215,7 +267,10 @@ expect_no_binary "$dir"
 fixture v9.9.9
 for missing in curl tar sha; do
 	start "missing tool: $missing"
-	limited_path "$missing"
+	case "$missing" in
+	sha) limited_path sha256sum shasum ;;
+	*) limited_path "$missing" ;;
+	esac
 	dir=$work/miss-$missing/bin
 	run "PATH=$limited" "LEETTEST_INSTALL_DIR=$dir" LEETTEST_VERSION=v9.9.9 \
 		"LEETTEST_BASE_URL=file://$work/fixture"
@@ -224,6 +279,7 @@ for missing in curl tar sha; do
 	sha) expect_out "sha256sum" ;;
 	*) expect_out "$missing" ;;
 	esac
+	reject_out "not found"
 	expect_no_binary "$dir"
 done
 
@@ -235,13 +291,59 @@ run "PATH=$limited" "LEETTEST_INSTALL_DIR=$dir" LEETTEST_VERSION=v9.9.9 \
 expect_status 0
 [ -x "$dir/leettest" ] || fail "$dir/leettest is missing"
 
+# Either checksum tool alone is enough, and each verifies: a script that calls only one of them
+# fails the case for the other.
+for only in shasum sha256sum; do
+	case "$only" in
+	shasum) other=sha256sum ;;
+	*) other=shasum ;;
+	esac
+	if ! command -v "$only" >/dev/null 2>&1; then
+		printf 'SKIP only %s: not on this host\n' "$only"
+		continue
+	fi
+
+	start "only $only: installs"
+	fixture v9.9.9
+	limited_path "$other"
+	dir=$work/only-$only/bin
+	run "PATH=$limited" "LEETTEST_INSTALL_DIR=$dir" LEETTEST_VERSION=v9.9.9 \
+		"LEETTEST_BASE_URL=file://$work/fixture"
+	expect_status 0
+	[ -x "$dir/leettest" ] || fail "$dir/leettest is missing"
+
+	start "only $only: refuses a wrong checksum"
+	break_sums
+	dir=$work/only-$only-bad/bin
+	run "PATH=$limited" "LEETTEST_INSTALL_DIR=$dir" LEETTEST_VERSION=v9.9.9 \
+		"LEETTEST_BASE_URL=file://$work/fixture"
+	expect_status 1
+	expect_out "checksum"
+	expect_no_binary "$dir"
+done
+
+# An unknown version is refused by name; nothing falls back to the latest release.
+start "unknown version, offline"
+fixture v9.9.9
+dir=$work/nover/bin
+run "LEETTEST_INSTALL_DIR=$dir" LEETTEST_VERSION=v0.0.0-nope "LEETTEST_BASE_URL=file://$work/fixture"
+expect_status 1
+expect_no_binary "$dir"
+if ! grep -F v0.0.0-nope "$work/out" | grep -v '^curl:' >/dev/null; then
+	fail "no message of the script names v0.0.0-nope"
+fi
+
 # --- against real releases (network) ----------------------------------------------------------
 
 start "network: latest release, directory not on PATH"
 want=$(gh release view --repo yhgrwav/leettest --json tagName --jq .tagName)
 dir=$work/latest/bin
-run "LEETTEST_INSTALL_DIR=$dir"
+limited_path
+spy_curl
+run "PATH=$limited" "LEETTEST_INSTALL_DIR=$dir"
 expect_status 0
+expect_log "https://github.com/yhgrwav/leettest/releases/latest"
+reject_log "api.github.com"
 if [ -x "$dir/leettest" ]; then
 	got=$("$dir/leettest" -version)
 	[ "$got" = "leettest $want" ] || fail "leettest -version says '$got', want 'leettest $want'"
@@ -263,6 +365,12 @@ else
 	fail "$dir/leettest is missing or not executable"
 fi
 reject_out "export PATH"
+
+start "network: unknown version"
+dir=$work/nover-net/bin
+run "LEETTEST_INSTALL_DIR=$dir" LEETTEST_VERSION=v0.0.0-nope
+expect_status 1
+expect_no_binary "$dir"
 
 printf '%s cases, %s failed\n' "$n" "$failed"
 [ "$failed" -eq 0 ]
