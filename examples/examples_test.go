@@ -167,7 +167,7 @@ func TestExamples_TourNeedsItsToken(t *testing.T) {
 	}
 
 	_, err := config.LoadFile("tour.yaml")
-	if err == nil || !strings.Contains(err.Error(), "environment variable LEETTEST_TOKEN is not set") {
+	if err == nil || !strings.Contains(err.Error(), "export LEETTEST_TOKEN=<value>") {
 		t.Errorf("tour.yaml without LEETTEST_TOKEN: %v", err)
 	}
 }

@@ -74,9 +74,9 @@ func (a *App) resolveMetadata() error {
 			v, ok := os.LookupEnv(name)
 			switch {
 			case !ok:
-				problems = append(problems, fmt.Errorf("%w: key %q: environment variable %s is not set", ErrInvalidMetadata, key, name))
+				problems = append(problems, fmt.Errorf("%w: key %q uses ${%s}, which is not set; %s", ErrInvalidMetadata, key, name, envHint(name)))
 			case v == "":
-				problems = append(problems, fmt.Errorf("%w: key %q: environment variable %s is set but empty", ErrInvalidMetadata, key, name))
+				problems = append(problems, fmt.Errorf("%w: key %q uses ${%s}, which is set but empty; %s", ErrInvalidMetadata, key, name, envHint(name)))
 			}
 
 			return v
@@ -102,6 +102,12 @@ func (a *App) resolveMetadata() error {
 	a.Metadata = out
 
 	return nil
+}
+
+// envHint is the command that fixes a missing variable. <value> stays as written: what the
+// variable holds is never printed.
+func envHint(name string) string {
+	return "set it before the run: export " + name + "=<value>"
 }
 
 // printableASCII is what gRPC carries as an ASCII header value.

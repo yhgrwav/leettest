@@ -12,7 +12,7 @@ app:
     port: 50051
   tls: false                        # on by default; the stand speaks plaintext unless started with -tls
   metadata:                         # sent with every call; ${NAME} comes from the environment
-    authorization: Bearer ${LEETTEST_TOKEN}
+    authorization: Bearer ${LEETTEST_TOKEN}  # export LEETTEST_TOKEN=demo — the shared token we give the first users
     x-request-source: leettest-tour
   max_response_size: 1MiB           # a bigger reply is a bad response, not a success
   connections: 1                    # N connections, calls take them in turn; the default is 1
