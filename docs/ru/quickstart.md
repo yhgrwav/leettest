@@ -31,8 +31,13 @@ curl -fsSL https://raw.githubusercontent.com/yhgrwav/leettest/main/install.sh | 
 Скрипт ставит последний релиз в `~/.local/bin` и сверяет контрольную сумму. Если этого каталога нет в
 `PATH`, он печатает строку `export PATH=...`: выполните её в этом терминале, а чтобы сохранить,
 добавьте в профиль shell. Другой каталог — переменная `LEETTEST_INSTALL_DIR`, другая версия —
-`LEETTEST_VERSION` (например `v0.2.0`). Для Windows в
-[релизе](https://github.com/yhgrwav/leettest/releases/latest) лежит `.zip`.
+`LEETTEST_VERSION`; переменная — перед `sh`, не перед `curl`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/yhgrwav/leettest/main/install.sh | LEETTEST_VERSION=v0.2.0 sh
+```
+
+Для Windows в [релизе](https://github.com/yhgrwav/leettest/releases/latest) лежит `.zip`.
 
 **2. Через Go**: нужен Go 1.26 или новее ([установка](https://go.dev/doc/install); более старый Go с
 `GOTOOLCHAIN=auto` скачает нужный сам):

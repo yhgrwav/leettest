@@ -21,7 +21,8 @@ queues) from client data, in code or in text.
 
 1. **Install** the release binary (curl and tar; no Go). Linux and macOS; Windows has a `.zip`.
    The script verifies the checksum and installs into `~/.local/bin` (`LEETTEST_INSTALL_DIR`
-   changes it, `LEETTEST_VERSION` pins a tag); it exits 1 with a message on any failure.
+   changes it, `LEETTEST_VERSION` pins a tag); it exits 1 with a message on any failure. A
+   variable goes before `sh`, not before `curl`: `… | LEETTEST_VERSION=v0.2.0 sh`.
    ```sh
    curl -fsSL https://raw.githubusercontent.com/yhgrwav/leettest/main/install.sh | sh
    export PATH="$HOME/.local/bin:$PATH"   # the script cannot change your shell's PATH

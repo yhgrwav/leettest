@@ -3,6 +3,10 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/yhgrwav/leettest/main/install.sh | sh
 #
+# Settings are environment variables; put them before sh, not before curl:
+#
+#   curl -fsSL https://raw.githubusercontent.com/yhgrwav/leettest/main/install.sh | LEETTEST_VERSION=v0.2.0 sh
+#
 # LEETTEST_INSTALL_DIR  where to put it (default $HOME/.local/bin, no sudo)
 # LEETTEST_VERSION      release tag, e.g. v0.2.0 (default: the latest release)
 # LEETTEST_BASE_URL     releases URL (default https://github.com/yhgrwav/leettest/releases)

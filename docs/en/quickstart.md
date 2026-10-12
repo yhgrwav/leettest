@@ -34,8 +34,13 @@ curl -fsSL https://raw.githubusercontent.com/yhgrwav/leettest/main/install.sh | 
 The script installs the latest release into `~/.local/bin` and verifies the checksum. If that
 directory is not on your `PATH`, it prints an `export PATH=...` line: run it in this terminal, and
 to keep it put it in your shell profile. `LEETTEST_INSTALL_DIR` picks another directory,
-`LEETTEST_VERSION` another version (for example `v0.2.0`). Windows has a `.zip` in the
-[release](https://github.com/yhgrwav/leettest/releases/latest).
+`LEETTEST_VERSION` another version; the variable goes before `sh`, not before `curl`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/yhgrwav/leettest/main/install.sh | LEETTEST_VERSION=v0.2.0 sh
+```
+
+Windows has a `.zip` in the [release](https://github.com/yhgrwav/leettest/releases/latest).
 
 **2. Through Go**: Go 1.26 or newer ([install](https://go.dev/doc/install); an older Go with
 `GOTOOLCHAIN=auto` downloads the right one itself):
