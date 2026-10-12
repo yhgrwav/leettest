@@ -1,7 +1,8 @@
 # AGENTS.md
 
-Instructions for AI coding agents. People: start with [README](README.md),
-[the quickstart](docs/en/quickstart.md) and [CONTRIBUTING](CONTRIBUTING.md).
+Instructions for AI coding agents. People: start with [README](https://github.com/yhgrwav/leettest/blob/main/README.md),
+[the quickstart](https://github.com/yhgrwav/leettest/blob/main/docs/en/quickstart.md) and
+[CONTRIBUTING](https://github.com/yhgrwav/leettest/blob/main/CONTRIBUTING.md).
 Claude Code reads `CLAUDE.md`, not this file: put a `CLAUDE.md` with the single line
 `@AGENTS.md` in your checkout.
 
@@ -17,8 +18,6 @@ queues) from client data, in code or in text.
 ## Part 1. Using LeetTest from an agent
 
 ### From zero to a report
-
-Links here are absolute: this file may reach you as a raw URL.
 
 1. **Install** the release binary (curl and tar; no Go). Linux and macOS; Windows has a `.zip`.
    ```sh
@@ -49,14 +48,25 @@ Links here are absolute: this file may reach you as a raw URL.
    `duration`: [`examples/breakpoint.yaml`](https://github.com/yhgrwav/leettest/blob/main/examples/breakpoint.yaml).
 4. **First run small**, as above (10 rps, 10 s). Before the first call LeetTest connects and checks
    every method through reflection and the body; an error is exit 1, names its line, sent nothing.
+   Reflection off on the service: a method with `data` will not start («server reflection is not
+   enabled on the target»). Two ways out: drop `data` (an empty message goes out, with a warning,
+   the method unchecked), or wait for [`.proto` support](https://github.com/yhgrwav/leettest/blob/main/docs/en/roadmap.md).
+   Do not guess a body.
 5. **Run:** `leettest -c load.yaml -plain -output json > report.json; echo $?`. It takes `duration`
    (warm-up included) plus the longest `timeout` plus up to 10 s to connect; a breakpoint search
    prints its worst case on stderr first. Set your tool's timeout above that.
-6. **Tell the user** the exit code first (table below); `0` is not «healthy». Then, from the
-   [JSON fields](https://github.com/yhgrwav/leettest/blob/main/docs/en/reference.md#json-fields),
-   the load where it stopped coping (a search: `breakpoint.outcome`, `held_rps`, `broke_rps`, `why`;
-   a plain run: `silent_from_s`, `failure_codes`, `tail_wait_cause`). Say what the client saw; never
-   the target's CPU, memory or queues — the generator cannot see them.
+6. **Tell the user**, in this order, from the
+   [JSON fields](https://github.com/yhgrwav/leettest/blob/main/docs/en/reference.md#json-fields):
+   - the exit code (table below); `0` only means the plan ran, not that the service is healthy;
+   - the load where it stopped coping, in rps. A search: `breakpoint.outcome` `broke` — held
+     `held_rps`, broke at `broke_rps`; `held_all` — held every step, the limit is above `to`;
+     `broke_at_first` — start lower; `run_limit` — the generator ran out, nothing is known about
+     the target above that. A plain run: `silent_from_s` is the second from which it answered
+     nothing;
+   - the cause as the client saw it: `why` or `failure_codes` (`from_target` says who set the
+     code) and `tail_wait_cause` (not `null` — the slow tail is the client's wait, not the target);
+   - a percentile with `lower_bound: true` is «more than», never a latency;
+   - never anything about the target's CPU, memory or queues: the generator cannot see them.
 7. **Without the user's service:** `-fake` needs a config, any one: `curl -fsSLO
    https://raw.githubusercontent.com/yhgrwav/leettest/main/examples/leettest.yaml`, then
    `leettest -c leettest.yaml -fake -plain` (a minute). The reference stand's tour needs the
@@ -84,7 +94,7 @@ from outside (a method name, the target's error text) is escaped as `\uXXXX`.
 
 ### Exit codes — decide by these first
 
-Source of truth: [README, «Exit codes»](docs/en/README.md#exit-codes). What each code asks of an agent:
+Source of truth: [README, «Exit codes»](https://github.com/yhgrwav/leettest/blob/main/docs/en/README.md#exit-codes). What each code asks of an agent:
 
 | Code | What to do |
 |---|---|
@@ -96,9 +106,9 @@ Source of truth: [README, «Exit codes»](docs/en/README.md#exit-codes). What ea
 
 ### Reading the JSON
 
-Every JSON field is described in the [reference, «JSON fields»](docs/en/reference.md#json-fields),
+Every JSON field is described in the [reference, «JSON fields»](https://github.com/yhgrwav/leettest/blob/main/docs/en/reference.md#json-fields),
 checked against `internal/cli/testdata/schema_v1.txt`; the contract rules are in the
-[README, «JSON for scripts and CI»](docs/en/README.md#json-for-scripts-and-ci). How an agent reads them:
+[README, «JSON for scripts and CI»](https://github.com/yhgrwav/leettest/blob/main/docs/en/README.md#json-for-scripts-and-ci). How an agent reads them:
 
 - Decisions are fields, not text: read `invalid_reasons`, `methods[].invalid_reason`,
   `tail_wait_cause`, `methods[].silent_from_s`. Never parse `notes` — it is reworded freely.
@@ -108,9 +118,9 @@ checked against `internal/cli/testdata/schema_v1.txt`; the contract rules are in
 
 ### Writing a config
 
-Every field, with what it does: [reference](docs/en/reference.md). Configs using all of them
-against the reference stand: [`examples/tour.yaml`](examples/tour.yaml) (needs `LEETTEST_TOKEN`
-set; `demo` is the shared token we give the first users) and, for TLS, [`examples/tour-tls.yaml`](examples/tour-tls.yaml) against a stand started with
+Every field, with what it does: [reference](https://github.com/yhgrwav/leettest/blob/main/docs/en/reference.md). Configs using all of them
+against the reference stand: [`examples/tour.yaml`](https://github.com/yhgrwav/leettest/blob/main/examples/tour.yaml) (needs `LEETTEST_TOKEN`
+set; `demo` is the shared token we give the first users) and, for TLS, [`examples/tour-tls.yaml`](https://github.com/yhgrwav/leettest/blob/main/examples/tour-tls.yaml) against a stand started with
 `-mtls` from the repository root. Rules an agent trips on:
 
 - The config is strict: an unknown field or a wrong value is an error with its line or call, not
@@ -226,7 +236,7 @@ the container), not on a desktop.
   in English, the subject lowercase.
 - A pull request body is short: what changed, why, how it was checked.
 - Dependencies: Apache-2.0, MIT, BSD, ISC only.
-- The author signs the [CLA](CLA.md); an agent's change is the person's contribution, and that
+- The author signs the [CLA](https://github.com/yhgrwav/leettest/blob/main/CLA.md); an agent's change is the person's contribution, and that
   person answers for it.
 
 ### Docs
