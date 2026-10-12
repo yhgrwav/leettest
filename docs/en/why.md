@@ -116,7 +116,7 @@ commit [`b5fdef3`](https://github.com/grafana/k6-docs/tree/b5fdef340160ab85c28de
 8. A non-zero exit code only when the run could not start or the report could not be written;
    there are no threshold flags. The full flag list —
    [`cmd/ghz/main.go` L28–L279](https://github.com/bojand/ghz/blob/v0.121.0/cmd/ghz/main.go#L28-L279),
-   the exit — [L334–L342, L385–L392](https://github.com/bojand/ghz/blob/v0.121.0/cmd/ghz/main.go#L385-L392).
+   the exit — [L334–L342](https://github.com/bojand/ghz/blob/v0.121.0/cmd/ghz/main.go#L334-L342), [L385–L392](https://github.com/bojand/ghz/blob/v0.121.0/cmd/ghz/main.go#L385-L392).
 9. The call template data (`CallData`) has no field for a previous call's response —
    [`runner/calldata.go` L32–L46](https://github.com/bojand/ghz/blob/v0.121.0/runner/calldata.go#L32-L46).
 

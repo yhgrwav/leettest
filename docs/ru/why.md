@@ -114,7 +114,7 @@ v2.0.2. Проверено 2026-10-12. Исходники — на теге ве
 8. Ненулевой код выхода — только если не удалось запустить прогон или записать отчёт; флагов
    порогов нет. Весь список флагов —
    [`cmd/ghz/main.go` L28–L279](https://github.com/bojand/ghz/blob/v0.121.0/cmd/ghz/main.go#L28-L279),
-   выход — [L334–L342, L385–L392](https://github.com/bojand/ghz/blob/v0.121.0/cmd/ghz/main.go#L385-L392).
+   выход — [L334–L342](https://github.com/bojand/ghz/blob/v0.121.0/cmd/ghz/main.go#L334-L342), [L385–L392](https://github.com/bojand/ghz/blob/v0.121.0/cmd/ghz/main.go#L385-L392).
 9. Данные шаблона вызова (`CallData`) не содержат ответа предыдущего вызова —
    [`runner/calldata.go` L32–L46](https://github.com/bojand/ghz/blob/v0.121.0/runner/calldata.go#L32-L46).
 
