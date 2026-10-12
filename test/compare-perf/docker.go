@@ -193,7 +193,10 @@ func freshDir(dir string) error {
 
 // collectRun reads a finished run from its folder: the stand's side first, written
 // to result.json, then the tool's own report. A report that cannot be read is
-// returned as an error with result.json already there.
+// no error of the run: it is named in ReportError, the tool's raw output stays
+// in the folder, and the rows go on (row 1's verdict reads the stand only; rows
+// 2 and 3 mark the run in their tables). An hour of measurement must not end on
+// one report.
 func collectRun(res runOut, stdout, standLog []byte, keepArrivals bool) (runOut, error) {
 	var err error
 	if res.Stand, err = parseStandSummary(string(standLog)); err != nil {
@@ -215,6 +218,7 @@ func collectRun(res runOut, stdout, standLog []byte, keepArrivals bool) (runOut,
 
 	var reportErr error
 	if res.Reports, reportErr = readReport(res.Tool, res.Dir, stdout); reportErr != nil {
+		res.Reports = toolResult{}
 		res.ReportError = reportErr.Error()
 	}
 
@@ -222,9 +226,8 @@ func collectRun(res runOut, stdout, standLog []byte, keepArrivals bool) (runOut,
 	if err != nil {
 		return res, err
 	}
-	writeErr := os.WriteFile(filepath.Join(res.Dir, "result.json"), b, 0o600)
 
-	return res, errors.Join(writeErr, reportErr)
+	return res, os.WriteFile(filepath.Join(res.Dir, "result.json"), b, 0o600)
 }
 
 // runTool writes the tool's inputs, runs its container to the end and keeps

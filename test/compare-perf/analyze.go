@@ -26,11 +26,18 @@ import (
 )
 
 // The definition of "held" is this harness's, not a tool's: the first headSkip
-// of every run is left out for all tools alike (connecting, starting virtual
-// users, dialling), and a point holds when the stand received at least
-// heldShare of the planned calls of the rest and no steady second of it fell
-// below steadyShare of the planned rate. Both shares are hypotheses until the
-// final run shows they separate a tool that keeps up from one that does not.
+// and the last whole second of every run are left out for all tools alike
+// (connecting, starting virtual users, dialling; the different ways to stop),
+// and a point holds when the stand received at least heldShare of the planned
+// calls of the window between them and no second of it fell below steadyShare
+// of the planned rate. Both shares are hypotheses until the final run shows
+// they separate a tool that keeps up from one that does not.
+//
+// The window is the same for the share and for the seconds. Offsets run from
+// the first arrival, which is later than the tool's own start by the time it
+// took to connect, so the tool's last call arrives at about duration minus that
+// time: a window reaching the nominal end would be short of those calls on
+// every step, at any rate, and fail a tool that keeps up.
 const (
 	heldShare   = 0.999
 	steadyShare = 0.99
@@ -41,17 +48,6 @@ const (
 	// last second, which is skipped too.
 	minDuration = 4 * time.Second
 )
-
-// allowanceFor is how long after the nominal end an arrival still counts as
-// within the run: the share of the run that heldShare lets be missing anyway.
-// Offsets run from the first arrival, which is later than the tool's own
-// start, so a call on schedule has an offset below the duration and needs no
-// more. A longer allowance would credit a tool that sends late calls after the
-// end (LeetTest does, until a call's deadline) with capacity that ghz and k6,
-// which stop issuing calls at the end, do not get.
-func allowanceFor(dur time.Duration) time.Duration {
-	return time.Duration((1 - heldShare) * float64(dur))
-}
 
 // readArrivals reads the stand's -arrivals file and sorts it: arrival order
 // can differ from time order by microseconds.
@@ -107,8 +103,9 @@ func perSecond(window []time.Duration, seconds int) []int {
 	return counts
 }
 
-// verdict is row 1's judgement of one run. Planned and Arrived count the run
-// after the skipped head.
+// verdict is row 1's judgement of one run. Planned and Arrived count the window
+// between the skipped head and the last second; both are zero for a run too
+// short to have one.
 type verdict struct {
 	Planned, Arrived int
 	// Head is the arrivals in the skipped first headSkip, of rate × headSkip
@@ -124,23 +121,21 @@ type verdict struct {
 }
 
 func judge(offs []time.Duration, rate int, dur time.Duration) verdict {
-	v := verdict{Planned: int(float64(rate) * (dur - headSkip).Seconds())}
+	var v verdict
 	for _, o := range offs {
-		switch {
-		case o < headSkip:
+		if o < headSkip {
 			v.Head++
-		case o < dur+allowanceFor(dur):
-			v.Arrived++
 		}
 	}
-	v.Share = float64(v.Arrived) / float64(v.Planned)
 
 	window, seconds := steady(offs, dur)
 	if seconds > 0 {
+		v.Planned, v.Arrived = rate*seconds, len(window)
+		v.Share = float64(v.Arrived) / float64(v.Planned)
 		v.MinSecond = slices.Min(perSecond(window, seconds))
 		v.MinShare = float64(v.MinSecond) / float64(rate)
 	}
-	v.Held = v.Share >= heldShare && seconds > 0 && v.MinShare >= steadyShare
+	v.Held = seconds > 0 && v.Share >= heldShare && v.MinShare >= steadyShare
 
 	return v
 }

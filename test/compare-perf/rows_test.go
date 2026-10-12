@@ -4,9 +4,13 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // script stands in for the Docker runs: it records the labels in call order
@@ -16,6 +20,8 @@ type script struct {
 	labels []string
 	held   func(tool string, s setup) bool
 	failAt string
+	// badReport is the label of a run whose tool report could not be read.
+	badReport string
 }
 
 func (sc *script) run(_ context.Context, tool string, s setup, label string) (runOut, error) {
@@ -23,8 +29,45 @@ func (sc *script) run(_ context.Context, tool string, s setup, label string) (ru
 	if sc.failAt != "" && label == sc.failAt {
 		return runOut{Tool: tool, Setup: s}, errors.New("docker fell over")
 	}
+	r := runOut{
+		Tool: tool, Setup: s, Spacing: &spacing{}, Verdict: verdict{Held: sc.held(tool, s), Share: 1},
+		Reports: toolResult{Sent: 1000, P50: 30 * time.Millisecond, P99: 40 * time.Millisecond},
+		Stand:   standSummary{HeldP50: 20 * time.Millisecond, HeldP99: 25 * time.Millisecond},
+	}
+	if sc.badReport != "" && label == sc.badReport {
+		r.Reports = toolResult{}
+		r.ReportError = "ghz json: invalid character"
+	}
 
-	return runOut{Tool: tool, Setup: s, Spacing: &spacing{}, Verdict: verdict{Held: sc.held(tool, s), Share: 1}}, nil
+	return r, nil
+}
+
+// collectingRun stands in for Docker below collectRun: the stand saw an even
+// schedule, the tool is ghz and left a report in its folder, garbage for the
+// labels in garbage. Whatever collectRun makes of it is what the row gets.
+func collectingRun(t *testing.T, labels *[]string, garbage ...string) runFunc {
+	t.Helper()
+
+	return func(_ context.Context, tool string, s setup, label string) (runOut, error) {
+		*labels = append(*labels, label)
+		dir := t.TempDir()
+		var arrivals strings.Builder
+		for _, o := range even(s.Rate, s.Duration) {
+			arrivals.WriteString(strconv.FormatInt(int64(o), 10) + "\n")
+		}
+		report := `{"count": 1000, "latencyDistribution": [{"percentage": 50, "latency": 30000000}, {"percentage": 99, "latency": 40000000}]}`
+		if slices.Contains(garbage, label) {
+			report = "this is not what ghz writes"
+		}
+		for name, content := range map[string]string{"arrivals.txt": arrivals.String(), "ghz.json": report} {
+			if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600); err != nil {
+				return runOut{}, err
+			}
+		}
+		standLog := []byte("arrivals 1, answered 1\n")
+
+		return collectRun(runOut{Tool: tool, Dir: dir, Setup: s}, nil, standLog, false)
+	}
 }
 
 func testHarness(t *testing.T, sc *script, args ...string) *harness {
@@ -223,6 +266,100 @@ func TestRow2_AnErrorLeavesTheRunsThatFinished(t *testing.T) {
 			t.Errorf("summary lacks %q:\n%s", want, summary.String())
 		}
 	}
+}
+
+// Garbage where ghz's report should be, in the middle of the ladder: the stand
+// saw the rate held, so the ladder goes on to the next step.
+func TestRow1_AReportThatCannotBeParsedInTheMiddleOfALadderDoesNotStopIt(t *testing.T) {
+	var labels []string
+	h := testHarness(t, &script{}, "-tools", "ghz", "-runs", "1", "-duration", "5s", "-rate-max", "1600", "-control-cpus", "0")
+	h.run = collectingRun(t, &labels, "row1-ghz-c1-1250-1")
+
+	var summary, stdout strings.Builder
+	err := h.row1(context.Background(), &summary, &stdout)
+
+	if err != nil {
+		t.Fatalf("err = %v, want the ladder to go on", err)
+	}
+	want := []string{"row1-ghz-c1-1000-1", "row1-ghz-c1-1250-1", "row1-ghz-c1-1550-1"}
+	if !slices.Equal(labels, want) {
+		t.Errorf("runs = %v, want %v", labels, want)
+	}
+	for _, want := range []string{"ghz: holds ≥ 1550 rps (the top of the ladder", "| 1250 | 1 of 1 |", unparsedLabel} {
+		if !strings.Contains(summary.String(), want) {
+			t.Errorf("summary lacks %q:\n%s", want, summary.String())
+		}
+	}
+	if strings.Contains(summary.String(), "stopped by an error") {
+		t.Errorf("the row says it stopped:\n%s", summary.String())
+	}
+	if !strings.Contains(stdout.String(), "tool report "+unparsedLabel) {
+		t.Errorf("the run's line does not say the report was not read:\n%s", stdout.String())
+	}
+}
+
+func TestRow2_AReportThatCannotBeParsedMarksTheRunAndTheRowGoesOn(t *testing.T) {
+	sc := &script{held: func(string, setup) bool { return true }, badReport: "row2-ghz-c1-1"}
+	h := testHarness(t, sc, "-tools", "leettest,ghz", "-runs", "2")
+
+	var summary strings.Builder
+	if err := h.row2(context.Background(), &summary, io.Discard); err != nil {
+		t.Fatalf("err = %v, want the row to go on", err)
+	}
+
+	if len(sc.labels) != 4 {
+		t.Errorf("runs = %v, want all four", sc.labels)
+	}
+	if got := rowOf(summary.String(), "| ghz |"); !strings.HasSuffix(got, unparsedLabel+": 1 of 2 |") {
+		t.Errorf("ghz row = %q, want the unread report named", got)
+	}
+	if got := rowOf(summary.String(), "| leettest |"); !strings.HasSuffix(got, "| read |") {
+		t.Errorf("leettest row = %q, want the report marked read", got)
+	}
+}
+
+func TestRow3_ARunWhoseReportCannotBeParsedIsOutOfTheToolsNumbers(t *testing.T) {
+	sc := &script{held: func(string, setup) bool { return true }, badReport: "row3-ghz-c1-1"}
+	h := testHarness(t, sc, "-tools", "leettest,ghz", "-runs", "2")
+
+	var summary, stdout strings.Builder
+	if err := h.row3(context.Background(), &summary, &stdout); err != nil {
+		t.Fatalf("err = %v, want the row to go on", err)
+	}
+
+	if len(sc.labels) != 4 {
+		t.Errorf("runs = %v, want all four", sc.labels)
+	}
+	ghzRow := rowOf(summary.String(), "| ghz |")
+	if !strings.Contains(ghzRow, "| 30ms [30ms–30ms] (не разобран: 1 of 2) |") || strings.Contains(ghzRow, "0s") {
+		t.Errorf("ghz row = %q, want 30ms from the run that was read and the other run named, no zeros from it", ghzRow)
+	}
+	if got := rowOf(summary.String(), "| leettest |"); strings.Contains(got, unparsedLabel) {
+		t.Errorf("leettest row = %q, nothing is wrong with its reports", got)
+	}
+}
+
+func TestRow3_NoReportReadAtAllNamesTheToolNotZeros(t *testing.T) {
+	f, _ := parseFlags([]string{"-tools", "ghz"}, io.Discard)
+	bad := runOut{Tool: ghz, ReportError: "garbage"}
+
+	var b strings.Builder
+	row3Table(&b, f, map[string][]runOut{ghz: {bad, bad}})
+
+	if got := rowOf(b.String(), "| ghz |"); !strings.Contains(got, unparsedLabel) || strings.Contains(got, "0s") {
+		t.Errorf("ghz row = %q, want the unread reports named", got)
+	}
+}
+
+// rowOf is the first line of text that starts with prefix.
+func rowOf(text, prefix string) string {
+	for _, l := range strings.Split(text, "\n") {
+		if strings.HasPrefix(l, prefix) {
+			return l
+		}
+	}
+
+	return ""
 }
 
 func TestRow1Table_TheStandsLimitIsALowerBoundForEveryToolThatReachedIt(t *testing.T) {

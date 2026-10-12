@@ -24,8 +24,8 @@ func even(rate int, dur time.Duration) []time.Duration {
 func TestJudge_AnEvenScheduleHolds(t *testing.T) {
 	v := judge(even(1000, 10*time.Second), 1000, 10*time.Second)
 
-	if !v.Held || v.Arrived != 8000 || v.Planned != 8000 || v.Head != 2000 || v.MinSecond != 1000 {
-		t.Errorf("verdict = %+v, want held with 8000 of 8000 after the 2 s head (2000 in it) and 1000 in the lowest second", v)
+	if !v.Held || v.Arrived != 7000 || v.Planned != 7000 || v.Head != 2000 || v.MinSecond != 1000 {
+		t.Errorf("verdict = %+v, want held with 7000 of 7000 in [2 s, 9 s) (2000 arrivals in the head) and 1000 in the lowest second", v)
 	}
 }
 
@@ -41,8 +41,8 @@ func TestJudge_ASlowStartInTheSkippedHeadStillHolds(t *testing.T) {
 	}
 
 	v := judge(offs, 1000, 10*time.Second)
-	if !v.Held || v.Head != 1000 || v.Arrived != 8000 {
-		t.Errorf("verdict = %+v, want held, 1000 arrivals in the head and 8000 after it", v)
+	if !v.Held || v.Head != 1000 || v.Arrived != 7000 {
+		t.Errorf("verdict = %+v, want held, 1000 arrivals in the head and 7000 in the window after it", v)
 	}
 }
 
@@ -85,8 +85,8 @@ func TestJudge_ASecondUnderNinetyNinePercentDoesNotHold(t *testing.T) {
 func TestJudge_AFourSecondRunHasOneSteadySecond(t *testing.T) {
 	v := judge(even(1000, 4*time.Second), 1000, 4*time.Second)
 
-	if !v.Held || v.Planned != 2000 || v.MinSecond != 1000 {
-		t.Errorf("verdict = %+v, want held with 2000 planned and the one steady second full", v)
+	if !v.Held || v.Planned != 1000 || v.Arrived != 1000 || v.MinSecond != 1000 {
+		t.Errorf("verdict = %+v, want held with 1000 planned (the one steady second) and all of it arrived", v)
 	}
 }
 
@@ -124,48 +124,82 @@ func TestJudge_AllCallsArrivingButNotSteadilyDoNotHold(t *testing.T) {
 	}
 }
 
-func TestJudge_CallsArrivingAfterTheAllowanceAreNotInTheRun(t *testing.T) {
+func TestJudge_CallsArrivingAfterTheWindowAreNotInTheRun(t *testing.T) {
 	offs := even(1000, 10*time.Second)
-	for i := range offs[9000:] { // the last tenth comes 2 s late
-		offs[9000+i] += 2 * time.Second
+	for i := range offs[6000:7000] { // a tenth of the window comes 3 s late, after it
+		offs[6000+i] += 3 * time.Second
 	}
 
 	v := judge(offs, 1000, 10*time.Second)
-	if v.Held || v.Arrived >= 10000 {
-		t.Errorf("verdict = %+v, want the late tenth left out", v)
+	if v.Held || v.Arrived != 6000 {
+		t.Errorf("verdict = %+v, want not held with 6000 of 7000 in the window", v)
 	}
 }
 
-// A tool that falls behind in the last second (not judged second by second)
-// and sends the late calls after the end (LeetTest does, until a call's
-// deadline) has every call arrive, only after the run: ghz and k6 stop at the
-// end and would count as missing, so must this one.
+// The tool starts its clock before the first call reaches the stand (it dials
+// first), so the calls of its first 30 ms are bunched at offset 0 and its last
+// call arrives 30 ms before the nominal end. The window ends before the last
+// second, so that shift costs the tool nothing: 30 ms of 18 s was 0.17 % and
+// failed every tool at 20 s.
+func TestJudge_AToolThatStartedBeforeItsFirstArrivalHolds(t *testing.T) {
+	const rate, dur, dial = 1000, 20 * time.Second, 30 * time.Millisecond
+
+	offs := even(rate, dur)
+	for i, o := range offs {
+		offs[i] = max(o-dial, 0)
+	}
+
+	v := judge(offs, rate, dur)
+	if !v.Held || v.Arrived != 17000 || v.Planned != 17000 {
+		t.Errorf("verdict = %+v, want held with 17000 of 17000 in [2 s, 19 s)", v)
+	}
+}
+
+// A lag inside the window is not paid back by anything after it. Every second
+// has 99.5 % of its calls, so the steady-second check alone passes; the missing
+// half percent is sent just after the end (LeetTest does that, until a call's
+// deadline; ghz and k6 stop at the end), so every call arrives, only not in the
+// window.
 func TestJudge_ALagCaughtUpAfterTheRunEndsDoesNotHold(t *testing.T) {
 	const rate, dur = 10000, 20 * time.Second
 
 	var offs []time.Duration
-	for i := range 190000 { // on time to the 19th second
-		offs = append(offs, time.Duration(i)*time.Second/rate)
-	}
-	for i := range 2000 { // a fifth of the last second on time
-		offs = append(offs, 19*time.Second+time.Duration(i)*time.Second/2000)
-	}
-	for i := range 8000 { // the rest, sent in the 0.83 s after the end
-		offs = append(offs, dur+time.Duration(i)*830*time.Millisecond/8000)
+	late := 0
+	for i := range int(rate * dur.Seconds()) {
+		o := time.Duration(i) * time.Second / rate
+		if i%200 == 0 && o >= headSkip {
+			late++
+			o = dur + time.Duration(late)*time.Microsecond*10 // a burst in the 10 ms after the end
+		}
+		offs = append(offs, o)
 	}
 
 	v := judge(offs, rate, dur)
 	if v.Held {
-		t.Errorf("held with %d of %d arrived by the end (%.3f), lowest second %.3f", v.Arrived, v.Planned, v.Share, v.MinShare)
+		t.Errorf("held with %d of %d arrived in the window (%.4f), lowest second %.3f", v.Arrived, v.Planned, v.Share, v.MinShare)
 	}
 	if v.MinShare < steadyShare {
 		t.Fatalf("lowest second %.3f: the premise is that the steady-second check alone passes", v.MinShare)
 	}
 }
 
-func TestAllowanceFor_IsWhatTheHeldShareAlreadyLetsBeMissing(t *testing.T) {
-	if got := allowanceFor(20 * time.Second); got < 19*time.Millisecond || got > 21*time.Millisecond {
-		t.Errorf("allowance for 20s = %v, want 20ms", got)
+// Calls missing from the window and sent in the last second, which the window
+// does not look at, are still missing.
+func TestJudge_ALagMadeUpInTheLastSecondDoesNotHold(t *testing.T) {
+	var offs []time.Duration
+	for i, o := range even(1000, 20*time.Second) {
+		if i%200 == 0 && o >= headSkip && o < 19*time.Second {
+			o = 19*time.Second + 500*time.Millisecond
+		}
+		offs = append(offs, o)
+	}
+
+	v := judge(offs, 1000, 20*time.Second)
+	if v.Held || v.Arrived >= 17000 {
+		t.Errorf("verdict = %+v, want not held: the calls moved to the last second are not in the window", v)
+	}
+	if v.MinShare < steadyShare {
+		t.Fatalf("lowest second %.3f: the premise is that the steady-second check alone passes", v.MinShare)
 	}
 }
 
@@ -191,8 +225,8 @@ func TestCollectRun_TheStandsNumbersAreSavedWhenTheToolsReportCannotBeRead(t *te
 
 	got, err := collectRun(res, nil, standLog, false) // no ghz.json in the folder
 
-	if err == nil {
-		t.Fatal("want the report's error")
+	if err != nil {
+		t.Fatalf("err = %v: a report that cannot be read is recorded in the run, it does not stop the row", err)
 	}
 	b, readErr := os.ReadFile(filepath.Join(dir, "result.json"))
 	if readErr != nil {
@@ -202,8 +236,8 @@ func TestCollectRun_TheStandsNumbersAreSavedWhenTheToolsReportCannotBeRead(t *te
 	if jsonErr := json.Unmarshal(b, &saved); jsonErr != nil {
 		t.Fatal(jsonErr)
 	}
-	if !saved.Verdict.Held || saved.Verdict.Arrived != 3000 || saved.ReportError == "" || !got.Verdict.Held {
-		t.Errorf("saved %+v, want the stand's verdict (held, 3000 arrived after the head) and the report's error named", saved)
+	if !saved.Verdict.Held || saved.Verdict.Arrived != 2000 || saved.ReportError == "" || !got.Verdict.Held || got.ReportError == "" {
+		t.Errorf("saved %+v, want the stand's verdict (held, 2000 arrived in the window) and the report's error named", saved)
 	}
 }
 

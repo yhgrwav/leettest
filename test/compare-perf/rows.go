@@ -86,12 +86,21 @@ func (h *harness) runPoint(ctx context.Context, stdout io.Writer, tool string, r
 	if err != nil {
 		return r, fmt.Errorf("row 1 %s on %d core(s) at %d rps, run %d: %w", tool, cpus, rate, n, err)
 	}
-	fmt.Fprintf(stdout, "row1 %-8s c%d %6d rps run %d: held %v, arrived %d of %d after the skipped head (%d arrivals in it), "+
-		"lowest second %d, tool says sent %d failed %d %s\n",
-		tool, cpus, rate, n, r.Verdict.Held, r.Verdict.Arrived, r.Verdict.Planned, r.Verdict.Head, r.Verdict.MinSecond,
-		r.Reports.Sent, r.Reports.Failed, r.Reports.Note)
+	fmt.Fprintf(stdout, "row1 %-8s c%d %6d rps run %d: held %v, arrived %d of %d in the window (%d arrivals in the skipped head), "+
+		"lowest second %d, %s\n",
+		tool, cpus, rate, n, r.Verdict.Held, r.Verdict.Arrived, r.Verdict.Planned, r.Verdict.Head, r.Verdict.MinSecond, reportText(r))
 
 	return r, nil
+}
+
+// reportText is what the tool said about its run, or that its report could not
+// be read.
+func reportText(r runOut) string {
+	if r.ReportError != "" {
+		return fmt.Sprintf("tool report %s: %s", unparsedLabel, r.ReportError)
+	}
+
+	return fmt.Sprintf("tool says sent %d failed %d %s", r.Reports.Sent, r.Reports.Failed, r.Reports.Note)
 }
 
 // ladderStep runs every tool still climbing at one rate: the runs of the step
@@ -232,8 +241,12 @@ rounds:
 
 				break rounds
 			}
-			fmt.Fprintf(stdout, "row3 %-8s run %d: tool p50 %v p99 %v, stand held p50 %v p99 %v\n",
-				tool, i+1, r.Reports.P50, r.Reports.P99, r.Stand.HeldP50, r.Stand.HeldP99)
+			if r.ReportError != "" {
+				fmt.Fprintf(stdout, "row3 %-8s run %d: %s\n", tool, i+1, reportText(r))
+			} else {
+				fmt.Fprintf(stdout, "row3 %-8s run %d: tool p50 %v p99 %v, stand held p50 %v p99 %v\n",
+					tool, i+1, r.Reports.P50, r.Reports.P99, r.Stand.HeldP50, r.Stand.HeldP99)
+			}
 			results[tool] = append(results[tool], r)
 		}
 	}

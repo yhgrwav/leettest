@@ -79,8 +79,41 @@ func highestHeld(points []point) (held, broke int) {
 	return held, broke
 }
 
+// unparsedLabel is what a table says where the tool's own report could not be
+// read; the raw output is in the run's folder.
+const unparsedLabel = "не разобран"
+
+func parsedRuns(rs []runOut) []runOut {
+	return slices.DeleteFunc(slices.Clone(rs), func(r runOut) bool { return r.ReportError != "" })
+}
+
+// fromReports is a number out of the tools' own reports over the runs whose
+// report was read, with the count of those that were not.
+func fromReports[T cmp.Ordered](rs []runOut, get func(runOut) T, show func(T) string) string {
+	ok := parsedRuns(rs)
+	if len(ok) == 0 {
+		return unparsedLabel
+	}
+	s := spread(collect(ok, get), show)
+	if n := len(rs) - len(ok); n > 0 {
+		s += fmt.Sprintf(" (%s: %d of %d)", unparsedLabel, n, len(rs))
+	}
+
+	return s
+}
+
+// reportCell is the table cell for whether the tool's report was read in every
+// run of the row.
+func reportCell(rs []runOut) string {
+	if n := len(rs) - len(parsedRuns(rs)); n > 0 {
+		return fmt.Sprintf("%s: %d of %d", unparsedLabel, n, len(rs))
+	}
+
+	return "read"
+}
+
 func pointRows(w *strings.Builder, points []point) {
-	fmt.Fprintln(w, "| rate | runs held | arrived / planned (after the skipped head) | lowest second / rate | arrivals in the skipped head | tool says sent | tool says failed |")
+	fmt.Fprintln(w, "| rate | runs held | arrived / planned (window: after the skipped head, before the last second) | lowest second / rate | arrivals in the skipped head | tool says sent | tool says failed |")
 	fmt.Fprintln(w, "|---|---|---|---|---|---|---|")
 	for _, p := range points {
 		n := 0
@@ -93,8 +126,8 @@ func pointRows(w *strings.Builder, points []point) {
 			spread(collect(p.runs, func(r runOut) float64 { return r.Verdict.Share }), showFloat),
 			spread(collect(p.runs, func(r runOut) float64 { return r.Verdict.MinShare }), showFloat),
 			spread(collect(p.runs, func(r runOut) int { return r.Verdict.Head }), showInt),
-			spread(collect(p.runs, func(r runOut) int { return r.Reports.Sent }), showInt),
-			spread(collect(p.runs, func(r runOut) int { return r.Reports.Failed }), showInt))
+			fromReports(p.runs, func(r runOut) int { return r.Reports.Sent }, showInt),
+			fromReports(p.runs, func(r runOut) int { return r.Reports.Failed }, showInt))
 	}
 	fmt.Fprintln(w)
 }
@@ -116,11 +149,13 @@ func row1Table(w *strings.Builder, f flags, results map[string][]point, ctl *con
 	limit, limited := ctl.standLimit()
 
 	fmt.Fprintf(w, "## Row 1: rate one core holds (stand answers at once)\n\n")
-	fmt.Fprintf(w, "Held: the first %v of every run, counted from the first arrival at the stand, is left out for all tools; "+
-		"at least %.1f%% of the planned calls of the rest reach the stand within the run (plus %.1f%% of its length), and the lowest "+
-		"steady second of it is at least %.0f%% of the rate; a point holds when more than half of its %d runs do. "+
-		"Run %v each, tool container %d core(s), stand %d core(s). All tools climb the same steps together; %s.\n\n",
-		headSkip, heldShare*100, (1-heldShare)*100, steadyShare*100, f.runs, f.duration, f.toolCPUs, f.standCPUs, connectionsNote(f))
+	fmt.Fprintf(w, "Held: the first %v of every run, counted from the first arrival at the stand, and its last whole second are "+
+		"left out for all tools; at least %.1f%% of the planned calls of the window between them reach the stand in it, and the "+
+		"lowest second of it is at least %.0f%% of the rate; a point holds when more than half of its %d runs do. "+
+		"Run %v each, tool container %d core(s), stand %d core(s). All tools climb the same steps together; %s. "+
+		"The tools' own numbers in the tables are read from their reports; a report that could not be read is marked %q, "+
+		"the verdict does not depend on it.\n\n",
+		headSkip, heldShare*100, steadyShare*100, f.runs, f.duration, f.toolCPUs, f.standCPUs, connectionsNote(f), unparsedLabel)
 
 	for _, tool := range f.tools {
 		held, broke := highestHeld(results[tool])
@@ -157,8 +192,8 @@ func row2Table(w *strings.Builder, f flags, results map[string][]runOut) {
 	fmt.Fprintf(w, "Steady seconds only (the first %v and the last second of each %v run are left out); median of %d runs "+
 		"and the range. Gap percentiles are nearest rank over the gaps between consecutive arrivals. %s.\n\n",
 		headSkip, f.duration, f.runs, connectionsNote(f))
-	fmt.Fprintln(w, "| tool | ideal gap | gap p50 | gap p99 | gap p99.9 | gap max | calls in a second, lowest | highest | std dev |")
-	fmt.Fprintln(w, "|---|---|---|---|---|---|---|---|---|")
+	fmt.Fprintln(w, "| tool | ideal gap | gap p50 | gap p99 | gap p99.9 | gap max | calls in a second, lowest | highest | std dev | tool's report |")
+	fmt.Fprintln(w, "|---|---|---|---|---|---|---|---|---|---|")
 	for _, tool := range f.tools {
 		rs := results[tool]
 		if len(rs) == 0 {
@@ -169,7 +204,7 @@ func row2Table(w *strings.Builder, f flags, results map[string][]runOut) {
 		sp := func(get func(spacing) time.Duration) string {
 			return spread(collect(rs, func(r runOut) time.Duration { return get(*r.Spacing) }), showDur)
 		}
-		fmt.Fprintf(w, "| %s | %s | %s | %s | %s | %s | %s | %s | %s |\n", tool,
+		fmt.Fprintf(w, "| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n", tool,
 			showDur(rs[0].Spacing.Ideal),
 			sp(func(s spacing) time.Duration { return s.GapP50 }),
 			sp(func(s spacing) time.Duration { return s.GapP99 }),
@@ -177,7 +212,8 @@ func row2Table(w *strings.Builder, f flags, results map[string][]runOut) {
 			sp(func(s spacing) time.Duration { return s.GapMax }),
 			spread(collect(rs, func(r runOut) int { return r.Spacing.SecMin }), showInt),
 			spread(collect(rs, func(r runOut) int { return r.Spacing.SecMax }), showInt),
-			spread(collect(rs, func(r runOut) float64 { return r.Spacing.SecStdDev }), showFloat))
+			spread(collect(rs, func(r runOut) float64 { return r.Spacing.SecStdDev }), showFloat),
+			reportCell(rs))
 	}
 	fmt.Fprintln(w)
 }
@@ -196,14 +232,22 @@ func row3Table(w *strings.Builder, f flags, results map[string][]runOut) {
 
 			continue
 		}
+		if len(parsedRuns(rs)) == 0 {
+			fmt.Fprintf(w, "| %s | %s: the report of none of the %d runs, raw output in runs/ |\n", tool, unparsedLabel, len(rs))
+
+			continue
+		}
+		// The stand's time is paired with the tool's number: the runs whose
+		// report was read.
+		ok := parsedRuns(rs)
 		fmt.Fprintf(w, "| %s | %s | %s | %s | %s | %s | %s | %s | %s |\n", tool,
-			spread(collect(rs, func(r runOut) time.Duration { return r.Reports.P50 }), showDur),
-			spread(collect(rs, func(r runOut) time.Duration { return r.Stand.HeldP50 }), showDur),
-			spread(collect(rs, func(r runOut) time.Duration { return r.Reports.P50 - r.Stand.HeldP50 }), showDur),
-			spread(collect(rs, func(r runOut) time.Duration { return r.Reports.P99 }), showDur),
-			spread(collect(rs, func(r runOut) time.Duration { return r.Stand.HeldP99 }), showDur),
-			spread(collect(rs, func(r runOut) time.Duration { return r.Reports.P99 - r.Stand.HeldP99 }), showDur),
-			spread(collect(rs, func(r runOut) int { return r.Reports.Failed }), showInt),
+			fromReports(rs, func(r runOut) time.Duration { return r.Reports.P50 }, showDur),
+			spread(collect(ok, func(r runOut) time.Duration { return r.Stand.HeldP50 }), showDur),
+			spread(collect(ok, func(r runOut) time.Duration { return r.Reports.P50 - r.Stand.HeldP50 }), showDur),
+			fromReports(rs, func(r runOut) time.Duration { return r.Reports.P99 }, showDur),
+			spread(collect(ok, func(r runOut) time.Duration { return r.Stand.HeldP99 }), showDur),
+			spread(collect(ok, func(r runOut) time.Duration { return r.Reports.P99 - r.Stand.HeldP99 }), showDur),
+			fromReports(rs, func(r runOut) int { return r.Reports.Failed }, showInt),
 			percentileMethod[tool])
 	}
 	fmt.Fprintln(w)
@@ -231,10 +275,12 @@ func plan(f flags) string {
 	} else {
 		fmt.Fprintf(&b, "row 1 control: off (-control-cpus 0), the stand's own limit is not checked\n")
 	}
-	fmt.Fprintf(&b, "held: the first %v of every run (from the first arrival at the stand) is skipped for all tools, its arrivals printed; "+
-		"a run holds with at least %.1f%% of the planned calls of the rest at the stand within the duration plus %.1f%% of it, "+
-		"and no steady second of it under %.0f%% of the rate (the last second is not judged)\n",
-		headSkip, heldShare*100, (1-heldShare)*100, steadyShare*100)
+	fmt.Fprintf(&b, "held: the first %v of every run (from the first arrival at the stand) and its last whole second are skipped for all tools, "+
+		"the arrivals in the head printed; a run holds with at least %.1f%% of the planned calls of the window between them at the "+
+		"stand in it, and no second of it under %.0f%% of the rate\n",
+		headSkip, heldShare*100, steadyShare*100)
+	fmt.Fprintf(&b, "a tool's report that cannot be parsed is recorded in the run (result.json, raw output kept) and the row goes on; "+
+		"row 1's verdict reads the stand only, rows 2 and 3 mark the run %q\n", unparsedLabel)
 	fmt.Fprintf(&b, "row 2: %d rps; row 3: %d rps, stand delay %v\n", f.fixedRate, f.latRate, f.latDelay)
 	fmt.Fprintf(&b, "tool call timeout %v; every tool: one container, --cpus=%d, GOMAXPROCS=%d, the stand's address as an IP\n",
 		callTimeout, f.toolCPUs, f.toolCPUs)
