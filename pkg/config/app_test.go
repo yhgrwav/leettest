@@ -286,6 +286,97 @@ func TestMetadata_EmptyVariableIsRefusedApartFromUnset(t *testing.T) {
 	}
 }
 
+// Ground: contract — a newcomer without the variable reads one error and knows the command to
+// type: the variable is named in the reference and in the command, which carries the placeholder
+// <value> as written (the real value is never known to us). Another variable name shows the name
+// is taken from the config, not fixed.
+func TestMetadata_UnsetVariableSaysHowToSetIt(t *testing.T) {
+	for _, name := range []string{"LEETTEST_TOKEN", "LEETTEST_OTHER_KEY"} {
+		t.Setenv(name, "") // restores the caller's value at the end
+		if err := os.Unsetenv(name); err != nil {
+			t.Fatal(err)
+		}
+
+		_, err := config.Parse(withApp("  metadata:\n    authorization: Bearer ${" + name + "}\n"))
+		if !errors.Is(err, config.ErrInvalidMetadata) {
+			t.Fatalf("%s: err = %v, want ErrInvalidMetadata", name, err)
+		}
+
+		msg := err.Error()
+		for _, want := range []string{
+			`key "authorization"`,
+			"${" + name + "}",
+			"not set",
+			"export " + name + "=<value>",
+		} {
+			if !strings.Contains(msg, want) {
+				t.Errorf("%s: the error lacks %q: %v", name, want, err)
+			}
+		}
+		if n := strings.Count(msg, name); n != 2 {
+			t.Errorf("%s: the name appears %d times, want 2 (the reference and the command): %v", name, n, err)
+		}
+		if strings.Contains(msg, "empty") {
+			t.Errorf("%s: an unset variable is called empty: %v", name, err)
+		}
+	}
+}
+
+// Ground: contract — same shape for a variable that is set but empty, told apart from unset.
+func TestMetadata_EmptyVariableSaysHowToSetIt(t *testing.T) {
+	for _, name := range []string{"LEETTEST_TOKEN", "LEETTEST_OTHER_KEY"} {
+		t.Setenv(name, "")
+
+		_, err := config.Parse(withApp("  metadata:\n    authorization: Bearer ${" + name + "}\n"))
+		if !errors.Is(err, config.ErrInvalidMetadata) {
+			t.Fatalf("%s: err = %v, want ErrInvalidMetadata", name, err)
+		}
+
+		msg := err.Error()
+		for _, want := range []string{
+			`key "authorization"`,
+			"${" + name + "}",
+			"set but empty",
+			"export " + name + "=<value>",
+		} {
+			if !strings.Contains(msg, want) {
+				t.Errorf("%s: the error lacks %q: %v", name, want, err)
+			}
+		}
+		if n := strings.Count(msg, name); n != 2 {
+			t.Errorf("%s: the name appears %d times, want 2 (the reference and the command): %v", name, n, err)
+		}
+		if strings.Contains(msg, "not set") {
+			t.Errorf("%s: an empty variable is called not set: %v", name, err)
+		}
+	}
+}
+
+// Ground: contract (secrets are never printed, #81) — the hint carries names and the placeholder
+// only. An empty variable gets the command with <value>, not with whatever was read; a value that
+// is set but refused stays out of the error whole.
+func TestMetadata_HintNeverCarriesTheValue(t *testing.T) {
+	t.Setenv("LEETTEST_TOKEN", "")
+
+	_, err := config.Parse(withApp("  metadata:\n    authorization: Bearer ${LEETTEST_TOKEN}\n"))
+	if err == nil || !strings.Contains(err.Error(), "export LEETTEST_TOKEN=<value>") {
+		t.Errorf("an empty variable: err = %v, want the command with the placeholder", err)
+	}
+
+	t.Setenv("LEETTEST_TOKEN", "s3cret-é")
+
+	_, err = config.Parse(withApp("  metadata:\n    authorization: Bearer ${LEETTEST_TOKEN}\n"))
+	if !errors.Is(err, config.ErrInvalidMetadata) {
+		t.Fatalf("a refused value: err = %v, want ErrInvalidMetadata", err)
+	}
+	if strings.Contains(err.Error(), "s3cret") {
+		t.Errorf("the error prints the value: %v", err)
+	}
+	if strings.Contains(err.Error(), "not set") || strings.Contains(err.Error(), "set but empty") {
+		t.Errorf("a variable that is set and not empty is called missing: %v", err)
+	}
+}
+
 // Ground: contract — "$${" writes a literal "${"; any other "$" is kept as written.
 func TestMetadata_DoubledDollarWritesALiteralReference(t *testing.T) {
 	cfg, err := config.Parse(withApp("  metadata:\n    x-a: p$${NOT_A_VAR}q\n    x-b: a$$b\n"))
