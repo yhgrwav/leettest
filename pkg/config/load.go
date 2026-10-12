@@ -52,7 +52,7 @@ func Parse(raw []byte) (*MasterConfig, error) {
 	if err := checkNumbers(raw); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrReadConfig, err)
 	}
-	if err := checkNullDataset(raw); err != nil {
+	if err := checkTree(raw); err != nil {
 		return nil, err
 	}
 
