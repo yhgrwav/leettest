@@ -113,11 +113,8 @@ same ceiling applies to any c once the server slows down enough: at `-c 50` it i
 | ghz, sync (`-c 10`) | 6000 [6000–6008] | 0 | 10.6ms [10.6–10.7] | 11.3ms [11.3–11.3] | 11.4ms [11.3–11.4] | 11.4ms [11.4–11.5] |
 | ghz, `--async` | 6001 [5996–6002] | 0 | 10.7ms [10.7–10.7] | 11.3ms [11.3–11.3] | 11.4ms [11.4–11.4] | 11.4ms [11.4–11.5] |
 
-All three agree within 0.6ms. LeetTest reads 0.4–0.6ms higher; the cause is not measured here.
-LeetTest measures from the moment a call was scheduled, while ghz measures from the moment the
-call starts [5], so LeetTest includes the generator's own delay before sending. LeetTest counts it on
-purpose: if the generator falls behind, the latency shows it instead of hiding it. The start lag
-is also reported separately.
+All three agree within 1ms. In this environment ghz reads 0.3–0.9ms higher than LeetTest; we did
+not measure the cause.
 
 ## Reproduce
 
