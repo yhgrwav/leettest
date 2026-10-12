@@ -211,6 +211,25 @@ func wantDuplicateAnchor(t *testing.T, err error, want string) {
 	}
 }
 
+// The likeliest repeat is the same name on each call's request body: the
+// decoder would hand the second body to the first call, and the run's numbers
+// would be about another request. An anchor on a mapping is refused like one
+// on a scalar.
+// Ground: contract — П13; the error value, text and both lines are what callers see.
+func TestParse_AnchorOnAMappingDefinedTwiceIsAnError(t *testing.T) {
+	calls := "      data: &req\n" +
+		"        id: 1\n" +
+		"    - method: wallet.v1.WalletService/GetHistory\n" +
+		"      rps: 10\n" +
+		"      duration: 1s\n" +
+		"      data: &req\n" +
+		"        id: 2\n"
+
+	_, err := config.Parse([]byte(datasetYAML(calls)))
+
+	wantDuplicateAnchor(t, err, "line 16: anchor &req is already defined at line 11; give it another name")
+}
+
 // An anchor name defined twice is refused, whatever the values: the decoder
 // resolves an alias to the last definition in the document, not the nearest
 // one before it, so a reused name silently swaps a value. Scenario A: a null
