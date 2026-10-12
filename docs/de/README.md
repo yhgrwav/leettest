@@ -4,7 +4,8 @@
 
 **gRPC-Lasttests, die nicht lügen.**
 
-[Русский](../ru/) · [English](../en/) · [Deutsch](../de/) · [简体中文](../zh-CN/) (Deutsch und 简体中文 können hinterherhinken)
+[Русский](../ru/) · [English](../en/) · [Deutsch](../de/) · [简体中文](../zh-CN/)
+
 [![CI](https://github.com/yhgrwav/leettest/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/yhgrwav/leettest/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/yhgrwav/leettest.svg)](https://pkg.go.dev/github.com/yhgrwav/leettest)
 [![Go version](https://img.shields.io/github/go-mod/go-version/yhgrwav/leettest)](../../go.mod)
