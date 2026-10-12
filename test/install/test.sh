@@ -285,6 +285,7 @@ for combo in "Linux x86_64 linux_amd64" "Linux aarch64 linux_arm64" "Linux arm64
 	p_pair=${rest#* }
 	start "platform $p_os $p_arch"
 	shim_uname "$p_os" "$p_arch"
+	shim_sysctl 0 # an Intel Mac, even when this host is an arm64 one
 	dir=$work/p/$p_os-$p_arch/bin
 	run "PATH=$work/shim:$PATH" "LEETTEST_INSTALL_DIR=$dir" LEETTEST_VERSION=v9.9.9 \
 		"LEETTEST_BASE_URL=file://$work/fixture"
