@@ -90,7 +90,10 @@ in errors.
 
 **Headers.** Names are lowercased, as HTTP/2 carries them anyway. A config error before the
 start: a key starting with `grpc-` (reserved by gRPC), pseudo-headers such as `:path`, a key
-ending in `-bin` (binary headers are not supported yet), a value outside printable ASCII. The same
+ending in `-bin` (binary headers are not supported yet), `content-type` and `te` (the transport
+writes them itself), `connection`, `keep-alive`, `proxy-connection`, `transfer-encoding`,
+`upgrade` (not allowed in HTTP/2), a value outside printable ASCII. `user-agent` is allowed: the
+target sees one header, your value followed by ` grpc-go/<version>`. The same
 headers and certificate go into the method check before the start. If the target answered it
 with `Unauthenticated` while headers are set, the run does not start: "target rejected
 credentials". `PermissionDenied` does not stop the run: the token was accepted and may work for
