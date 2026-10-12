@@ -158,6 +158,13 @@ func TestRun_ASearchOnTheFakeTarget(t *testing.T) {
 // 100 are 100 125 156 195 244 305, so the search holds 244 and breaks at 305
 // exactly (test/measure TestBreakpoint_FindsTheStandsCapacity has the
 // arithmetic).
+//
+// The premise is an unloaded machine: a generator that cannot keep its
+// schedule ends the search as run_limit with why "generator", and says so
+// rather than naming the target's limit. The test then skips, but only when
+// the generator kept up through 125 rps (generatorKeptUpTo); below that it
+// fails, a hypothesis threshold: it does not tell a regression from a starved
+// machine there.
 func TestRun_ASearchNamesTheStandsCapacity(t *testing.T) {
 	if testing.Short() {
 		t.Skip("a search of ~30s")
@@ -181,9 +188,32 @@ func TestRun_ASearchNamesTheStandsCapacity(t *testing.T) {
 		t.Fatalf("run: %v\n%s", res.err, res.stderr)
 	}
 	bp, _ := decodeOnly(t, res.stdout)["breakpoint"].(map[string]any)
+	if generatorFellBehindAfter(bp, generatorKeptUpTo) {
+		runs := bp["runs"].([]any)
+		last := runs[len(runs)-1]
+		t.Skipf("premise: an unloaded machine; the generator fell behind at %v rps (held %v): "+
+			"generator_calls %v, not_sent_generator %v in the last run",
+			bp["broke_rps"], bp["held_rps"],
+			jsonAt(t, last, "report", "client_waits", "generator_calls"),
+			jsonAt(t, last, "report", "not_sent_generator"))
+	}
 	if bp == nil || bp["outcome"] != "broke" || bp["held_rps"] != 244.0 || bp["broke_rps"] != 305.0 {
 		t.Errorf("breakpoint %v, want broke, held 244, broke 305", bp)
 	}
+}
+
+// generatorKeptUpTo is the step the generator must have held for a search it
+// ended to be skipped: the second of 100 125 156 ...
+const generatorKeptUpTo = 125
+
+// generatorFellBehindAfter reports a search that ended as run_limit because
+// the generator fell behind (why "generator", closed list of the JSON), having
+// held at least rps. A null held_rps, the first step, counts as 0.
+func generatorFellBehindAfter(bp map[string]any, rps float64) bool {
+	held, _ := bp["held_rps"].(float64)
+	runs, _ := bp["runs"].([]any)
+
+	return bp["outcome"] == "run_limit" && bp["why"] == "generator" && held >= rps && len(runs) > 0
 }
 
 // A stop during a search follows a plain run's: one Ctrl+C ends the current
