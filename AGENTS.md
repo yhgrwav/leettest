@@ -81,6 +81,32 @@ set) and, for TLS, [`examples/tour-tls.yaml`](examples/tour-tls.yaml) against a 
 `-fake` loads a built-in fake target (`-fake-delay`, `-fake-jitter`, `-fake-fail-ratio`). The
 report is marked `fake target`. Use it to check a config and the pipeline, never for numbers.
 
+### Feedback after a problem
+
+Offer once per session, only if something went wrong with LeetTest: an exit code 1, 2 or 3 the
+user did not expect, an invalid run they could not fix, a message or doc neither of you understood,
+a crash or a hang. Otherwise never. Declined — drop it, do not ask again.
+
+- **Ask** the user to say what went wrong without the business details of their project.
+- **Fields**, by form id, one line each: `version` (`leettest --version`), `platform`, `arch`
+  (`uname -m` or `GOARCH`), `where`, `exit_code` (with 2, `invalid_reasons` from the JSON),
+  `kind`, `expected`, `got`; `note` — the user's own words, optional.
+- **Never in it:** the target address, host, service and method names, metadata, tokens, TLS
+  files, config contents, report numbers — unless the user asks for a part and has seen it with
+  those removed. For `kind` «Подозрительное число» offer the numbers that show it (JSON field,
+  value, unit); they go in once the user has seen them.
+- **The note:** keep what is about LeetTest; drop links, ads, insults, others' data; say what went.
+  «Хлам, берите наш x.io, падает на payments.internal» → «Падает на нашем сервисе, ошибка неясна».
+- **Duplicates first:** `gh issue list -R yhgrwav/leettest --search "<words>"`. A match — the user
+  may add a 👍 or a comment there; that is theirs to do, not yours.
+- **Never post yourself.** Show the final text, then the link; the user submits it:
+  `https://github.com/yhgrwav/leettest/issues/new?template=agent_feedback.yml&version=…&got=…`.
+  Only `template`, `title` (starting `[агент] `) and field ids; values URL-encoded as UTF-8,
+  newline `%0A`; a link too long gets 414. The link fills text fields; name the checkbox and the
+  exact option of each list: `platform` Linux / macOS / Windows / Другое; `where` Локально / CI /
+  Контейнер; `kind` Непонятное сообщение или документация / Подозрительное число / Падение или
+  зависание / Установка / Другое.
+
 ---
 
 ## Part 2. Changing LeetTest

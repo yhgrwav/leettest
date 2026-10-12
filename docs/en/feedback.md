@@ -22,6 +22,8 @@ Anything is fair game:
 - **confusing documentation or an unclear error message** — that is a defect, not a nitpick;
 - **a question** — if the answer was not here, the documentation has a gap.
 
+A problem met while working through an AI agent has [its own form](https://github.com/yhgrwav/leettest/issues/new?template=agent_feedback.yml).
+
 Opening an issue takes no ceremony: the [CLA](../../CLA.md) is only needed for pull requests with
 code.
 
