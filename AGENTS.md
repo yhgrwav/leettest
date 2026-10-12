@@ -256,6 +256,9 @@ between it and the code is a question to ask, not a task to make the code match.
   Linux next to the target. What the user does not need to get true numbers is cut, and there
   are no "if you are on Windows rather than macOS, then…" paragraphs beyond that.
 - Reference detail (every JSON field, every enum value) lives in a reference, not in the guide.
+- **Every capability in a guide is a command to copy.** A fenced block the reader runs as is: no
+  `$ ` prompt, no `[...]` optional parts, no `/path/to`. A placeholder only when it cannot be
+  avoided, with a line saying what to put there. After the command, what the reader will see.
 - A fix does not leave its story in the docs. If a sentence explains how you got here, delete it.
 
 **Tests are not a dump either.** A test checks meaning, not prose: the outcome, the numbers, the
