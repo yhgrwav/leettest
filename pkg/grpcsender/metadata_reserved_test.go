@@ -70,3 +70,41 @@ func TestMetadata_OrdinaryKeysAndDefaultUserAgentAreUnchanged(t *testing.T) {
 		}
 	}
 }
+
+// Ground: contract — the dial option is set for every connection of the run, not only the first:
+// with two connections each call still shows the target one user-agent.
+func TestMetadata_UserAgentIsOnceOnEveryConnection(t *testing.T) {
+	target := &seeingTarget{}
+	sender := mustConnect(t, 2, pair(t, target, nil, nil), Options{
+		Metadata: map[string]string{"user-agent": "my-bench/1.0", "x-request-source": "leettest"},
+	})
+
+	for range 6 {
+		if out, err := sender.Send(bounded(t), request(time.Now())); err != nil || out.Code != "OK" {
+			t.Fatalf("send: %v, code %v", err, out.Code)
+		}
+	}
+
+	for i, md := range target.metadata {
+		got := md.Get("user-agent")
+		if len(got) != 1 || !strings.HasPrefix(got[0], "my-bench/1.0 ") {
+			t.Errorf("call %d: user-agent = %q, want one value starting with the user's", i, got)
+		}
+		if src := md.Get("x-request-source"); len(src) != 1 {
+			t.Errorf("call %d: x-request-source = %q, want once", i, src)
+		}
+	}
+}
+
+// Ground: contract — Options.Metadata is the caller's map (the CLI hands over its config's): taking
+// user-agent out for the dial option does not take it out of theirs.
+func TestMetadata_CallersMapIsNotChanged(t *testing.T) {
+	md := map[string]string{"user-agent": "my-bench/1.0", "x-api-key": "k"}
+	opts := listen(t, &seeingTarget{})
+	opts.Metadata = md
+	_ = connected(t, opts)
+
+	if len(md) != 2 || md["user-agent"] != "my-bench/1.0" || md["x-api-key"] != "k" {
+		t.Errorf("the caller's map is now %v", md)
+	}
+}

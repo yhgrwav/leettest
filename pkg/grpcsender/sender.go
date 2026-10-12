@@ -76,7 +76,11 @@ type Options struct {
 	// TLS.
 	ServerName string
 	// Metadata is sent with every call, such as authorization or x-api-key.
-	// Keys must already be lowercase; nil adds nothing to a call.
+	// Keys must already be lowercase; nil adds nothing to a call. A user-agent
+	// is sent as the connection's user-agent, the value first and grpc-go's
+	// own name after it. Keys the transport writes itself (content-type, te)
+	// and the connection-specific ones HTTP/2 forbids are not checked here:
+	// pkg/config refuses them.
 	Metadata map[string]string
 	// MaxResponseBytes raises or lowers the largest reply a call accepts;
 	// 0 keeps grpc-go's default of 4 MiB, above math.MaxInt32 fails Connect.
@@ -287,10 +291,17 @@ func (s *Sender) dialOptions(l *link, creds credentials.TransportCredentials, au
 		// a reply limit of its own. See Options.DialOptions.
 		grpc.WithDisableServiceConfig(),
 	}
-	if len(s.opts.Metadata) > 0 {
+	perCall, userAgent, hasUserAgent := splitUserAgent(s.opts.Metadata)
+	if hasUserAgent {
+		// The transport writes user-agent itself; as per-RPC metadata it would
+		// go out as a second field. The dial option puts the value first and
+		// grpc-go's own name after it.
+		dialOpts = append(dialOpts, grpc.WithUserAgent(userAgent))
+	}
+	if len(perCall) > 0 {
 		// Per-RPC credentials rather than a context per call: gRPC attaches
 		// them itself, and a run without metadata has nothing in the send path.
-		dialOpts = append(dialOpts, grpc.WithPerRPCCredentials(staticMetadata(s.opts.Metadata)))
+		dialOpts = append(dialOpts, grpc.WithPerRPCCredentials(staticMetadata(perCall)))
 	}
 	if authority != "" {
 		dialOpts = append(dialOpts, grpc.WithAuthority(authority))
@@ -723,6 +734,26 @@ func (l *link) blocker(conn *grpc.ClientConn, t callTimes) engine.Blocker {
 	default:
 		return engine.BlockedOnGenerator
 	}
+}
+
+// splitUserAgent returns the metadata without user-agent, and its value. A
+// map without one is returned as it is, otherwise a copy: the caller's map is
+// never changed.
+func splitUserAgent(md map[string]string) (rest map[string]string, userAgent string, found bool) {
+	userAgent, found = md["user-agent"]
+	if !found {
+		return md, "", false
+	}
+
+	rest = make(map[string]string, len(md)-1)
+
+	for k, v := range md {
+		if k != "user-agent" {
+			rest[k] = v
+		}
+	}
+
+	return rest, userAgent, true
 }
 
 // staticMetadata is the same metadata for every call.
