@@ -322,6 +322,30 @@ load:
 	wantDuplicateAnchor(t, err, "line 8: anchor &m is already defined at line 7; give it another name")
 }
 
+// A name defined three times is reported at every repeat, each against the
+// first definition (line 11), not against the repeat before it. The user fixes
+// the one name they started with, and sees every place to rename.
+// Ground: contract — П13; the error value, text and both lines of each repeat are what callers see.
+func TestParse_AnchorDefinedThreeTimesNamesTheFirstLineAtEveryRepeat(t *testing.T) {
+	calls := "      data: &a\n" +
+		"        id: 1\n" +
+		"    - method: wallet.v1.WalletService/GetHistory\n" +
+		"      rps: 10\n" +
+		"      duration: 1s\n" +
+		"      data: &a\n" +
+		"        id: 2\n" +
+		"    - method: wallet.v1.WalletService/Transfer\n" +
+		"      rps: 10\n" +
+		"      duration: 1s\n" +
+		"      data: &a z.jsonl\n"
+
+	_, err := config.Parse([]byte(datasetYAML(calls)))
+
+	want := "line 16: anchor &a is already defined at line 11; give it another name\n" +
+		"line 21: anchor &a is already defined at line 11; give it another name"
+	wantDuplicateAnchor(t, err, want)
+}
+
 // Two different names are two anchors: each alias is its own anchor's value.
 // Ground: characterization — only a repeated name is refused.
 func TestParse_DifferentAnchorNamesAreAccepted(t *testing.T) {
