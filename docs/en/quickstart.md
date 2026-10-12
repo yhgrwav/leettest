@@ -1,4 +1,4 @@
-> Translated from [docs/ru/quickstart.md](../ru/quickstart.md) at b7a685c, 2026-10-12. If they
+> Translated from [docs/ru/quickstart.md](../ru/quickstart.md) at 1bd45f9, 2026-10-12. If they
 > differ, the Russian one is right.
 
 # Quickstart
@@ -23,13 +23,37 @@ the latency itself. Measure on Linux; Windows is fine for trying the tool out.
 
 ## 1. Install
 
-```console
-$ go install github.com/yhgrwav/leettest/cmd/leettest@latest
-$ leettest -version
+Two paths, take either. The commands work as they are in a Linux or macOS terminal: copy the whole
+block.
+
+**1. A prebuilt binary** from the [releases page](https://github.com/yhgrwav/leettest/releases)
+(Linux, macOS, Windows; amd64 and arm64) — no Go needed, only `curl` and `tar`:
+
+```sh
+tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/yhgrwav/leettest/releases/latest)
+file=leettest_${tag##*/v}_$(uname -s | tr A-Z a-z)_$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/').tar.gz
+base=https://github.com/yhgrwav/leettest/releases/latest/download
+curl -fsSLO "$base/$file" -O "$base/checksums.txt"
+grep " $file\$" checksums.txt | { sha256sum -c - || shasum -a 256 -c -; }
+mkdir -p ~/.local/bin && tar -xzf "$file" -C ~/.local/bin leettest && rm "$file" checksums.txt
+export PATH="$HOME/.local/bin:$PATH"
+leettest -version
 ```
 
-Go 1.26 or newer. Prebuilt binaries for Linux, macOS and Windows (amd64 and arm64) are on the
-releases page.
+The `grep` line checks the checksum (`sha256sum` on Linux, `shasum` on macOS). The `export` holds
+for this terminal; to keep it, put the line in your shell profile. Windows has a `.zip` in the
+release.
+
+**2. Through Go**: Go 1.26 or newer ([install](https://go.dev/doc/install); an older Go with
+`GOTOOLCHAIN=auto` downloads the right one itself):
+
+```sh
+go install github.com/yhgrwav/leettest/cmd/leettest@latest
+export PATH="$PATH:$(go env GOPATH)/bin"
+leettest -version
+```
+
+The last command of both paths prints the version.
 
 ## 2. A target: the reference stand
 
@@ -37,14 +61,20 @@ You need no service of your own for the tour: the repository has a reference sta
 service whose behaviour you set. It answers `grpc.health.v1.Health/Check` and
 `wallet.v1.WalletService` and serves reflection, as a real service does.
 
-```console
-$ git clone https://github.com/yhgrwav/leettest && cd leettest
-$ go run ./test/stand/cmd/stand -delay 20ms -hang-from 25s -life 60s
+The tour goes on in the same terminal and builds from a clone: it needs `git` and Go 1.26+, and
+the stand and `leettest` from one clone match its configs exactly.
+
+```sh
+git clone --depth 1 https://github.com/yhgrwav/leettest && cd leettest
+go build -o bin/ ./cmd/leettest ./test/stand/cmd/stand
+bin/stand -delay 20ms -hang-from 25s -life 3m > stand.log 2>&1 &
+sleep 1
 ```
 
-The stand answers in 20 ms, and 25 seconds after the first call it stops answering at all — the
-way a service that fell over under load looks. The right answer is known up front, so you can see
-whether the report tells the truth.
+The stand runs in the background (`sleep 1` gives it a moment to start listening) and stops by itself after 3 minutes (`-life 3m`: the warm-up, 40
+seconds of the run and some slack). It answers in 20 ms, and 25 seconds after the first call it
+stops answering at all — the way a service that fell over under load looks. The right answer is
+known up front, so you can see whether the report tells the truth.
 
 ## 3. The config
 
@@ -107,10 +137,15 @@ method.
 
 ## 4. Run
 
-```console
-$ export LEETTEST_TOKEN=demo
-$ leettest -c examples/tour.yaml
+```sh
+export LEETTEST_TOKEN=demo
+bin/leettest -c examples/tour.yaml
 ```
+
+`demo` — the shared token we give the first users.
+
+The first launch in a terminal asks for a colour theme: arrows and Enter, asked once (`-plain`
+skips both the question and the live view).
 
 Before the start LeetTest connects to the target, checks each method through reflection, builds
 the request body, and checks that the in-flight cap (`-max-in-flight`) holds a target that hangs.
@@ -127,9 +162,15 @@ Without a terminal (CI, output to a file) you get a progress line a second on st
 `test/stand/certs` at start and requires the client certificate;
 [`examples/tour-tls.yaml`](../../examples/tour-tls.yaml) points at those files:
 
-```console
-$ go run ./test/stand/cmd/stand -mtls -delay 20ms -life 30s
-$ leettest -c examples/tour-tls.yaml
+The stand from §2 holds the same port, so it is stopped before another: `kill %%` ends the last
+background command of this terminal (if the stand has already stopped by itself, `2>/dev/null`
+hides the error):
+
+```sh
+kill %% 2>/dev/null; sleep 1
+bin/stand -mtls -delay 20ms -life 3m > stand.log 2>&1 &
+sleep 1
+bin/leettest -c examples/tour-tls.yaml
 ```
 
 ## 5. The report
@@ -184,25 +225,39 @@ The failure categories (`overload`, `failure`, `request error`, `timed out`, `cu
 `unreachable` and others) and what they mean are in the
 [README, «Reading the report»](README.md#reading-the-report).
 
+Exit code `0` does not mean "the service is healthy": read the load limit and the causes
+([README, «Exit codes»](README.md#exit-codes)).
+
 ## 6. Other target behaviours
 
-The same config against the stand in another mode — what the report shows:
+The same config against the stand in another mode — what the report shows. Each block first stops
+the previous stand (as in §4), then starts a new one and the run; `LEETTEST_TOKEN` from §4 is
+already set.
 
-```console
-$ go run ./test/stand/cmd/stand -delay 20ms -freeze-at 10s -freeze-for 2s -life 60s
+```sh
+kill %% 2>/dev/null; sleep 1
+bin/stand -delay 20ms -freeze-at 10s -freeze-for 2s -life 3m > stand.log 2>&1 &
+sleep 1
+bin/leettest -c examples/tour.yaml
 ```
 A 2-second freeze with a 500 ms timeout: p50 and p90 stay near 21 ms, and the calls that arrived
 during the pause got no answer — about 4% `got no answer within 500ms`, p99 printed as `>500ms`.
 Percentiles are not averaged: a short freeze shows in the tail, not smeared over a mean.
 
-```console
-$ go run ./test/stand/cmd/stand -delay 20ms -fail-every 10 -life 60s
+```sh
+kill %% 2>/dev/null; sleep 1
+bin/stand -delay 20ms -fail-every 10 -life 3m > stand.log 2>&1 &
+sleep 1
+bin/leettest -c examples/tour.yaml
 ```
 Every tenth call is `RESOURCE_EXHAUSTED`: category `overload`, its code on the "sent by the
 target" line.
 
-```console
-$ go run ./test/stand/cmd/stand -delay 150ms -max-streams 1 -life 60s
+```sh
+kill %% 2>/dev/null; sleep 1
+bin/stand -delay 150ms -max-streams 1 -life 3m > stand.log 2>&1 &
+sleep 1
+bin/leettest -c examples/tour.yaml
 ```
 The target allows one stream per connection and holds each answer 150 ms: through one connection
 it can answer no more than 6–7 calls a second. The report says where they got stuck:
@@ -212,9 +267,9 @@ connection's limit, not a slow target.
 
 ## 7. Scripts and CI
 
-```console
-$ leettest -c load.yaml -output json > report.json
-$ echo $?
+```sh
+leettest -c load.yaml -output json > report.json
+echo $?
 ```
 
 The JSON is versioned (`schema_version`); decisions are fields, not text: `invalid_reasons`,
@@ -235,12 +290,13 @@ There are no pass/fail thresholds yet: in CI check the exit code and the JSON fi
 
 ## 8. No service at all
 
-```console
-$ leettest -c examples/leettest.yaml -fake -fake-delay 30ms -fake-jitter 10ms
+```sh
+bin/leettest -c examples/leettest.yaml -fake -fake-delay 30ms -fake-jitter 10ms
 ```
 
 `-fake` loads a built-in fake target instead of a service — to look at the screen and the report
-without one. The report is marked `fake target`.
+without one. The config comes from the clone (`examples/leettest.yaml`) and its `target` is
+ignored. The report is marked `fake target`.
 
 ## Next
 

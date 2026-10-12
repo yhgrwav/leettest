@@ -19,12 +19,12 @@
 другой инструмент. Поведение задаётся флагом, по одному за раз; при выходе стенд печатает, что
 видел сам: сколько вызовов пришло в каждую секунду, на сколько ответил и сколько держал ответ.
 
-```console
-$ go run ./test/stand/cmd/stand -delay 20ms -freeze-at 5s -freeze-for 1s -life 20s
-$ go run ./test/stand/cmd/stand -delay 20ms -hang-from 8s
-$ go run ./test/stand/cmd/stand -delay 20ms -fail-every 10
-$ go run ./test/stand/cmd/stand -delay 150ms -max-streams 1
-$ go run ./test/stand/cmd/stand -delay 20ms -capacity 270
+```sh
+go run ./test/stand/cmd/stand -delay 20ms -freeze-at 5s -freeze-for 1s -life 20s
+go run ./test/stand/cmd/stand -delay 20ms -hang-from 8s
+go run ./test/stand/cmd/stand -delay 20ms -fail-every 10
+go run ./test/stand/cmd/stand -delay 150ms -max-streams 1
+go run ./test/stand/cmd/stand -delay 20ms -capacity 270
 ```
 
 Методы — `grpc.health.v1.Health/Check`, `wallet.v1.WalletService/GetBalance` и `/Transfer`, адрес
