@@ -240,7 +240,7 @@ func TestMeasureSpacing_TheSkippedHeadIsNotInTheGaps(t *testing.T) {
 	var offs []time.Duration
 	for _, o := range even(1000, 10*time.Second) {
 		if o < headSkip {
-			o = o / 100 // the whole head in a burst
+			o /= 100 // the whole head in a burst
 		}
 		offs = append(offs, o)
 	}
