@@ -118,21 +118,22 @@ type runOut struct {
 	Stand   standSummary
 	Verdict verdict
 	Spacing *spacing
+	// ReportError is set when the tool's own report could not be read; the
+	// stand's side above is still there.
+	ReportError string
 }
 
 // execute does one run: a fresh stand, one tool at it, the stand stopped so it
-// writes what it saw, then the numbers read from the stand's side. label names
-// the run's folder under runs/.
+// writes what it saw, then the numbers read from the stand's side, written to
+// result.json before the tool's own report is read: that report failing to
+// parse does not lose the stand's numbers. label names the run's folder under
+// runs/; whatever an earlier run left there is removed first, so a tool that
+// wrote no report cannot show an older run's.
 func (h *harness) execute(ctx context.Context, tool string, s setup, label string) (res runOut, err error) {
 	res = runOut{Tool: tool, Setup: s}
 
 	dir := filepath.Join(h.out, "runs", label)
-	err = os.MkdirAll(dir, 0o750)
-	if err != nil {
-		return res, err
-	}
-	// The k6 image runs as its own user and writes into this folder.
-	err = os.Chmod(dir, 0o777)
+	err = freshDir(dir)
 	if err != nil {
 		return res, err
 	}
@@ -172,32 +173,58 @@ func (h *harness) execute(ctx context.Context, tool string, s setup, label strin
 	if err != nil {
 		return res, err
 	}
+
+	return collectRun(res, stdout, standLog, h.keepArrivals)
+}
+
+// freshDir makes an empty run folder, wiping what an earlier run with the same
+// label left. The k6 image runs as its own user and writes into the folder, so
+// it is open to all.
+func freshDir(dir string) error {
+	if err := os.RemoveAll(dir); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return err
+	}
+
+	return os.Chmod(dir, 0o777)
+}
+
+// collectRun reads a finished run from its folder: the stand's side first, written
+// to result.json, then the tool's own report. A report that cannot be read is
+// returned as an error with result.json already there.
+func collectRun(res runOut, stdout, standLog []byte, keepArrivals bool) (runOut, error) {
+	var err error
 	if res.Stand, err = parseStandSummary(string(standLog)); err != nil {
 		return res, err
 	}
-	if res.Reports, err = readReport(tool, dir, stdout); err != nil {
-		return res, err
-	}
 
-	arrivalsPath := filepath.Join(dir, "arrivals.txt")
+	arrivalsPath := filepath.Join(res.Dir, "arrivals.txt")
 	offs, err := readArrivals(arrivalsPath)
 	if err != nil {
 		return res, err
 	}
-	if !h.keepArrivals {
+	if !keepArrivals {
 		defer func() { _ = os.Remove(arrivalsPath) }()
 	}
-	res.Verdict = judge(offs, s.Rate, s.Duration)
-	if sp, spErr := measureSpacing(offs, s.Rate, s.Duration); spErr == nil {
+	res.Verdict = judge(offs, res.Setup.Rate, res.Setup.Duration)
+	if sp, spErr := measureSpacing(offs, res.Setup.Rate, res.Setup.Duration); spErr == nil {
 		res.Spacing = &sp
+	}
+
+	var reportErr error
+	if res.Reports, reportErr = readReport(res.Tool, res.Dir, stdout); reportErr != nil {
+		res.ReportError = reportErr.Error()
 	}
 
 	b, err := json.MarshalIndent(res, "", "  ")
 	if err != nil {
 		return res, err
 	}
+	writeErr := os.WriteFile(filepath.Join(res.Dir, "result.json"), b, 0o600)
 
-	return res, os.WriteFile(filepath.Join(dir, "result.json"), b, 0o600)
+	return res, errors.Join(writeErr, reportErr)
 }
 
 // runTool writes the tool's inputs, runs its container to the end and keeps
@@ -275,15 +302,28 @@ func waitReady(ctx context.Context, name string) error {
 
 func standIsReady(logs string) bool { return strings.Contains(logs, readyLine) }
 
+// inputMode lets the tool's container read its input: the k6 image runs as
+// uid 12345, and on a Linux host a bind mount keeps the host's owner and mode.
+const inputMode os.FileMode = 0o644
+
 func writeInputs(tool string, s setup, ip, dir string) error {
 	switch tool {
 	case leettest:
-		return os.WriteFile(filepath.Join(dir, "leettest.yaml"), []byte(leettestConfig(s, ip)), 0o600)
+		return writeInput(filepath.Join(dir, "leettest.yaml"), leettestConfig(s, ip))
 	case k6:
-		return os.WriteFile(filepath.Join(dir, "k6.js"), []byte(k6Script(s, ip)), 0o600)
+		return writeInput(filepath.Join(dir, "k6.js"), k6Script(s, ip))
 	}
 
 	return nil
+}
+
+// writeInput chmods after writing: the umask would take bits off the mode.
+func writeInput(path, content string) error {
+	if err := os.WriteFile(path, []byte(content), inputMode); err != nil {
+		return err
+	}
+
+	return os.Chmod(path, inputMode)
 }
 
 func readReport(tool, dir string, stdout []byte) (toolResult, error) {

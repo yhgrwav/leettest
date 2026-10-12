@@ -79,32 +79,65 @@ func highestHeld(points []point) (held, broke int) {
 	return held, broke
 }
 
-func row1Table(w *strings.Builder, f flags, results map[string][]point) {
+func pointRows(w *strings.Builder, points []point) {
+	fmt.Fprintln(w, "| rate | runs held | arrived / planned | lowest second / rate | tool says sent | tool says failed |")
+	fmt.Fprintln(w, "|---|---|---|---|---|---|")
+	for _, p := range points {
+		n := 0
+		for i := range p.runs {
+			if p.runs[i].Verdict.Held {
+				n++
+			}
+		}
+		fmt.Fprintf(w, "| %d | %d of %d | %s | %s | %s | %s |\n", p.rate, n, len(p.runs),
+			spread(collect(p.runs, func(r runOut) float64 { return r.Verdict.Share }), showFloat),
+			spread(collect(p.runs, func(r runOut) float64 { return r.Verdict.MinShare }), showFloat),
+			spread(collect(p.runs, func(r runOut) int { return r.Reports.Sent }), showInt),
+			spread(collect(p.runs, func(r runOut) int { return r.Reports.Failed }), showInt))
+	}
+	fmt.Fprintln(w)
+}
+
+// row1Table writes each tool's ladder and, when the control ran, what it says
+// about the stand: a tool that reached the stand's limit has that as a lower
+// bound, not as its number.
+func row1Table(w *strings.Builder, f flags, results map[string][]point, ctl *control) {
+	limit, limited := ctl.standLimit()
+
 	fmt.Fprintf(w, "## Row 1: rate one core holds (stand answers at once)\n\n")
-	fmt.Fprintf(w, "Held: at least %.1f%% of the planned calls reach the stand within the run (%v allowance), and the lowest "+
+	fmt.Fprintf(w, "Held: at least %.1f%% of the planned calls reach the stand within the run (plus %.1f%% of its length), and the lowest "+
 		"steady second is at least %.0f%% of the rate; a point holds when more than half of its %d runs do. "+
-		"Run %v each, tool container %d core(s), stand %d core(s).\n\n",
-		heldShare*100, allowance, steadyShare*100, f.runs, f.duration, f.toolCPUs, f.standCPUs)
+		"Run %v each, tool container %d core(s), stand %d core(s). All tools climb the same steps together; "+
+		"connections: leettest 1, ghz 1, k6 one per virtual user (%d).\n\n",
+		heldShare*100, (1-heldShare)*100, steadyShare*100, f.runs, f.duration, f.toolCPUs, f.standCPUs, f.k6VUs)
 
 	for _, tool := range f.tools {
 		held, broke := highestHeld(results[tool])
-		fmt.Fprintf(w, "### %s: holds %d rps, did not hold %d rps\n\n", tool, held, broke)
-		fmt.Fprintln(w, "| rate | runs held | arrived / planned | lowest second / rate | tool says sent | tool says failed |")
-		fmt.Fprintln(w, "|---|---|---|---|---|---|")
-		for _, p := range results[tool] {
-			n := 0
-			for i := range p.runs {
-				if p.runs[i].Verdict.Held {
-					n++
-				}
-			}
-			fmt.Fprintf(w, "| %d | %d of %d | %s | %s | %s | %s |\n", p.rate, n, len(p.runs),
-				spread(collect(p.runs, func(r runOut) float64 { return r.Verdict.Share }), showFloat),
-				spread(collect(p.runs, func(r runOut) float64 { return r.Verdict.MinShare }), showFloat),
-				spread(collect(p.runs, func(r runOut) int { return r.Reports.Sent }), showInt),
-				spread(collect(p.runs, func(r runOut) int { return r.Reports.Failed }), showInt))
+		switch {
+		case limited && held >= limit:
+			fmt.Fprintf(w, "### %s: holds ≥ %d rps (stand's limit)\n\n", tool, held)
+		case broke == 0 && held > 0:
+			fmt.Fprintf(w, "### %s: holds ≥ %d rps (the top of the ladder, it never broke)\n\n", tool, held)
+		default:
+			fmt.Fprintf(w, "### %s: holds %d rps, did not hold %d rps\n\n", tool, held, broke)
 		}
-		fmt.Fprintln(w)
+		pointRows(w, results[tool])
+	}
+
+	switch {
+	case ctl != nil:
+		cHeld, _ := highestHeld(ctl.Points)
+		fmt.Fprintf(w, "### Control: %s with %d core(s) instead of %d, from %d rps\n\n", ctl.Tool, ctl.CPUs, f.toolCPUs, ctl.From)
+		pointRows(w, ctl.Points)
+		if limited {
+			fmt.Fprintf(w, "With %d cores %s holds %d rps, no more than the %d with %d: row 1 reaches the stand's limit "+
+				"(≥ %d rps), not the tools' own.\n\n", ctl.CPUs, ctl.Tool, cHeld, limit, f.toolCPUs, limit)
+		} else {
+			fmt.Fprintf(w, "With %d cores %s holds %d rps, more than the %d with %d: the stand was not the limit at the "+
+				"tools' numbers above.\n\n", ctl.CPUs, ctl.Tool, cHeld, ctl.From, f.toolCPUs)
+		}
+	case f.ctlCPUs != 0:
+		fmt.Fprintf(w, "No control ran: none of the tools held a rate and then broke on the ladder, or the row stopped early.\n\n")
 	}
 }
 
@@ -116,6 +149,11 @@ func row2Table(w *strings.Builder, f flags, results map[string][]runOut) {
 	fmt.Fprintln(w, "|---|---|---|---|---|---|---|---|---|")
 	for _, tool := range f.tools {
 		rs := results[tool]
+		if len(rs) == 0 {
+			fmt.Fprintf(w, "| %s | no run finished |\n", tool)
+
+			continue
+		}
 		sp := func(get func(spacing) time.Duration) string {
 			return spread(collect(rs, func(r runOut) time.Duration { return get(*r.Spacing) }), showDur)
 		}
@@ -141,6 +179,11 @@ func row3Table(w *strings.Builder, f flags, results map[string][]runOut) {
 	fmt.Fprintln(w, "|---|---|---|---|---|---|---|---|---|")
 	for _, tool := range f.tools {
 		rs := results[tool]
+		if len(rs) == 0 {
+			fmt.Fprintf(w, "| %s | no run finished |\n", tool)
+
+			continue
+		}
 		fmt.Fprintf(w, "| %s | %s | %s | %s | %s | %s | %s | %s | %s |\n", tool,
 			spread(collect(rs, func(r runOut) time.Duration { return r.Reports.P50 }), showDur),
 			spread(collect(rs, func(r runOut) time.Duration { return r.Stand.HeldP50 }), showDur),
@@ -167,6 +210,17 @@ func plan(f flags) string {
 		f.rows, strings.Join(f.tools, ","), f.runs, f.duration, f.toolCPUs, f.standCPUs)
 	fmt.Fprintf(&b, "images: %s (stand, leettest, ghz), %s (build ghz %s), %s (k6)\n", f.image, f.goImage, f.ghzVersion, f.k6Image)
 	fmt.Fprintf(&b, "row 1 ladder (%d steps, x%v, at most %d): %v\n", len(rates), f.rateFactor, f.rateMax, rates)
+	fmt.Fprintf(&b, "row 1 order: step by step, all tools at each rate (runs go round the tools, the order shifted), "+
+		"a tool that does not hold a step drops out\n")
+	if f.ctlCPUs != 0 {
+		fmt.Fprintf(&b, "row 1 control: after the ladder the fastest tool again with %d core(s) (GOMAXPROCS %d) from its highest held rate "+
+			"up to the first it does not hold, %d run(s) each; it holds no more than with %d: row 1 is the stand's limit and "+
+			"the table says so; folders row1-<tool>-c%d-<rate>-<run>\n", f.ctlCPUs, f.ctlCPUs, f.runs, f.toolCPUs, f.ctlCPUs)
+	} else {
+		fmt.Fprintf(&b, "row 1 control: off (-control-cpus 0), the stand's own limit is not checked\n")
+	}
+	fmt.Fprintf(&b, "held: a run holds with at least %.1f%% of the planned calls at the stand within the duration plus %.1f%% of it, "+
+		"and no steady second under %.0f%% of the rate\n", heldShare*100, (1-heldShare)*100, steadyShare*100)
 	fmt.Fprintf(&b, "row 2: %d rps; row 3: %d rps, stand delay %v\n", f.fixedRate, f.latRate, f.latDelay)
 	fmt.Fprintf(&b, "tool call timeout %v; every tool: one container, --cpus=%d, GOMAXPROCS=%d, the stand's address as an IP\n",
 		callTimeout, f.toolCPUs, f.toolCPUs)
@@ -189,6 +243,9 @@ func plan(f flags) string {
 	const overhead = 15 * time.Second // assumed: stand start and stop, the tool's container and start-up
 	perRun := f.duration + overhead
 	row1, row23 := len(f.tools)*len(rates)*f.runs, len(f.tools)*f.runs
+	if f.ctlCPUs != 0 {
+		row1 += len(rates) * f.runs
+	}
 	total := 0
 	for _, r := range f.rows {
 		if r == 1 {
@@ -197,7 +254,11 @@ func plan(f flags) string {
 			total += row23
 		}
 	}
-	fmt.Fprintf(&b, "runs at most: row 1 %d (each tool stops at its first point that does not hold), rows 2 and 3 %d each; "+
+	if f.ctlCPUs != 0 && slices.Contains(f.rows, 1) {
+		fmt.Fprintf(&b, "free cores needed: %d (a tool) + %d (the stand) + the harness, Docker and the host\n",
+			max(f.ctlCPUs, f.toolCPUs), f.standCPUs)
+	}
+	fmt.Fprintf(&b, "runs at most: row 1 %d (each tool stops at its first point that does not hold; the control, if any, is in it), rows 2 and 3 %d each; "+
 		"%d runs at an assumed %v each is at most %v\n", row1, row23, total, perRun, (time.Duration(total) * perRun).Round(time.Minute))
 
 	return b.String()

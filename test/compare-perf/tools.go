@@ -18,7 +18,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -103,7 +105,7 @@ export const options = {
       maxVUs: %d,
     },
   },
-  summaryTrendStats: ['min', 'p(50)', 'p(90)', 'p(95)', 'p(99)', 'max'],
+  summaryTrendStats: ['count', 'min', 'p(50)', 'p(90)', 'p(95)', 'p(99)', 'max'],
 };
 
 export default function () {
@@ -122,11 +124,26 @@ export function handleSummary(data) {
 `, s.Rate, s.Duration, s.K6VUs, s.K6VUs, ip, standPort, callTimeout, method, callTimeout)
 }
 
+// leettestInFlight is the in-flight cap LeetTest is given. Its default (5000)
+// refuses a run whose rate × timeout plus the release margin (100 ms of
+// calls) and one edge slot would not fit, which every rate above ~980 with a
+// 5 s timeout does; the cap is raised to fit, with two slots to spare. Nothing
+// is held that long against a stand answering at once, so the cap is not
+// reached; ghz and k6 have no such check.
+func leettestInFlight(s setup) int {
+	const releaseMargin = 100 * time.Millisecond
+
+	return int(math.Ceil(float64(s.Rate)*(callTimeout+releaseMargin).Seconds())) + 2
+}
+
 // toolCommand is the container image and the command inside it.
 func toolCommand(tool string, s setup, ip string) (image string, cmd []string, err error) {
 	switch tool {
 	case leettest:
-		return s.Image, []string{"/perf/leettest", "-c", "/data/leettest.yaml", "-output", "json"}, nil
+		return s.Image, []string{
+			"/perf/leettest", "-c", "/data/leettest.yaml", "-output", "json",
+			"-max-in-flight", strconv.Itoa(leettestInFlight(s)),
+		}, nil
 	case ghz:
 		return s.Image, append([]string{"/perf/ghz"}, ghzArgs(s, ip)...), nil
 	case k6:
@@ -189,7 +206,7 @@ func parseLeetTestJSON(data []byte) (toolResult, error) {
 	}
 
 	for _, m := range rep.Methods {
-		if m.Method != method {
+		if strings.TrimPrefix(m.Method, "/") != method { // the report writes "/grpc.health.v1.Health/Check"
 			continue
 		}
 		if m.Latency.P50 == nil || m.Latency.P99 == nil {
@@ -242,9 +259,12 @@ func parseGhzJSON(data []byte) (toolResult, error) {
 }
 
 // parseK6Summary reads handleSummary's data: k6's trend percentiles are exact
-// values with linear interpolation between neighbours, in milliseconds. The
-// values may sit under "values" or beside the metric's other fields, by k6
-// version; both are read.
+// values with linear interpolation between neighbours, in milliseconds. k6
+// v2.3.0 has no grpc_reqs metric; the calls it made are the count of
+// grpc_req_duration, which the script's summaryTrendStats asks for. The
+// handleSummary data has the old form, metrics.<name>.{type,contains,values}
+// (--new-machine-readable-summary is off by default); values beside the
+// metric's other fields, a form k6 does not produce, are read too.
 func parseK6Summary(data []byte) (toolResult, error) {
 	var rep struct {
 		Metrics map[string]map[string]any `json:"metrics"`
@@ -275,9 +295,9 @@ func parseK6Summary(data []byte) (toolResult, error) {
 	r.P50 = time.Duration(p50 * float64(time.Millisecond))
 	r.P99 = time.Duration(p99 * float64(time.Millisecond))
 
-	reqs, ok := value("grpc_reqs", "count")
+	reqs, ok := value("grpc_req_duration", "count")
 	if !ok {
-		return r, errors.New("k6 reported no grpc_reqs count")
+		return r, errors.New("k6 reported no count of grpc_req_duration")
 	}
 	r.Sent = int(reqs)
 	if errs, ok := value("perf_errors", "count"); ok {

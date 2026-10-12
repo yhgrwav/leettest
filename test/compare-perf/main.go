@@ -25,6 +25,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -47,6 +48,7 @@ type flags struct {
 	latDelay   time.Duration
 	toolCPUs   int
 	standCPUs  int
+	ctlCPUs    int
 	k6VUs      int
 	image      string
 	goImage    string
@@ -75,6 +77,8 @@ func parseFlags(args []string, usage io.Writer) (flags, error) {
 	fs.DurationVar(&f.latDelay, "latency-delay", 20*time.Millisecond, "row 3: how long the stand holds every answer")
 	fs.IntVar(&f.toolCPUs, "tool-cpus", 1, "cores of a tool's container, and its GOMAXPROCS")
 	fs.IntVar(&f.standCPUs, "stand-cpus", 4, "cores of the stand's container")
+	fs.IntVar(&f.ctlCPUs, "control-cpus", 4, "row 1 control: the fastest tool again with this many cores, from its highest held rate up, "+
+		"to tell the tool's limit from the stand's; 0 for no control")
 	fs.IntVar(&f.k6VUs, "k6-vus", 100, "k6's virtual users, all pre-allocated; k6 opens a connection for each, the others use one")
 	fs.StringVar(&f.image, "image", "debian:stable-slim", "image the stand, LeetTest and ghz run in")
 	fs.StringVar(&f.goImage, "go-image", "golang:1.27.1", "image that builds ghz")
@@ -105,6 +109,8 @@ func parseFlags(args []string, usage io.Writer) (flags, error) {
 		return f, fmt.Errorf("-duration %v is under %v", f.duration, minDuration)
 	case f.runs < 1, f.toolCPUs < 1, f.standCPUs < 1, f.k6VUs < 1, f.rateStart < 1, f.fixedRate < 1, f.latRate < 1:
 		return f, errors.New("-runs, -tool-cpus, -stand-cpus, -k6-vus and the rates must be at least 1")
+	case f.ctlCPUs != 0 && f.ctlCPUs <= f.toolCPUs:
+		return f, errors.New("-control-cpus must be above -tool-cpus, or 0 for no control")
 	case f.rateFactor <= 1:
 		return f, errors.New("-rate-factor must be above 1")
 	case f.rateMax < f.rateStart:
@@ -140,6 +146,10 @@ func ladder(start int, factor float64, top int) []int {
 	}
 }
 
+// runFunc does one run of a tool and returns what was measured; the harness
+// uses execute, a test a script.
+type runFunc func(ctx context.Context, tool string, s setup, label string) (runOut, error)
+
 // harness is the state shared by every run.
 type harness struct {
 	f             flags
@@ -148,6 +158,20 @@ type harness struct {
 	prefix        string
 	n             int
 	keepArrivals  bool
+	run           runFunc
+}
+
+// runLabel names a run's folder. The cores are in it: the same tool at the
+// same rate with another number of cores is another run, never to be written
+// over the first.
+func runLabel(row int, tool string, cpus int, rest ...int) string {
+	parts := make([]string, 0, 3+len(rest))
+	parts = append(parts, fmt.Sprintf("row%d", row), tool, fmt.Sprintf("c%d", cpus))
+	for _, n := range rest {
+		parts = append(parts, strconv.Itoa(n))
+	}
+
+	return strings.Join(parts, "-")
 }
 
 func main() { os.Exit(realMain()) }
@@ -215,6 +239,7 @@ func measure(ctx context.Context, f flags, planText string, stdout io.Writer) er
 		return err
 	}
 	h := &harness{f: f, out: f.out, binMount: binMount, network: prefix + "-net", prefix: prefix, keepArrivals: f.keep}
+	h.run = h.execute
 	_, _, _ = docker(ctx, "network", "rm", h.network)
 	if _, err = dockerOK(ctx, "network", "create", h.network); err != nil {
 		return err
@@ -301,95 +326,4 @@ func rotated(tools []string, i int) []string {
 	}
 
 	return out
-}
-
-// point is one rate of row 1 for one tool.
-type point struct {
-	rate int
-	runs []runOut
-}
-
-// holds reports whether more than half of the runs held.
-func (p point) holds() bool {
-	n := 0
-	for i := range p.runs {
-		if p.runs[i].Verdict.Held {
-			n++
-		}
-	}
-
-	return 2*n > len(p.runs)
-}
-
-func (h *harness) row1(ctx context.Context, summary *strings.Builder, stdout io.Writer) error {
-	rates := ladder(h.f.rateStart, h.f.rateFactor, h.f.rateMax)
-	results := map[string][]point{}
-
-	for _, tool := range h.f.tools {
-		for _, rate := range rates {
-			p := point{rate: rate}
-			for i := range h.f.runs {
-				s := h.f.base()
-				s.Rate = rate
-				r, err := h.execute(ctx, tool, s, fmt.Sprintf("row1-%s-%d-%d", tool, rate, i+1))
-				if err != nil {
-					return fmt.Errorf("row 1 %s %d rps run %d: %w", tool, rate, i+1, err)
-				}
-				fmt.Fprintf(stdout, "row1 %-8s %6d rps run %d: held %v, arrived %d of %d, lowest second %d, tool says sent %d failed %d %s\n",
-					tool, rate, i+1, r.Verdict.Held, r.Verdict.Arrived, r.Verdict.Planned, r.Verdict.MinSecond,
-					r.Reports.Sent, r.Reports.Failed, r.Reports.Note)
-				p.runs = append(p.runs, r)
-			}
-			results[tool] = append(results[tool], p)
-			if !p.holds() {
-				break
-			}
-		}
-	}
-	row1Table(summary, h.f, results)
-
-	return nil
-}
-
-func (h *harness) row2(ctx context.Context, summary *strings.Builder, stdout io.Writer) error {
-	results := map[string][]runOut{}
-	for i := range h.f.runs {
-		for _, tool := range rotated(h.f.tools, i) {
-			s := h.f.base()
-			s.Rate = h.f.fixedRate
-			r, err := h.execute(ctx, tool, s, fmt.Sprintf("row2-%s-%d", tool, i+1))
-			if err != nil {
-				return fmt.Errorf("row 2 %s run %d: %w", tool, i+1, err)
-			}
-			if r.Spacing == nil {
-				return fmt.Errorf("row 2 %s run %d: no arrivals in the steady seconds", tool, i+1)
-			}
-			fmt.Fprintf(stdout, "row2 %-8s run %d: gap p99 %v (ideal %v), seconds %d..%d\n",
-				tool, i+1, r.Spacing.GapP99, r.Spacing.Ideal, r.Spacing.SecMin, r.Spacing.SecMax)
-			results[tool] = append(results[tool], r)
-		}
-	}
-	row2Table(summary, h.f, results)
-
-	return nil
-}
-
-func (h *harness) row3(ctx context.Context, summary *strings.Builder, stdout io.Writer) error {
-	results := map[string][]runOut{}
-	for i := range h.f.runs {
-		for _, tool := range rotated(h.f.tools, i) {
-			s := h.f.base()
-			s.Rate, s.Delay = h.f.latRate, h.f.latDelay
-			r, err := h.execute(ctx, tool, s, fmt.Sprintf("row3-%s-%d", tool, i+1))
-			if err != nil {
-				return fmt.Errorf("row 3 %s run %d: %w", tool, i+1, err)
-			}
-			fmt.Fprintf(stdout, "row3 %-8s run %d: tool p50 %v p99 %v, stand held p50 %v p99 %v\n",
-				tool, i+1, r.Reports.P50, r.Reports.P99, r.Stand.HeldP50, r.Stand.HeldP99)
-			results[tool] = append(results[tool], r)
-		}
-	}
-	row3Table(summary, h.f, results)
-
-	return nil
 }

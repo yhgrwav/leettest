@@ -33,14 +33,21 @@ import (
 const (
 	heldShare   = 0.999
 	steadyShare = 0.95
-	// allowance is how long after the nominal end an arrival still counts as
-	// within the run: a tool starts its clock before its first call reaches
-	// the stand.
-	allowance = time.Second
 	// minDuration leaves at least two steady seconds between the first and
 	// the last, which are skipped.
 	minDuration = 4 * time.Second
 )
+
+// allowanceFor is how long after the nominal end an arrival still counts as
+// within the run: the share of the run that heldShare lets be missing anyway.
+// Offsets run from the first arrival, which is later than the tool's own
+// start, so a call on schedule has an offset below the duration and needs no
+// more. A longer allowance would credit a tool that sends late calls after the
+// end (LeetTest does, until a call's deadline) with capacity that ghz and k6,
+// which stop issuing calls at the end, do not get.
+func allowanceFor(dur time.Duration) time.Duration {
+	return time.Duration((1 - heldShare) * float64(dur))
+}
 
 // readArrivals reads the stand's -arrivals file and sorts it: arrival order
 // can differ from time order by microseconds.
@@ -110,7 +117,7 @@ type verdict struct {
 func judge(offs []time.Duration, rate int, dur time.Duration) verdict {
 	v := verdict{Planned: int(float64(rate) * dur.Seconds())}
 	for _, o := range offs {
-		if o < dur+allowance {
+		if o < dur+allowanceFor(dur) {
 			v.Arrived++
 		}
 	}

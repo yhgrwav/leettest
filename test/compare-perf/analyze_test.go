@@ -1,8 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -72,9 +75,98 @@ func TestJudge_CallsArrivingAfterTheAllowanceAreNotInTheRun(t *testing.T) {
 	}
 }
 
+// A tool with 0.96 of the capacity the rate needs lags behind; a tool that
+// sends late calls after the end (LeetTest does, until a call's deadline) catches
+// up in the next second. Every call arrives, only after the run: ghz and k6
+// stop at the end and would count as missing 4%, so must this one.
+func TestJudge_ALagCaughtUpAfterTheRunEndsDoesNotHold(t *testing.T) {
+	const rate, dur = 10000, 20 * time.Second
+
+	var offs []time.Duration
+	for i := range 192000 { // 0.96 of the calls, on time at 9600 a second
+		offs = append(offs, time.Duration(i)*time.Second/9600)
+	}
+	for i := range 8000 { // the rest, sent in the 0.83 s after the end
+		offs = append(offs, dur+time.Duration(i)*830*time.Millisecond/8000)
+	}
+
+	v := judge(offs, rate, dur)
+	if v.Held {
+		t.Errorf("held with %d of %d arrived by the end (%.3f), lowest second %.3f", v.Arrived, v.Planned, v.Share, v.MinShare)
+	}
+	if v.MinShare < steadyShare {
+		t.Fatalf("lowest second %.3f: the premise is that the steady-second check alone passes", v.MinShare)
+	}
+}
+
+func TestAllowanceFor_IsWhatTheHeldShareAlreadyLetsBeMissing(t *testing.T) {
+	if got := allowanceFor(20 * time.Second); got < 19*time.Millisecond || got > 21*time.Millisecond {
+		t.Errorf("allowance for 20s = %v, want 20ms", got)
+	}
+}
+
 func TestJudge_ARunTooShortToHaveSteadySecondsNeverHolds(t *testing.T) {
 	if v := judge(even(1000, 3*time.Second), 1000, 3*time.Second); v.Held {
 		t.Errorf("a 3 s run has no steady second to judge, got %+v", v)
+	}
+}
+
+// The tool's report failing to parse must not take the stand's numbers with it:
+// row 1's verdict is read at the stand only.
+func TestCollectRun_TheStandsNumbersAreSavedWhenTheToolsReportCannotBeRead(t *testing.T) {
+	dir := t.TempDir()
+	var lines strings.Builder
+	for _, o := range even(1000, 5*time.Second) {
+		lines.WriteString(strconv.FormatInt(int64(o), 10) + "\n")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "arrivals.txt"), []byte(lines.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	standLog := []byte("arrivals 5000, answered 5000\nper second, from the first arrival:\n  0  1000\n")
+	res := runOut{Tool: ghz, Dir: dir, Setup: setup{Rate: 1000, Duration: 5 * time.Second}}
+
+	got, err := collectRun(res, nil, standLog, false) // no ghz.json in the folder
+
+	if err == nil {
+		t.Fatal("want the report's error")
+	}
+	b, readErr := os.ReadFile(filepath.Join(dir, "result.json"))
+	if readErr != nil {
+		t.Fatalf("no result.json: %v", readErr)
+	}
+	var saved runOut
+	if jsonErr := json.Unmarshal(b, &saved); jsonErr != nil {
+		t.Fatal(jsonErr)
+	}
+	if !saved.Verdict.Held || saved.Verdict.Arrived != 5000 || saved.ReportError == "" || !got.Verdict.Held {
+		t.Errorf("saved %+v, want the stand's verdict (held, 5000 arrived) and the report's error named", saved)
+	}
+}
+
+// A tool that exits 0 without writing its report must not be given the report
+// of an earlier run with the same label (the 5 s smoke run, then the real one).
+func TestFreshDir_WhatAnEarlierRunLeftIsGone(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "runs", "row3-ghz-c1-1")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(dir, "ghz.json")
+	if err := os.WriteFile(stale, []byte(`{"count":1}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := freshDir(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(stale); err == nil {
+		t.Error("the earlier run's ghz.json is still there")
+	}
+	if _, err := readReport(ghz, dir, nil); err == nil {
+		t.Error("a ghz run without a report was read as if it had one")
+	}
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		t.Errorf("the folder is not there: %v", err)
 	}
 }
 

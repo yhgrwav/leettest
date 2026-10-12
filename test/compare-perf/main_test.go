@@ -36,7 +36,7 @@ func TestParseFlags_HelpListsTheFlags(t *testing.T) {
 	if !errors.Is(err, flag.ErrHelp) {
 		t.Fatalf("err = %v, want flag.ErrHelp", err)
 	}
-	for _, name := range []string{"-plan", "-rows", "-tools", "-runs", "-duration", "-rate-start", "-rate-factor", "-tool-cpus", "-stand-cpus", "-k6-vus", "-keep-arrivals"} {
+	for _, name := range []string{"-plan", "-rows", "-tools", "-runs", "-duration", "-rate-start", "-rate-factor", "-tool-cpus", "-stand-cpus", "-control-cpus", "-k6-vus", "-keep-arrivals"} {
 		if !strings.Contains(usage.String(), name) {
 			t.Errorf("usage lacks %s:\n%s", name, usage.String())
 		}
@@ -53,6 +53,7 @@ func TestParseFlags_RejectsWhatCannotBeMeasured(t *testing.T) {
 		{"-rate-start", "5000", "-rate-max", "1000"},
 		{"-runs", "0"},
 		{"-latency-delay", "0s"},
+		{"-control-cpus", "1"}, // not more than a tool's own cores: it controls nothing
 	} {
 		if _, err := parseFlags(args, io.Discard); err == nil {
 			t.Errorf("%v: want an error", args)
@@ -165,7 +166,7 @@ func TestRow1Table_NamesWhereEachToolStoppedHolding(t *testing.T) {
 	}
 
 	var b strings.Builder
-	row1Table(&b, f, map[string][]point{k6: {p(1000, true), p(1250, false)}})
+	row1Table(&b, f, map[string][]point{k6: {p(1000, true), p(1250, false)}}, nil)
 
 	if !strings.Contains(b.String(), "k6: holds 1000 rps, did not hold 1250 rps") {
 		t.Errorf("table:\n%s", b.String())
@@ -194,10 +195,20 @@ func TestRun_PlanPrintsEverySettingAndRunsNothing(t *testing.T) {
 	for _, want := range []string{
 		"--cpus=1", "GOMAXPROCS=1", "--cpus=4", "/perf/leettest", "/perf/ghz", "--async", "grafana/k6:2.3.0",
 		"constant-arrival-rate", "ladder", "percentiles:", "runs at most",
+		"row 1 control: after the ladder the fastest tool again with 4 core(s)", "row1-<tool>-c4-",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("plan lacks %q", want)
 		}
+	}
+}
+
+func TestPlan_ControlOffIsSaid(t *testing.T) {
+	f, _ := parseFlags([]string{"-control-cpus", "0"}, io.Discard)
+
+	text := plan(f)
+	if !strings.Contains(text, "control: off") || strings.Contains(text, "after the ladder") {
+		t.Errorf("plan:\n%s", text)
 	}
 }
 
