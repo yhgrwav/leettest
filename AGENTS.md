@@ -24,7 +24,7 @@ queues) from client data, in code or in text.
    V=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/yhgrwav/leettest/releases/latest); V=${V##*/v}
    A=leettest_${V}_$(uname -s | tr A-Z a-z)_$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/').tar.gz
    U=https://github.com/yhgrwav/leettest/releases/download/v$V
-   curl -fsSL -O $U/$A -O $U/checksums.txt && grep " $A\$" checksums.txt | sha256sum -c -   # macOS: shasum -a 256 -c -
+   curl -fsSL -O $U/$A -O $U/checksums.txt && grep " $A\$" checksums.txt | sha256sum -c - &&   # macOS: shasum -a 256 -c -
    mkdir -p ~/.local/bin && tar -xzf $A -C ~/.local/bin leettest && export PATH=$HOME/.local/bin:$PATH
    leettest -version
    ```
@@ -47,19 +47,19 @@ queues) from client data, in code or in text.
    For **at what load the service stops coping**, use `load.breakpoint` instead of `rps` and
    `duration`: [`examples/breakpoint.yaml`](https://github.com/yhgrwav/leettest/blob/main/examples/breakpoint.yaml).
 4. **First run small**, as above (10 rps, 10 s). Before the first call LeetTest connects and checks
-   every method through reflection and the body; an error is exit 1, names its line, sent nothing.
+   every method through reflection and the body; an error is exit 1, names its line or call, sent nothing.
    Reflection off on the service: a method with `data` will not start («server reflection is not
    enabled on the target»). Two ways out: drop `data` (an empty message goes out, with a warning,
    the method unchecked), or wait for [`.proto` support](https://github.com/yhgrwav/leettest/blob/main/docs/en/roadmap.md).
    Do not guess a body.
-5. **Run:** `leettest -c load.yaml -plain -output json > report.json; echo $?`. It takes `duration`
-   (warm-up included) plus the longest `timeout` plus up to 10 s to connect; a breakpoint search
+5. **Run:** `leettest -c load.yaml -plain -output json > report.json; echo $?`. It takes the longest
+   `duration` (warm-up included) plus the longest `timeout` plus up to 10 s to connect; a breakpoint search
    prints its worst case on stderr first. Set your tool's timeout above that.
 6. **Tell the user**, in this order, from the
    [JSON fields](https://github.com/yhgrwav/leettest/blob/main/docs/en/reference.md#json-fields):
    - the exit code (table below); `0` only means the plan ran, not that the service is healthy;
    - the load where it stopped coping, in rps. A search: `breakpoint.outcome` `broke` — held
-     `held_rps`, broke at `broke_rps`; `held_all` — held every step, the limit is above `to`;
+     `held_rps`, broke at `broke_rps`; `held_all` — held every step, the limit is above `held_rps`;
      `broke_at_first` — start lower; `run_limit` — the generator ran out, nothing is known about
      the target above that. A plain run: `silent_from_s` is the second from which it answered
      nothing;
