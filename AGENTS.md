@@ -16,6 +16,52 @@ queues) from client data, in code or in text.
 
 ## Part 1. Using LeetTest from an agent
 
+### From zero to a report
+
+Links here are absolute: this file may reach you as a raw URL.
+
+1. **Install** the release binary (curl and tar; no Go). Linux and macOS; Windows has a `.zip`.
+   ```sh
+   V=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/yhgrwav/leettest/releases/latest); V=${V##*/v}
+   A=leettest_${V}_$(uname -s | tr A-Z a-z)_$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/').tar.gz
+   U=https://github.com/yhgrwav/leettest/releases/download/v$V
+   curl -fsSL -O $U/$A -O $U/checksums.txt && grep " $A\$" checksums.txt | sha256sum -c -   # macOS: shasum -a 256 -c -
+   mkdir -p ~/.local/bin && tar -xzf $A -C ~/.local/bin leettest && export PATH=$HOME/.local/bin:$PATH
+   leettest -version
+   ```
+   Or `go install github.com/yhgrwav/leettest/cmd/leettest@latest` (Go 1.26+; an older Go with
+   `GOTOOLCHAIN=auto` fetches it) and `export PATH="$(go env GOPATH)/bin:$PATH"`.
+2. **Ask the user** the target's address, TLS or not, which methods, how hard (rps, duration).
+   **Never send load to a target the user has not named and confirmed, with the rate and duration
+   said back to them.** A production target — only on the user's explicit yes.
+3. **Write `load.yaml`** ([every field](https://github.com/yhgrwav/leettest/blob/main/docs/en/reference.md#config)).
+   TLS is on by default: a plaintext service needs `tls: false`.
+   ```yaml
+   app:
+     target: {ip: HOST, port: 50051}    # a name or an IP
+     tls: false
+     metadata: {authorization: "Bearer ${SERVICE_TOKEN}"}   # only if the service wants it
+   load:
+     calls:
+       - {method: package.Service/Method, rps: 10, duration: 10s}   # data: {...} for a body
+   ```
+   For **at what load the service stops coping**, use `load.breakpoint` instead of `rps` and
+   `duration`: [`examples/breakpoint.yaml`](https://github.com/yhgrwav/leettest/blob/main/examples/breakpoint.yaml).
+4. **First run small**, as above (10 rps, 10 s). Before the first call LeetTest connects and checks
+   every method through reflection and the body; an error is exit 1, names its line, sent nothing.
+5. **Run:** `leettest -c load.yaml -plain -output json > report.json; echo $?`. It takes `duration`
+   (warm-up included) plus the longest `timeout` plus up to 10 s to connect; a breakpoint search
+   prints its worst case on stderr first. Set your tool's timeout above that.
+6. **Tell the user** the exit code first (table below); `0` is not «healthy». Then, from the
+   [JSON fields](https://github.com/yhgrwav/leettest/blob/main/docs/en/reference.md#json-fields),
+   the load where it stopped coping (a search: `breakpoint.outcome`, `held_rps`, `broke_rps`, `why`;
+   a plain run: `silent_from_s`, `failure_codes`, `tail_wait_cause`). Say what the client saw; never
+   the target's CPU, memory or queues — the generator cannot see them.
+7. **Without the user's service:** `-fake` needs a config, any one: `curl -fsSLO
+   https://raw.githubusercontent.com/yhgrwav/leettest/main/examples/leettest.yaml`, then
+   `leettest -c leettest.yaml -fake -plain` (a minute). The reference stand's tour needs the
+   repository and Go: [quickstart §2](https://github.com/yhgrwav/leettest/blob/main/docs/en/quickstart.md#2-a-target-the-reference-stand).
+
 ### Where it runs
 
 Linux and macOS first: the generator runs next to the target (a server in the same network, a
@@ -64,7 +110,7 @@ checked against `internal/cli/testdata/schema_v1.txt`; the contract rules are in
 
 Every field, with what it does: [reference](docs/en/reference.md). Configs using all of them
 against the reference stand: [`examples/tour.yaml`](examples/tour.yaml) (needs `LEETTEST_TOKEN`
-set) and, for TLS, [`examples/tour-tls.yaml`](examples/tour-tls.yaml) against a stand started with
+set; `demo` is the shared token we give the first users) and, for TLS, [`examples/tour-tls.yaml`](examples/tour-tls.yaml) against a stand started with
 `-mtls` from the repository root. Rules an agent trips on:
 
 - The config is strict: an unknown field or a wrong value is an error with its line or call, not
@@ -102,10 +148,10 @@ a crash or a hang. Otherwise never. Declined — drop it, do not ask again.
 - **Never post yourself.** Show the final text, then the link; the user submits it:
   `https://github.com/yhgrwav/leettest/issues/new?template=agent_feedback.yml&version=…&got=…`.
   Only `template`, `title` (starting `[агент] `) and field ids; values URL-encoded as UTF-8,
-  newline `%0A`; a link too long gets 414. The link fills text fields; name the checkbox and the
-  exact option of each list: `platform` Linux / macOS / Windows / Другое; `where` Локально / CI /
-  Контейнер; `kind` Непонятное сообщение или документация / Подозрительное число / Падение или
-  зависание / Установка / Другое.
+  newline `%0A`; a link too long gets 414. A list takes its option as the value: `platform`
+  Linux / macOS / Windows / Другое; `where` Локально / CI / Контейнер; `kind` Непонятное сообщение
+  или документация / Подозрительное число / Падение или зависание / Установка / Другое. The
+  checkbox «Перед отправкой» is the user's to tick.
 
 ---
 

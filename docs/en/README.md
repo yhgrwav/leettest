@@ -14,6 +14,12 @@
 
 ---
 
+**With your AI agent.** It installs LeetTest, asks about your service and runs the load; tell it:
+
+```text
+Read https://raw.githubusercontent.com/yhgrwav/leettest/main/AGENTS.md and load-test my gRPC service
+```
+
 > This is `main`: it has unreleased features, marked "not released". Docs of the released version are in the [latest release](https://github.com/yhgrwav/leettest/releases/latest).
 
 > Translated from [README.md](../../README.md) at b7a685c, 2026-10-12. If they differ, the Russian
