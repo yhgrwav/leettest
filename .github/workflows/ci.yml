@@ -175,3 +175,22 @@ jobs:
           want="leettest $(jq -r .tag dist/metadata.json)"
           echo "$got"
           [ "$got" = "$want" ] || { echo "::error::-version printed '$got', want '$want'"; exit 1; }
+
+  # install.sh is what the README tells users to pipe into sh: run it as they do, on both
+  # platforms it supports. The cases against real releases need GitHub; the rest use a local
+  # fixture.
+  install-script:
+    name: install script (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: shellcheck
+        if: runner.os == 'Linux'
+        run: shellcheck install.sh test/install/test.sh
+      - run: sh test/install/test.sh
+        env:
+          GH_TOKEN: ${{ github.token }}
