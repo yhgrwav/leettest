@@ -20,6 +20,10 @@
 #   temp files            a temp directory under $TMPDIR, removed on success and on refusal
 #   checksum tool         sha256sum or shasum -a 256, whichever exists, either alone is enough
 #   tools used            POSIX utilities, gzip (for tar), curl, tar, sha256sum or shasum
+#   cut-short download    the script is read from stdin (curl | sh); any prefix of it does nothing:
+#                         no directory created, no file written, no temp files left. Exit status
+#                         is not specified (a syntax error and a script that never reaches its
+#                         last line both qualify).
 #
 # Cases that need no network use a local fixture served through file://; cases against real
 # releases are marked "network" and need `gh` authenticated (GH_TOKEN) for the expected tag.
@@ -49,6 +53,14 @@ start() {
 # run VAR=value ...: install.sh with exactly these variables on top of the current environment.
 run() {
 	env "$@" "$sh_bin" "$script" >"$work/out" 2>&1
+	status=$?
+}
+
+# run_stdin FILE VAR=value ...: the script text comes on stdin, as in `curl | sh`.
+run_stdin() {
+	src=$1
+	shift
+	env "$@" "$sh_bin" <"$src" >"$work/out" 2>&1
 	status=$?
 }
 
@@ -332,6 +344,31 @@ expect_no_binary "$dir"
 if ! grep -F v0.0.0-nope "$work/out" | grep -v '^curl:' >/dev/null; then
 	fail "no message of the script names v0.0.0-nope"
 fi
+
+# A download cut short must do nothing: the script runs from stdin, so a prefix of it is what sh
+# sees. Cut at every tenth of its size (mid-line too) and with only the last line removed.
+start "whole script from stdin installs"
+fixture v9.9.9
+dir=$work/stdin/bin
+run_stdin "$script" "LEETTEST_INSTALL_DIR=$dir" LEETTEST_VERSION=v9.9.9 "LEETTEST_BASE_URL=file://$work/fixture"
+expect_status 0
+[ -x "$dir/leettest" ] || fail "$dir/leettest is missing"
+
+size=$(wc -c <"$script" | tr -d ' ')
+lines=$(wc -l <"$script" | tr -d ' ')
+for cut in 10 20 30 40 50 60 70 80 90 last-line; do
+	start "cut short: $cut"
+	case "$cut" in
+	last-line) head -n $((lines - 1)) "$script" >"$work/cut.sh" ;;
+	*) head -c $((size * cut / 100)) "$script" >"$work/cut.sh" ;;
+	esac
+	dir=$work/cut-$cut/bin
+	reset_tmp
+	run_stdin "$work/cut.sh" "TMPDIR=$work/tmp" "LEETTEST_INSTALL_DIR=$dir" LEETTEST_VERSION=v9.9.9 \
+		"LEETTEST_BASE_URL=file://$work/fixture"
+	if [ -e "$dir" ] || [ -e "$work/cut-$cut" ]; then fail "$dir was created"; fi
+	expect_tmp_empty
+done
 
 # --- against real releases (network) ----------------------------------------------------------
 

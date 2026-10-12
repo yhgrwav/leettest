@@ -6,11 +6,11 @@
 # LEETTEST_INSTALL_DIR  where to put it (default $HOME/.local/bin, no sudo)
 # LEETTEST_VERSION      release tag, e.g. v0.2.0 (default: the latest release)
 # LEETTEST_BASE_URL     releases URL (default https://github.com/yhgrwav/leettest/releases)
+#
+# Everything that acts is inside main, called on the last line: a download cut short
+# is a syntax error or a script that never calls main, and does nothing.
 set -eu
 
-releases=https://github.com/yhgrwav/leettest/releases
-base=${LEETTEST_BASE_URL:-$releases}
-dir=${LEETTEST_INSTALL_DIR:-${HOME:-}/.local/bin}
 tmp=
 
 die() {
@@ -21,72 +21,81 @@ die() {
 cleanup() {
 	if [ -n "$tmp" ]; then rm -rf "$tmp"; fi
 }
-trap cleanup EXIT
-trap 'exit 1' HUP INT TERM
 
 have() {
 	command -v "$1" >/dev/null 2>&1
 }
 
-have curl || die "curl is required"
-have tar || die "tar is required"
-if have sha256sum; then
-	sha256() { sha256sum "$1"; }
-elif have shasum; then
-	sha256() { shasum -a 256 "$1"; }
-else
-	die "sha256sum or shasum is required to verify the download"
-fi
+main() {
+	releases=https://github.com/yhgrwav/leettest/releases
+	base=${LEETTEST_BASE_URL:-$releases}
+	dir=${LEETTEST_INSTALL_DIR:-${HOME:-}/.local/bin}
 
-os=$(uname -s)
-arch=$(uname -m)
-unsupported="unsupported system: $os $arch. Download an archive from $releases or run: go install github.com/yhgrwav/leettest/cmd/leettest@latest"
-case $os in
-Linux) os=linux ;;
-Darwin) os=darwin ;;
-*) die "$unsupported" ;;
-esac
-case $arch in
-x86_64 | amd64) arch=amd64 ;;
-aarch64 | arm64) arch=arm64 ;;
-*) die "$unsupported" ;;
-esac
+	trap cleanup EXIT
+	trap 'exit 1' HUP INT TERM
 
-tag=${LEETTEST_VERSION:-}
-if [ -z "$tag" ]; then
-	# The latest release is the newest one that is neither a draft nor a pre-release.
-	url=$(curl -fsSLI --retry 3 -o /dev/null -w '%{url_effective}' "$base/latest") ||
-		die "cannot find the latest release at $base/latest"
-	tag=${url##*/}
-	case $tag in
-	v[0-9]*) ;;
-	*) die "cannot read a release tag from $url" ;;
+	have curl || die "curl is required"
+	have tar || die "tar is required"
+	if have sha256sum; then
+		sha256() { sha256sum "$1"; }
+	elif have shasum; then
+		sha256() { shasum -a 256 "$1"; }
+	else
+		die "sha256sum or shasum is required to verify the download"
+	fi
+
+	os=$(uname -s)
+	arch=$(uname -m)
+	unsupported="unsupported system: $os $arch. Download an archive from $releases or run: go install github.com/yhgrwav/leettest/cmd/leettest@latest"
+	case $os in
+	Linux) os=linux ;;
+	Darwin) os=darwin ;;
+	*) die "$unsupported" ;;
 	esac
-fi
+	case $arch in
+	x86_64 | amd64) arch=amd64 ;;
+	aarch64 | arm64) arch=arm64 ;;
+	*) die "$unsupported" ;;
+	esac
 
-file=leettest_${tag#v}_${os}_${arch}.tar.gz
-tmp=$(mktemp -d "${TMPDIR:-/tmp}/leettest-install.XXXXXX")
+	tag=${LEETTEST_VERSION:-}
+	if [ -z "$tag" ]; then
+		# The latest release is the newest one that is neither a draft nor a pre-release.
+		url=$(curl -fsSLI --retry 3 -o /dev/null -w '%{url_effective}' "$base/latest") ||
+			die "cannot find the latest release at $base/latest"
+		tag=${url##*/}
+		case $tag in
+		v[0-9]*) ;;
+		*) die "cannot read a release tag from $url" ;;
+		esac
+	fi
 
-for name in "$file" checksums.txt; do
-	curl -fsSL --retry 3 -o "$tmp/$name" "$base/download/$tag/$name" ||
-		die "cannot download $base/download/$tag/$name (is $tag a release?)"
-done
+	file=leettest_${tag#v}_${os}_${arch}.tar.gz
+	tmp=$(mktemp -d "${TMPDIR:-/tmp}/leettest-install.XXXXXX")
 
-want=$(awk -v f="$file" '$2 == f { print $1 }' "$tmp/checksums.txt")
-[ -n "$want" ] || die "no checksum for $file in checksums.txt"
-got=$(sha256 "$tmp/$file" | awk '{ print $1 }')
-[ "$got" = "$want" ] || die "checksum mismatch for $file: got $got, want $want"
+	for name in "$file" checksums.txt; do
+		curl -fsSL --retry 3 -o "$tmp/$name" "$base/download/$tag/$name" ||
+			die "cannot download $base/download/$tag/$name (is $tag a release?)"
+	done
 
-tar -xzf "$tmp/$file" -C "$tmp" leettest || die "cannot unpack $file"
-mkdir -p "$dir" || die "cannot create $dir"
-cp "$tmp/leettest" "$dir/.leettest.$$" || die "cannot write to $dir"
-chmod 755 "$dir/.leettest.$$"
-mv -f "$dir/.leettest.$$" "$dir/leettest" || die "cannot write $dir/leettest"
+	want=$(awk -v f="$file" '$2 == f { print $1 }' "$tmp/checksums.txt")
+	[ -n "$want" ] || die "no checksum for $file in checksums.txt"
+	got=$(sha256 "$tmp/$file" | awk '{ print $1 }')
+	[ "$got" = "$want" ] || die "checksum mismatch for $file: got $got, want $want"
 
-echo "Installed $dir/leettest"
-"$dir/leettest" -version || die "the installed binary does not run"
+	tar -xzf "$tmp/$file" -C "$tmp" leettest || die "cannot unpack $file"
+	mkdir -p "$dir" || die "cannot create $dir"
+	cp "$tmp/leettest" "$dir/.leettest.$$" || die "cannot write to $dir"
+	chmod 755 "$dir/.leettest.$$"
+	mv -f "$dir/.leettest.$$" "$dir/leettest" || die "cannot write $dir/leettest"
 
-case ":${PATH:-}:" in
-*":$dir:"*) ;;
-*) echo "$dir is not in your PATH. Add it to your shell profile: export PATH=\"$dir:\$PATH\"" ;;
-esac
+	echo "Installed $dir/leettest"
+	"$dir/leettest" -version || die "the installed binary does not run"
+
+	case ":${PATH:-}:" in
+	*":$dir:"*) ;;
+	*) echo "$dir is not in your PATH. Add it to your shell profile: export PATH=\"$dir:\$PATH\"" ;;
+	esac
+}
+
+main "$@"
