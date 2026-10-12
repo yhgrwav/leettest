@@ -195,6 +195,89 @@ func TestParse_DatasetAliasOfNullInASecondCallNamesItsLine(t *testing.T) {
 	}
 }
 
+// An alias refers to the nearest anchor of that name before it (YAML 1.2,
+// 7.1), not to the last one in the document. Scenario A: the anchor is a null
+// when the alias comes and a path only later, so the alias is a null.
+// Ground: contract — П13; the error value, text and line are what callers see.
+func TestParse_DatasetAliasTakesTheNearestPrecedingAnchor_NullThenPath(t *testing.T) {
+	calls := "      data: &a ~\n" +
+		"      dataset: *a\n" +
+		"    - method: wallet.v1.WalletService/GetHistory\n" +
+		"      rps: 10\n" +
+		"      duration: 1s\n" +
+		"      data: &a x.jsonl\n"
+
+	_, err := config.Parse([]byte(datasetYAML(calls)))
+
+	if !errors.Is(err, config.ErrEmptyDatasetPath) {
+		t.Fatalf("error = %v, want %v: the alias at line 12 follows the null anchor at line 11", err, config.ErrEmptyDatasetPath)
+	}
+	if want := "line 12: " + config.ErrEmptyDatasetPath.Error(); err.Error() != want {
+		t.Errorf("error = %q, want the direct form's text %q", err, want)
+	}
+}
+
+// Scenario B: the anchor is a path when the alias comes and a null only
+// later, so the alias is the path and the config is valid. The path is
+// checked too: the decoder resolves the alias itself, and a null from the
+// later anchor would lose the path with the check green. The anchor is the
+// first call's data, the alias is the second call's dataset (data and dataset
+// in one call are refused), the null anchor is the third call's data.
+// Ground: contract — П13; a valid config is not refused and keeps its path.
+func TestParse_DatasetAliasTakesTheNearestPrecedingAnchor_PathThenNull(t *testing.T) {
+	calls := "      data: &a x.jsonl\n" +
+		"    - method: wallet.v1.WalletService/GetHistory\n" +
+		"      rps: 10\n" +
+		"      duration: 1s\n" +
+		"      dataset: *a\n" +
+		"    - method: wallet.v1.WalletService/Transfer\n" +
+		"      rps: 10\n" +
+		"      duration: 1s\n" +
+		"      data: &a ~\n"
+
+	cfg, err := config.Parse([]byte(datasetYAML(calls)))
+
+	if err != nil {
+		t.Fatalf("error = %v, want none: the alias follows the path anchor, the later null anchor is not its target", err)
+	}
+	if got := cfg.Load.Calls[1].Dataset; got != "x.jsonl" {
+		t.Errorf("second call dataset = %q, want %q", got, "x.jsonl")
+	}
+}
+
+// The same with the anchor in app.metadata: the alias is outside the calls'
+// data, and the config is valid with either reading of "nearest".
+// Ground: contract — П13; a valid config is not refused and keeps its path.
+func TestParse_DatasetAliasTakesTheNearestPrecedingAnchor_PathThenNullInMetadata(t *testing.T) {
+	raw := `
+app:
+  target:
+    ip: localhost
+    port: 50051
+  metadata:
+    k: &a x.jsonl
+load:
+  calls:
+    - method: ` + datasetMethod + `
+      rps: 10
+      duration: 1s
+      dataset: *a
+    - method: wallet.v1.WalletService/GetHistory
+      rps: 10
+      duration: 1s
+      data: &a ~
+`
+
+	cfg, err := config.Parse([]byte(raw))
+
+	if err != nil {
+		t.Fatalf("error = %v, want none: the alias follows the path anchor, the later null anchor is not its target", err)
+	}
+	if got := cfg.Load.Calls[0].Dataset; got != "x.jsonl" {
+		t.Errorf("first call dataset = %q, want %q", got, "x.jsonl")
+	}
+}
+
 // An alias to a path is a path: a config that reuses one dataset file for two
 // calls keeps working. A null alias used outside a call's dataset is not
 // touched.
@@ -215,6 +298,9 @@ func TestParse_DatasetAliasOfAPathIsAccepted(t *testing.T) {
 		if got := len(cfg.Load.Calls); got != 2 {
 			t.Fatalf("calls = %d, want 2", got)
 		}
+		if got := cfg.Load.Calls[1].Dataset; got != "x.jsonl" {
+			t.Errorf("second call dataset = %q, want %q: an alias to a path is that path", got, "x.jsonl")
+		}
 	})
 
 	t.Run("a path shared by two calls behind a str tag", func(t *testing.T) {
@@ -224,8 +310,16 @@ func TestParse_DatasetAliasOfAPathIsAccepted(t *testing.T) {
 			"      duration: 1s\n" +
 			"      dataset: !!str *p\n"
 
-		if _, err := config.Parse([]byte(datasetYAML(calls))); err != nil {
+		cfg, err := config.Parse([]byte(datasetYAML(calls)))
+
+		if err != nil {
 			t.Fatalf("error = %v, want none: an alias to a path is a path", err)
+		}
+		if got := len(cfg.Load.Calls); got != 2 {
+			t.Fatalf("calls = %d, want 2", got)
+		}
+		if got := cfg.Load.Calls[1].Dataset; got != "x.jsonl" {
+			t.Errorf("second call dataset = %q, want %q: an alias to a path is that path", got, "x.jsonl")
 		}
 	})
 
