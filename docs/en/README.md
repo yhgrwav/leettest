@@ -23,7 +23,7 @@ Read https://raw.githubusercontent.com/yhgrwav/leettest/main/AGENTS.md and load-
 
 > This is `main`: it has unreleased features, marked "not released". Docs of the released version are in the [latest release](https://github.com/yhgrwav/leettest/releases/latest).
 
-> Translated from [README.md](../../README.md) at b7a685c, 2026-10-12. If they differ, the Russian
+> Translated from [README.md](../../README.md) at 1bd45f9, 2026-10-12. If they differ, the Russian
 > one is right. Plus an index of English docs, not in the Russian source.
 
 > **Early stage.** Working now: unary load against a real service, several methods at their own
