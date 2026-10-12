@@ -23,26 +23,24 @@ the latency itself. Measure on Linux; Windows is fine for trying the tool out.
 
 ## 1. Install
 
-Two paths, take either. The commands work as they are in a Linux or macOS terminal: copy the whole
-block.
+Two paths, take either. The commands work as they are in a Linux or macOS terminal.
 
-**1. A prebuilt binary** from the [releases page](https://github.com/yhgrwav/leettest/releases)
-(Linux, macOS, Windows; amd64 and arm64) — no Go needed, only `curl` and `tar`:
+**1. A prebuilt binary** (Linux and macOS; amd64 and arm64) — no Go needed, only `curl` and `tar`:
 
 ```sh
-tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/yhgrwav/leettest/releases/latest)
-file=leettest_${tag##*/v}_$(uname -s | tr A-Z a-z)_$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/').tar.gz
-base=https://github.com/yhgrwav/leettest/releases/latest/download
-curl -fsSLO "$base/$file" -O "$base/checksums.txt"
-grep " $file\$" checksums.txt | { sha256sum -c - || shasum -a 256 -c -; }
-mkdir -p ~/.local/bin && tar -xzf "$file" -C ~/.local/bin leettest && rm "$file" checksums.txt
-export PATH="$HOME/.local/bin:$PATH"
-leettest -version
+curl -fsSL https://raw.githubusercontent.com/yhgrwav/leettest/main/install.sh | sh
 ```
 
-The `grep` line checks the checksum (`sha256sum` on Linux, `shasum` on macOS). The `export` holds
-for this terminal; to keep it, put the line in your shell profile. Windows has a `.zip` in the
-release.
+The script installs the latest release into `~/.local/bin` and verifies the checksum. If that
+directory is not on your `PATH`, it prints an `export PATH=...` line: run it in this terminal, and
+to keep it put it in your shell profile. `LEETTEST_INSTALL_DIR` picks another directory,
+`LEETTEST_VERSION` another version; the variable goes before `sh`, not before `curl`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/yhgrwav/leettest/main/install.sh | LEETTEST_VERSION=v0.2.0 sh
+```
+
+Windows has a `.zip` in the [release](https://github.com/yhgrwav/leettest/releases/latest).
 
 **2. Through Go**: Go 1.26 or newer ([install](https://go.dev/doc/install); an older Go with
 `GOTOOLCHAIN=auto` downloads the right one itself):
@@ -50,10 +48,13 @@ release.
 ```sh
 go install github.com/yhgrwav/leettest/cmd/leettest@latest
 export PATH="$PATH:$(go env GOPATH)/bin"
-leettest -version
 ```
 
-The last command of both paths prints the version.
+Check, for both paths:
+
+```sh
+leettest -version
+```
 
 ## 2. A target: the reference stand
 

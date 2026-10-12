@@ -27,8 +27,15 @@
 
 ## Установка
 
-Скачайте архив для своей системы со [страницы релизов](https://github.com/yhgrwav/leettest/releases/latest)
-(Linux, macOS, Windows; amd64 и arm64), распакуйте и положите `leettest` в `PATH`. Или через Go 1.26+:
+Linux и macOS (amd64 и arm64) — одной командой:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/yhgrwav/leettest/main/install.sh | sh
+```
+
+Скрипт ставит последний релиз в `~/.local/bin`, сверяет контрольную сумму и, если этого каталога нет
+в `PATH`, печатает строку для профиля shell. Windows — архив со
+[страницы релизов](https://github.com/yhgrwav/leettest/releases/latest). Или через Go 1.26+:
 
 ```sh
 go install github.com/yhgrwav/leettest/cmd/leettest@latest

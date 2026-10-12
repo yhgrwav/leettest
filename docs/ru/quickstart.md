@@ -20,24 +20,24 @@ Windows поддерживается, но для измерений подхо�
 
 ## 1. Установка
 
-Два пути на выбор. Команды работают в терминале Linux и macOS как есть: копируйте блок целиком.
+Два пути на выбор. Команды работают в терминале Linux и macOS как есть.
 
-**1. Готовый бинарник** со [страницы релизов](https://github.com/yhgrwav/leettest/releases) (Linux,
-macOS, Windows; amd64 и arm64) — Go не нужен, нужны `curl` и `tar`:
+**1. Готовый бинарник** (Linux и macOS; amd64 и arm64) — Go не нужен, нужны `curl` и `tar`:
 
 ```sh
-tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/yhgrwav/leettest/releases/latest)
-file=leettest_${tag##*/v}_$(uname -s | tr A-Z a-z)_$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/').tar.gz
-base=https://github.com/yhgrwav/leettest/releases/latest/download
-curl -fsSLO "$base/$file" -O "$base/checksums.txt"
-grep " $file\$" checksums.txt | { sha256sum -c - || shasum -a 256 -c -; }
-mkdir -p ~/.local/bin && tar -xzf "$file" -C ~/.local/bin leettest && rm "$file" checksums.txt
-export PATH="$HOME/.local/bin:$PATH"
-leettest -version
+curl -fsSL https://raw.githubusercontent.com/yhgrwav/leettest/main/install.sh | sh
 ```
 
-Строка с `grep` сверяет контрольную сумму (`sha256sum` на Linux, `shasum` на macOS). `export` действует
-в этом терминале; чтобы сохранить, добавьте строку в профиль shell. Для Windows в релизе лежит `.zip`.
+Скрипт ставит последний релиз в `~/.local/bin` и сверяет контрольную сумму. Если этого каталога нет в
+`PATH`, он печатает строку `export PATH=...`: выполните её в этом терминале, а чтобы сохранить,
+добавьте в профиль shell. Другой каталог — переменная `LEETTEST_INSTALL_DIR`, другая версия —
+`LEETTEST_VERSION`; переменная — перед `sh`, не перед `curl`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/yhgrwav/leettest/main/install.sh | LEETTEST_VERSION=v0.2.0 sh
+```
+
+Для Windows в [релизе](https://github.com/yhgrwav/leettest/releases/latest) лежит `.zip`.
 
 **2. Через Go**: нужен Go 1.26 или новее ([установка](https://go.dev/doc/install); более старый Go с
 `GOTOOLCHAIN=auto` скачает нужный сам):
@@ -45,10 +45,13 @@ leettest -version
 ```sh
 go install github.com/yhgrwav/leettest/cmd/leettest@latest
 export PATH="$PATH:$(go env GOPATH)/bin"
-leettest -version
 ```
 
-Последняя команда обоих путей печатает номер версии.
+Проверка для обоих путей:
+
+```sh
+leettest -version
+```
 
 ## 2. Цель: эталонный стенд
 
