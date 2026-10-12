@@ -43,11 +43,33 @@ message is as much a defect as a wrong number; the generator never becomes the b
 
 ## Install
 
-```console
-$ go install github.com/yhgrwav/leettest/cmd/leettest@latest
+Two paths, take either; the commands work as they are in a Linux or macOS terminal.
+
+**A prebuilt binary** from the [releases page](https://github.com/yhgrwav/leettest/releases)
+(Linux, macOS, Windows; amd64 and arm64) — no Go needed, only `curl` and `tar`:
+
+```sh
+tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/yhgrwav/leettest/releases/latest)
+file=leettest_${tag##*/v}_$(uname -s | tr A-Z a-z)_$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/').tar.gz
+base=https://github.com/yhgrwav/leettest/releases/latest/download
+curl -fsSLO "$base/$file" -O "$base/checksums.txt"
+grep " $file\$" checksums.txt | { sha256sum -c - || shasum -a 256 -c -; }
+mkdir -p ~/.local/bin && tar -xzf "$file" -C ~/.local/bin leettest && rm "$file" checksums.txt
+export PATH="$HOME/.local/bin:$PATH"
+leettest -version
 ```
 
-Requires Go 1.26 or newer. Prebuilt binaries are on the releases page.
+The `export` holds for this terminal; to keep it, put the line in your shell profile. Windows has a
+`.zip` in the release.
+
+**Through Go**, Go 1.26 or newer ([install](https://go.dev/doc/install); an older Go with
+`GOTOOLCHAIN=auto` downloads the right one itself):
+
+```sh
+go install github.com/yhgrwav/leettest/cmd/leettest@latest
+export PATH="$PATH:$(go env GOPATH)/bin"
+leettest -version
+```
 
 **Where to run it.** On Linux next to the target: in the same network, the same cluster, a CI
 runner. Everything between the generator and the target goes into the latency and looks like the
@@ -82,8 +104,8 @@ load:
       duration: 1m
 ```
 
-```console
-$ leettest -c leettest.yaml
+```sh
+leettest -c leettest.yaml
 ```
 
 The method name is the full one, `package.Service/Method`. The tool takes the method's schema from

@@ -40,11 +40,33 @@
 
 ## Установка
 
-```console
-$ go install github.com/yhgrwav/leettest/cmd/leettest@latest
+Два пути на выбор; команды работают в терминале Linux и macOS как есть.
+
+**Готовый бинарник** со [страницы релизов](https://github.com/yhgrwav/leettest/releases) (Linux,
+macOS, Windows; amd64 и arm64) — Go не нужен, нужны `curl` и `tar`:
+
+```sh
+tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/yhgrwav/leettest/releases/latest)
+file=leettest_${tag##*/v}_$(uname -s | tr A-Z a-z)_$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/').tar.gz
+base=https://github.com/yhgrwav/leettest/releases/latest/download
+curl -fsSLO "$base/$file" -O "$base/checksums.txt"
+grep " $file\$" checksums.txt | { sha256sum -c - || shasum -a 256 -c -; }
+mkdir -p ~/.local/bin && tar -xzf "$file" -C ~/.local/bin leettest && rm "$file" checksums.txt
+export PATH="$HOME/.local/bin:$PATH"
+leettest -version
 ```
 
-Нужен Go 1.26 или новее. Готовые бинарники — на странице релизов.
+`export` действует в этом терминале; чтобы сохранить, добавьте строку в профиль shell. Для Windows
+в релизе лежит `.zip`.
+
+**Через Go**, нужен Go 1.26 или новее ([установка](https://go.dev/doc/install); более старый Go с
+`GOTOOLCHAIN=auto` скачает нужный сам):
+
+```sh
+go install github.com/yhgrwav/leettest/cmd/leettest@latest
+export PATH="$PATH:$(go env GOPATH)/bin"
+leettest -version
+```
 
 **Где запускать.** На Linux рядом с целью: в той же сети, в том же кластере, на раннере CI. Всё,
 что лежит между генератором и целью, входит в латенси и выглядит как время цели: на нашем стенде
@@ -79,8 +101,8 @@ load:
       duration: 1m
 ```
 
-```console
-$ leettest -c leettest.yaml
+```sh
+leettest -c leettest.yaml
 ```
 
 Имя метода — полное, `пакет.Сервис/Метод`. Схему метода инструмент берёт у сервиса через gRPC
