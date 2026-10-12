@@ -33,6 +33,8 @@ the calls in flight piling up, and the report counts the ones left without an an
 
 <img src="../../assets/demo.gif" width="100%" alt="A LeetTest run in a terminal: the load screen, the target freezing for three seconds, the report showing the unanswered calls and a p99 above 2 seconds">
 
+What questions LeetTest answers — [as a list](questions.md).
+
 ## Install
 
 Linux and macOS (amd64 and arm64) — one command:
@@ -315,6 +317,7 @@ We have a roadmap for the product — **[roadmap](roadmap.md)**. Missing somethi
 
 | Question | |
 |---|---|
+| What questions does LeetTest answer? | [Read](questions.md) |
 | What problem does LeetTest solve? | [Read](problem.md) |
 | Why this tool? | [Read](why.md) |
 | Which load-testing problems does it fix? | [Read](pitfalls.md) |
