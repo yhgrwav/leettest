@@ -5,6 +5,7 @@
 
 This page compares LeetTest with [ghz](https://ghz.sh) on a test server with known behavior. The
 question is narrow: when the server stalls or slows down, does the report show it?
+A feature comparison with ghz, k6 and JMeter is in the [table](why.md#comparison-with-ghz-k6-and-jmeter).
 
 In short:
 
