@@ -30,43 +30,19 @@ The project is growing: what works today is below, what comes next is in the [ro
 
 ## Install
 
-This is `main`: it has unreleased features, marked "not released". Docs of the released version are in the [latest release](https://github.com/yhgrwav/leettest/releases/latest).
-
-Two paths, take either; the commands work as they are in a Linux or macOS terminal.
-
-**A prebuilt binary** from the [releases page](https://github.com/yhgrwav/leettest/releases)
-(Linux, macOS, Windows; amd64 and arm64) — no Go needed, only `curl` and `tar`:
-
-```sh
-tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/yhgrwav/leettest/releases/latest)
-file=leettest_${tag##*/v}_$(uname -s | tr A-Z a-z)_$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/').tar.gz
-base=https://github.com/yhgrwav/leettest/releases/latest/download
-curl -fsSLO "$base/$file" -O "$base/checksums.txt"
-grep " $file\$" checksums.txt | { sha256sum -c - || shasum -a 256 -c -; }
-mkdir -p ~/.local/bin && tar -xzf "$file" -C ~/.local/bin leettest && rm "$file" checksums.txt
-export PATH="$HOME/.local/bin:$PATH"
-leettest -version
-```
-
-The `export` holds for this terminal; to keep it, put the line in your shell profile. Windows has a
-`.zip` in the release.
-
-**Through Go**, Go 1.26 or newer ([install](https://go.dev/doc/install); an older Go with
-`GOTOOLCHAIN=auto` downloads the right one itself):
+Download the archive for your system from the [releases page](https://github.com/yhgrwav/leettest/releases/latest)
+(Linux, macOS, Windows; amd64 and arm64), unpack it and put `leettest` on your `PATH`. Or with Go 1.26+:
 
 ```sh
 go install github.com/yhgrwav/leettest/cmd/leettest@latest
-export PATH="$PATH:$(go env GOPATH)/bin"
-leettest -version
 ```
 
-**Where to run it.** On Linux next to the target: in the same network, the same cluster, a CI
-runner. Everything between the generator and the target goes into the latency and looks like the
-target's time: on our stand at 1000 RPS, through Docker Desktop port forwarding p99 was 38 ms,
-inside the Docker network 2 ms. The exact call schedule is Linux-only; in a container with a CPU
-quota under two cores, rare start lags up to the quota period (usually 100 ms) are possible, and
-the report shows them. Behind an L4 balancer one backend is loaded — [see below](#reading-the-report). On Windows the clock steps about 0.5 ms, and a run against a fast service
-will be declared invalid.
+Check: `leettest -version`. If the command is not found after `go install` —
+`export PATH="$PATH:$(go env GOPATH)/bin"`.
+
+**Where to run:** on Linux next to the target — in the same network, cluster or on a CI runner.
+Everything between the generator and the target goes into the latency. More in the
+[reference](reference.md#where-to-run).
 
 **[Quickstart →](quickstart.md)** — every capability on the reference stand: a config with every
 field, reading the report, other target behaviours, CI. Working through an AI agent — give it

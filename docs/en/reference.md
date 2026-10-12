@@ -224,6 +224,19 @@ interrupt it.
 A stopped run is marked incomplete in the report (exit 3): its numbers are honest but cover less
 than was planned.
 
+## Where to run
+
+On Linux next to the target: in the same network, the same cluster, a CI runner. Everything between
+the generator and the target goes into the latency and looks like the target's time: on our stand at
+1000 RPS, through Docker Desktop port forwarding p99 was 38 ms, inside the Docker network 2 ms.
+
+- The exact call schedule is Linux-only. In a container with a CPU quota under two cores, rare start
+  lags up to the quota period (usually 100 ms) are possible; the report shows them.
+- Behind an L4 balancer one backend is loaded: one connection, one backend. See
+  [reading the report](README.md#reading-the-report).
+- On Windows the clock steps about 0.5 ms, and a run against a fast service will be declared invalid
+  (`clock_step`, exit code 2).
+
 ## JSON fields
 
 The contract's rules — schema version, units, `null` rather than `0`, unknown fields — are in the
