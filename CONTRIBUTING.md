@@ -96,6 +96,8 @@ more:
 
 - **Give the agent [AGENTS.md](AGENTS.md).** It holds the architecture, the order of work, the
   commands and the platform rule. For Claude Code, add a `CLAUDE.md` with the line `@AGENTS.md`.
+  To only load-test your own service, point the agent at its section
+  [«From zero to a report»](AGENTS.md#from-zero-to-a-report).
 - **Spec and failing tests before code** — agents write plausible code quickly; the spec is what
   makes it the right code. Read the spec yourself before the agent implements it.
 - **Run the checks yourself, or read their output.** "The tests pass" from an agent is a claim;
