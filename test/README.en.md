@@ -22,12 +22,12 @@ another tool can be pointed at it too. Every method obeys the same behaviour.
 tool at it. Behaviour is set by a flag, one at a time; on exit the stand prints what it saw
 itself: how many calls arrived each second, how many it answered and how long it held them.
 
-```console
-$ go run ./test/stand/cmd/stand -delay 20ms -freeze-at 5s -freeze-for 1s -life 20s
-$ go run ./test/stand/cmd/stand -delay 20ms -hang-from 8s
-$ go run ./test/stand/cmd/stand -delay 20ms -fail-every 10
-$ go run ./test/stand/cmd/stand -delay 150ms -max-streams 1
-$ go run ./test/stand/cmd/stand -delay 20ms -capacity 270
+```sh
+go run ./test/stand/cmd/stand -delay 20ms -freeze-at 5s -freeze-for 1s -life 20s
+go run ./test/stand/cmd/stand -delay 20ms -hang-from 8s
+go run ./test/stand/cmd/stand -delay 20ms -fail-every 10
+go run ./test/stand/cmd/stand -delay 150ms -max-streams 1
+go run ./test/stand/cmd/stand -delay 20ms -capacity 270
 ```
 
 The methods are `grpc.health.v1.Health/Check`, `wallet.v1.WalletService/GetBalance` and

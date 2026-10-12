@@ -15,23 +15,8 @@
 
 ---
 
-**With your AI agent.** It installs LeetTest, asks about your service and runs the load; tell it:
-
-```text
-Read https://raw.githubusercontent.com/yhgrwav/leettest/main/AGENTS.md and load-test my gRPC service
-```
-
-> This is `main`: it has unreleased features, marked "not released". Docs of the released version are in the [latest release](https://github.com/yhgrwav/leettest/releases/latest).
-
-> Translated from [README.md](../../README.md) at b7a685c, 2026-10-12. If they differ, the Russian
+> Translated from [README.md](../../README.md) at 1bd45f9, 2026-10-12. If they differ, the Russian
 > one is right. Plus an index of English docs, not in the Russian source.
-
-> **Early stage.** Working now: unary load against a real service, several methods at their own
-> RPS in one run, finding the breaking point, different data in every call (`dataset`), several
-> connections, a console report and JSON for scripts. Not yet:
-> ramp-up, pass/fail thresholds for CI, metrics export — **[what comes next →](roadmap.md)**.
-> Missing something — [open an issue](https://github.com/yhgrwav/leettest/issues/new/choose).
-> Everything below describes what already works.
 
 The tool answers the question people bring to a load test: **at what load does the service stop
 coping, and where is the bottleneck.** It applies load that looks like production — several
@@ -41,13 +26,39 @@ service degrades. No `.proto`, no codegen, no scripts.
 Priorities, in order: the numbers don't lie; the tool is pleasant to use — an unclear error
 message is as much a defect as a wrong number; the generator never becomes the bottleneck.
 
+The project is growing: what works today is below, what comes next is in the [roadmap](roadmap.md).
+
 ## Install
 
-```console
-$ go install github.com/yhgrwav/leettest/cmd/leettest@latest
+This is `main`: it has unreleased features, marked "not released". Docs of the released version are in the [latest release](https://github.com/yhgrwav/leettest/releases/latest).
+
+Two paths, take either; the commands work as they are in a Linux or macOS terminal.
+
+**A prebuilt binary** from the [releases page](https://github.com/yhgrwav/leettest/releases)
+(Linux, macOS, Windows; amd64 and arm64) — no Go needed, only `curl` and `tar`:
+
+```sh
+tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/yhgrwav/leettest/releases/latest)
+file=leettest_${tag##*/v}_$(uname -s | tr A-Z a-z)_$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/').tar.gz
+base=https://github.com/yhgrwav/leettest/releases/latest/download
+curl -fsSLO "$base/$file" -O "$base/checksums.txt"
+grep " $file\$" checksums.txt | { sha256sum -c - || shasum -a 256 -c -; }
+mkdir -p ~/.local/bin && tar -xzf "$file" -C ~/.local/bin leettest && rm "$file" checksums.txt
+export PATH="$HOME/.local/bin:$PATH"
+leettest -version
 ```
 
-Requires Go 1.26 or newer. Prebuilt binaries are on the releases page.
+The `export` holds for this terminal; to keep it, put the line in your shell profile. Windows has a
+`.zip` in the release.
+
+**Through Go**, Go 1.26 or newer ([install](https://go.dev/doc/install); an older Go with
+`GOTOOLCHAIN=auto` downloads the right one itself):
+
+```sh
+go install github.com/yhgrwav/leettest/cmd/leettest@latest
+export PATH="$PATH:$(go env GOPATH)/bin"
+leettest -version
+```
 
 **Where to run it.** On Linux next to the target: in the same network, the same cluster, a CI
 runner. Everything between the generator and the target goes into the latency and looks like the
@@ -82,8 +93,8 @@ load:
       duration: 1m
 ```
 
-```console
-$ leettest -c leettest.yaml
+```sh
+leettest -c leettest.yaml
 ```
 
 The method name is the full one, `package.Service/Method`. The tool takes the method's schema from
@@ -103,6 +114,17 @@ progress line once a second:
 ```
 
 The report goes to stdout, progress and errors to stderr. No live screen (e.g. over ssh): `-plain`.
+
+## With your AI agent
+
+If you would rather not write the config yourself, give the link to your agent: it installs
+LeetTest, asks about your service and runs the load.
+
+```text
+Read https://raw.githubusercontent.com/yhgrwav/leettest/main/AGENTS.md and load-test my gRPC service
+```
+
+The guide it works from is [AGENTS.md](../../AGENTS.md).
 
 ## Reading the report
 
@@ -296,12 +318,10 @@ writes `mode: "run"`.
 Exit codes: `0` for `broke`, `broke_at_first`, `held_all`, `run_limit` — they are findings; `2` for
 `invalid`; `3` for a stop by one Ctrl+C.
 
-## Not yet
-
-Ramp-up from zero to the target RPS, pass/fail thresholds, export to Prometheus. What comes and in
-what order — **[the plan](roadmap.md)**; what you are missing — [an issue](https://github.com/yhgrwav/leettest/issues/new/choose).
-
 ## Going deeper
+
+We have a roadmap for the product — **[roadmap](roadmap.md)**. Missing something —
+[open an issue](https://github.com/yhgrwav/leettest/issues/new/choose).
 
 **[Reference →](reference.md)** — every config field and flag.
 

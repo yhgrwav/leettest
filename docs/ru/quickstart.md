@@ -20,13 +20,35 @@ Windows поддерживается, но для измерений подхо�
 
 ## 1. Установка
 
-```console
-$ go install github.com/yhgrwav/leettest/cmd/leettest@latest
-$ leettest -version
+Два пути на выбор. Команды работают в терминале Linux и macOS как есть: копируйте блок целиком.
+
+**1. Готовый бинарник** со [страницы релизов](https://github.com/yhgrwav/leettest/releases) (Linux,
+macOS, Windows; amd64 и arm64) — Go не нужен, нужны `curl` и `tar`:
+
+```sh
+tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/yhgrwav/leettest/releases/latest)
+file=leettest_${tag##*/v}_$(uname -s | tr A-Z a-z)_$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/').tar.gz
+base=https://github.com/yhgrwav/leettest/releases/latest/download
+curl -fsSLO "$base/$file" -O "$base/checksums.txt"
+grep " $file\$" checksums.txt | { sha256sum -c - || shasum -a 256 -c -; }
+mkdir -p ~/.local/bin && tar -xzf "$file" -C ~/.local/bin leettest && rm "$file" checksums.txt
+export PATH="$HOME/.local/bin:$PATH"
+leettest -version
 ```
 
-Нужен Go 1.26 или новее. Готовые бинарники для Linux, macOS и Windows (amd64 и arm64) — на
-странице релизов.
+Строка с `grep` сверяет контрольную сумму (`sha256sum` на Linux, `shasum` на macOS). `export` действует
+в этом терминале; чтобы сохранить, добавьте строку в профиль shell. Для Windows в релизе лежит `.zip`.
+
+**2. Через Go**: нужен Go 1.26 или новее ([установка](https://go.dev/doc/install); более старый Go с
+`GOTOOLCHAIN=auto` скачает нужный сам):
+
+```sh
+go install github.com/yhgrwav/leettest/cmd/leettest@latest
+export PATH="$PATH:$(go env GOPATH)/bin"
+leettest -version
+```
+
+Последняя команда обоих путей печатает номер версии.
 
 ## 2. Цель: эталонный стенд
 
@@ -34,12 +56,18 @@ $ leettest -version
 поведением. Он отвечает на `grpc.health.v1.Health/Check` и `wallet.v1.WalletService` и отдаёт
 reflection, как настоящий сервис.
 
-```console
-$ git clone https://github.com/yhgrwav/leettest && cd leettest
-$ go run ./test/stand/cmd/stand -delay 20ms -hang-from 25s -life 60s
+Тур идёт в том же терминале и собирается из клона: нужны `git` и Go 1.26+, а стенд и `leettest` из
+одного клона точно подходят к его конфигам.
+
+```sh
+git clone --depth 1 https://github.com/yhgrwav/leettest && cd leettest
+go build -o bin/ ./cmd/leettest ./test/stand/cmd/stand
+bin/stand -delay 20ms -hang-from 25s -life 3m > stand.log 2>&1 &
+sleep 1
 ```
 
-Стенд отвечает за 20 мс, а через 25 секунд после первого вызова перестаёт отвечать совсем —
+Стенд работает в фоне (`sleep 1` — секунда, чтобы он начал слушать порт) и сам остановится через 3 минуты (`-life 3m`: прогрев, 40 секунд прогона и
+запас). Он отвечает за 20 мс, а через 25 секунд после первого вызова перестаёт отвечать совсем —
 так выглядит сервис, который упал под нагрузкой. Правильный ответ известен заранее, поэтому видно,
 говорит ли отчёт правду.
 
@@ -105,10 +133,15 @@ load:
 
 ## 4. Запуск
 
-```console
-$ export LEETTEST_TOKEN=demo
-$ leettest -c examples/ru/tour.yaml
+```sh
+export LEETTEST_TOKEN=demo
+bin/leettest -c examples/ru/tour.yaml
 ```
+
+`demo` — общий токен, который мы дарим первым пользователям.
+
+Первый запуск в терминале спросит цветовую тему: стрелки и Enter, вопрос задаётся один раз
+(`-plain` пропускает и вопрос, и живой экран).
 
 Перед стартом инструмент подключается к цели, проверяет каждый метод через reflection, собирает
 тело запроса и проверяет, что потолок запросов в полёте (`-max-in-flight`) выдержит зависание
@@ -125,9 +158,15 @@ $ leettest -c examples/ru/tour.yaml
 требует клиентский сертификат; [`examples/ru/tour-tls.yaml`](../../examples/ru/tour-tls.yaml)
 указывает на эти файлы:
 
-```console
-$ go run ./test/stand/cmd/stand -mtls -delay 20ms -life 30s
-$ leettest -c examples/ru/tour-tls.yaml
+Стенд из §2 занимает тот же порт, поэтому перед другим его останавливают: `kill %%` завершает
+последнюю фоновую команду этого терминала (если стенд уже остановился сам, ошибка скрыта
+`2>/dev/null`):
+
+```sh
+kill %% 2>/dev/null; sleep 1
+bin/stand -mtls -delay 20ms -life 3m > stand.log 2>&1 &
+sleep 1
+bin/leettest -c examples/ru/tour-tls.yaml
 ```
 
 ## 5. Отчёт
@@ -181,24 +220,37 @@ is a lower bound: the real tail lies above it. Raise the timeout to see it.
 Категории отказов (`overload`, `failure`, `request error`, `timed out`, `cut off`, `unreachable` и
 др.) и их смысл — в [README, «Как читать отчёт»](../../README.md#как-читать-отчёт).
 
+Код выхода `0` не значит «сервис здоров»: читайте предел нагрузки и причины
+([README, «Коды выхода»](../../README.md#коды-выхода)).
+
 ## 6. Другие поведения цели
 
-Тот же конфиг против стенда в другом режиме — что покажет отчёт:
+Тот же конфиг против стенда в другом режиме — что покажет отчёт. Каждый блок сначала останавливает
+прежний стенд (как в §4), затем запускает новый и прогон; токен `LEETTEST_TOKEN` из §4 уже задан.
 
-```console
-$ go run ./test/stand/cmd/stand -delay 20ms -freeze-at 10s -freeze-for 2s -life 60s
+```sh
+kill %% 2>/dev/null; sleep 1
+bin/stand -delay 20ms -freeze-at 10s -freeze-for 2s -life 3m > stand.log 2>&1 &
+sleep 1
+bin/leettest -c examples/ru/tour.yaml
 ```
 Заморозка на 2 секунды при таймауте 500 мс: p50 и p90 остаются около 21 мс, а вызовы, пришедшие в
 паузу, не дождались ответа — около 4% `got no answer within 500ms`, p99 печатается как `>500ms`.
 Percentiles не усредняются: короткая заморозка видна в хвосте, а не размазана по среднему.
 
-```console
-$ go run ./test/stand/cmd/stand -delay 20ms -fail-every 10 -life 60s
+```sh
+kill %% 2>/dev/null; sleep 1
+bin/stand -delay 20ms -fail-every 10 -life 3m > stand.log 2>&1 &
+sleep 1
+bin/leettest -c examples/ru/tour.yaml
 ```
 Каждый десятый вызов — `RESOURCE_EXHAUSTED`: категория `overload`, код в строке «sent by the target».
 
-```console
-$ go run ./test/stand/cmd/stand -delay 150ms -max-streams 1 -life 60s
+```sh
+kill %% 2>/dev/null; sleep 1
+bin/stand -delay 150ms -max-streams 1 -life 3m > stand.log 2>&1 &
+sleep 1
+bin/leettest -c examples/ru/tour.yaml
 ```
 Цель разрешает один поток на соединение, и каждый ответ держит 150 мс: ответить через одно соединение
 она успевает не больше чем на 6–7 вызовов в секунду. Отчёт говорит, где они застряли: `connections: 1; target
@@ -207,9 +259,9 @@ stream limit 1` и `not sent N: waited for a stream N` — вызовы ждал
 
 ## 7. Скрипты и CI
 
-```console
-$ leettest -c load.yaml -output json > report.json
-$ echo $?
+```sh
+leettest -c load.yaml -output json > report.json
+echo $?
 ```
 
 JSON — версионированный (`schema_version`), решения — полями, а не текстом:
@@ -230,12 +282,13 @@ JSON — версионированный (`schema_version`), решения —
 
 ## 8. Без сервиса вообще
 
-```console
-$ leettest -c examples/leettest.yaml -fake -fake-delay 30ms -fake-jitter 10ms
+```sh
+bin/leettest -c examples/ru/leettest.yaml -fake -fake-delay 30ms -fake-jitter 10ms
 ```
 
-`-fake` нагружает встроенную заглушку вместо цели — посмотреть на экран и отчёт без сервиса. Отчёт
-помечен `fake target`.
+`-fake` нагружает встроенную заглушку вместо цели — посмотреть на экран и отчёт без сервиса. Конфиг
+берётся из клона (`examples/ru/leettest.yaml`), а `target` в нём игнорируется. Отчёт помечен
+`fake target`.
 
 ## Дальше
 

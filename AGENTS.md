@@ -84,9 +84,9 @@ With stderr not a terminal, LeetTest prints a progress line a second to stderr i
 live view, and never waits for a key. Behind a pseudo-terminal (a shell driven through a pty, ssh)
 add `-plain` for the same. Ask for JSON on stdout:
 
-```console
-$ leettest -c load.yaml -output json > report.json
-$ echo $?
+```sh
+leettest -c load.yaml -output json > report.json
+echo $?
 ```
 
 Stdout carries only the report; progress and errors go to stderr. The text report is ASCII; text
@@ -216,12 +216,12 @@ another tool, a publication. "Sounds right" is not a source.
 
 ### Commands
 
-```console
-$ make check      # gofmt (via the linter), vet, tests, golangci-lint — before every push
-$ make race       # tests under -race; needs gcc
-$ make stand      # the reference stand on 127.0.0.1:50051
-$ make demo       # a run against the built-in fake target
-$ make proto      # regenerate the stand's code from wallet.proto, in Docker
+```sh
+make check      # gofmt (via the linter), vet, tests, golangci-lint — before every push
+make race       # tests under -race; needs gcc
+make stand      # the reference stand on 127.0.0.1:50051
+make demo       # a run against the built-in fake target
+make proto      # regenerate the stand's code from wallet.proto, in Docker
 ```
 
 `make check && git push` — never put a pipe between a check and a push: a pipe returns the last
