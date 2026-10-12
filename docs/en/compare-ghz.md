@@ -1,6 +1,6 @@
 # LeetTest and ghz on the same stand
 
-> Translated from [docs/ru/compare-ghz.md](../ru/compare-ghz.md) at 67f8732, 2026-10-08. If they
+> Translated from [docs/ru/compare-ghz.md](../ru/compare-ghz.md) at b7a685c, 2026-10-12. If they
 > differ, the Russian one is right.
 
 This page compares LeetTest with [ghz](https://ghz.sh) on a test server with known behavior. The

@@ -1,5 +1,7 @@
 > Übersetzt aus [docs/ru/quickstart.md](../ru/quickstart.md) bei 67f8732, 2026-10-08. Bei
 > Abweichungen gilt die russische Fassung.
+> **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
+> die [englische](../en/quickstart.md).
 
 # Schnellstart
 

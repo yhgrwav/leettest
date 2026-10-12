@@ -4,6 +4,8 @@
 
 > Übersetzt aus [docs/ru/feedback.md](../ru/feedback.md) bei 67f8732, 2026-10-08. Bei Abweichungen gilt die
 > russische Fassung.
+> **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
+> die [englische](../en/feedback.md).
 
 Das Projekt ist jung, und Rückmeldung ist derzeit mehr wert als Code: Solange die Schnittstelle
 nicht feststeht, ist eine schlechte Idee billig zu ändern.

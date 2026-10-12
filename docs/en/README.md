@@ -4,7 +4,7 @@
 
 **gRPC load testing that doesn't lie.**
 
-[Русский](../ru/) · [English](../en/) · [Deutsch](../de/) · [简体中文](../zh-CN/)
+[Русский](../ru/) · [English](../en/) · [Deutsch](../de/) · [简体中文](../zh-CN/) (Deutsch and 简体中文 may lag behind)
 [![CI](https://github.com/yhgrwav/leettest/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/yhgrwav/leettest/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/yhgrwav/leettest.svg)](https://pkg.go.dev/github.com/yhgrwav/leettest)
 [![Go version](https://img.shields.io/github/go-mod/go-version/yhgrwav/leettest)](../../go.mod)
@@ -16,7 +16,7 @@
 
 > This is `main`: it has unreleased features, marked "not released". Docs of the released version are in the [latest release](https://github.com/yhgrwav/leettest/releases/latest).
 
-> Translated from [README.md](../../README.md) at 67f8732, 2026-10-08. If they differ, the Russian
+> Translated from [README.md](../../README.md) at b7a685c, 2026-10-12. If they differ, the Russian
 > one is right. Plus an index of English docs, not in the Russian source.
 
 > **Early stage.** Working now: unary load against a real service, several methods at their own
