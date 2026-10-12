@@ -10,10 +10,10 @@ In short:
 
 - **When the server behaves**, both tools report the same latencies (mode A).
 - **When the server freezes for 2 seconds** (mode B1), ghz in synchronous mode (the default)
-  reports p99 of 10.8ms with `-c 10` and 12.0ms with the default `-c 50`. LeetTest reports 1.71s.
+  reports p99 of 11.4ms with `-c 10` and 11.6ms with the default `-c 50`. LeetTest reports 1.71s.
   ghz with `--async` also reports 1.71s.
 - **When the server is slower than the load needs** (mode B2), ghz in synchronous mode (the
-  default) with `-c 10` sends 2980 of the 6000 requested calls. Its latencies are correct for the
+  default) with `-c 10` sends 2970 of the 6000 requested calls. Its latencies are correct for the
   calls it sent, but that is half the requested load. With the default `-c 50` it sends all 6000.
 
 This is not a bug in ghz. The synchronous mode runs a fixed number of workers (`-c`, 50 by default
@@ -59,11 +59,13 @@ in brackets.
 
 Environment:
 
-- LeetTest at commit `4be4115`;
+- LeetTest at commit `fb8c7b7`;
 - ghz v0.121.0 (grpc-go v1.56.3);
-- Go 1.26.1;
-- Windows 11 (10.0.26100), AMD Ryzen 9 5900X, 32 GB RAM;
-- tools and stand on the same machine, over loopback.
+- Go 1.27.1;
+- Linux (kernel 6.18) in a `golang:1.27.1` container with `--cpus=4`; Docker Desktop on Windows 11,
+  so Linux in a WSL2 virtual machine on a Windows host;
+- host CPU AMD Ryzen 9 5900X (12 cores, 24 threads), 16 GB RAM in the virtual machine;
+- tools and stand in the same container, over loopback.
 
 ## Results
 
@@ -71,12 +73,12 @@ Environment:
 
 | tool | sent | failed | p50 | p90 | p95 | p99 | calls over 1s |
 |---|---|---|---|---|---|---|---|
-| LeetTest | 6000 [6000–6000] | 0 | 10.6ms [10.5–10.6] | 11.2ms [11.1–11.2] | 514ms [510–516] | 1.71s [1.71–1.72] | not reported |
-| ghz, sync (`-c 10`) | 5999 [5999–6002] | 0 | 10.2ms [10.1–10.2] | 10.5ms [10.4–10.6] | 10.6ms [10.6–10.7] | 10.8ms [10.8–10.9] | 10 [10–10] |
-| ghz, sync (`-c 50`, default) | 5999 [5999–6000] | 0 | 10.2ms [10.2–10.3] | 10.8ms [10.7–10.8] | 11.1ms [10.9–11.1] | 12.0ms [11.7–12.5] | 50 [50–50] |
-| ghz, `--async` | 5999 [5999–6000] | 0 | 10.2ms [10.2–10.3] | 10.7ms [10.7–10.7] | 514ms [510–515] | 1.71s [1.71–1.72] | 203 [202–203] |
+| LeetTest | 6000 [6000–6000] | 0 | 10.4ms [10.3–10.4] | 10.6ms [10.5–10.6] | 509ms [508–509] | 1.71s [1.71–1.71] | not reported |
+| ghz, sync (`-c 10`) | 5999 [5999–6004] | 0 | 10.7ms [10.7–10.7] | 11.3ms [11.3–11.3] | 11.4ms [11.3–11.4] | 11.4ms [11.4–11.5] | 10 [10–10] |
+| ghz, sync (`-c 50`, default) | 5999 [5999–6000] | 0 | 10.7ms [10.7–10.7] | 11.3ms [11.3–11.3] | 11.4ms [11.4–11.4] | 11.6ms [11.5–12.3] | 50 [50–50] |
+| ghz, `--async` | 6000 [5999–6000] | 0 | 10.7ms [10.7–10.7] | 11.4ms [11.4–11.4] | 512ms [506–518] | 1.71s [1.71–1.72] | 202 [202–203] |
 
-Over 2 seconds at 200 RPS, about 400 calls were due. With `--async`, ghz counts 203 calls over 1s:
+Over 2 seconds at 200 RPS, about 400 calls were due. With `--async`, ghz counts 202 calls over 1s:
 the ones due in the first half of the freeze wait longer than a second. In synchronous mode, 10
 calls are over 1s with `-c 10` and 50 with `-c 50`, one per worker. That is 0.17% and 0.83%
 of the calls, too few to reach p99. The workers stood still during the freeze. When it ended, ghz
@@ -90,9 +92,9 @@ The number of calls sent is the same in all rows, so the count does not reveal t
 
 | tool | sent | failed | p50 | p90 | p95 | p99 |
 |---|---|---|---|---|---|---|
-| LeetTest | 6000 [6000–6000] | 0 | 101ms [101–101] | 101ms [101–101] | 101ms [101–101] | 102ms [102–102] |
-| ghz, sync (`-c 10`) | 2980 [2980–2980] | 0 | 100.6ms [100.5–100.6] | 101.1ms [101.1–101.2] | 101.3ms [101.2–101.5] | 102ms [101.8–102.8] |
-| ghz, sync (`-c 50`, default) | 6000 [5999–6003] | 0 | 100.3ms [100.3–100.3] | 100.7ms [100.7–100.7] | 101ms [101–101] | 101.5ms [101.5–101.5] |
+| LeetTest | 6000 [6000–6000] | 0 | 100ms [100–100] | 101ms [101–101] | 101ms [101–101] | 102ms [101–102] |
+| ghz, sync (`-c 10`) | 2970 [2970–2970] | 0 | 100.9ms [100.9–101] | 101.3ms [101.3–101.4] | 101.4ms [101.4–101.5] | 101.6ms [101.6–101.7] |
+| ghz, sync (`-c 50`, default) | 6000 [5999–6001] | 0 | 100.5ms [100.5–100.6] | 101.3ms [101.3–101.4] | 101.4ms [101.3–101.5] | 101.5ms [101.4–101.7] |
 
 Synchronous ghz sends at most c / latency calls per second, where c is the number of workers.
 With `-c 10` and 100ms that is 100 calls per second, half of the 200 requested. The latencies
@@ -107,15 +109,12 @@ same ceiling applies to any c once the server slows down enough: at `-c 50` it i
 
 | tool | sent | failed | p50 | p90 | p95 | p99 |
 |---|---|---|---|---|---|---|
-| LeetTest | 6000 [6000–6000] | 0 | 10.6ms [10.6–10.6] | 10.9ms [10.9–11.0] | 11.1ms [11.0–11.1] | 11.3ms [11.2–11.5] |
-| ghz, sync (`-c 10`) | 6000 [5999–6001] | 0 | 10.2ms [10.2–10.3] | 10.5ms [10.5–10.5] | 10.5ms [10.5–10.5] | 10.7ms [10.7–10.8] |
-| ghz, `--async` | 6001 [5999–6002] | 0 | 10.2ms [10.2–10.2] | 10.5ms [10.5–10.5] | 10.5ms [10.5–10.6] | 10.7ms [10.7–10.8] |
+| LeetTest | 6000 [6000–6000] | 0 | 10.3ms [10.3–10.4] | 10.5ms [10.5–10.6] | 10.5ms [10.5–10.6] | 10.6ms [10.6–10.8] |
+| ghz, sync (`-c 10`) | 6000 [6000–6008] | 0 | 10.6ms [10.6–10.7] | 11.3ms [11.3–11.3] | 11.4ms [11.3–11.4] | 11.4ms [11.4–11.5] |
+| ghz, `--async` | 6001 [5996–6002] | 0 | 10.7ms [10.7–10.7] | 11.3ms [11.3–11.3] | 11.4ms [11.4–11.4] | 11.4ms [11.4–11.5] |
 
-All three agree within 0.6ms. LeetTest reads 0.4–0.6ms higher; the cause is not measured here.
-LeetTest measures from the moment a call was scheduled, while ghz measures from the moment the
-call starts [5], so LeetTest includes the generator's own delay before sending. LeetTest counts it on
-purpose: if the generator falls behind, the latency shows it instead of hiding it. The start lag
-is also reported separately.
+All three agree within 1ms. In this environment ghz reads 0.3–0.9ms higher than LeetTest; we did
+not measure the cause.
 
 ## Reproduce
 
