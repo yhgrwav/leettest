@@ -28,6 +28,11 @@ message is as much a defect as a wrong number; the generator never becomes the b
 
 The project is growing: what works today is below, what comes next is in the [roadmap](roadmap.md).
 
+This is what a run looks like: mid-load the service freezes for three seconds — the screen shows
+the calls in flight piling up, and the report counts the ones left without an answer.
+
+<img src="../../assets/demo.gif" width="100%" alt="A LeetTest run in a terminal: the load screen, the target freezing for three seconds, the report showing the unanswered calls and a p99 above 2 seconds">
+
 ## Install
 
 Linux and macOS (amd64 and arm64) — one command:
