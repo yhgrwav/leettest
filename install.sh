@@ -16,6 +16,7 @@
 set -eu
 
 tmp=
+staged=
 
 die() {
 	echo "install.sh: $*" >&2
@@ -24,6 +25,7 @@ die() {
 
 cleanup() {
 	if [ -n "$tmp" ]; then rm -rf "$tmp"; fi
+	if [ -n "$staged" ]; then rm -f "$staged"; fi
 }
 
 have() {
@@ -61,6 +63,11 @@ main() {
 	aarch64 | arm64) arch=arm64 ;;
 	*) die "$unsupported" ;;
 	esac
+	# A shell under Rosetta on an Apple silicon Mac reports x86_64; the native binary is the right one.
+	if [ "$os" = darwin ] && [ "$arch" = amd64 ] && have sysctl &&
+		[ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = 1 ]; then
+		arch=arm64
+	fi
 
 	tag=${LEETTEST_VERSION:-}
 	if [ -z "$tag" ]; then
@@ -89,12 +96,14 @@ main() {
 
 	tar -xzf "$tmp/$file" -C "$tmp" leettest || die "cannot unpack $file"
 	mkdir -p "$dir" || die "cannot create $dir"
-	cp "$tmp/leettest" "$dir/.leettest.$$" || die "cannot write to $dir"
-	chmod 755 "$dir/.leettest.$$"
-	mv -f "$dir/.leettest.$$" "$dir/leettest" || die "cannot write $dir/leettest"
+	staged=$dir/.leettest.$$
+	cp "$tmp/leettest" "$staged" || die "cannot write to $dir"
+	chmod 755 "$staged" || die "cannot make $staged executable"
+	mv -f "$staged" "$dir/leettest" || die "cannot write $dir/leettest"
 
+	"$dir/leettest" -version ||
+		die "installed $dir/leettest, but it does not run (a noexec mount, or a binary for another architecture?)"
 	echo "Installed $dir/leettest"
-	"$dir/leettest" -version || die "the installed binary does not run"
 
 	case ":${PATH:-}:" in
 	*":$dir:"*) ;;
