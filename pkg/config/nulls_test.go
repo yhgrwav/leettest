@@ -130,26 +130,110 @@ load:
 }
 
 // An explicit empty string is refused through the path check, not the null
-// check: no line. An alias is not followed: a null reached through one is
-// read as the key left out. Frozen as main does it.
-// Ground: characterization — the null rule unwraps anchors and tags, not strings or aliases.
-func TestParse_EmptyStringTagAndAliasAreUnchanged(t *testing.T) {
-	t.Run("a str tag on an empty string", func(t *testing.T) {
-		_, err := config.Parse([]byte(datasetYAML("      dataset: !!str \"\"\n")))
+// check: no line. Frozen as main does it.
+// Ground: characterization — the null rule unwraps anchors and tags, not strings.
+func TestParse_EmptyStringTagIsUnchanged(t *testing.T) {
+	_, err := config.Parse([]byte(datasetYAML("      dataset: !!str \"\"\n")))
 
-		if !errors.Is(err, config.ErrEmptyDatasetPath) {
-			t.Fatalf("error = %v, want %v", err, config.ErrEmptyDatasetPath)
+	if !errors.Is(err, config.ErrEmptyDatasetPath) {
+		t.Fatalf("error = %v, want %v", err, config.ErrEmptyDatasetPath)
+	}
+	if strings.Contains(err.Error(), "line ") {
+		t.Errorf("error = %q, carries a line; main names the call, not the key", err)
+	}
+}
+
+// An alias that resolves to a null is the same lost path as a direct null: it
+// is refused with the direct form's error, at the dataset key's line. The
+// anchor sits on line 11 (the call's data), the alias on line 12.
+// Ground: contract — П13, no config silently ignored; the error value, text and line are what callers see.
+func TestParse_DatasetAliasOfNullIsAnError(t *testing.T) {
+	for name, lines := range map[string]string{
+		"an anchor on a tilde":        "      data: &a ~\n      dataset: *a\n",
+		"an anchor on null":           "      data: &a null\n      dataset: *a\n",
+		"an anchor on a null tag":     "      data: &a !!null ~\n      dataset: *a\n",
+		"an anchor with no value":     "      data: &a\n      dataset: *a\n",
+		"a null tag on the alias":     "      data: &a ~\n      dataset: !!null *a\n",
+		"a str tag on the null alias": "      data: &a ~\n      dataset: !!str *a\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := config.Parse([]byte(datasetYAML(lines)))
+
+			if !errors.Is(err, config.ErrEmptyDatasetPath) {
+				t.Fatalf("error = %v, want %v", err, config.ErrEmptyDatasetPath)
+			}
+			if errors.Is(err, config.ErrReadConfig) {
+				t.Errorf("error = %v, is a read error; the category is the empty path", err)
+			}
+			if want := "line 12: " + config.ErrEmptyDatasetPath.Error(); err.Error() != want {
+				t.Errorf("error = %q, want the direct form's text %q", err, want)
+			}
+		})
+	}
+}
+
+// The alias is followed from the second call to an anchor in the first: the
+// line is that of the alias, not of the anchor.
+// Ground: contract — the line is the one place the user is sent to.
+func TestParse_DatasetAliasOfNullInASecondCallNamesItsLine(t *testing.T) {
+	second := "      data: &a ~\n" +
+		"    - method: wallet.v1.WalletService/GetHistory\n" +
+		"      rps: 10\n" +
+		"      duration: 1s\n" +
+		"      dataset: *a\n"
+
+	_, err := config.Parse([]byte(datasetYAML(second)))
+
+	if !errors.Is(err, config.ErrEmptyDatasetPath) {
+		t.Fatalf("error = %v, want %v", err, config.ErrEmptyDatasetPath)
+	}
+	if want := "line 15:"; !strings.Contains(err.Error(), want) {
+		t.Errorf("error = %q, want it to carry %q", err, want)
+	}
+	if strings.Contains(err.Error(), "line 11:") {
+		t.Errorf("error = %q, names the anchor's line", err)
+	}
+}
+
+// An alias to a path is a path: a config that reuses one dataset file for two
+// calls keeps working. A null alias used outside a call's dataset is not
+// touched.
+// Ground: characterization — only a null reached as load.calls[i].dataset is refused.
+func TestParse_DatasetAliasOfAPathIsAccepted(t *testing.T) {
+	t.Run("a path shared by two calls", func(t *testing.T) {
+		calls := "      dataset: &p x.jsonl\n" +
+			"    - method: wallet.v1.WalletService/GetHistory\n" +
+			"      rps: 10\n" +
+			"      duration: 1s\n" +
+			"      dataset: *p\n"
+
+		cfg, err := config.Parse([]byte(datasetYAML(calls)))
+
+		if err != nil {
+			t.Fatalf("error = %v, want none: an alias to a path is a path", err)
 		}
-		if strings.Contains(err.Error(), "line ") {
-			t.Errorf("error = %q, carries a line; main names the call, not the key", err)
+		if got := len(cfg.Load.Calls); got != 2 {
+			t.Fatalf("calls = %d, want 2", got)
 		}
 	})
 
-	t.Run("an alias of a null", func(t *testing.T) {
-		_, err := config.Parse([]byte(datasetYAML("      data: &a ~\n      dataset: *a\n")))
+	t.Run("a path shared by two calls behind a str tag", func(t *testing.T) {
+		calls := "      dataset: &p x.jsonl\n" +
+			"    - method: wallet.v1.WalletService/GetHistory\n" +
+			"      rps: 10\n" +
+			"      duration: 1s\n" +
+			"      dataset: !!str *p\n"
 
-		if err != nil {
-			t.Errorf("error = %v, want none: a known hole (the alias hides an empty path), out of scope here and read as before", err)
+		if _, err := config.Parse([]byte(datasetYAML(calls))); err != nil {
+			t.Fatalf("error = %v, want none: an alias to a path is a path", err)
+		}
+	})
+
+	t.Run("a null alias outside the dataset", func(t *testing.T) {
+		_, err := config.Parse([]byte(datasetYAML("      data: &a ~\n      timeout: *a\n")))
+
+		if errors.Is(err, config.ErrEmptyDatasetPath) {
+			t.Fatalf("error = %v, a null alias outside load.calls[i].dataset was read as an empty dataset path", err)
 		}
 	})
 }
