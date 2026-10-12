@@ -117,17 +117,23 @@ ghz --insecure --call grpc.health.v1.Health/Check -d '{}' --rps 200 -z 30s -t 5s
 
 Установите ghz и запустите из корня репозитория:
 
-```
-go run ./test/compare-ghz -ghz /path/to/ghz
+```sh
+go install github.com/bojand/ghz/cmd/ghz@v0.121.0
+go run ./test/compare-ghz -ghz "$(go env GOPATH)/bin/ghz"
 ```
 
 Скрипт собирает стенд и LeetTest и прогоняет каждый режим 5 раз, это около 25 минут. Он печатает
 таблицы этой страницы и записывает их вместе с сырым выводом каждого прогона в
-`test/compare-ghz/out/`. Полезные флаги:
+`test/compare-ghz/out/`.
 
-- `-runs N` — число прогонов;
-- `-modes B1` — только перечисленные режимы;
-- `-variants ghz-sync50` — только перечисленные инструменты.
+Короткий прогон — один раз и только режим B1, около 2 минут:
+
+```sh
+go run ./test/compare-ghz -ghz "$(go env GOPATH)/bin/ghz" -runs 1 -modes B1
+```
+
+Режимы — `A`, `B1`, `B2` (`-modes`), инструменты — `leettest`, `ghz-sync`, `ghz-sync50`,
+`ghz-async` (`-variants`); остальные флаги — в `go run ./test/compare-ghz -h`.
 
 На другой машине числа будут другими. Картина — нет: в B1 ghz в синхронном режиме пропускает
 замирание, а LeetTest и ghz с `--async` его показывают.

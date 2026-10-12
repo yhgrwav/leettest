@@ -120,17 +120,23 @@ not measure the cause.
 
 Install ghz, then run from the repository root:
 
-```
-go run ./test/compare-ghz -ghz /path/to/ghz
+```sh
+go install github.com/bojand/ghz/cmd/ghz@v0.121.0
+go run ./test/compare-ghz -ghz "$(go env GOPATH)/bin/ghz"
 ```
 
 The script builds the stand and LeetTest and runs every mode 5 times, which takes about 25
 minutes. It prints this page's tables and writes them, with every run's raw output, to
-`test/compare-ghz/out/`. Useful flags:
+`test/compare-ghz/out/`.
 
-- `-runs N` sets the number of runs;
-- `-modes B1` runs only the listed modes;
-- `-variants ghz-sync50` runs only the listed tools.
+A short run, once and only mode B1, takes about 2 minutes:
+
+```sh
+go run ./test/compare-ghz -ghz "$(go env GOPATH)/bin/ghz" -runs 1 -modes B1
+```
+
+The modes are `A`, `B1`, `B2` (`-modes`), the tools are `leettest`, `ghz-sync`, `ghz-sync50`,
+`ghz-async` (`-variants`); the other flags are in `go run ./test/compare-ghz -h`.
 
 Numbers will differ on another machine. The pattern should not: in B1, ghz in synchronous mode
 misses the freeze, while LeetTest and ghz with `--async` both show it.
