@@ -27,43 +27,18 @@
 
 ## Установка
 
-Это ветка `main`: здесь есть невыпущенное, оно помечено «не выпущено». Документация выпущенной версии — в [последнем релизе](https://github.com/yhgrwav/leettest/releases/latest).
-
-Два пути на выбор; команды работают в терминале Linux и macOS как есть.
-
-**Готовый бинарник** со [страницы релизов](https://github.com/yhgrwav/leettest/releases) (Linux,
-macOS, Windows; amd64 и arm64) — Go не нужен, нужны `curl` и `tar`:
-
-```sh
-tag=$(curl -fsSLI -o /dev/null -w '%{url_effective}' https://github.com/yhgrwav/leettest/releases/latest)
-file=leettest_${tag##*/v}_$(uname -s | tr A-Z a-z)_$(uname -m | sed 's/x86_64/amd64/; s/aarch64/arm64/').tar.gz
-base=https://github.com/yhgrwav/leettest/releases/latest/download
-curl -fsSLO "$base/$file" -O "$base/checksums.txt"
-grep " $file\$" checksums.txt | { sha256sum -c - || shasum -a 256 -c -; }
-mkdir -p ~/.local/bin && tar -xzf "$file" -C ~/.local/bin leettest && rm "$file" checksums.txt
-export PATH="$HOME/.local/bin:$PATH"
-leettest -version
-```
-
-`export` действует в этом терминале; чтобы сохранить, добавьте строку в профиль shell. Для Windows
-в релизе лежит `.zip`.
-
-**Через Go**, нужен Go 1.26 или новее ([установка](https://go.dev/doc/install); более старый Go с
-`GOTOOLCHAIN=auto` скачает нужный сам):
+Скачайте архив для своей системы со [страницы релизов](https://github.com/yhgrwav/leettest/releases/latest)
+(Linux, macOS, Windows; amd64 и arm64), распакуйте и положите `leettest` в `PATH`. Или через Go 1.26+:
 
 ```sh
 go install github.com/yhgrwav/leettest/cmd/leettest@latest
-export PATH="$PATH:$(go env GOPATH)/bin"
-leettest -version
 ```
 
-**Где запускать.** На Linux рядом с целью: в той же сети, в том же кластере, на раннере CI. Всё,
-что лежит между генератором и целью, входит в латенси и выглядит как время цели: на нашем стенде
-при 1000 RPS через проброс портов Docker Desktop p99 был 38 мс, внутри сети Docker — 2 мс. Точное
-расписание вызовов — только на Linux; в контейнере с квотой CPU меньше двух ядер возможны редкие
-задержки старта до периода квоты (обычно 100 мс), отчёт их показывает. За L4-балансировщиком
-нагружается один бэкенд — [см. ниже](#как-читать-отчёт). На Windows часы идут шагами около 0,5 мс, и прогон с быстрым
-сервисом будет объявлен недействительным.
+Проверка: `leettest -version`. Если после `go install` команда не найдена —
+`export PATH="$PATH:$(go env GOPATH)/bin"`.
+
+**Где запускать:** на Linux рядом с целью — в той же сети, кластере или на раннере CI. Всё, что
+лежит между генератором и целью, попадает в латенси. Подробнее — в [справочнике](docs/ru/reference.md#где-запускать).
 
 **[Быстрый старт →](docs/ru/quickstart.md)** — все возможности на эталонном стенде: конфиг со
 всеми полями, чтение отчёта, разные поведения цели, CI. Работаете через ИИ-агента — дайте ему
