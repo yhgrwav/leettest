@@ -1,0 +1,24 @@
+# Сервис без server reflection: методы берутся из .proto-файлов, против эталонного стенда, из корня
+# репозитория:
+#   go run ./test/stand/cmd/stand -delay 20ms -life 60s
+#   leettest -c examples/ru/proto.yaml
+# Набор, собранный protoc, вместо файлов: protoset.yaml.
+
+app:
+  target:
+    ip: 127.0.0.1
+    port: 50051
+  tls: false
+  proto:                            # вместо запроса к цели; пути считаются от каталога этого файла
+    files:                          # файлы с методами; их импорты ищутся в import_paths
+      - ../../test/stand/proto/wallet/v1/wallet.proto
+    import_paths:                   # где искать импорты; без этого ключа — каталог этого файла
+      - ../../test/stand/proto
+
+load:
+  calls:
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 50
+      duration: 10s
+      data:                         # тело запроса: до прогона проверяется по .proto
+        wallet_id: w-42

@@ -263,6 +263,7 @@ measured calls only. The first column is the field's full path.
 | `mode` | string | `run` for a plain run, `breakpoint` for a breaking-point search |
 | `leettest_version` | string | The tool's version; a build from source gives the commit |
 | `target` | string | The target address from the config, `fake target` with `-fake` |
+| `methods_source` | string? | Where the methods came from: `reflection`, `proto` (the `app.proto` files) or `protoset`; `null` with `-fake` — not released |
 | `outcome` | string | `complete`, `invalid`, `incomplete` — matches exit code `0`, `2`, `3` |
 | `invalid_reasons` | []string | Why the run is invalid: `in_flight_cap`, `nothing_measured`, `clock_step`. Empty — valid |
 | `tail_wait_cause` | string? | The client-side wait that set the tail: `generator`, `stream`, `connection`; `null` — no verdict |

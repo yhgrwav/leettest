@@ -44,6 +44,12 @@ var ErrRequestData = errors.New("request data does not fit the method")
 // int64 or uint64 and encoding/json writes them digit for digit, so an ID above
 // 2^53 arrives as written instead of rounded.
 func RequestBody(desc protoreflect.MessageDescriptor, data any) ([]byte, error) {
+	return requestBody(protojson.UnmarshalOptions{}, desc, data)
+}
+
+// requestBody is RequestBody reading with opts: the types of the method's own
+// files, where an Any may name them.
+func requestBody(opts protojson.UnmarshalOptions, desc protoreflect.MessageDescriptor, data any) ([]byte, error) {
 	msg := dynamicpb.NewMessage(desc)
 
 	if data != nil {
@@ -53,7 +59,7 @@ func RequestBody(desc protoreflect.MessageDescriptor, data any) ([]byte, error) 
 		}
 
 		// Strict: an unknown field is an error, not a silently dropped typo.
-		if err := protojson.Unmarshal(raw, msg); err != nil {
+		if err := opts.Unmarshal(raw, msg); err != nil {
 			return nil, withProtoNames(err, desc)
 		}
 	}
@@ -68,10 +74,10 @@ func RequestBody(desc protoreflect.MessageDescriptor, data any) ([]byte, error) 
 //
 // It says only whether the record fits: protojson's own text quotes the value,
 // an unknown key and a duplicate map key, and a record may hold a secret.
-func recordBody(desc protoreflect.MessageDescriptor, raw []byte) (body []byte, fits bool) {
+func recordBody(opts protojson.UnmarshalOptions, desc protoreflect.MessageDescriptor, raw []byte) (body []byte, fits bool) {
 	msg := dynamicpb.NewMessage(desc)
 
-	if err := protojson.Unmarshal(raw, msg); err != nil {
+	if err := opts.Unmarshal(raw, msg); err != nil {
 		return nil, false
 	}
 
@@ -83,11 +89,11 @@ func recordBody(desc protoreflect.MessageDescriptor, raw []byte) (body []byte, f
 
 // datasetBodies builds every record of call's dataset, in file order. The
 // first record that does not fit is the error, named by its line in the file.
-func datasetBodies(desc protoreflect.MessageDescriptor, call *config.Call) ([][]byte, error) {
+func datasetBodies(opts protojson.UnmarshalOptions, desc protoreflect.MessageDescriptor, call *config.Call) ([][]byte, error) {
 	bodies := make([][]byte, len(call.Records))
 
 	for i, record := range call.Records {
-		body, fits := recordBody(desc, record.JSON)
+		body, fits := recordBody(opts, desc, record.JSON)
 		if !fits {
 			return nil, fmt.Errorf("%w: %s: dataset %s:%d: does not fit %s",
 				ErrRequestData, call.Method, call.Dataset, record.Line, desc.FullName())
@@ -154,11 +160,13 @@ func AttachData(
 			continue
 		case errors.Is(resolveErr, descriptor.ErrReflectionUnsupported) && call.Dataset != "":
 			errs = append(errs, fmt.Errorf("%s: %w: the schema for its dataset comes from reflection; "+
+				"set app.proto or app.protoset to give it another way, or drop the dataset: "+
 				"without dataset the method runs with an empty message", call.Method, resolveErr))
 
 			continue
 		case errors.Is(resolveErr, descriptor.ErrReflectionUnsupported):
 			errs = append(errs, fmt.Errorf("%s: %w: the schema for its data comes from reflection; "+
+				"set app.proto or app.protoset to give it another way, or drop the data: "+
 				"without data the method runs with an empty message", call.Method, resolveErr))
 
 			continue
@@ -171,7 +179,7 @@ func AttachData(
 		}
 
 		if call.Dataset != "" {
-			bodies, err := datasetBodies(method.Input, call)
+			bodies, err := datasetBodies(method.UnmarshalOptions(), method.Input, call)
 			if err != nil {
 				errs = append(errs, err)
 
@@ -187,7 +195,7 @@ func AttachData(
 			continue
 		}
 
-		body, err := RequestBody(method.Input, call.Data)
+		body, err := requestBody(method.UnmarshalOptions(), method.Input, call.Data)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%w: %s: %w", ErrRequestData, call.Method, err))
 

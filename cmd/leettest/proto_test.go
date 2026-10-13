@@ -281,9 +281,9 @@ func TestRun_FilesAreCheckedBeforeTheConnection(t *testing.T) {
 
 					return
 				}
-				// health.proto is entry file number one; the broken field is on line 4.
-				if !regexp.MustCompile(`health\.proto:4:\d+`).MatchString(err.Error()) {
-					t.Errorf("error %q does not carry health.proto:4:<column>", err)
+				// The broken field is in the message on line 3 of healthProto.
+				if !regexp.MustCompile(`health\.proto:3:\d+`).MatchString(err.Error()) {
+					t.Errorf("error %q does not carry health.proto:3:<column>", err)
 				}
 			},
 		},
