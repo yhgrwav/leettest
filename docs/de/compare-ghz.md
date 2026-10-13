@@ -1,21 +1,22 @@
 # LeetTest und ghz auf demselben Stand
 
-> Übersetzt aus [docs/ru/compare-ghz.md](../ru/compare-ghz.md) bei 67f8732, 2026-10-08. Bei
+> Übersetzt aus [docs/ru/compare-ghz.md](../ru/compare-ghz.md) bei 6adffbf, 2026-10-12. Bei
 > Abweichungen gilt die russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/compare-ghz.md).
 
 Diese Seite vergleicht LeetTest mit [ghz](https://ghz.sh) auf einem Testserver mit bekanntem
 Verhalten. Die Frage ist eng: Wenn der Server stockt oder langsamer wird, zeigt der Bericht das?
+Ein Funktionsvergleich mit ghz, k6 und JMeter steht in der [Tabelle](why.md#vergleich-mit-ghz-k6-und-jmeter).
 
 Kurz:
 
 - **Wenn sich der Server normal verhält**, melden beide Werkzeuge dieselben Latenzen (Modus A).
 - **Wenn der Server 2 Sekunden einfriert** (Modus B1), meldet ghz im synchronen Modus (Standard)
-  ein p99 von 10.8ms mit `-c 10` und 12.0ms mit dem Standard `-c 50`. LeetTest meldet 1.71s. ghz
-  mit `--async` meldet ebenfalls 1.71s.
+  ein p99 von 11.4ms mit `-c 10` und 11.6ms mit dem Standard `-c 50`. LeetTest meldet 1.71s.
+  ghz mit `--async` meldet ebenfalls 1.71s.
 - **Wenn der Server langsamer ist, als die Last verlangt** (Modus B2), sendet ghz im synchronen
-  Modus (Standard) mit `-c 10` 2980 der 6000 angeforderten Aufrufe. Seine Latenzen stimmen für die
+  Modus (Standard) mit `-c 10` 2970 der 6000 angeforderten Aufrufe. Seine Latenzen stimmen für die
   gesendeten Aufrufe, aber das ist die halbe angeforderte Last. Mit dem Standard `-c 50` sendet es
   alle 6000.
 
@@ -63,11 +64,13 @@ Minimum und Maximum in Klammern.
 
 Umgebung:
 
-- LeetTest bei Commit `4be4115`;
+- LeetTest bei Commit `fb8c7b7`;
 - ghz v0.121.0 (grpc-go v1.56.3);
-- Go 1.26.1;
-- Windows 11 (10.0.26100), AMD Ryzen 9 5900X, 32 GB RAM;
-- Werkzeuge und Stand auf derselben Maschine, über Loopback.
+- Go 1.27.1;
+- Linux (Kernel 6.18) in einem Container `golang:1.27.1` mit `--cpus=4`; Docker Desktop unter
+  Windows 11, also Linux in einer WSL2-virtuellen Maschine auf einem Windows-Host;
+- Host-Prozessor AMD Ryzen 9 5900X (12 Kerne, 24 Threads), 16 GB RAM in der virtuellen Maschine;
+- Werkzeuge und Stand im selben Container, über Loopback.
 
 ## Ergebnisse
 
@@ -75,12 +78,12 @@ Umgebung:
 
 | Werkzeug | gesendet | fehlgeschlagen | p50 | p90 | p95 | p99 | Aufrufe über 1s |
 |---|---|---|---|---|---|---|---|
-| LeetTest | 6000 [6000–6000] | 0 | 10.6ms [10.5–10.6] | 11.2ms [11.1–11.2] | 514ms [510–516] | 1.71s [1.71–1.72] | nicht ausgegeben |
-| ghz, sync (`-c 10`) | 5999 [5999–6002] | 0 | 10.2ms [10.1–10.2] | 10.5ms [10.4–10.6] | 10.6ms [10.6–10.7] | 10.8ms [10.8–10.9] | 10 [10–10] |
-| ghz, sync (`-c 50`, Standard) | 5999 [5999–6000] | 0 | 10.2ms [10.2–10.3] | 10.8ms [10.7–10.8] | 11.1ms [10.9–11.1] | 12.0ms [11.7–12.5] | 50 [50–50] |
-| ghz, `--async` | 5999 [5999–6000] | 0 | 10.2ms [10.2–10.3] | 10.7ms [10.7–10.7] | 514ms [510–515] | 1.71s [1.71–1.72] | 203 [202–203] |
+| LeetTest | 6000 [6000–6000] | 0 | 10.4ms [10.3–10.4] | 10.6ms [10.5–10.6] | 509ms [508–509] | 1.71s [1.71–1.71] | nicht ausgegeben |
+| ghz, sync (`-c 10`) | 5999 [5999–6004] | 0 | 10.7ms [10.7–10.7] | 11.3ms [11.3–11.3] | 11.4ms [11.3–11.4] | 11.4ms [11.4–11.5] | 10 [10–10] |
+| ghz, sync (`-c 50`, Standard) | 5999 [5999–6000] | 0 | 10.7ms [10.7–10.7] | 11.3ms [11.3–11.3] | 11.4ms [11.4–11.4] | 11.6ms [11.5–12.3] | 50 [50–50] |
+| ghz, `--async` | 6000 [5999–6000] | 0 | 10.7ms [10.7–10.7] | 11.4ms [11.4–11.4] | 512ms [506–518] | 1.71s [1.71–1.72] | 202 [202–203] |
 
-In 2 Sekunden bei 200 RPS waren etwa 400 Aufrufe fällig. Mit `--async` zählt ghz 203 Aufrufe über
+In 2 Sekunden bei 200 RPS waren etwa 400 Aufrufe fällig. Mit `--async` zählt ghz 202 Aufrufe über
 1s: Die in der ersten Hälfte des Stillstands fälligen warten länger als eine Sekunde. Im synchronen
 Modus liegen 10 Aufrufe über 1s mit `-c 10` und 50 mit `-c 50`, einer pro Worker. Das sind 0.17 %
 und 0.83 % der Aufrufe, zu wenig, um p99 zu erreichen. Die Worker standen während des Stillstands
@@ -96,9 +99,9 @@ nicht.
 
 | Werkzeug | gesendet | fehlgeschlagen | p50 | p90 | p95 | p99 |
 |---|---|---|---|---|---|---|
-| LeetTest | 6000 [6000–6000] | 0 | 101ms [101–101] | 101ms [101–101] | 101ms [101–101] | 102ms [102–102] |
-| ghz, sync (`-c 10`) | 2980 [2980–2980] | 0 | 100.6ms [100.5–100.6] | 101.1ms [101.1–101.2] | 101.3ms [101.2–101.5] | 102ms [101.8–102.8] |
-| ghz, sync (`-c 50`, Standard) | 6000 [5999–6003] | 0 | 100.3ms [100.3–100.3] | 100.7ms [100.7–100.7] | 101ms [101–101] | 101.5ms [101.5–101.5] |
+| LeetTest | 6000 [6000–6000] | 0 | 100ms [100–100] | 101ms [101–101] | 101ms [101–101] | 102ms [101–102] |
+| ghz, sync (`-c 10`) | 2970 [2970–2970] | 0 | 100.9ms [100.9–101] | 101.3ms [101.3–101.4] | 101.4ms [101.4–101.5] | 101.6ms [101.6–101.7] |
+| ghz, sync (`-c 50`, Standard) | 6000 [5999–6001] | 0 | 100.5ms [100.5–100.6] | 101.3ms [101.3–101.4] | 101.4ms [101.3–101.5] | 101.5ms [101.4–101.7] |
 
 Synchrones ghz sendet höchstens c / Latenz Aufrufe pro Sekunde, wobei c die Zahl der Worker ist.
 Mit `-c 10` und 100ms sind das 100 Aufrufe pro Sekunde, die Hälfte der angeforderten 200. Die
@@ -113,31 +116,34 @@ oberhalb von 250ms erreicht.
 
 | Werkzeug | gesendet | fehlgeschlagen | p50 | p90 | p95 | p99 |
 |---|---|---|---|---|---|---|
-| LeetTest | 6000 [6000–6000] | 0 | 10.6ms [10.6–10.6] | 10.9ms [10.9–11.0] | 11.1ms [11.0–11.1] | 11.3ms [11.2–11.5] |
-| ghz, sync (`-c 10`) | 6000 [5999–6001] | 0 | 10.2ms [10.2–10.3] | 10.5ms [10.5–10.5] | 10.5ms [10.5–10.5] | 10.7ms [10.7–10.8] |
-| ghz, `--async` | 6001 [5999–6002] | 0 | 10.2ms [10.2–10.2] | 10.5ms [10.5–10.5] | 10.5ms [10.5–10.6] | 10.7ms [10.7–10.8] |
+| LeetTest | 6000 [6000–6000] | 0 | 10.3ms [10.3–10.4] | 10.5ms [10.5–10.6] | 10.5ms [10.5–10.6] | 10.6ms [10.6–10.8] |
+| ghz, sync (`-c 10`) | 6000 [6000–6008] | 0 | 10.6ms [10.6–10.7] | 11.3ms [11.3–11.3] | 11.4ms [11.3–11.4] | 11.4ms [11.4–11.5] |
+| ghz, `--async` | 6001 [5996–6002] | 0 | 10.7ms [10.7–10.7] | 11.3ms [11.3–11.3] | 11.4ms [11.4–11.4] | 11.4ms [11.4–11.5] |
 
-Alle drei stimmen auf 0.6ms überein. LeetTest liegt 0.4–0.6ms höher; die Ursache wird hier nicht
-gemessen. LeetTest misst ab dem Zeitpunkt, für den ein Aufruf geplant war, ghz ab dem Beginn des
-Aufrufs [5], also enthält LeetTest die eigene Verzögerung des Generators vor dem Senden. LeetTest
-zählt sie absichtlich: Fällt der Generator zurück, zeigt die Latenz das, statt es zu verbergen. Die
-Startverspätung wird zudem gesondert ausgegeben.
+Alle drei stimmen auf 1ms überein. In dieser Umgebung zeigt ghz 0.3–0.9ms mehr als LeetTest; die
+Ursache haben wir nicht gemessen.
 
 ## Nachstellen
 
 Installieren Sie ghz und führen Sie aus dem Wurzelverzeichnis des Repositorys aus:
 
-```
-go run ./test/compare-ghz -ghz /path/to/ghz
+```sh
+go install github.com/bojand/ghz/cmd/ghz@v0.121.0
+go run ./test/compare-ghz -ghz "$(go env GOPATH)/bin/ghz"
 ```
 
 Das Skript baut den Stand und LeetTest und führt jeden Modus 5 Mal aus, was etwa 25 Minuten dauert.
 Es gibt die Tabellen dieser Seite aus und schreibt sie, mit der Rohausgabe jedes Laufs, nach
-`test/compare-ghz/out/`. Nützliche Flags:
+`test/compare-ghz/out/`.
 
-- `-runs N` legt die Zahl der Läufe fest;
-- `-modes B1` führt nur die genannten Modi aus;
-- `-variants ghz-sync50` führt nur die genannten Werkzeuge aus.
+Ein kurzer Lauf, einmal und nur Modus B1, dauert etwa 2 Minuten:
+
+```sh
+go run ./test/compare-ghz -ghz "$(go env GOPATH)/bin/ghz" -runs 1 -modes B1
+```
+
+Die Modi sind `A`, `B1`, `B2` (`-modes`), die Werkzeuge `leettest`, `ghz-sync`, `ghz-sync50`,
+`ghz-async` (`-variants`); die übrigen Flags stehen in `go run ./test/compare-ghz -h`.
 
 Auf einer anderen Maschine werden die Zahlen abweichen. Das Muster nicht: In B1 verpasst ghz im
 synchronen Modus den Stillstand, während LeetTest und ghz mit `--async` ihn beide zeigen.
