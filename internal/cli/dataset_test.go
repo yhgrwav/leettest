@@ -236,6 +236,7 @@ func TestAttachData_DatasetNoReflectionNamesDataset(t *testing.T) {
 		_, err := AttachData(t.Context(), resolver, cfg, calls)
 
 		want := prefix + "the schema for its dataset comes from reflection; " +
+			"set app.proto or app.protoset to give it another way, or drop the dataset: " +
 			"without dataset the method runs with an empty message"
 		if err == nil || err.Error() != want {
 			t.Errorf("error = %v, want %q", err, want)
@@ -252,6 +253,7 @@ func TestAttachData_DatasetNoReflectionNamesDataset(t *testing.T) {
 		_, err := AttachData(t.Context(), resolver, cfg, calls)
 
 		want := prefix + "the schema for its data comes from reflection; " +
+			"set app.proto or app.protoset to give it another way, or drop the data: " +
 			"without data the method runs with an empty message"
 		if err == nil || err.Error() != want {
 			t.Errorf("error = %v, want %q", err, want)
@@ -670,7 +672,7 @@ func TestJSON_DatasetIsCumulativePerRun(t *testing.T) {
 
 	for k := range out {
 		switch k {
-		case "schema_version", "mode", "leettest_version", "target", "method", "started_at", "breakpoint":
+		case "schema_version", "mode", "leettest_version", "target", "methods_source", "method", "started_at", "breakpoint":
 		default:
 			t.Errorf("top level has %q, a field no schema has", k)
 		}
