@@ -40,6 +40,10 @@ func LoadFile(path string) (*MasterConfig, error) {
 	dir := filepath.Dir(path)
 	cfg.App.relativeTo(dir)
 
+	if err := cfg.App.resolveProto(dir); err != nil {
+		return nil, err
+	}
+
 	if err := cfg.readDatasets(dir); err != nil {
 		return nil, err
 	}
@@ -105,6 +109,9 @@ func (m *MasterConfig) Validate() error {
 		errs = append(errs, ErrEmptyName)
 	}
 	if err := m.App.validateTLSFiles(); err != nil {
+		errs = append(errs, err)
+	}
+	if err := m.App.validateProto(); err != nil {
 		errs = append(errs, err)
 	}
 	if err := m.Load.Validate(); err != nil {

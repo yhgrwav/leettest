@@ -2,6 +2,7 @@ schema_version int
 mode string
 leettest_version string
 target string
+methods_source string?
 outcome string
 invalid_reasons []string
 tail_wait_cause string?

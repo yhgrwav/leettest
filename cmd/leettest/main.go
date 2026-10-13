@@ -294,23 +294,44 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 
 	// Methods nothing could be checked against: named again with the report,
 	// where a full-screen run does not scroll them away.
-	var unchecked []cli.Unchecked
+	var (
+		unchecked []cli.Unchecked
+		// Where the methods came from; nil when none was resolved (-fake).
+		source *cli.MethodsSource
+	)
 
 	if grpcSender != nil {
 		defer func() { _ = grpcSender.Close() }()
+
+		// Files are read before the connection: a mistake in them does not
+		// wait for the network, and no reflection call is made for them.
+		files, fileSource, filesErr := cli.FileResolver(cfg)
+		if filesErr != nil {
+			return filesErr
+		}
+
+		source = fileSource
+		if files != nil {
+			if unchecked, filesErr = cli.AttachData(ctx, files, cfg, opts.Calls); filesErr != nil {
+				return filesErr
+			}
+		}
 
 		if connErr := connect(ctx, stderr, grpcSender, &cfg.App, *connectTimeout); connErr != nil {
 			return connErr
 		}
 
-		// Bodies need the schema, and the schema needs the connection.
-		dataCtx, cancelData := context.WithTimeout(ctx, *connectTimeout)
-		var dataErr error
-		unchecked, dataErr = cli.AttachData(dataCtx, descriptor.NewReflectionResolver(grpcSender.Conn()), cfg, opts.Calls)
-		cancelData()
+		if files == nil {
+			// Bodies need the schema, and the schema needs the connection.
+			source = cli.ReflectionSource()
+			dataCtx, cancelData := context.WithTimeout(ctx, *connectTimeout)
+			var dataErr error
+			unchecked, dataErr = cli.AttachData(dataCtx, descriptor.NewReflectionResolver(grpcSender.Conn()), cfg, opts.Calls)
+			cancelData()
 
-		if dataErr != nil {
-			return dataErr
+			if dataErr != nil {
+				return dataErr
+			}
 		}
 		for _, m := range unchecked {
 			fmt.Fprintf(stderr, "%s: %v; the method was not checked before the run and sends an "+
@@ -330,6 +351,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 			cfg: cfg, configPath: *configPath, target: target, sender: sender, calls: opts.Calls,
 			unchecked: unchecked, maxInFlight: *maxInFlight, capSet: capSet, connect: connectWithin,
 			json: *output == "json", interactive: interactive, stepBefore: stepBefore,
+			source: source,
 		}, stdout, stderr)
 	}
 
@@ -417,7 +439,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		report := eng.Report()
 
 		return cli.RunReport{
-			Report: report, Unchecked: unchecked, MaxResponse: maxResponse,
+			Report: report, Unchecked: unchecked, MaxResponse: maxResponse, MethodsSource: source,
 			ClockStep: max(stepBefore, time.Duration(stepAfter.Load())), ClockStepBefore: stepBefore,
 			GeneratorCPU: meter.Result(report, cores),
 		}

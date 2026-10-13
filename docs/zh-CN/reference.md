@@ -219,6 +219,7 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `mode` | string | 普通运行为 `run`，崩溃点搜索为 `breakpoint` |
 | `leettest_version` | string | 工具版本；从源码构建时为提交哈希 |
 | `target` | string | 配置中的目标地址，使用 `-fake` 时为 `fake target` |
+| `methods_source` | string? | 方法的来源：`reflection`、`proto`（`app.proto` 的文件）或 `protoset`；使用 `-fake` 时为 `null`——未发布 |
 | `outcome` | string | `complete`、`invalid`、`incomplete`——对应退出码 `0`、`2`、`3` |
 | `invalid_reasons` | []string | 运行无效的原因：`in_flight_cap`、`nothing_measured`、`clock_step`。为空——有效 |
 | `tail_wait_cause` | string? | 决定尾部的客户端侧等待：`generator`、`stream`、`connection`；`null`——没有结论 |

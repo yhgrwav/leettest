@@ -1,0 +1,24 @@
+# A service without server reflection: the methods come from .proto files, against the reference
+# stand, from the repository root:
+#   go run ./test/stand/cmd/stand -delay 20ms -life 60s
+#   leettest -c examples/proto.yaml
+# A set built with protoc instead of files: protoset.yaml.
+
+app:
+  target:
+    ip: 127.0.0.1
+    port: 50051
+  tls: false
+  proto:                            # instead of asking the target; paths are relative to this file
+    files:                          # the files that hold the methods; their imports are found on import_paths
+      - ../test/stand/proto/wallet/v1/wallet.proto
+    import_paths:                   # where imports are looked up; this file's directory when left out
+      - ../test/stand/proto
+
+load:
+  calls:
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 50
+      duration: 10s
+      data:                         # the request body, checked against the .proto before the run
+        wallet_id: w-42

@@ -144,7 +144,11 @@ func TestExamples_LanguagesParseEqual(t *testing.T) {
 	}
 
 	for _, name := range en {
-		if got, want := loadExample(t, filepath.Join("ru", name)), loadExample(t, name); !reflect.DeepEqual(got, want) {
+		got, want := loadExample(t, filepath.Join("ru", name)), loadExample(t, name)
+		// The ru example reaches the shared files from its own directory, so how
+		// app.protoset is written differs; where it points (Protoset) must not.
+		got.App.RawProtoset = want.App.RawProtoset
+		if !reflect.DeepEqual(got, want) {
 			t.Errorf("ru/%s loads to\n%+v\n%s loads to\n%+v", name, *got, name, *want)
 		}
 	}

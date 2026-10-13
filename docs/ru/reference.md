@@ -253,6 +253,7 @@ SIGTERM (`docker stop`, Kubernetes, отмена джоба в CI) сразу о
 | `mode` | string | `run` у обычного прогона, `breakpoint` у поиска точки отказа |
 | `leettest_version` | string | Версия инструмента; собранное из исходников — коммит |
 | `target` | string | Адрес цели из конфига, `fake target` при `-fake` |
+| `methods_source` | string? | Откуда взяты методы: `reflection`, `proto` (файлы `app.proto`) или `protoset`; `null` при `-fake` — не выпущено |
 | `outcome` | string | `complete`, `invalid`, `incomplete` — совпадает с кодом выхода `0`, `2`, `3` |
 | `invalid_reasons` | []string | Почему прогон недействителен: `in_flight_cap`, `nothing_measured`, `clock_step`. Пустой — действителен |
 | `tail_wait_cause` | string? | Ожидание на стороне клиента, которое задало хвост: `generator`, `stream`, `connection`; `null` — вердикта нет |

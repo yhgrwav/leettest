@@ -34,6 +34,9 @@ type RunReport struct {
 	engine.Report
 	Unchecked   []Unchecked
 	MaxResponse string
+	// MethodsSource is where the methods came from; nil when none was
+	// resolved (-fake).
+	MethodsSource *MethodsSource
 	// ClockStep is the larger of the host clock's steps measured before and
 	// after the run.
 	ClockStep time.Duration
@@ -62,6 +65,9 @@ func PrintReport(w io.Writer, target string, run RunReport) {
 	report := run.Report
 
 	fmt.Fprintf(w, "run finished: %s in %s\n", target, formatDuration(report.Duration))
+	if run.MethodsSource != nil {
+		fmt.Fprintln(w, run.MethodsSource.Line())
+	}
 	fmt.Fprintf(w, "sent %d, failed %d", report.Sent, report.Failed)
 	if report.NotSent > 0 {
 		fmt.Fprintf(w, ", not sent %d", report.NotSent)
