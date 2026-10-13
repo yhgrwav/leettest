@@ -3,6 +3,9 @@ package main
 import (
 	"bytes"
 	"io"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -126,5 +129,107 @@ func TestParse_MaxStreamsBecomesAServerOptionUnlessZero(t *testing.T) {
 func TestParse_RejectsNegativeMaxStreams(t *testing.T) {
 	if _, err := parse([]string{"-max-streams", "-1"}, io.Discard); err == nil {
 		t.Error("-max-streams -1 accepted")
+	}
+}
+
+func TestWriteArrivals_OneOffsetFromTheFirstArrivalPerLine(t *testing.T) {
+	t0 := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
+	path := filepath.Join(t.TempDir(), "arrivals.txt")
+
+	// The third moment is earlier than the second: arrival order is written
+	// as taken, sorting is the reader's.
+	err := writeArrivals(path, []time.Time{t0, t0.Add(3 * time.Millisecond), t0.Add(time.Millisecond)})
+	if err != nil {
+		t.Fatalf("writeArrivals: %v", err)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "0\n3000000\n1000000\n"; string(got) != want {
+		t.Errorf("file = %q, want %q", got, want)
+	}
+}
+
+func TestRun_WritesTheArrivalsFileOnExit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "arrivals.txt")
+	target, finish := startForArrivals(t, "-arrivals", path)
+
+	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+	for range 3 {
+		if _, err = grpc_health_v1.NewHealthClient(conn).Check(t.Context(), &grpc_health_v1.HealthCheckRequest{}); err != nil {
+			t.Fatalf("check: %v", err)
+		}
+	}
+
+	if err = finish(); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("the file was not written: %v", err)
+	}
+	lines := strings.Fields(string(data))
+	if len(lines) != 3 {
+		t.Fatalf("%d lines, want one per call:\n%s", len(lines), data)
+	}
+	if lines[0] != "0" {
+		t.Errorf("first line = %q, want 0: offsets count from the first arrival", lines[0])
+	}
+	var prev int64
+	for _, l := range lines {
+		ns, err := strconv.ParseInt(l, 10, 64)
+		if err != nil || ns < prev {
+			t.Fatalf("line %q after %d: want integers that do not go back (sequential calls)", l, prev)
+		}
+		prev = ns
+	}
+}
+
+func TestRun_AnUnwritableArrivalsFileIsAnError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing-dir", "arrivals.txt")
+	_, finish := startForArrivals(t, "-arrivals", path)
+
+	err := finish()
+	if err == nil || !strings.Contains(err.Error(), "-arrivals") {
+		t.Fatalf("err = %v, want one naming -arrivals: a run whose record is lost must not look fine", err)
+	}
+}
+
+// startForArrivals starts the stand with args and returns its address and a
+// function that stops it and returns run's error.
+func startForArrivals(t *testing.T, args ...string) (target string, finish func() error) {
+	t.Helper()
+
+	stop := make(chan struct{})
+	addr := make(chan string, 1)
+	done := make(chan error, 1)
+	go func() {
+		done <- run(append([]string{"-addr", "127.0.0.1:0"}, args...), io.Discard, io.Discard, stop,
+			func(a string) { addr <- a })
+	}()
+
+	select {
+	case target = <-addr:
+	case <-time.After(5 * time.Second):
+		t.Fatal("stand did not start")
+	}
+
+	return target, func() error {
+		close(stop)
+		select {
+		case err := <-done:
+			return err
+		case <-time.After(5 * time.Second):
+			t.Fatal("run did not return after stop")
+
+			return nil
+		}
 	}
 }

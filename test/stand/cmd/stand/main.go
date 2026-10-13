@@ -19,6 +19,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -28,6 +29,7 @@ import (
 	"os"
 	"os/signal"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -51,6 +53,7 @@ type options struct {
 	tls        bool
 	mtls       bool
 	certs      string
+	arrivals   string
 }
 
 func parse(args []string, usage io.Writer) (options, error) {
@@ -70,6 +73,7 @@ func parse(args []string, usage io.Writer) (options, error) {
 	fs.BoolVar(&o.tls, "tls", false, "serve over TLS with certificates generated at start into -certs")
 	fs.BoolVar(&o.mtls, "mtls", false, "-tls, and require a client certificate signed by the generated CA")
 	fs.StringVar(&o.certs, "certs", "test/stand/certs", "folder the TLS certificates are written to, relative to the working directory")
+	fs.StringVar(&o.arrivals, "arrivals", "", "on exit write this file: when each call arrived, in nanoseconds after the first arrival, one per line")
 
 	if err := fs.Parse(args); err != nil {
 		return o, err
@@ -163,7 +167,43 @@ func run(args []string, out, errOut io.Writer, stop <-chan struct{}, ready func(
 
 	summarize(out, s.Arrivals(), s.Holds())
 
+	if o.arrivals != "" {
+		if err := writeArrivals(o.arrivals, s.Arrivals()); err != nil {
+			return fmt.Errorf("-arrivals %s: %w", o.arrivals, err)
+		}
+	}
+
 	return nil
+}
+
+// writeArrivals writes each arrival as nanoseconds after the first one, in
+// arrival order, so a reader needs no clock and no parsing beyond integers.
+// Arrival order is the order the stand took the moments in, which can differ
+// from time order by a few microseconds under load: a reader sorts.
+func writeArrivals(path string, arrivals []time.Time) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+
+	w := bufio.NewWriter(f)
+	var line []byte
+	for _, at := range arrivals {
+		line = strconv.AppendInt(line[:0], int64(at.Sub(arrivals[0])), 10)
+		line = append(line, '\n')
+		if _, err := w.Write(line); err != nil {
+			_ = f.Close()
+
+			return err
+		}
+	}
+	if err := w.Flush(); err != nil {
+		_ = f.Close()
+
+		return err
+	}
+
+	return f.Close()
 }
 
 func summarize(w io.Writer, arrivals []time.Time, holds []time.Duration) {

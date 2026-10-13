@@ -70,6 +70,9 @@ docs/strategy.md
 # ghz comparison: binaries and raw outputs
 /test/compare-ghz/out/
 
+# performance comparison: binaries, raw outputs and tables
+/test/compare-perf/out/
+
 # goreleaser output
 dist/
 
