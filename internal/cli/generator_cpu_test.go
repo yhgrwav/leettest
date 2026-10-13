@@ -444,6 +444,16 @@ func TestCPUMeter_TicksBecomeTheMeasurement(t *testing.T) {
 // A partial series would give a share over other seconds than the line says,
 // so one failed read, first or last or between, leaves the whole null.
 func TestCPUMeter_AFailedReadLeavesNoMeasurementAtAll(t *testing.T) {
+	// The same five ticks without a failure do measure.
+	control := fiveReadings(-1)
+	cm := NewCPUMeter(control.read, control.now, time.Hour)
+	for range 5 {
+		cm.Tick()
+	}
+	if cm.Result(cpuReport(4, 0, 4, 4), 1) == nil {
+		t.Fatal("five good readings: Result = nil, so a nil after a failure proves nothing")
+	}
+
 	for _, failAt := range []int32{0, 2, 4} {
 		s := fiveReadings(failAt)
 		m := NewCPUMeter(s.read, s.now, time.Hour)

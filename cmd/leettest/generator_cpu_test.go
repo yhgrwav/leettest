@@ -15,6 +15,7 @@
 package main
 
 import (
+	"bytes"
 	"math"
 	"os"
 	"runtime"
@@ -127,6 +128,13 @@ func TestRun_EveryStepOfASearchHasItsGeneratorCPU(t *testing.T) {
 func TestRunResult_TheGeneratorCPUChangesNoExitCode(t *testing.T) {
 	first := 2
 	busy := &cli.GeneratorCPU{AvailableCores: 1, Share: 0.97, BusySeconds: 18, FirstBusy: &first, Counted: 20}
+
+	// The object is not ignored: the report with it says the line.
+	var printed bytes.Buffer
+	cli.PrintReport(&printed, "t:1", cli.RunReport{GeneratorCPU: busy})
+	if !strings.Contains(printed.String(), "generator CPU:") {
+		t.Fatalf("the report of a run with 18 busy seconds has no generator CPU line:\n%s", printed.String())
+	}
 
 	for name, report := range map[string]engine.Report{
 		"complete":   {},
