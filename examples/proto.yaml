@@ -1,6 +1,6 @@
 # A service without server reflection: the methods come from .proto files, against the reference
 # stand, from the repository root:
-#   go run ./test/stand/cmd/stand -delay 20ms -life 60s
+#   go run ./test/stand/cmd/stand -no-reflection -delay 20ms -life 60s
 #   leettest -c examples/proto.yaml
 # A set built with protoc instead of files: protoset.yaml.
 

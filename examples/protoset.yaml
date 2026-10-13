@@ -1,6 +1,6 @@
 # A service without server reflection: the methods come from a protoset, against the reference
 # stand, from the repository root:
-#   go run ./test/stand/cmd/stand -delay 20ms -life 60s
+#   go run ./test/stand/cmd/stand -no-reflection -delay 20ms -life 60s
 #   leettest -c examples/protoset.yaml
 # The set is made with imports included:
 #   protoc -I test/stand/proto --include_imports --descriptor_set_out=examples/wallet.protoset test/stand/proto/wallet/v1/wallet.proto
