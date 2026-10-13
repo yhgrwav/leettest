@@ -79,6 +79,7 @@ func TestParse_ProtoSourceWithNothingInItIsRefused(t *testing.T) {
 		{"an empty files list", "  proto:\n    files: []\n", "app.proto.files"},
 		{"proto with only import paths", "  proto:\n    import_paths: [api]\n", "app.proto.files"},
 		{"a blank entry among the files", "  proto:\n    files: [a.proto, '']\n", "app.proto.files"},
+		{"a blank import path", "  proto:\n    files: [a.proto]\n    import_paths: [api, '']\n", "app.proto.import_paths"},
 		{"a blank protoset path", "  protoset: ''\n", "app.protoset"},
 	}
 	for _, tc := range tests {
@@ -263,6 +264,24 @@ func TestLoadFile_AMissingProtoFileNamesBothPaths(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not name %q", err, want)
 		}
+	}
+}
+
+// Ground: contract — a directory is not a file the compiler or the set reader can open.
+func TestLoadFile_ADirectoryIsNotAProtoFile(t *testing.T) {
+	for name, app := range map[string]string{
+		"a proto file": "  proto:\n    files: [api]\n",
+		"a protoset":   "  protoset: api\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, path := writeProtoConfig(t, app, "api/keep")
+
+			_, err := config.LoadFile(path)
+
+			if !errors.Is(err, config.ErrProtoSource) || !strings.Contains(err.Error(), "directory") {
+				t.Errorf("err = %v, want config.ErrProtoSource saying it is a directory", err)
+			}
+		})
 	}
 }
 
