@@ -118,6 +118,9 @@ type runOut struct {
 	Stand   standSummary
 	Verdict verdict
 	Spacing *spacing
+	// Resources is what the containers and the Docker VM were doing, read from
+	// the files the run's sampler wrote.
+	Resources resources
 	// ReportError is set when the tool's own report could not be read; the
 	// stand's side above is still there.
 	ReportError string
@@ -164,10 +167,21 @@ func (h *harness) execute(ctx context.Context, tool string, s setup, label strin
 		return res, errors.New("the stand has no address on the network")
 	}
 
-	stdout, err := h.runTool(ctx, tool, s, ip, dir, data, toolName)
+	cpus, err := h.vmCPUs(ctx)
 	if err != nil {
 		return res, err
 	}
+	smp, err := startSampler(ctx, dir, standName, toolName, cpus)
+	if err != nil {
+		return res, err
+	}
+
+	stdout, err := h.runTool(ctx, tool, s, ip, dir, data, toolName)
+	smp.stop()
+	if err != nil {
+		return res, err
+	}
+	res.Resources = analyseResources(dir, s.StandCPUs)
 
 	standLog, err := stopStand(ctx, standName, dir)
 	if err != nil {

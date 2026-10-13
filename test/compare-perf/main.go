@@ -159,6 +159,20 @@ type harness struct {
 	n             int
 	keepArrivals  bool
 	run           runFunc
+	// hostCPUs is the Docker VM's CPU count, read once.
+	hostCPUs int
+}
+
+func (h *harness) vmCPUs(ctx context.Context) (int, error) {
+	if h.hostCPUs == 0 {
+		n, err := vmCPUs(ctx)
+		if err != nil {
+			return 0, err
+		}
+		h.hostCPUs = n
+	}
+
+	return h.hostCPUs, nil
 }
 
 // runLabel names a run's folder. The cores are in it: the same tool at the

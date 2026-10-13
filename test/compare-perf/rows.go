@@ -87,8 +87,8 @@ func (h *harness) runPoint(ctx context.Context, stdout io.Writer, tool string, r
 		return r, fmt.Errorf("row 1 %s on %d core(s) at %d rps, run %d: %w", tool, cpus, rate, n, err)
 	}
 	fmt.Fprintf(stdout, "row1 %-8s c%d %6d rps run %d: held %v, arrived %d of %d in the window (%d arrivals in the skipped head), "+
-		"lowest second %d, %s\n",
-		tool, cpus, rate, n, r.Verdict.Held, r.Verdict.Arrived, r.Verdict.Planned, r.Verdict.Head, r.Verdict.MinSecond, reportText(r))
+		"lowest second %d, %s%s\n",
+		tool, cpus, rate, n, r.Verdict.Held, r.Verdict.Arrived, r.Verdict.Planned, r.Verdict.Head, r.Verdict.MinSecond, reportText(r), marksSuffix(r))
 
 	return r, nil
 }
@@ -215,8 +215,8 @@ rounds:
 
 				break rounds
 			}
-			fmt.Fprintf(stdout, "row2 %-8s run %d: gap p99 %v (ideal %v), seconds %d..%d\n",
-				tool, i+1, r.Spacing.GapP99, r.Spacing.Ideal, r.Spacing.SecMin, r.Spacing.SecMax)
+			fmt.Fprintf(stdout, "row2 %-8s run %d: gap p99 %v (ideal %v), seconds %d..%d%s\n",
+				tool, i+1, r.Spacing.GapP99, r.Spacing.Ideal, r.Spacing.SecMin, r.Spacing.SecMax, marksSuffix(r))
 			results[tool] = append(results[tool], r)
 		}
 	}
@@ -242,10 +242,10 @@ rounds:
 				break rounds
 			}
 			if r.ReportError != "" {
-				fmt.Fprintf(stdout, "row3 %-8s run %d: %s\n", tool, i+1, reportText(r))
+				fmt.Fprintf(stdout, "row3 %-8s run %d: %s%s\n", tool, i+1, reportText(r), marksSuffix(r))
 			} else {
-				fmt.Fprintf(stdout, "row3 %-8s run %d: tool p50 %v p99 %v, stand held p50 %v p99 %v\n",
-					tool, i+1, r.Reports.P50, r.Reports.P99, r.Stand.HeldP50, r.Stand.HeldP99)
+				fmt.Fprintf(stdout, "row3 %-8s run %d: tool p50 %v p99 %v, stand held p50 %v p99 %v%s\n",
+					tool, i+1, r.Reports.P50, r.Reports.P99, r.Stand.HeldP50, r.Stand.HeldP99, marksSuffix(r))
 			}
 			results[tool] = append(results[tool], r)
 		}
