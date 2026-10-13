@@ -57,11 +57,16 @@ func schemaLines(t reflect.Type, prefix string, out *[]string) {
 			schemaLines(ft, path+".", out)
 		case reflect.Slice:
 			elem := ft.Elem()
+			// A list whose entries may be null: "[]float|null".
+			nullEntries := ""
+			if elem.Kind() == reflect.Pointer {
+				elem, nullEntries = elem.Elem(), "|null"
+			}
 			if elem.Kind() == reflect.Struct {
 				*out = append(*out, path+" []object"+suffix)
 				schemaLines(elem, path+"[].", out)
 			} else {
-				*out = append(*out, path+" []"+kindName(elem.Kind())+suffix)
+				*out = append(*out, path+" []"+kindName(elem.Kind())+nullEntries+suffix)
 			}
 		default:
 			*out = append(*out, path+" "+kindName(ft.Kind())+suffix)

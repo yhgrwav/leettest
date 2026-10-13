@@ -40,6 +40,9 @@ type RunReport struct {
 	// ClockStepBefore is the step measured before the run, which set the
 	// engine's wait floor; 0 when not measured.
 	ClockStepBefore time.Duration
+	// GeneratorCPU is what the CLI measured of the process's CPU use beside
+	// the run; nil when it could not.
+	GeneratorCPU *GeneratorCPU
 	// Target is what the run went to, as the config wrote it; the report
 	// printers set it, the notes about connections name its host.
 	Target string

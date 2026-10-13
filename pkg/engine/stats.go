@@ -271,6 +271,11 @@ type Report struct {
 	// Planned is how long the schedule was meant to run; Duration how long it
 	// did.
 	Planned time.Duration
+	// SendingEnded is how long after StartedAt the schedule stopped handing out
+	// calls: Planned for a run that ran its plan, the moment of Stop for one
+	// stopped early. Calls still in flight after it are waited for and counted
+	// in Duration, not here.
+	SendingEnded time.Duration
 	// Scheduled is how many calls the plan schedules after the warmup: the
 	// window Sent, Failed and NotSent count in, whatever the run managed.
 	Scheduled int
@@ -965,11 +970,16 @@ func (s *Stats) Report() Report {
 	startLag := s.startLag.Snapshot()
 	streamWait := s.streamWait.Snapshot()
 	startLagMax, lateCancelMax := s.startLagMax, s.lateCancelMax
+	var sendingEnded time.Duration
+	if !s.sendingEndedAt.IsZero() {
+		sendingEnded = s.sendingEndedAt.Sub(s.startedAt)
+	}
 	s.mu.Unlock()
 
 	report := Report{
-		Duration: elapsed,
-		Warmup:   warmup,
+		Duration:     elapsed,
+		SendingEnded: sendingEnded,
+		Warmup:       warmup,
 
 		WarmupSent:    warmupSent,
 		WarmupFailed:  warmupFailed,

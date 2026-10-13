@@ -254,10 +254,14 @@ func reportNotes(report engine.Report, maxResponse string) []string {
 }
 
 // runNotes are reportNotes and what the CLI measured beside the engine: the
-// host clock.
+// CPU the process used and the host clock.
 func runNotes(run RunReport) []string {
 	notes := reportNotes(run.Report, run.MaxResponse)
 	notes = append(notes, connectionNotes(run.Target, run.Connections)...)
+
+	if line := cpuNote(run.GeneratorCPU); line != "" {
+		notes = append(notes, line)
+	}
 
 	if clockGrew(run) {
 		notes = append(notes, fmt.Sprintf("invalid run: clock step changed during the run: %s before, %s after. The floor of\n"+
