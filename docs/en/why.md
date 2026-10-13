@@ -39,6 +39,39 @@ gRPC plugin: JMeter itself does not do gRPC [20][21].
 | The generator's own lag is counted in latency | 🔴 no: from the send [5] | 🔴 no: from the send, unsent ones in `dropped_iterations` [12][13] | 🔴 no: from the send [24] | 🟢 |
 | Failed and timed-out calls are in the percentiles | 🟡 `--count-errors`, not the default [6] | 🟢 [13] | 🟢 [25] | 🟢 failed ones in their own per-category percentiles, timed-out ones as a lower bound |
 
+**How much it holds and how evenly**
+
+| What we measure | ghz | k6 | LeetTest |
+|---|---|---|---|
+| Requests a second one core holds; the target answers at once (more is better) | 9,300 | 4,750 | **35,550** |
+| Evenness of the schedule at 1000 requests a second: the gap between neighbouring requests at the target, p99 / p99.9 / maximum; the ideal is 1 ms (less is better) | 1.75 / 3.5 / 9.3 ms | 1.8 / 2.05 / 14.7 ms | **1.68 / 1.88 / 3.1 ms** |
+| What the tool adds to latency; the target answers in 20 ms, 500 requests a second; p50 / p99 (less is better) | **0.33 / 0.31 ms** | **0.33** / 0.49 ms | 0.98 / 1.3 ms ¹ |
+
+JMeter was not measured. ¹ LeetTest counts latency from the moment the call was due, ghz and k6
+from the send (the row "The generator's own lag is counted in latency" above); on one core
+LeetTest's timer fires up to about a millisecond late, and that lateness lands in its number only.
+
+How it was measured. Each tool runs in its own Docker container with one core (`--cpus=1`,
+`GOMAXPROCS=1`), the reference stand in another with four. The numbers are counted by the stand
+from when the calls arrived, not taken from the tools' reports; in the third row it is the tool's
+own p50 and p99 minus the time the stand held the answer at the same percentile. ghz v0.121.0 with
+`--async`; k6 v2.3.0 with a constant arrival rate and 100 pre-allocated virtual users (it opens a
+connection for each); LeetTest with one connection. Three runs of 20 seconds, the second and third
+rows show the median. A rate in the first row holds when, leaving out the first two seconds and the
+last one, at least 99.9% of the planned calls reach the stand and no second falls under 99% of the
+rate; a point counts when at least two of the three runs held it. LeetTest with four cores held
+108,400 requests a second, so the stand was not the limit in the first row. One machine: 24 logical
+cores, Linux in WSL2 under Docker Desktop, 12–13 October 2026.
+
+To reproduce (needs Docker and Go; run it from the repository root):
+
+```
+go run ./test/compare-perf -runs 3 -duration 20s
+```
+
+At the end it prints the tables and saves them to `test/compare-perf/out/summary.md`; a full run
+takes up to three hours. `-plan` prints every setting and command without running anything.
+
 The open model by default, counting the generator's lag and breakpoint search are the rows
 where none of ghz, k6 and JMeter has a 🟢. LeetTest does not yet have ramp-up to a target RPS, CI thresholds, call
 chaining or running without reflection; the order is in the [roadmap](roadmap.md).
