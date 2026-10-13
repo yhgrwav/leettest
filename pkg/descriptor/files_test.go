@@ -463,10 +463,27 @@ func TestProtoResolver_AnEntryFileShadowedByAnEarlierImportPathIsRefused(t *test
 	if r != nil {
 		t.Errorf("a resolver came back with the error: it could answer from the other file")
 	}
-	wants := append(at(dir, "vendor/foo/x.proto", "api/foo/x.proto"), at(dir, "api", "vendor")...)
-	for _, want := range wants {
-		if !strings.Contains(err.Error(), want) {
+	namesBothFilesAndTheWayOut(t, err, dir, "vendor/foo/x.proto", "api/foo/x.proto")
+}
+
+// namesBothFilesAndTheWayOut checks the text of a shadowing refusal: the entry
+// file, the file that shadows it, and the way out. A root is a substring of its
+// file's path, so a bare Contains on the root is met by the file alone; in the
+// right text the shadowing root appears twice (the file in the description and in
+// "list ... instead") and the entry's root twice (the file and "put ... first").
+func namesBothFilesAndTheWayOut(t *testing.T, err error, dir, entry, shadowing string) {
+	t.Helper()
+
+	msg := err.Error()
+	for _, want := range at(dir, entry, shadowing) {
+		if !strings.Contains(msg, want) {
 			t.Errorf("error %q does not name %q", err, want)
+		}
+	}
+	for _, name := range []string{entry, shadowing} {
+		root := at(dir, strings.SplitN(name, "/", 2)[0])[0]
+		if n := strings.Count(msg, root); n < 2 {
+			t.Errorf("error %q names %q %d time(s): the way out (list the other file, or put the entry's root first) is missing", err, root, n)
 		}
 	}
 }
@@ -534,11 +551,22 @@ func TestProtoResolver_ADirectoryAtTheNameInAnEarlierPathShadowsToo(t *testing.T
 	if !errors.Is(err, descriptor.ErrShadowedInput) {
 		t.Fatalf("err = %v, want descriptor.ErrShadowedInput", err)
 	}
-	wants := append(at(dir, "api/foo/x.proto", "vendor/foo/x.proto"), at(dir, "api", "vendor")...)
-	for _, want := range wants {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error %q does not name %q", err, want)
-		}
+	namesBothFilesAndTheWayOut(t, err, dir, "vendor/foo/x.proto", "api/foo/x.proto")
+}
+
+// The common case: the entry sits under the second path and the first holds
+// nothing at its name. Absence, or a failed Stat, is not a shadow.
+// Ground: contract — only something at the name on an earlier path shadows; nothing there does not.
+func TestProtoResolver_NothingAtTheNameInAnEarlierPathIsNotShadowed(t *testing.T) {
+	dir := tree(t, map[string]string{
+		"third_party/keep": "",
+		"api/foo/x.proto":  shopProto,
+	})
+
+	r := compile(t, dir, []string{"api/foo/x.proto"}, []string{"third_party", "api"})
+
+	if _, err := r.Resolve(t.Context(), "shop.v1.Shop/Get"); err != nil {
+		t.Errorf("resolve: %v", err)
 	}
 }
 
