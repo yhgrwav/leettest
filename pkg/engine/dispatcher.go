@@ -147,15 +147,17 @@ func (q *cursors) Pop() any {
 // exactSchedule says whether the dispatcher waits to each moment exactly, on
 // this host.
 func exactSchedule() bool {
-	return exactScheduleFor(preciseSleep, clock.StepOf(time.Now))
+	return exactScheduleFor(preciseSleep, clock.StepOf(time.Now), runtime.GOMAXPROCS(0))
 }
 
 // exactScheduleFor is exactSchedule on a host that can or cannot sleep to a
-// microsecond (Linux, clock_nanosleep) and has a clock of step. Not on a
-// clock of 1µs or coarser (Windows, ~0.5ms): a wait cannot end closer than a
-// step, and there a busy-wait was measured worse than the plain timer.
-func exactScheduleFor(precise bool, step time.Duration) bool {
-	return precise && step < time.Microsecond
+// microsecond (Linux, clock_nanosleep), has a clock of step and procs Ps. Not
+// on a clock of 1µs or coarser (Windows, ~0.5ms): a wait cannot end closer
+// than a step, and there a busy-wait was measured worse than the plain timer.
+// Not on one P either: the wait keeps it, and the goroutines that read the
+// answers wait for it to be taken back.
+func exactScheduleFor(precise bool, step time.Duration, procs int) bool {
+	return precise && step < time.Microsecond && procs >= 2
 }
 
 // waitUntil returns at at, or when ctx ends with its error. Not exact: a plain
