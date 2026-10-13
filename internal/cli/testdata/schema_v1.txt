@@ -58,6 +58,12 @@ client_waits.connection_calls int
 client_waits.generator_tail_calls int
 client_waits.stream_tail_calls int
 client_waits.connection_tail_calls int
+generator_cpu object?
+generator_cpu.available_cores float
+generator_cpu.share float
+generator_cpu.busy_seconds int
+generator_cpu.first_busy_s int?
+generator_cpu.seconds []float|null
 methods []object
 methods[].method string
 methods[].invalid_reason string?

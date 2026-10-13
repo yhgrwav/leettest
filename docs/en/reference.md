@@ -302,6 +302,12 @@ measured calls only. The first column is the field's full path.
 | `client_waits` | object | Calls that waited on the client side over the floor, by cause ([README](README.md#reading-the-report)) |
 | `client_waits.generator_calls`, `client_waits.stream_calls`, `client_waits.connection_calls` | int | All such calls, sent or not. A sent call can count for several causes |
 | `client_waits.generator_tail_calls`, `client_waits.stream_tail_calls`, `client_waits.connection_tail_calls` | int | Only among the p99 tail and the unsent: these pick `tail_wait_cause` |
+| `generator_cpu` | object? | How much of the CPU available to LeetTest itself the run used, second by second; `null` when the process's CPU time could not be read. The report prints a line when some second is busy — not released |
+| `generator_cpu.available_cores` | float | The CPU the process may use: `GOMAXPROCS`, or the cgroup quota when that is smaller — not released |
+| `generator_cpu.share` | float | CPU time over wall time and `available_cores`, rounded to 2 decimals, over the planned seconds after the warm-up. Can pass 1: time in system calls runs outside the Ps — not released |
+| `generator_cpu.busy_seconds` | int | How many of those seconds have a `share` of 0.90 or more (compared as rounded). `0` when they total under a second — not released |
+| `generator_cpu.first_busy_s` | int? | The first such second, counted from the start of the run, warm-up included; `null` without one — not released |
+| `generator_cpu.seconds` | []float | The share of each second from the start of the run, warm-up and the timeout tail included: as many entries as the longest `methods[].seconds`. `null` for a second no reading covers, and for a last second under half a second that is counted with the one before — not released |
 | `methods` | []object | Methods, see below |
 | `unchecked` | []object | Methods that could not be checked through reflection |
 | `unchecked[].method` | string | The method |

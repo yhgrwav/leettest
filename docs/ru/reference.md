@@ -292,6 +292,12 @@ SIGTERM (`docker stop`, Kubernetes, отмена джоба в CI) сразу о
 | `client_waits` | object | Вызовы, ждавшие на стороне клиента дольше порога, по причинам ([README](../../README.md#как-читать-отчёт)) |
 | `client_waits.generator_calls`, `client_waits.stream_calls`, `client_waits.connection_calls` | int | Все такие вызовы, отправленные и нет. Отправленный может считаться за несколько причин |
 | `client_waits.generator_tail_calls`, `client_waits.stream_tail_calls`, `client_waits.connection_tail_calls` | int | Только среди вызовов хвоста p99 и неотправленных: по ним выбирается `tail_wait_cause` |
+| `generator_cpu` | object? | Сколько доступного самому LeetTest CPU занял прогон, по секундам; `null`, если CPU-время процесса не удалось прочитать. Отчёт печатает строку, когда есть занятая секунда — не выпущено |
+| `generator_cpu.available_cores` | float | Сколько CPU процесс может использовать: `GOMAXPROCS` или квота cgroup, если она меньше — не выпущено |
+| `generator_cpu.share` | float | CPU-время, делённое на время по часам и на `available_cores`, округлённое до 2 знаков, по плановым секундам после прогрева. Может быть больше 1: время в системных вызовах идёт вне P — не выпущено |
+| `generator_cpu.busy_seconds` | int | Сколько из этих секунд с `share` от 0.90 (сравнивается округлённое). `0`, если их меньше секунды в сумме — не выпущено |
+| `generator_cpu.first_busy_s` | int? | Первая такая секунда от начала прогона, прогрев входит в счёт; `null`, если таких нет — не выпущено |
+| `generator_cpu.seconds` | []float | Доля каждой секунды от начала прогона, прогрев и хвост таймаутов входят: столько записей, сколько в самом длинном `methods[].seconds`. `null` — секунду не покрывает ни один замер, а также последнюю секунду короче полусекунды, которая считается вместе с предыдущей — не выпущено |
 | `methods` | []object | Методы, см. ниже |
 | `unchecked` | []object | Методы, которые не удалось проверить через reflection |
 | `unchecked[].method` | string | Метод |

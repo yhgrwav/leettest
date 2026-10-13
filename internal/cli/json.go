@@ -86,6 +86,7 @@ type JSONReport struct {
 	StartLag          jsonStartLag    `json:"start_lag"`
 	Connections       *jsonConns      `json:"connections"`
 	ClientWaits       jsonClientWaits `json:"client_waits"`
+	GeneratorCPU      *jsonGenCPU     `json:"generator_cpu"`
 	Methods           []jsonMethod    `json:"methods"`
 	Unchecked         []jsonUnchecked `json:"unchecked"`
 	// Notes are the text report's notes: for people, and reworded freely.
@@ -338,9 +339,10 @@ func NewJSONReport(run JSONRun) JSONReport {
 			GeneratorCalls: r.GeneratorCauseCalls, StreamCalls: r.StreamCauseCalls, ConnectionCalls: r.ConnectionCauseCalls,
 			GeneratorTailCalls: r.GeneratorTailCalls, StreamTailCalls: r.StreamTailCalls, ConnectionTailCalls: r.ConnectionTailCalls,
 		},
-		Notes:     runNotes(run.Run),
-		Methods:   make([]jsonMethod, 0, len(r.Methods)),
-		Unchecked: make([]jsonUnchecked, 0, len(run.Run.Unchecked)),
+		GeneratorCPU: genCPUOf(run.Run.GeneratorCPU),
+		Notes:        runNotes(run.Run),
+		Methods:      make([]jsonMethod, 0, len(r.Methods)),
+		Unchecked:    make([]jsonUnchecked, 0, len(run.Run.Unchecked)),
 	}
 	// The maximum is exact, but there is none without a call.
 	if r.StartLagP99.Defined {
@@ -489,6 +491,29 @@ func WriteJSON(w io.Writer, run JSONRun) error {
 	enc.SetEscapeHTML(false)
 
 	return enc.Encode(NewJSONReport(run))
+}
+
+// jsonGenCPU is how much of the CPU available to the process the generator
+// used. Share and each of Seconds are of all the available cores and may pass
+// 1: time in system calls runs outside the Ps. A second no reading covers is
+// null, never 0.
+type jsonGenCPU struct {
+	AvailableCores float64    `json:"available_cores"`
+	Share          float64    `json:"share"`
+	BusySeconds    int        `json:"busy_seconds"`
+	FirstBusy      *int       `json:"first_busy_s"`
+	Seconds        []*float64 `json:"seconds"`
+}
+
+func genCPUOf(g *GeneratorCPU) *jsonGenCPU {
+	if g == nil {
+		return nil
+	}
+
+	return &jsonGenCPU{
+		AvailableCores: g.AvailableCores, Share: g.Share, BusySeconds: g.BusySeconds,
+		FirstBusy: g.FirstBusy, Seconds: g.Seconds,
+	}
 }
 
 // jsonClientWaits count the calls that waited over the floor for each cause,

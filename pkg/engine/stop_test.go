@@ -401,3 +401,61 @@ func TestAbort_RatesOverTheTimeItSentNotThePlan(t *testing.T) {
 			got, report.Sent, report.Duration)
 	}
 }
+
+// Ground: contract — SendingEnded is where the schedule stopped, not where the drain did.
+func TestReport_SendingEndedIsThePlanForARunThatRanItsPlan(t *testing.T) {
+	const plan = 100 * time.Millisecond
+
+	eng, err := New(Options{
+		Calls:       []Call{{Method: "a.B/One", Timeout: time.Second, Stages: []Stage{{StartRPS: 100, TargetRPS: 100, Duration: plan}}}},
+		Sender:      FakeSender{Delay: 300 * time.Millisecond}, // the last calls are waited for past the plan
+		MaxInFlight: 128,
+	})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	if err := eng.Run(t.Context()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	report := eng.Report()
+	if report.Duration < plan+200*time.Millisecond {
+		t.Fatalf("duration = %v, want the drain of 300 ms after the %v plan: the test has nothing to tell apart", report.Duration, plan)
+	}
+	if report.SendingEnded != plan {
+		t.Errorf("SendingEnded = %v, want %v, the plan: the drain after it is not sending", report.SendingEnded, plan)
+	}
+}
+
+// Ground: contract — SendingEnded is where the schedule stopped, not where the drain did.
+func TestReport_SendingEndedIsTheMomentOfStopWhileTheCallsDrainAfterIt(t *testing.T) {
+	const timeout = 600 * time.Millisecond
+
+	h := newHoldingSender() // never released: only deadlines end the calls
+	eng := stopEngine(t, h, timeout)
+	done := runAsync(t.Context(), eng)
+
+	waitEntered(t, h, 3)
+	before := time.Now()
+	eng.Stop()
+	after := time.Now()
+
+	if err := waitRun(t, done); err != nil {
+		t.Fatalf("Run = %v, want nil", err)
+	}
+
+	report := eng.Report()
+	lo, hi := before.Sub(report.StartedAt), after.Sub(report.StartedAt)
+	// The moment is read by the goroutine that sees the stop, a little after
+	// Stop returns: the bound above allows a loaded machine its delay.
+	if report.SendingEnded < lo || report.SendingEnded > hi+100*time.Millisecond {
+		t.Errorf("SendingEnded = %v, want the moment of Stop, between %v and %v", report.SendingEnded, lo, hi)
+	}
+	if drain := report.Duration - report.SendingEnded; drain < timeout/2 {
+		t.Errorf("duration %v is only %v past SendingEnded, want the drain of calls held to their %v deadline",
+			report.Duration, drain, timeout)
+	}
+	if report.SendingEnded >= report.Planned {
+		t.Errorf("SendingEnded = %v, not before the %v plan of a stopped run", report.SendingEnded, report.Planned)
+	}
+}

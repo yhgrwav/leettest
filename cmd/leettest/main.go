@@ -393,9 +393,16 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 	stopper.Store(s)
 	runStarting(eng)
 
+	// The process's CPU time is read beside the run, from before the engine
+	// starts to after it returns, and laid on the run's seconds afterwards.
+	cores := cli.AvailableCPU()
+	meter := cli.NewCPUMeter(cli.ProcessCPU, time.Now, time.Second)
+
 	var stepAfter atomic.Int64
 	start := func() error {
+		stopMeter := meter.Start()
 		err := eng.Run(ctx)
+		stopMeter()
 		stepAfter.Store(int64(clockStep()))
 
 		return err
@@ -407,9 +414,12 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		maxResponse = strings.TrimSpace(*raw)
 	}
 	reportOf := func() cli.RunReport {
+		report := eng.Report()
+
 		return cli.RunReport{
-			Report: eng.Report(), Unchecked: unchecked, MaxResponse: maxResponse,
+			Report: report, Unchecked: unchecked, MaxResponse: maxResponse,
 			ClockStep: max(stepBefore, time.Duration(stepAfter.Load())), ClockStepBefore: stepBefore,
+			GeneratorCPU: meter.Result(report, cores),
 		}
 	}
 
