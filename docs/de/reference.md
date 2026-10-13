@@ -292,6 +292,12 @@ unten den Typ „percentile?" hat.
 | `client_waits` | object | Aufrufe, die auf Client-Seite über der Schwelle warteten, nach Ursache ([README](README.md#den-bericht-lesen)) |
 | `client_waits.generator_calls`, `client_waits.stream_calls`, `client_waits.connection_calls` | int | Alle solchen Aufrufe, gesendet oder nicht. Ein gesendeter Aufruf kann für mehrere Ursachen zählen |
 | `client_waits.generator_tail_calls`, `client_waits.stream_tail_calls`, `client_waits.connection_tail_calls` | int | Nur im p99-Ende und unter den ungesendeten: Diese bestimmen `tail_wait_cause` |
+| `generator_cpu` | object? | Wie viel der für LeetTest selbst verfügbaren CPU der Lauf belegte, sekundenweise; `null`, wenn die CPU-Zeit des Prozesses nicht gelesen werden konnte. Der Bericht druckt eine Zeile, wenn eine Sekunde ausgelastet ist — nicht veröffentlicht |
+| `generator_cpu.available_cores` | float | Wie viel CPU der Prozess nutzen darf: `GOMAXPROCS` oder das cgroup-Kontingent, wenn es kleiner ist — nicht veröffentlicht |
+| `generator_cpu.share` | float | CPU-Zeit geteilt durch Wanduhrzeit und `available_cores`, auf 2 Stellen gerundet, über die geplanten Sekunden nach dem Warm-up. Kann über 1 liegen: Zeit in Systemaufrufen läuft außerhalb der Ps — nicht veröffentlicht |
+| `generator_cpu.busy_seconds` | int | Wie viele dieser Sekunden einen `share` von 0.90 oder mehr haben (verglichen wird der gerundete Wert). `0`, wenn sie zusammen unter einer Sekunde liegen — nicht veröffentlicht |
+| `generator_cpu.first_busy_s` | int? | Die erste solche Sekunde ab Laufbeginn, das Warm-up zählt mit; `null`, wenn es keine gibt — nicht veröffentlicht |
+| `generator_cpu.seconds` | []float | Der Anteil jeder Sekunde ab Laufbeginn, Warm-up und Timeout-Ende eingeschlossen: so viele Einträge wie das längste `methods[].seconds`. `null` für eine Sekunde, die keine Messung abdeckt, und für eine letzte Sekunde unter einer halben, die mit der vorigen zusammen gezählt wird — nicht veröffentlicht |
 | `methods` | []object | Methoden, siehe unten |
 | `unchecked` | []object | Methoden, die über Reflection nicht geprüft werden konnten |
 | `unchecked[].method` | string | Die Methode |

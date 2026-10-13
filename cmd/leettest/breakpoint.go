@@ -133,6 +133,7 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 		fmt.Fprintln(stderr, cli.PlanLine(plan, s.connect))
 	}
 
+	cores := cli.AvailableCPU()
 	var runs []cli.RunReport
 	step := func(_ context.Context, rps int, settle, hold time.Duration, need int) (engine.Report, error) {
 		calls := slices.Clone(s.calls)
@@ -157,10 +158,16 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 		}
 		// The run's own context is the command's: a stop of the search ends it
 		// gently through Stop, only an abort cuts its calls off.
+		// Each step is a run of its own, with readings of its own.
+		meter := cli.NewCPUMeter(cli.ProcessCPU, time.Now, time.Second)
+		stopMeter := meter.Start()
 		runErr := eng.Run(ctx)
+		stopMeter()
+		report := eng.Report()
 		run := cli.RunReport{
-			Report: eng.Report(), Unchecked: s.unchecked, MaxResponse: maxResponse,
+			Report: report, Unchecked: s.unchecked, MaxResponse: maxResponse,
 			ClockStep: max(before, clockStep()), ClockStepBefore: before,
+			GeneratorCPU: meter.Result(report, cores),
 		}
 		runs = append(runs, run)
 		r := run.Report

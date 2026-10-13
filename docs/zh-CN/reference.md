@@ -258,6 +258,12 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `client_waits` | object | 在客户端侧等待超过阈值的调用，按原因（[README](README.md#阅读报告)） |
 | `client_waits.generator_calls`、`client_waits.stream_calls`、`client_waits.connection_calls` | int | 所有此类调用，无论是否发出。一个已发出的调用可能同时计入多个原因 |
 | `client_waits.generator_tail_calls`、`client_waits.stream_tail_calls`、`client_waits.connection_tail_calls` | int | 只统计 p99 尾部和未发出的调用：由它们决定 `tail_wait_cause` |
+| `generator_cpu` | object? | 运行占用了 LeetTest 自身可用 CPU 的多少，按秒给出；无法读取进程的 CPU 时间时为 `null`。有繁忙的秒时，报告会打印一行 — 未发布 |
+| `generator_cpu.available_cores` | float | 进程可使用的 CPU：`GOMAXPROCS`，或 cgroup 配额（若更小） — 未发布 |
+| `generator_cpu.share` | float | CPU 时间除以墙钟时间和 `available_cores`，四舍五入到 2 位小数，范围是预热之后的计划秒数。可能超过 1：系统调用中的时间发生在 P 之外 — 未发布 |
+| `generator_cpu.busy_seconds` | int | 其中 `share` 不低于 0.90 的秒数（按四舍五入后的值比较）。这些秒加起来不足一秒时为 `0` — 未发布 |
+| `generator_cpu.first_busy_s` | int? | 第一个这样的秒，从运行开始算起，预热计入；没有则为 `null` — 未发布 |
+| `generator_cpu.seconds` | []float | 从运行开始算起每一秒的占比，预热和超时尾部都包含：条目数与最长的 `methods[].seconds` 相同。没有任何读数覆盖的秒为 `null`，与前一秒合并计算的不足半秒的最后一秒也为 `null` — 未发布 |
 | `methods` | []object | 方法，见下文 |
 | `unchecked` | []object | 无法通过 reflection 检查的方法 |
 | `unchecked[].method` | string | 方法 |
