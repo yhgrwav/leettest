@@ -65,9 +65,12 @@ const (
 )
 
 type Outcome struct {
-	// SentAt is when the request actually went out on the wire, after the
-	// sender was granted transport quota. Zero if the sender does not track
-	// this; the worker pool then falls back to the moment Send was called.
+	// SentAt is when the request was handed to the transport's send queue
+	// (grpc-go's OutPayload), after the sender was granted transport quota; it
+	// is not when the request reached the wire, and a stalled transport can
+	// keep a request that has a SentAt from the target. Zero if the sender does
+	// not track this; the worker pool then falls back to the moment Send was
+	// called.
 	SentAt time.Time
 	// NotSent marks a timeout whose request never went out. The engine tells
 	// whose fault it was by who ate more of the budget: the generator's lag
