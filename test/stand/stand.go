@@ -217,6 +217,17 @@ func StartWith(answer Answer, opts ...grpc.ServerOption) *Stand {
 // StartOn serves a stand on lis until Stop, so a separate process, such as
 // another load tool, can reach it over the network.
 func StartOn(lis net.Listener, answer Answer, opts ...grpc.ServerOption) *Stand {
+	return startOn(lis, answer, true, opts)
+}
+
+// StartBareOn is StartOn without server reflection: a client learns the
+// methods from .proto files or a protoset, as it must for a service that
+// does not serve them.
+func StartBareOn(lis net.Listener, answer Answer, opts ...grpc.ServerOption) *Stand {
+	return startOn(lis, answer, false, opts)
+}
+
+func startOn(lis net.Listener, answer Answer, reflect bool, opts []grpc.ServerOption) *Stand {
 	if answer == nil {
 		answer = Constant(0)
 	}
@@ -230,7 +241,9 @@ func StartOn(lis net.Listener, answer Answer, opts ...grpc.ServerOption) *Stand 
 
 	grpc_health_v1.RegisterHealthServer(s.srv, s)
 	walletv1.RegisterWalletServiceServer(s.srv, wallet{s: s})
-	reflection.Register(s.srv)
+	if reflect {
+		reflection.Register(s.srv)
+	}
 
 	go func() { _ = s.srv.Serve(s.lis) }()
 
