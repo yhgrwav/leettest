@@ -24,25 +24,14 @@ import (
 	"github.com/goccy/go-yaml"
 )
 
-// protoKeyHints are the misspellings of the keys under app.proto, with the
-// key meant.
-var protoKeyHints = map[string]string{
-	"import_path": "import_paths", "importpaths": "import_paths", "import_dirs": "import_paths",
-	"include": "import_paths", "includes": "import_paths", "includes_paths": "import_paths",
-	"file": "files", "proto_files": "files", "protos": "files",
-}
-
-// UnmarshalYAML reads app.proto strictly and names the key meant by a
-// misspelled one: the parser's own «unknown field» does not.
+// UnmarshalYAML reads app.proto strictly and names the keys it has when one is
+// misspelled (import_path, file): the parser's own «unknown field» does not.
 func (p *ProtoSource) UnmarshalYAML(raw []byte) error {
 	var keys map[string]any
 	if err := yaml.Unmarshal(raw, &keys); err == nil {
 		for key := range keys {
 			if key == "files" || key == "import_paths" {
 				continue
-			}
-			if hint, ok := protoKeyHints[key]; ok {
-				return fmt.Errorf("unknown key %q under app.proto: did you mean %s?", key, hint)
 			}
 
 			return fmt.Errorf("unknown key %q under app.proto: the keys are files and import_paths", key)
