@@ -44,12 +44,14 @@ gRPC plugin: JMeter itself does not do gRPC [20][21].
 | What we measure | ghz | k6 | LeetTest |
 |---|---|---|---|
 | Requests a second one core holds; the target answers at once (more is better) | 9,300 | 4,750 | **35,550** |
-| Evenness of the schedule at 1000 requests a second: the gap between neighbouring requests at the target, p99 / p99.9 / maximum; the ideal is 1 ms (less is better) | 1.75 / 3.5 / 9.3 ms | 1.8 / 2.05 / 14.7 ms | **1.68 / 1.88 / 3.1 ms** |
+| Evenness of the schedule at 1000 requests a second: the gap between neighbouring requests at the target, median / p99 / p99.9 / maximum; the ideal is 1 ms (less is better) ² | **1.1** / 1.75 / 3.5 / 9.3 ms | 0.59 / 1.8 / 2.05 / 14.7 ms | 1.5 / **1.68 / 1.88 / 3.1 ms** |
 | What the tool adds to latency; the target answers in 20 ms, 500 requests a second; p50 / p99 (less is better) | **0.33 / 0.31 ms** | **0.33** / 0.49 ms | 0.98 / 1.3 ms ¹ |
 
 JMeter was not measured. ¹ LeetTest counts latency from the moment the call was due, ghz and k6
-from the send (the row "The generator's own lag is counted in latency" above); on one core
-LeetTest's timer fires up to about a millisecond late, and that lateness lands in its number only.
+from the send (the row "The generator's own lag is counted in latency" above); with
+`GOMAXPROCS=1` LeetTest starts calls up to about a millisecond late, and that lateness lands in its
+number only. ² All three tools send 999–1001 requests in every second, so the average gap is 1 ms;
+a median away from 1 ms means the requests come unevenly, not at another rate.
 
 How it was measured. Each tool runs in its own Docker container with one core (`--cpus=1`,
 `GOMAXPROCS=1`), the reference stand in another with four. The numbers are counted by the stand
