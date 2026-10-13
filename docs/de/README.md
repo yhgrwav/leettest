@@ -40,8 +40,8 @@ Engpass.
 
 ## Installation
 
-```console
-$ go install github.com/yhgrwav/leettest/cmd/leettest@latest
+```sh
+go install github.com/yhgrwav/leettest/cmd/leettest@latest
 ```
 
 Benötigt Go 1.26 oder neuer. Fertige Binärdateien liegen auf der Release-Seite.
@@ -80,8 +80,8 @@ load:
       duration: 1m
 ```
 
-```console
-$ leettest -c leettest.yaml
+```sh
+leettest -c leettest.yaml
 ```
 
 Der Methodenname ist der volle, `package.Service/Method`. Das Werkzeug holt das Schema der Methode

@@ -26,13 +26,39 @@ reicht Windows.
 
 ## 1. Installation
 
-```console
-$ go install github.com/yhgrwav/leettest/cmd/leettest@latest
-$ leettest -version
+Zwei Wege, nehmen Sie einen. Die Befehle laufen unverändert in einem Linux- oder macOS-Terminal.
+
+**1. Eine fertige Binärdatei** (Linux und macOS; amd64 und arm64) — ohne Go, nur `curl` und `tar`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/yhgrwav/leettest/main/install.sh | sh
 ```
 
-Go 1.26 oder neuer. Fertige Binärdateien für Linux, macOS und Windows (amd64 und arm64) liegen auf
-der Release-Seite.
+Das Skript installiert das neueste Release nach `~/.local/bin` und prüft die Prüfsumme. Liegt dieses
+Verzeichnis nicht im `PATH`, gibt es eine Zeile `export PATH=...` aus: Führen Sie sie in diesem
+Terminal aus, und legen Sie sie in Ihr Shell-Profil, um sie zu behalten. `LEETTEST_INSTALL_DIR`
+wählt ein anderes Verzeichnis, `LEETTEST_VERSION` eine andere Version; die Variable steht vor `sh`,
+nicht vor `curl`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/yhgrwav/leettest/main/install.sh | LEETTEST_VERSION=v0.2.0 sh
+```
+
+Für Windows liegt ein `.zip` im [Release](https://github.com/yhgrwav/leettest/releases/latest).
+
+**2. Über Go**: Go 1.26 oder neuer ([Installation](https://go.dev/doc/install); ein älteres Go mit
+`GOTOOLCHAIN=auto` lädt das passende selbst):
+
+```sh
+go install github.com/yhgrwav/leettest/cmd/leettest@latest
+export PATH="$PATH:$(go env GOPATH)/bin"
+```
+
+Prüfen, für beide Wege:
+
+```sh
+leettest -version
+```
 
 ## 2. Ein Ziel: der Referenz-Stand
 
@@ -40,12 +66,19 @@ Für den Rundgang brauchen Sie keinen eigenen Dienst: Das Repository enthält ei
 einen gRPC-Dienst, dessen Verhalten Sie festlegen. Er beantwortet `grpc.health.v1.Health/Check` und
 `wallet.v1.WalletService` und bietet Reflection an, wie ein echter Dienst.
 
-```console
-$ git clone https://github.com/yhgrwav/leettest && cd leettest
-$ go run ./test/stand/cmd/stand -delay 20ms -hang-from 25s -life 60s
+Der Rundgang läuft im selben Terminal weiter und baut aus einem Klon: Er braucht `git` und Go 1.26+,
+und der Stand und `leettest` aus einem Klon passen genau zu dessen Konfigurationen.
+
+```sh
+git clone --depth 1 https://github.com/yhgrwav/leettest && cd leettest
+go build -o bin/ ./cmd/leettest ./test/stand/cmd/stand
+bin/stand -delay 20ms -hang-from 25s -life 3m > stand.log 2>&1 &
+sleep 1
 ```
 
-Der Stand antwortet in 20 ms, und 25 Sekunden nach dem ersten Aufruf antwortet er gar nicht mehr —
+Der Stand läuft im Hintergrund (`sleep 1` gibt ihm einen Moment, um zu lauschen) und endet nach
+3 Minuten von selbst (`-life 3m`: das Warm-up, 40 Sekunden Lauf und etwas Reserve). Er antwortet in
+20 ms, und 25 Sekunden nach dem ersten Aufruf antwortet er gar nicht mehr —
 so sieht ein Dienst aus, der unter Last umgefallen ist. Die richtige Antwort ist vorher bekannt,
 also sieht man, ob der Bericht die Wahrheit sagt.
 
@@ -113,9 +146,9 @@ ist je Methode.
 
 ## 4. Ausführen
 
-```console
-$ export LEETTEST_TOKEN=demo
-$ leettest -c examples/tour.yaml
+```sh
+export LEETTEST_TOKEN=demo
+bin/leettest -c examples/tour.yaml
 ```
 
 Vor dem Start verbindet sich LeetTest mit dem Ziel, prüft jede Methode über Reflection, baut den
@@ -134,9 +167,15 @@ stderr.
 nach `test/stand/certs` und verlangt das Client-Zertifikat;
 [`examples/tour-tls.yaml`](../../examples/tour-tls.yaml) zeigt auf diese Dateien:
 
-```console
-$ go run ./test/stand/cmd/stand -mtls -delay 20ms -life 30s
-$ leettest -c examples/tour-tls.yaml
+Der Stand aus §2 belegt denselben Port, also wird er vor dem nächsten beendet: `kill %%` beendet den
+letzten Hintergrundbefehl dieses Terminals (ist der Stand schon von selbst beendet, verbirgt
+`2>/dev/null` den Fehler):
+
+```sh
+kill %% 2>/dev/null; sleep 1
+bin/stand -mtls -delay 20ms -life 3m > stand.log 2>&1 &
+sleep 1
+bin/leettest -c examples/tour-tls.yaml
 ```
 
 ## 5. Der Bericht
@@ -195,24 +234,35 @@ und andere) und ihre Bedeutung stehen im
 
 ## 6. Andere Verhaltensweisen des Ziels
 
-Dieselbe Konfiguration gegen den Stand in einem anderen Modus — was der Bericht zeigt:
+Dieselbe Konfiguration gegen den Stand in einem anderen Modus — was der Bericht zeigt. Jeder Block
+beendet zuerst den vorigen Stand (wie in §4), startet dann einen neuen und den Lauf; `LEETTEST_TOKEN`
+aus §4 ist schon gesetzt.
 
-```console
-$ go run ./test/stand/cmd/stand -delay 20ms -freeze-at 10s -freeze-for 2s -life 60s
+```sh
+kill %% 2>/dev/null; sleep 1
+bin/stand -delay 20ms -freeze-at 10s -freeze-for 2s -life 3m > stand.log 2>&1 &
+sleep 1
+bin/leettest -c examples/tour.yaml
 ```
 Ein 2-Sekunden-Stillstand bei 500 ms Timeout: p50 und p90 bleiben um 21 ms, und die Aufrufe, die
 während der Pause ankamen, bekamen keine Antwort — etwa 4 % `got no answer within 500ms`, p99 als
 `>500ms` ausgegeben. Perzentile werden nicht gemittelt: Ein kurzer Stillstand zeigt sich im Ende der
 Verteilung, nicht verschmiert in einem Mittelwert.
 
-```console
-$ go run ./test/stand/cmd/stand -delay 20ms -fail-every 10 -life 60s
+```sh
+kill %% 2>/dev/null; sleep 1
+bin/stand -delay 20ms -fail-every 10 -life 3m > stand.log 2>&1 &
+sleep 1
+bin/leettest -c examples/tour.yaml
 ```
 Jeder zehnte Aufruf ist `RESOURCE_EXHAUSTED`: Kategorie `overload`, sein Code auf der Zeile „sent
 by the target".
 
-```console
-$ go run ./test/stand/cmd/stand -delay 150ms -max-streams 1 -life 60s
+```sh
+kill %% 2>/dev/null; sleep 1
+bin/stand -delay 150ms -max-streams 1 -life 3m > stand.log 2>&1 &
+sleep 1
+bin/leettest -c examples/tour.yaml
 ```
 Das Ziel erlaubt einen Stream je Verbindung und hält jede Antwort 150 ms: Über eine Verbindung kann
 es höchstens 6–7 Aufrufe pro Sekunde beantworten. Der Bericht sagt, wo sie hängen blieben:
@@ -222,9 +272,9 @@ Grenze der Verbindung, kein langsames Ziel.
 
 ## 7. Skripte und CI
 
-```console
-$ leettest -c load.yaml -output json > report.json
-$ echo $?
+```sh
+leettest -c load.yaml -output json > report.json
+echo $?
 ```
 
 Das JSON ist versioniert (`schema_version`); Entscheidungen sind Felder, kein Text:
@@ -245,12 +295,13 @@ Pass/Fail-Schwellen gibt es noch nicht: Prüfen Sie in CI den Exit-Code und die 
 
 ## 8. Ganz ohne Dienst
 
-```console
-$ leettest -c examples/leettest.yaml -fake -fake-delay 30ms -fake-jitter 10ms
+```sh
+bin/leettest -c examples/leettest.yaml -fake -fake-delay 30ms -fake-jitter 10ms
 ```
 
 `-fake` lädt statt eines Dienstes ein eingebautes Scheinziel — um Bildschirm und Bericht ohne Dienst
-anzusehen. Der Bericht ist als `fake target` markiert.
+anzusehen. Die Konfiguration kommt aus dem Klon (`examples/leettest.yaml`), ihr `target` wird
+ignoriert. Der Bericht ist als `fake target` markiert.
 
 ## Weiter
 
