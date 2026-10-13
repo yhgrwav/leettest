@@ -88,23 +88,30 @@ func TestWaitUntil_APastMomentReturnsAtOnce(t *testing.T) {
 	}
 }
 
-// Ground: boundary — exact only where a microsecond sleep exists (Linux) and
-// the clock is finer than 1µs: on Windows (~0.5ms) a busy-wait was measured
-// worse than the timer.
-func TestExactSchedule_NeedsAPreciseSleepAndAFineClock(t *testing.T) {
+// Ground: boundary — exact only where a microsecond sleep exists (Linux), the
+// clock is finer than 1µs (on Windows, ~0.5ms, a busy-wait was measured worse
+// than the timer) and the runtime has two Ps or more: with one P the exact
+// wait holds the P and the goroutines reading the answers wait for it, up to
+// ~10ms.
+func TestExactSchedule_NeedsAPreciseSleepAFineClockAndTwoPs(t *testing.T) {
 	for _, tc := range []struct {
 		precise bool
 		step    time.Duration
+		procs   int
 		exact   bool
 	}{
-		{true, 40 * time.Nanosecond, true},
-		{true, 999 * time.Nanosecond, true},
-		{true, time.Microsecond, false},
-		{true, 500 * time.Microsecond, false},
-		{false, 40 * time.Nanosecond, false},
+		{true, 40 * time.Nanosecond, 2, true},
+		{true, 999 * time.Nanosecond, 2, true},
+		{true, 40 * time.Nanosecond, 8, true},
+		{true, time.Microsecond, 2, false},
+		{true, 500 * time.Microsecond, 2, false},
+		{false, 40 * time.Nanosecond, 2, false},
+		{true, 40 * time.Nanosecond, 1, false},
+		{true, 999 * time.Nanosecond, 1, false},
+		{false, 40 * time.Nanosecond, 1, false},
 	} {
-		if got := exactScheduleFor(tc.precise, tc.step); got != tc.exact {
-			t.Errorf("precise sleep %v, step %v: exact %v, want %v", tc.precise, tc.step, got, tc.exact)
+		if got := exactScheduleFor(tc.precise, tc.step, tc.procs); got != tc.exact {
+			t.Errorf("precise sleep %v, step %v, %d Ps: exact %v, want %v", tc.precise, tc.step, tc.procs, got, tc.exact)
 		}
 	}
 }
