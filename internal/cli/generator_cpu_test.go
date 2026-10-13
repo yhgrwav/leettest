@@ -298,6 +298,37 @@ func TestGeneratorCPU_AStoppedRunIsCountedToWhereItStopped(t *testing.T) {
 	}
 }
 
+// The same stop at 10.4 s: the last counted piece is 0.4 s long and joins the
+// second before. Counted to the plan's end it would be a full second of its
+// own, busy at 0.99.
+func TestGeneratorCPU_AStoppedRunsLastPieceEndsWhereItStopped(t *testing.T) {
+	report := cpuReport(60, 2, 10.4, 11)
+	report.Incomplete = true
+
+	samples := append(perSecond(1, .5, .5, .5, .5, .5, .5, .5, .5, .5, .5), cpuAt(10.4, 5.396))
+	got := layCPU(t, report, 1, samples)
+
+	if got.Counted != 8 || got.BusySeconds != 0 {
+		t.Errorf("counted %d, busy %d; want 8 and 0: the 0.4 s piece joins second 9", got.Counted, got.BusySeconds)
+	}
+	// (0.5 + 0.396) CPU-s over 1.4 s.
+	wantCPUSeconds(t, got.Seconds, .5, .5, .5, .5, .5, .5, .5, .5, .5, .64, cpuNull)
+}
+
+// Only the seconds on the grid count: a plan that ends in idle seconds after
+// the last call has no entry for them.
+func TestGeneratorCPU_ASecondOffTheGridIsNotCounted(t *testing.T) {
+	got := layCPU(t, cpuReport(5, 0, 5, 3), 1, perSecond(1, .95, .95, .95, .1, .1))
+
+	if len(got.Seconds) != 3 || got.Counted != 3 || got.BusySeconds != 3 {
+		t.Errorf("%d entries, counted %d, busy %d; want 3 of each: seconds 3 and 4 are not on the grid",
+			len(got.Seconds), got.Counted, got.BusySeconds)
+	}
+	if !near(got.Share, 0.95) {
+		t.Errorf("share = %v, want 0.95 over the three seconds on the grid", got.Share)
+	}
+}
+
 // Readings that stop before the end of the grid leave the rest null, never 0.
 func TestGeneratorCPU_ASecondNoReadingCoversIsNullNotZero(t *testing.T) {
 	got := layCPU(t, cpuReport(7, 2, 10, 10), 1, perSecond(1, .3, .3, .5, .95, .95, .5, .5))

@@ -263,13 +263,20 @@ func NewCPUMeter(read func() (time.Duration, error), now func() time.Time, inter
 // Tick takes one sample. A failed read ends the measurement for good.
 func (m *CPUMeter) Tick() {
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	failed := m.failed
+	m.mu.Unlock()
 
-	if m.failed {
+	if failed {
 		return
 	}
+	// Outside the lock: the lock guards the list, and a reading in progress
+	// must not hide, by holding it, that stop returned without waiting.
 	at := m.now()
 	cpu, err := m.read()
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if err != nil {
 		m.failed = true
 
