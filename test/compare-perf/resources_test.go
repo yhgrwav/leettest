@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -172,6 +173,9 @@ func TestAnalyseResources_WhatCannotBeReadIsUnreadNeverClean(t *testing.T) {
 		{"no period passed", quietStats, "1000,tool,1000,2,500\n2000,tool,1000,2,500\n", quietHost, []string{"tool throttling"}},
 		{"a row that is not a number", "1000,stand,lots,1\n", quietCg, quietHost, []string{"stand CPU"}},
 		{"no load", quietStats, quietCg, "", []string{"host load"}},
+		{"no load after the run", quietStats, quietCg, "before,900,2.00,8\n", []string{"host load"}},
+		{"no load before the run", quietStats, quietCg, "after,2100,3.00,8\n", []string{"host load"}},
+		{"four stand readings in a 10 s run", statsEvery(1000, 4), tenSecondCg, tenSecondHost, []string{"stand CPU"}},
 	} {
 		r := analyseResources(runDir(t, c.stats, c.cg, c.host), 4)
 		if !slices.Equal(r.Unread, c.unread) {
@@ -182,6 +186,37 @@ func TestAnalyseResources_WhatCannotBeReadIsUnreadNeverClean(t *testing.T) {
 		}
 	}
 }
+
+// Half of the run's seconds is enough to judge the stand by; one reading less
+// is not. Both sides, so that neither the bound nor "any reading at all" passes.
+func TestAnalyseResources_StandReadingsForHalfTheRunAreEnough(t *testing.T) {
+	for _, c := range []struct {
+		readings int
+		unread   bool
+	}{{5, false}, {4, true}, {10, false}} {
+		r := analyseResources(runDir(t, statsEvery(1000, c.readings), tenSecondCg, tenSecondHost), 4)
+		if got := slices.Contains(r.Unread, "stand CPU"); got != c.unread {
+			t.Errorf("%d readings of 10 s: unread %v, want %v", c.readings, r.Unread, c.unread)
+		}
+	}
+}
+
+// statsEvery is n stand readings, one every second from ms on, the stand at
+// 100% of 400.
+func statsEvery(ms int64, n int) string {
+	var b strings.Builder
+	for i := range n {
+		fmt.Fprintf(&b, "%d,stand,100.00,1000000\n", ms+int64(i)*1000)
+	}
+
+	return b.String()
+}
+
+// A run of 10 s by its other files: the tool's cgroup and the load.
+const (
+	tenSecondCg   = "1000,tool,1000,2,500\n11000,tool,1100,3,900\n"
+	tenSecondHost = "before,1000,2.00,8\nafter,11000,3.00,8\n"
+)
 
 func TestParseStatsLine(t *testing.T) {
 	name, cpu, mem, err := parseStatsLine("leetperf-stand-1;231.45%;12.5MiB / 7.658GiB\n")
