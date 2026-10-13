@@ -28,7 +28,8 @@ import (
 )
 
 // threeSecondConfig is writeConfig's run stretched from 300ms at 50 rps to 3s
-// at 20000: long enough for the readings to tick, and with work to measure.
+// at 4000: long enough for the readings to tick, and with work to measure,
+// yet within what 2 Ps keep up with under -race.
 func threeSecondConfig(t *testing.T) string {
 	t.Helper()
 
@@ -38,7 +39,7 @@ func threeSecondConfig(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
-	longer := strings.Replace(strings.Replace(string(raw), "duration: 300ms", "duration: 3s", 1), "rps: 50", "rps: 20000", 1)
+	longer := strings.Replace(strings.Replace(string(raw), "duration: 300ms", "duration: 3s", 1), "rps: 50", "rps: 4000", 1)
 	if longer == string(raw) {
 		t.Fatal("the config has no 300ms duration to stretch")
 	}
@@ -80,7 +81,7 @@ func TestRun_JSONCarriesTheGeneratorCPUOnTheGridOfTheRun(t *testing.T) {
 		t.Error("generator_cpu.seconds[0] is null: the readings start before the run")
 	}
 
-	// 20000 rps of the fake target takes at least 0.02 of a core, 0.01 of the 2;
+	// 4000 rps of the fake target takes at least 0.02 of a core, 0.01 of the 2;
 	// a share can pass 1 a little (time in system calls outside the Ps), not
 	// by half.
 	share, _ := cpu["share"].(float64)
