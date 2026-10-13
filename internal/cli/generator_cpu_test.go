@@ -66,9 +66,19 @@ func perSecond(cores float64, shares ...float64) []CPUSample {
 // of them warm-up, that ran for ran seconds; the longest of its methods has n
 // seconds on the grid, the other two one second each. The long one stands in
 // the middle: a grid taken from the first or the last method comes out short.
+// The schedule ran its whole plan, so ran is the plan or more: the more is
+// the wait for calls still in flight.
 func cpuReport(planned, warmup, ran float64, n int) engine.Report {
+	return stoppedCPUReport(planned, warmup, planned, ran, n)
+}
+
+// stoppedCPUReport is a run whose schedule stopped handing out calls at
+// sendingEnded seconds, the plan's end or before it, and which ran on for the
+// calls in flight until ran seconds: the shape the engine reports.
+func stoppedCPUReport(planned, warmup, sendingEnded, ran float64, n int) engine.Report {
 	return engine.Report{
 		StartedAt: cpuStart, Planned: cpuSecs(planned), Warmup: cpuSecs(warmup), Duration: cpuSecs(ran),
+		SendingEnded: cpuSecs(sendingEnded),
 		Methods: []engine.MethodReport{
 			{Method: "/pkg.S/N", Seconds: make([]engine.Second, 1)},
 			{Method: "/pkg.S/M", Seconds: make([]engine.Second, n)},
@@ -277,42 +287,43 @@ func TestGeneratorCPU_FirstBusyIsASecondFromTheStartOfTheRun(t *testing.T) {
 	}
 }
 
-// A 60 s plan stopped at 10 s: the seconds counted are the ones that ran, not
-// the ones planned.
-func TestGeneratorCPU_AStoppedRunIsCountedToWhereItStopped(t *testing.T) {
-	report := cpuReport(60, 2, 10, 10)
+// A 60 s plan stopped at 10 s with the calls in flight waited for until 12 s
+// (their timeouts): the seconds counted are the ones the schedule ran, 2..9.
+// The two seconds of the wait are on the grid, the generator busy in them at
+// 0.95, and in neither the share nor the busy count.
+func TestGeneratorCPU_AStoppedRunIsCountedToWhereItStoppedNotToWhereItDrained(t *testing.T) {
+	report := stoppedCPUReport(60, 2, 10, 12, 12)
 	report.Incomplete = true
 
-	got := layCPU(t, report, 1, perSecond(1, .5, .5, .5, .5, .5, .5, .5, .5, .5, .5))
+	got := layCPU(t, report, 1, perSecond(1, .5, .5, .5, .5, .5, .5, .5, .5, .5, .5, .95, .95))
 
-	if got.Counted != 8 {
-		t.Errorf("counted seconds = %d, want 8 (seconds 2..9 of the 10 that ran)", got.Counted)
-	}
-	for i, s := range got.Seconds {
-		if s == nil {
-			t.Errorf("seconds[%d] = null in a run that covered it", i)
-		}
+	if got.Counted != 8 || got.BusySeconds != 0 {
+		t.Errorf("counted %d, busy %d; want 8 and 0: seconds 2..9 ran, 10 and 11 are the wait for the calls in flight",
+			got.Counted, got.BusySeconds)
 	}
 	if !near(got.Share, 0.50) {
-		t.Errorf("share = %v, want 0.50", got.Share)
+		t.Errorf("share = %v, want 0.50, without the wait", got.Share)
 	}
+	wantCPUSeconds(t, got.Seconds, .5, .5, .5, .5, .5, .5, .5, .5, .5, .5, .95, .95)
 }
 
-// The same stop at 10.4 s: the last counted piece is 0.4 s long and joins the
-// second before. Counted to the plan's end it would be a full second of its
-// own, busy at 0.99.
+// The same stop at 10.4 s, the wait for the calls in flight until 12 s: the
+// last counted piece is 0.4 s long and joins the second before. Counted to the
+// end of the run it would be a second of its own, and the wait two more.
 func TestGeneratorCPU_AStoppedRunsLastPieceEndsWhereItStopped(t *testing.T) {
-	report := cpuReport(60, 2, 10.4, 11)
+	report := stoppedCPUReport(60, 2, 10.4, 12, 12)
 	report.Incomplete = true
 
-	samples := append(perSecond(1, .5, .5, .5, .5, .5, .5, .5, .5, .5, .5), cpuAt(10.4, 5.396))
+	samples := append(perSecond(1, .5, .5, .5, .5, .5, .5, .5, .5, .5, .5),
+		cpuAt(10.4, 5.396), cpuAt(11, 5.966), cpuAt(12, 6.916))
 	got := layCPU(t, report, 1, samples)
 
 	if got.Counted != 8 || got.BusySeconds != 0 {
 		t.Errorf("counted %d, busy %d; want 8 and 0: the 0.4 s piece joins second 9", got.Counted, got.BusySeconds)
 	}
-	// (0.5 + 0.396) CPU-s over 1.4 s.
-	wantCPUSeconds(t, got.Seconds, .5, .5, .5, .5, .5, .5, .5, .5, .5, .64, cpuNull)
+	// (0.5 + 0.396) CPU-s over 1.4 s; the second after the stop is on the grid
+	// as the generator spent it, 0.95.
+	wantCPUSeconds(t, got.Seconds, .5, .5, .5, .5, .5, .5, .5, .5, .5, .64, cpuNull, .95)
 }
 
 // Only the seconds on the grid count: a plan that ends in idle seconds after
@@ -568,7 +579,7 @@ func TestCPUMeter_StopWaitsForTheTicker(t *testing.T) {
 	first, last := m.samples[0].At, m.samples[len(m.samples)-1].At
 	span := last.Sub(first)
 	report := engine.Report{
-		StartedAt: first, Planned: span, Duration: span,
+		StartedAt: first, Planned: span, Duration: span, SendingEnded: span,
 		Methods: []engine.MethodReport{{Method: "/pkg.S/M", Seconds: make([]engine.Second, 1)}},
 	}
 	if got := m.Result(report, 1); got == nil {

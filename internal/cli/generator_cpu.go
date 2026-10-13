@@ -142,8 +142,9 @@ func fromHundredths(h int64) float64 {
 // methods[].seconds and silent_from_s count; the grid is as long as the
 // longest of those. The seconds that count for Share and busy are the
 // planned ones after the warm-up: from the first second wholly after it to
-// the last that starts before the end of the plan or of the run, whichever
-// came first. The timeout tail is on the grid and not counted.
+// the last that starts before the schedule stopped handing out calls
+// (Report.SendingEnded: the plan's end, or a stop). The wait for calls still
+// in flight after it, the timeout tail, is on the grid and not counted.
 func LayGeneratorCPU(report engine.Report, samples []CPUSample, cores float64) *GeneratorCPU {
 	if len(samples) < 2 || !(cores > 0) || math.IsInf(cores, 0) {
 		return nil
@@ -163,7 +164,7 @@ func LayGeneratorCPU(report engine.Report, samples []CPUSample, cores float64) *
 	}
 
 	first := int((max(0, report.Warmup) + time.Second - 1) / time.Second)
-	end := min(report.Planned, report.Duration)
+	end := report.SendingEnded
 	var windows []window
 	for i := first; i < grid && time.Duration(i)*time.Second < end; i++ {
 		from := time.Duration(i) * time.Second
