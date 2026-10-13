@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -86,13 +87,18 @@ func newFileResolver(reg *protoregistry.Files, files []protoreflect.FileDescript
 // each under one of importPaths; their imports are looked up on importPaths,
 // and the well-known types need no path. A file is named by its path under the
 // first import path that holds it, as protoc names it, so one file is one name
-// whether listed or imported. No import paths hold no file.
+// whether listed or imported. No import paths hold no file. Something else at
+// a file's name under an earlier import path shadows it: ErrShadowedInput.
 func NewProtoResolver(files, importPaths []string) (*FileResolver, error) {
 	names := make([]string, len(files))
 	for i, file := range files {
-		name, ok := nameUnder(file, importPaths)
+		name, held, ok := nameUnder(file, importPaths)
 		if !ok {
 			return nil, fmt.Errorf("%w: %s; import paths: %s", ErrOutsideImportPaths, file, listPaths(importPaths))
+		}
+		if other, shadowed := shadowedBy(name, importPaths[:held], file); shadowed {
+			return nil, fmt.Errorf("%w: %s is shadowed by %s; list %s instead, or put %s first in the import paths",
+				ErrShadowedInput, file, other, other, importPaths[held])
 		}
 		names[i] = name
 	}
@@ -119,14 +125,15 @@ func NewProtoResolver(files, importPaths []string) (*FileResolver, error) {
 }
 
 // nameUnder is file's path relative to the first of importPaths that holds it,
-// with forward slashes, which is how an import spells it.
-func nameUnder(file string, importPaths []string) (string, bool) {
+// with forward slashes, which is how an import spells it, and the index of that
+// import path.
+func nameUnder(file string, importPaths []string) (string, int, bool) {
 	abs, err := filepath.Abs(file)
 	if err != nil {
-		return "", false
+		return "", 0, false
 	}
 
-	for _, ip := range importPaths {
+	for i, ip := range importPaths {
 		root, err := filepath.Abs(ip)
 		if err != nil {
 			continue
@@ -136,7 +143,30 @@ func nameUnder(file string, importPaths []string) (string, bool) {
 			continue
 		}
 
-		return filepath.ToSlash(rel), true
+		return filepath.ToSlash(rel), i, true
+	}
+
+	return "", 0, false
+}
+
+// shadowedBy is the path of what the compiler would read for name instead of
+// entry: anything found at name under one of earlier, a directory included,
+// that is not entry itself.
+func shadowedBy(name string, earlier []string, entry string) (string, bool) {
+	own, err := os.Stat(entry)
+	if err != nil {
+		return "", false
+	}
+
+	for _, ip := range earlier {
+		p := filepath.Join(ip, filepath.FromSlash(name))
+		info, err := os.Stat(p)
+		if err != nil {
+			continue
+		}
+		if !os.SameFile(info, own) {
+			return p, true
+		}
 	}
 
 	return "", false
