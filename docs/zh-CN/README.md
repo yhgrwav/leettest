@@ -35,8 +35,8 @@
 
 ## 安装
 
-```console
-$ go install github.com/yhgrwav/leettest/cmd/leettest@latest
+```sh
+go install github.com/yhgrwav/leettest/cmd/leettest@latest
 ```
 
 需要 Go 1.26 或更高版本。预编译的二进制文件在 Releases 页面。
@@ -72,8 +72,8 @@ load:
       duration: 1m
 ```
 
-```console
-$ leettest -c leettest.yaml
+```sh
+leettest -c leettest.yaml
 ```
 
 方法名使用全名 `package.Service/Method`。工具通过 gRPC server reflection 从服务获取方法的结构，
