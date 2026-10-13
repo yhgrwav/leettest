@@ -438,18 +438,19 @@ func TestReport_SendingEndedIsTheMomentOfStopWhileTheCallsDrainAfterIt(t *testin
 	waitEntered(t, h, 3)
 	before := time.Now()
 	eng.Stop()
-	after := time.Now()
 
 	if err := waitRun(t, done); err != nil {
 		t.Fatalf("Run = %v, want nil", err)
 	}
+	returned := time.Now()
 
 	report := eng.Report()
-	lo, hi := before.Sub(report.StartedAt), after.Sub(report.StartedAt)
-	// The moment is read by the goroutine that sees the stop, a little after
-	// Stop returns: the bound above allows a loaded machine its delay.
-	if report.SendingEnded < lo || report.SendingEnded > hi+100*time.Millisecond {
-		t.Errorf("SendingEnded = %v, want the moment of Stop, between %v and %v", report.SendingEnded, lo, hi)
+	lo, hi := before.Sub(report.StartedAt), returned.Sub(report.StartedAt)
+	// The moment is read by the goroutine that sees the stop, before Run
+	// returns: the return is a bound with no allowance to tune. What keeps it
+	// from being the drain's end are the two checks below.
+	if report.SendingEnded < lo || report.SendingEnded > hi {
+		t.Errorf("SendingEnded = %v, want the moment of Stop, between %v and the return of Run at %v", report.SendingEnded, lo, hi)
 	}
 	if drain := report.Duration - report.SendingEnded; drain < timeout/2 {
 		t.Errorf("duration %v is only %v past SendingEnded, want the drain of calls held to their %v deadline",

@@ -99,11 +99,16 @@ func analyseResources(dir string, standCPUs int) resources {
 	r := resources{Recorded: true}
 
 	stats, err := readStats(filepath.Join(dir, statsFile))
+	cg, cgErr := readCgroup(filepath.Join(dir, cgroupFile))
+	host, hostErr := readHost(filepath.Join(dir, hostFile))
+	seconds := runSeconds(cg, host)
 	standSeen := false
+	standReadings := map[int64]bool{}
 	for _, s := range stats {
 		switch s.role {
 		case roleStand:
 			standSeen = true
+			standReadings[s.ms] = true
 			r.StandPeakCPU = max(r.StandPeakCPU, s.cpu)
 			r.StandPeakMem = max(r.StandPeakMem, s.mem)
 		case roleTool:
@@ -112,16 +117,16 @@ func analyseResources(dir string, standCPUs int) resources {
 		}
 	}
 	// 100 percent is one core: the stand is at its cores at 90% of standCPUs × 100.
-	if err != nil || !standSeen {
+	// A peak over a few readings of a long run says nothing about the rest of it.
+	if err != nil || !standSeen || 2*float64(len(standReadings)) < seconds {
 		r.Unread = append(r.Unread, "stand CPU")
 	} else if r.StandPeakCPU*100 >= float64(standBusyPercent*standCPUs*100) {
 		r.Marks = append(r.Marks, markStand)
 	}
 
-	cg, err := readCgroup(filepath.Join(dir, cgroupFile))
 	tool := slices.DeleteFunc(cg, func(c cgroupRow) bool { return c.role != roleTool })
 	switch {
-	case err != nil || len(tool) < 2 || tool[len(tool)-1].periods <= tool[0].periods:
+	case cgErr != nil || len(tool) < 2 || tool[len(tool)-1].periods <= tool[0].periods:
 		r.Unread = append(r.Unread, "tool throttling")
 	default:
 		first, last := tool[0], tool[len(tool)-1]
@@ -133,8 +138,12 @@ func analyseResources(dir string, standCPUs int) resources {
 		}
 	}
 
-	host, err := readHost(filepath.Join(dir, hostFile))
-	if err != nil || len(host) == 0 {
+	// The load before and the load after: one of them alone is half a reading.
+	phases := map[string]bool{}
+	for _, h := range host {
+		phases[h.phase] = true
+	}
+	if hostErr != nil || !phases["before"] || !phases["after"] {
 		r.Unread = append(r.Unread, "host load")
 	} else {
 		busy := false
@@ -155,7 +164,29 @@ func analyseResources(dir string, standCPUs int) resources {
 	return r
 }
 
+// runSeconds is the length of the run as its files saw it: from the first
+// timestamp of the cgroup and host files to the last. Zero when they hold none.
+func runSeconds(cg []cgroupRow, host []hostRow) float64 {
+	var first, last int64
+	seen := false
+	note := func(ms int64) {
+		if !seen {
+			first, last, seen = ms, ms, true
+		}
+		first, last = min(first, ms), max(last, ms)
+	}
+	for _, c := range cg {
+		note(c.ms)
+	}
+	for _, h := range host {
+		note(h.ms)
+	}
+
+	return float64(last-first) / 1000
+}
+
 type statsRow struct {
+	ms   int64
 	role string
 	cpu  float64
 	mem  int64
@@ -168,6 +199,7 @@ type cgroupRow struct {
 }
 
 type hostRow struct {
+	ms    int64
 	phase string
 	load  float64
 	cpus  int
@@ -206,12 +238,13 @@ func readStats(path string) ([]statsRow, error) {
 	}
 	var out []statsRow
 	for _, rec := range recs {
+		ms, err0 := strconv.ParseInt(rec[0], 10, 64)
 		cpu, err1 := strconv.ParseFloat(rec[2], 64)
 		mem, err2 := strconv.ParseInt(rec[3], 10, 64)
-		if err := errors.Join(err1, err2); err != nil {
+		if err := errors.Join(err0, err1, err2); err != nil {
 			return nil, fmt.Errorf("%s: %w", filepath.Base(path), err)
 		}
-		out = append(out, statsRow{role: rec[1], cpu: cpu, mem: mem})
+		out = append(out, statsRow{ms: ms, role: rec[1], cpu: cpu, mem: mem})
 	}
 
 	return out, nil
@@ -248,12 +281,13 @@ func readHost(path string) ([]hostRow, error) {
 	}
 	var out []hostRow
 	for _, rec := range recs {
+		ms, err0 := strconv.ParseInt(rec[1], 10, 64)
 		load, err1 := strconv.ParseFloat(rec[2], 64)
 		cpus, err2 := strconv.Atoi(rec[3])
-		if err := errors.Join(err1, err2); err != nil {
+		if err := errors.Join(err0, err1, err2); err != nil {
 			return nil, fmt.Errorf("%s: %w", filepath.Base(path), err)
 		}
-		out = append(out, hostRow{phase: rec[0], load: load, cpus: cpus})
+		out = append(out, hostRow{ms: ms, phase: rec[0], load: load, cpus: cpus})
 	}
 
 	return out, nil

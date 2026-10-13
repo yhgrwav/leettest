@@ -414,7 +414,7 @@ func TestSearchView_DrawsOnlyCheckedGlyphs(t *testing.T) {
 // On every host the bound is half the screen's 200ms (the flaky-test rule):
 // a schedule started before the screen let the run go puts its first calls
 // up to 200ms late; the host's own timer (1-2ms on Windows) stays far under.
-// Linux, where the schedule is exact, also holds 20ms (below).
+// Linux with two Ps or more, where the schedule is exact, also holds 20ms (below).
 func TestSearchFeed_ASlowScreenDelaysNoCall(t *testing.T) {
 	for i, lag := range searchLags(t, func(any) { time.Sleep(200 * time.Millisecond) }) {
 		if lag >= 100*time.Millisecond {
@@ -464,8 +464,9 @@ func searchLags(t *testing.T, send func(any)) []time.Duration {
 	return lags
 }
 
-// On a host whose engine schedules exactly (Linux), a slow screen leaves the
-// start lag under 20ms. That catches a screen delaying calls by 20-100ms,
+// On a host whose engine schedules exactly (Linux, two Ps or more: with one
+// P the engine waits with a plain timer), a slow screen leaves the start lag
+// under 20ms. That catches a screen delaying calls by 20-100ms,
 // which ASlowScreenDelaysNoCall's 100ms bound lets through. A run holds
 // 80 calls at 200 rps and 100 at 250, so p99 is the latest or the second
 // latest call. The host's own noise
