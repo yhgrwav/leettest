@@ -239,9 +239,12 @@ func TestGeneratorCPUJSON_NamesAndValues(t *testing.T) {
 			t.Errorf("seconds[%d] = %v, want %v", i, seconds[i], w)
 		}
 	}
-	if methods := field(t, out, "methods").([]any); len(seconds) != len(field(t, methods[0], "seconds").([]any)) {
-		t.Errorf("generator_cpu.seconds has %d entries, methods[0].seconds has %d: one grid",
-			len(seconds), len(field(t, methods[0], "seconds").([]any)))
+	longest := 0
+	for _, m := range field(t, out, "methods").([]any) {
+		longest = max(longest, len(field(t, m, "seconds").([]any)))
+	}
+	if len(seconds) != longest {
+		t.Errorf("generator_cpu.seconds has %d entries, the longest methods[].seconds has %d: one grid", len(seconds), longest)
 	}
 }
 

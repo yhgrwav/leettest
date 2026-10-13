@@ -64,13 +64,15 @@ func perSecond(cores float64, shares ...float64) []CPUSample {
 
 // cpuReport is a run of stages that total planned seconds, the first warmup
 // of them warm-up, that ran for ran seconds; the longest of its methods has n
-// seconds on the grid, the other one second.
+// seconds on the grid, the other two one second each. The long one stands in
+// the middle: a grid taken from the first or the last method comes out short.
 func cpuReport(planned, warmup, ran float64, n int) engine.Report {
 	return engine.Report{
 		StartedAt: cpuStart, Planned: cpuSecs(planned), Warmup: cpuSecs(warmup), Duration: cpuSecs(ran),
 		Methods: []engine.MethodReport{
-			{Method: "/pkg.S/M", Seconds: make([]engine.Second, n)},
 			{Method: "/pkg.S/N", Seconds: make([]engine.Second, 1)},
+			{Method: "/pkg.S/M", Seconds: make([]engine.Second, n)},
+			{Method: "/pkg.S/O", Seconds: make([]engine.Second, 1)},
 		},
 	}
 }
@@ -228,7 +230,8 @@ func TestGeneratorCPU_TwoReadingsAtOneInstantGiveNoNaN(t *testing.T) {
 func TestGeneratorCPU_TheGridRunsToTheEndOfTheRunWarmupIncluded(t *testing.T) {
 	got := layCPU(t, cpuReport(7, 2, 8, 8), 1, perSecond(1, .3, .3, .5, .5, .5, .5, .5, .3))
 
-	// The longest methods[].seconds is the length, not the first or the last.
+	// The longest methods[].seconds is the length, not the first or the last
+	// method's (cpuReport puts the long one in the middle).
 	wantCPUSeconds(t, got.Seconds, .3, .3, .5, .5, .5, .5, .5, .3)
 }
 
@@ -488,22 +491,130 @@ func TestCPUMeter_StartTakesTheFirstReadingAndStopTheLast(t *testing.T) {
 	}
 }
 
-// The CPU time of this process: burning a core for a while raises it.
+// The ticker's goroutine and the last reading of stop write the same list of
+// readings, so stop returns only when the goroutine has: after that no reading
+// is taken and none changes the result. The shared list is what -race watches.
+//
+// Ground: signal — the goroutine ticks for real here, every millisecond.
+func TestCPUMeter_StopWaitsForTheTicker(t *testing.T) {
+	var (
+		stopped atomic.Bool
+		used    atomic.Int64
+		reads   = make(chan struct{}, 1)
+	)
+	read := func() (time.Duration, error) {
+		if stopped.Load() {
+			t.Error("a reading was taken after stop returned")
+		}
+		select {
+		case reads <- struct{}{}:
+		default:
+		}
+
+		return time.Duration(used.Add(1)) * time.Millisecond, nil
+	}
+	m := NewCPUMeter(read, time.Now, time.Millisecond)
+
+	stop := m.Start()
+	for i := 0; i < 3; i++ {
+		select {
+		case <-reads:
+		case <-time.After(10 * time.Second):
+			t.Fatalf("%d readings in 10 s, want 3: the ticker does not tick", i)
+		}
+	}
+	stop()
+	stopped.Store(true)
+
+	if len(m.samples) < 3 {
+		t.Fatalf("%d readings kept, want at least 3", len(m.samples))
+	}
+	for i := 1; i < len(m.samples); i++ {
+		if m.samples[i].At.Before(m.samples[i-1].At) {
+			t.Errorf("reading %d is at %v, before reading %d at %v", i, m.samples[i].At, i-1, m.samples[i-1].At)
+		}
+	}
+	first, last := m.samples[0].At, m.samples[len(m.samples)-1].At
+	span := last.Sub(first)
+	report := engine.Report{
+		StartedAt: first, Planned: span, Duration: span,
+		Methods: []engine.MethodReport{{Method: "/pkg.S/M", Seconds: make([]engine.Second, 1)}},
+	}
+	if got := m.Result(report, 1); got == nil {
+		t.Error("Result = nil after a run of good readings")
+	}
+}
+
+// A reading in progress is not left behind: stop waits for it. The third
+// reading blocks until released; stop must still be waiting then.
+func TestCPUMeter_StopDoesNotReturnWhileAReadingIsInProgress(t *testing.T) {
+	var (
+		calls    atomic.Int32
+		inRead   = make(chan struct{})
+		release  = make(chan struct{})
+		returned = make(chan struct{})
+	)
+	read := func() (time.Duration, error) {
+		if calls.Add(1) == 2 {
+			close(inRead)
+			<-release
+		}
+
+		return time.Duration(calls.Load()) * time.Millisecond, nil
+	}
+	m := NewCPUMeter(read, time.Now, time.Millisecond)
+
+	stop := m.Start()
+	select {
+	case <-inRead:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the ticker never took a second reading")
+	}
+	go func() {
+		stop()
+		close(returned)
+	}()
+
+	// A stop that does not wait returns at once; waiting 100 ms can only miss
+	// that on a machine too starved to run a goroutine, never fail a stop that
+	// does wait.
+	select {
+	case <-returned:
+		t.Error("stop returned while the ticker was inside a reading")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	select {
+	case <-returned:
+	case <-time.After(10 * time.Second):
+		t.Fatal("stop did not return after the reading did")
+	}
+}
+
+// The CPU time of this process: burning CPU raises it. The burning goes on
+// until the rise is seen, however little of a core a loaded runner gives it.
 func TestProcessCPU_RisesWithWork(t *testing.T) {
+	const want = 50 * time.Millisecond // over the 15.6 ms step of the Windows clock
+
 	before, err := ProcessCPU()
 	if err != nil {
 		t.Fatalf("ProcessCPU: %v", err)
 	}
-	for end := time.Now().Add(150 * time.Millisecond); time.Now().Before(end); {
-	}
-	after, err := ProcessCPU()
-	if err != nil {
-		t.Fatalf("ProcessCPU: %v", err)
-	}
-
-	// Half of the spin, for a clock that steps 15.6 ms.
-	if after-before < 75*time.Millisecond {
-		t.Errorf("CPU time rose by %v over 150 ms of spinning, want at least 75ms", after-before)
+	// Ceiling for a runner that gives the process no CPU at all.
+	ceiling := time.Now().Add(10 * time.Second)
+	for {
+		for end := time.Now().Add(10 * time.Millisecond); time.Now().Before(end); {
+		}
+		after, err := ProcessCPU()
+		if err != nil {
+			t.Fatalf("ProcessCPU: %v", err)
+		}
+		if after-before >= want {
+			return
+		}
+		if time.Now().After(ceiling) {
+			t.Fatalf("CPU time rose by %v over 10 s of spinning, want at least %v", after-before, want)
+		}
 	}
 }
 
@@ -562,6 +673,17 @@ func TestAvailableCores_ReadsTheQuotaTheWayTheGoRuntimeDoes(t *testing.T) {
 			"sys/fs/cgroup/cpu,cpuacct/cpu.cfs_quota_us":             "-1\n",
 			"sys/fs/cgroup/cpu,cpuacct/cpu.cfs_period_us":            "100000\n",
 			"sys/fs/cgroup/cpu,cpuacct/docker/abc/cpu.cfs_quota_us":  "150000\n",
+			"sys/fs/cgroup/cpu,cpuacct/docker/abc/cpu.cfs_period_us": "100000\n",
+		}, 1.5},
+		// Docker on a cgroup v1 host with the host's cgroup namespace: the
+		// container's own group is the mount's root, and the files are on the
+		// mount itself, not under /docker/abc.
+		{"v1 mounted at the leaf itself", gomax, map[string]string{
+			"proc/self/cgroup":                                       "11:cpu,cpuacct:/docker/abc\n",
+			"proc/self/mountinfo":                                    mountLine(v1Mount, "/docker/abc"),
+			"sys/fs/cgroup/cpu,cpuacct/cpu.cfs_quota_us":             "150000\n",
+			"sys/fs/cgroup/cpu,cpuacct/cpu.cfs_period_us":            "100000\n",
+			"sys/fs/cgroup/cpu,cpuacct/docker/abc/cpu.cfs_quota_us":  "-1\n",
 			"sys/fs/cgroup/cpu,cpuacct/docker/abc/cpu.cfs_period_us": "100000\n",
 		}, 1.5},
 		{"a quota under one core", gomax, map[string]string{

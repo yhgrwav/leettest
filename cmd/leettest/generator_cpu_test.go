@@ -52,6 +52,12 @@ func threeSecondConfig(t *testing.T) string {
 // The whole path: the readings are taken beside the run, laid on the grid
 // the run's seconds are on, and reach the JSON.
 func TestRun_JSONCarriesTheGeneratorCPUOnTheGridOfTheRun(t *testing.T) {
+	// The share is of all the cores the process may use: with 2 of them the
+	// run's few percent of a machine is the same on a laptop and a 64-thread
+	// runner, and the bounds below are in the units of those 2.
+	const cores = 2
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(cores))
+
 	res := runCLI(t.Context(), t, 30*time.Second, "-fake", "-output", "json", "-c", threeSecondConfig(t))
 	if res.err != nil {
 		t.Fatalf("run: %v\n%s", res.err, res.stderr)
@@ -74,14 +80,15 @@ func TestRun_JSONCarriesTheGeneratorCPUOnTheGridOfTheRun(t *testing.T) {
 		t.Error("generator_cpu.seconds[0] is null: the readings start before the run")
 	}
 
+	// 20000 rps of the fake target takes at least 0.02 of a core, 0.01 of the 2;
+	// a share can pass 1 a little (time in system calls outside the Ps), not
+	// by half.
 	share, _ := cpu["share"].(float64)
-	// 20000 rps of the fake target is a few percent of a core at least; the
-	// process cannot have used more than every core there is.
-	if limit := float64(runtime.GOMAXPROCS(0)) * 1.5; math.IsNaN(share) || share < 0.01 || share > limit {
-		t.Errorf("share = %v, want a CPU share from 0.01 to %v", cpu["share"], limit)
+	if math.IsNaN(share) || share < 0.01 || share > 1.5 {
+		t.Errorf("share = %v, want a CPU share from 0.01 to 1.5", cpu["share"])
 	}
-	if cores, _ := cpu["available_cores"].(float64); cores <= 0 || cores > float64(runtime.GOMAXPROCS(0)) {
-		t.Errorf("available_cores = %v, want above 0 and at most GOMAXPROCS %d", cpu["available_cores"], runtime.GOMAXPROCS(0))
+	if got, _ := cpu["available_cores"].(float64); got <= 0 || got > cores {
+		t.Errorf("available_cores = %v, want above 0 and at most GOMAXPROCS %d", cpu["available_cores"], cores)
 	}
 }
 
