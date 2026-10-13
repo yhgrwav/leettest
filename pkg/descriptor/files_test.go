@@ -520,16 +520,25 @@ func TestProtoResolver_TheSameFileUnderTwoImportPathsIsNotShadowed(t *testing.T)
 	})
 }
 
-// Ground: contract — only a regular file shadows; a directory of that name is nothing.
-func TestProtoResolver_ADirectoryAtTheNameInAnEarlierPathDoesNotShadow(t *testing.T) {
+// Whatever sits at the name shadows, a directory too: the compiler's own answer
+// there ("is a directory" / "Incorrect function") names neither file nor the way out.
+// Ground: contract — anything but the entry file itself at its name on an earlier path is refused, naming that path.
+func TestProtoResolver_ADirectoryAtTheNameInAnEarlierPathShadowsToo(t *testing.T) {
 	dir := tree(t, map[string]string{
 		"api/foo/x.proto/keep": "",
 		"vendor/foo/x.proto":   shopProto,
 	})
-	r := compile(t, dir, []string{"vendor/foo/x.proto"}, []string{"api", "vendor"})
 
-	if _, err := r.Resolve(t.Context(), "shop.v1.Shop/Get"); err != nil {
-		t.Errorf("resolve: %v", err)
+	err := compileErr(dir, []string{"vendor/foo/x.proto"}, []string{"api", "vendor"})
+
+	if !errors.Is(err, descriptor.ErrShadowedInput) {
+		t.Fatalf("err = %v, want descriptor.ErrShadowedInput", err)
+	}
+	wants := append(at(dir, "api/foo/x.proto", "vendor/foo/x.proto"), at(dir, "api", "vendor")...)
+	for _, want := range wants {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not name %q", err, want)
+		}
 	}
 }
 
