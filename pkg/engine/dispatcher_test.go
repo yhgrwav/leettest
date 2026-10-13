@@ -116,6 +116,30 @@ func TestExactSchedule_NeedsAPreciseSleepAFineClockAndTwoPs(t *testing.T) {
 	}
 }
 
+// Ground: boundary — the P count that decides comes from the runtime
+// (GOMAXPROCS), not from the number of cores: a host with many cores and
+// GOMAXPROCS=1 has one P. Not parallel: it changes the process's GOMAXPROCS.
+func TestNewDispatcher_OnePUsesThePlainTimer(t *testing.T) {
+	prev := runtime.GOMAXPROCS(1)
+	t.Cleanup(func() { runtime.GOMAXPROCS(prev) })
+
+	if NewDispatcher(nil).exact {
+		t.Error("exact wait with GOMAXPROCS 1, want the plain timer")
+	}
+}
+
+// Ground: boundary — with two Ps the dispatcher keeps what the host allows
+// (exact on Linux with a fine clock). Not parallel, as above.
+func TestNewDispatcher_TwoPsKeepTheHostVerdict(t *testing.T) {
+	prev := runtime.GOMAXPROCS(2)
+	t.Cleanup(func() { runtime.GOMAXPROCS(prev) })
+
+	want := exactScheduleFor(preciseSleep, clock.StepOf(time.Now), 2)
+	if got := NewDispatcher(nil).exact; got != want {
+		t.Errorf("exact %v with GOMAXPROCS 2, want the host's verdict %v", got, want)
+	}
+}
+
 // Ground: hot path — one dispatcher for the run: its wait costs the same
 // however many methods there are.
 func TestDispatcher_OneGoroutineForEveryCall(t *testing.T) {
