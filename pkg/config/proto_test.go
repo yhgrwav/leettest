@@ -169,6 +169,30 @@ func TestLoadFile_ProtoPathsAreRelativeToTheConfigDirectory(t *testing.T) {
 	}
 }
 
+// Without import_paths the import path is the config's directory, as protoc's
+// -I. is. LoadFile puts it there, like every path from that directory (#191);
+// Parse has no directory and leaves the list empty.
+// Ground: contract — the default import path is set where paths are resolved.
+func TestLoadFile_NoImportPathsMeansTheConfigDirectory(t *testing.T) {
+	dir, path := writeProtoConfig(t, "  proto:\n    files: [svc.proto]\n", "svc.proto")
+
+	cfg, err := config.LoadFile(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.App.Proto == nil || !slices.Equal(cfg.App.Proto.ImportPaths, []string{dir}) {
+		t.Errorf("import paths = %+v, want [%s]", cfg.App.Proto, dir)
+	}
+
+	parsed, err := config.Parse(protoYAML("  proto:\n    files: [svc.proto]\n"))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(parsed.App.Proto.ImportPaths) != 0 {
+		t.Errorf("Parse import paths = %v, want none: it has no directory", parsed.App.Proto.ImportPaths)
+	}
+}
+
 // Ground: contract — an absolute path is used as it is.
 func TestLoadFile_AbsoluteProtoPathsStayAsTheyAre(t *testing.T) {
 	elsewhere := t.TempDir()

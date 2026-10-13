@@ -228,6 +228,33 @@ service Health { rpc Check(HealthCheckRequest) returns (HealthCheckResponse); }
 	}
 }
 
+// The target answers reflection with a schema whose field is called service;
+// the user's file calls it svc (same number). A run that asked the target
+// first would take the target's schema and refuse svc as an unknown field.
+// Ground: contract — with proto set no reflection call is made, even where the target offers it.
+func TestRun_FilesAreUsedEvenWhereTheTargetOffersReflection(t *testing.T) {
+	target := startReflectingTarget(t)
+	dir := layout(t, map[string]string{"health.proto": strings.Replace(healthProto, "string service = 1;", "string svc = 1;", 1)})
+	cfg := protoConfig(t, dir, target.addr, filesApp, checkLoad("      data:\n        svc: wallet\n"))
+
+	res := runCLI(t.Context(), t, 10*time.Second, "-c", cfg)
+
+	if res.err != nil {
+		t.Fatalf("run: %v\nstderr:\n%s", res.err, res.stderr)
+	}
+	if got := servedService(target); got != "wallet" {
+		t.Errorf("target received service = %q, want wallet from the file's svc", got)
+	}
+
+	js := runCLI(t.Context(), t, 10*time.Second, "-output", "json", "-c", cfg)
+	if js.err != nil {
+		t.Fatalf("json run: %v\nstderr:\n%s", js.err, js.stderr)
+	}
+	if got := jsonAt(t, decodeOnly(t, js.stdout), "methods_source"); got != "proto" {
+		t.Errorf("methods_source = %v, want proto", got)
+	}
+}
+
 // --- files are read before the network -------------------------------------------
 
 // «A config error does not wait for the network» (main.go): the target accepts
@@ -367,6 +394,10 @@ var methodsSources = []struct {
 }{
 	{name: "reflection", reflect: true, jsonValue: "reflection", line: "methods: server reflection"},
 	{
+		name: "one entry .proto file", app: filesApp, jsonValue: "proto", line: "methods: 1 .proto file",
+		files: map[string]string{"health.proto": healthProto},
+	},
+	{
 		name: "two entry .proto files", app: twoFilesApp, jsonValue: "proto", line: "methods: 2 .proto files",
 		files: map[string]string{"health.proto": healthProto, "other.proto": otherProto},
 	},
@@ -451,15 +482,15 @@ func searchReported(err error) bool {
 // Ground: contract — methods_source in the breaking-point JSON and the line in its text report.
 func TestRun_ASearchSaysWhereTheMethodWasFoundToo(t *testing.T) {
 	for _, src := range methodsSources {
-		if src.protoset {
-			continue
-		}
 		t.Run(src.name, func(t *testing.T) {
 			target := startTarget(t)
 			if src.reflect {
 				target = startReflectingTarget(t)
 			}
 			dir := layout(t, src.files)
+			if src.protoset {
+				writeHealthProtoset(t, dir)
+			}
 			cfg := protoConfig(t, dir, target.addr, src.app, searchLoad())
 
 			text := runCLI(t.Context(), t, 60*time.Second, "-c", cfg)

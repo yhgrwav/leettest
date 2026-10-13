@@ -430,6 +430,23 @@ func TestProtoResolver_AFileUnderNoImportPathIsRefused(t *testing.T) {
 	}
 }
 
+// The library does not guess an import path: the config puts the directory of
+// the config file there. With none, no file is under one.
+// Ground: contract — an empty collection of import paths holds no file.
+func TestProtoResolver_NoImportPathsHoldNoFile(t *testing.T) {
+	dir := tree(t, map[string]string{"shop.proto": shopProto})
+
+	for name, imports := range map[string][]string{"nil": nil, "empty": {}} {
+		t.Run(name, func(t *testing.T) {
+			_, err := descriptor.NewProtoResolver(at(dir, "shop.proto"), imports)
+
+			if !errors.Is(err, descriptor.ErrOutsideImportPaths) {
+				t.Errorf("err = %v, want descriptor.ErrOutsideImportPaths", err)
+			}
+		})
+	}
+}
+
 // --- finding the method -----------------------------------------------------
 
 // bigProto is a service of n methods named M01, M02, ...
@@ -763,6 +780,45 @@ func TestProtosetResolver_BytesThatAreNotASetAreRefused(t *testing.T) {
 				t.Errorf("err = %v, want descriptor.ErrBadProtoset", err)
 			}
 		})
+	}
+}
+
+// A protoset carries the types of its method the same way .proto files do
+// (amendment 3: both paths use Method.Types). With none, protojson would use
+// the global registry and an Any of a type of the set would not be found.
+// Ground: contract — types come from the set; only google.protobuf.* falls back to the global registry.
+func TestProtosetResolver_MethodTypesAreTheSetAndTheWellKnownOnes(t *testing.T) {
+	r, err := descriptor.NewProtosetResolver(protoset(t, depFile(), mainFile()))
+	if err != nil {
+		t.Fatalf("read the set: %v", err)
+	}
+	m, err := r.Resolve(t.Context(), "main.v1.Pay/Do")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if m.Types == nil {
+		t.Fatal("Types is nil: a payload would resolve against the global registry")
+	}
+
+	found := map[string]string{
+		"type.googleapis.com/dep.v1.Money":             "dep.v1.Money",
+		"type.googleapis.com/google.protobuf.Duration": "google.protobuf.Duration",
+	}
+	for url, want := range found {
+		mt, err := m.Types.FindMessageByURL(url)
+		if err != nil {
+			t.Errorf("find %s: %v", url, err)
+
+			continue
+		}
+		if got := string(mt.Descriptor().FullName()); got != want {
+			t.Errorf("find %s = %s, want %s", url, got, want)
+		}
+	}
+
+	// Registered in this test binary, not in the set.
+	if _, err := m.Types.FindMessageByURL("type.googleapis.com/grpc.health.v1.HealthCheckRequest"); !errors.Is(err, protoregistry.NotFound) {
+		t.Errorf("find HealthCheckRequest: err = %v, want protoregistry.NotFound", err)
 	}
 }
 
