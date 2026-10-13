@@ -156,11 +156,11 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 		if feed != nil {
 			feed.Starting(eng)
 		}
-		// The run's own context is the command's: a stop of the search ends it
-		// gently through Stop, only an abort cuts its calls off.
 		// Each step is a run of its own, with readings of its own.
 		meter := cli.NewCPUMeter(cli.ProcessCPU, time.Now, time.Second)
 		stopMeter := meter.Start()
+		// The run's own context is the command's: a stop of the search ends it
+		// gently through Stop, only an abort cuts its calls off.
 		runErr := eng.Run(ctx)
 		stopMeter()
 		report := eng.Report()
