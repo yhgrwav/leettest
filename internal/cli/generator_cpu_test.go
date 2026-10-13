@@ -587,7 +587,7 @@ func TestCPUMeter_StopWaitsForTheTicker(t *testing.T) {
 	}
 }
 
-// A reading in progress is not left behind: stop waits for it. The third
+// A reading in progress is not left behind: stop waits for it. The second
 // reading blocks until released; stop must still be waiting then.
 func TestCPUMeter_StopDoesNotReturnWhileAReadingIsInProgress(t *testing.T) {
 	var (
