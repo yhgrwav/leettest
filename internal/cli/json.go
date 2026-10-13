@@ -59,7 +59,10 @@ type JSONReport struct {
 	Mode            string `json:"mode"`
 	LeetTestVersion string `json:"leettest_version"`
 	Target          string `json:"target"`
-	Outcome         string `json:"outcome"`
+	// MethodsSource is where the methods came from: reflection, proto or
+	// protoset; null when the run resolved none (-fake).
+	MethodsSource *string `json:"methods_source"`
+	Outcome       string  `json:"outcome"`
 	// InvalidReasons are why the run is invalid: in_flight_cap, nothing_measured,
 	// clock_step.
 	InvalidReasons []string `json:"invalid_reasons"`
@@ -316,6 +319,7 @@ func NewJSONReport(run JSONRun) JSONReport {
 		Mode:              ModeRun,
 		LeetTestVersion:   run.Version,
 		Target:            run.Target,
+		MethodsSource:     run.Run.MethodsSource.kind(),
 		Outcome:           run.Outcome,
 		StartedAt:         run.StartedAt.UTC().Format(time.RFC3339Nano),
 		DurationUS:        micros(r.Duration),

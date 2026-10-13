@@ -1,0 +1,18 @@
+
+ä
+wallet/v1/wallet.proto	wallet.v1"0
+GetBalanceRequest
+	wallet_id (	RwalletId">
+Balance
+	wallet_id (	RwalletId
+amount (Ramount"M
+TransferRequest
+from (	Rfrom
+to (	Rto
+amount (Ramount"
+TransferReply
+id (	Rid2‘
+WalletService>
+
+GetBalance.wallet.v1.GetBalanceRequest.wallet.v1.Balance@
+Transfer.wallet.v1.TransferRequest.wallet.v1.TransferReplyBAZ?github.com/yhgrwav/leettest/test/stand/proto/wallet/v1;walletv1bproto3

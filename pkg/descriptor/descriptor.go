@@ -41,6 +41,9 @@ type Method struct {
 	Path   string
 	Input  protoreflect.MessageDescriptor
 	Output protoreflect.MessageDescriptor
+	// Types finds the message types a payload may name, such as the @type of an
+	// Any. Nil means protojson's default, the process's global registry.
+	Types Types
 }
 
 // Payload is JSON. An unknown field is an error, so a typo in the config is caught here
@@ -51,11 +54,22 @@ func (m *Method) NewRequest(payload []byte) (proto.Message, error) {
 		return msg, nil
 	}
 
-	if err := (protojson.UnmarshalOptions{}).Unmarshal(payload, msg); err != nil {
+	if err := m.UnmarshalOptions().Unmarshal(payload, msg); err != nil {
 		return nil, fmt.Errorf("build request for %s: %w", m.Path, err)
 	}
 
 	return msg, nil
+}
+
+// UnmarshalOptions are the protojson options a payload for the method is read
+// with: the method's own types where it has them, so an Any names a type of
+// the same files the method came from.
+func (m *Method) UnmarshalOptions() protojson.UnmarshalOptions {
+	if m.Types == nil {
+		return protojson.UnmarshalOptions{}
+	}
+
+	return protojson.UnmarshalOptions{Resolver: m.Types}
 }
 
 func (m *Method) NewResponse() proto.Message {

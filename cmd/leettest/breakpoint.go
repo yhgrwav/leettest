@@ -49,6 +49,8 @@ type searchSetup struct {
 	json        bool
 	interactive bool
 	stepBefore  time.Duration
+	// source is where the method came from; nil under -fake.
+	source *cli.MethodsSource
 }
 
 // searchScreen says whether a search draws its full screen: only in a
@@ -212,6 +214,7 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 	report := cli.BreakpointRun{
 		Target: s.target, Version: versionString(version, info), Method: method,
 		StartedAt: started, Plan: plan, Result: res, Runs: aligned(res.Steps, runs),
+		MethodsSource: s.source,
 	}
 	if s.json {
 		if err := cli.WriteBreakpointJSON(stdout, report); err != nil {

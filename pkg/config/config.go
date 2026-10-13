@@ -51,6 +51,8 @@ var (
 	// ErrInvalidConnections is app.connections outside 1 to 256 or not a whole
 	// number.
 	ErrInvalidConnections = errors.New("app.connections must be a whole number from 1 to 256")
+	// ErrProtoSource is app.proto or app.protoset that cannot be used as written.
+	ErrProtoSource = errors.New("invalid proto source")
 )
 
 type MasterConfig struct {
@@ -91,6 +93,21 @@ type App struct {
 	// 256; 1 when the file leaves it out.
 	RawConnections *ConnectionCount `yaml:"connections"`
 	Connections    int              `yaml:"-"`
+	// Proto names the .proto files the methods come from instead of the
+	// target's reflection; nil when app.proto is not set. RawProtoset is
+	// app.protoset as written, a FileDescriptorSet file, nil when not set;
+	// Protoset is its path, relative to the config file once LoadFile has read it.
+	Proto       *ProtoSource `yaml:"proto"`
+	RawProtoset *string      `yaml:"protoset"`
+	Protoset    string       `yaml:"-"`
+}
+
+// ProtoSource is app.proto: entry files, and where their imports are looked
+// for. LoadFile makes both relative to the config file; Parse keeps them as
+// written.
+type ProtoSource struct {
+	Files       []string `yaml:"files"`
+	ImportPaths []string `yaml:"import_paths"`
 }
 
 type ConnectionStringTarget struct {

@@ -40,6 +40,9 @@ type BreakpointRun struct {
 	StartedAt time.Time
 	Plan      breakpoint.Plan
 	Result    breakpoint.Result
+	// MethodsSource is where the method came from; nil when none was resolved
+	// (-fake).
+	MethodsSource *MethodsSource
 	// Runs, when it has one per Result.Steps, are the runs with what only
 	// the CLI knows (the clock step); otherwise each run is its engine report.
 	Runs []RunReport
@@ -230,6 +233,9 @@ func PrintBreakpoint(w io.Writer, run BreakpointRun) {
 	res := run.Result
 
 	fmt.Fprintf(w, "breaking point: %s\n", run.Method)
+	if run.MethodsSource != nil {
+		fmt.Fprintln(w, run.MethodsSource.Line())
+	}
 	head, why := headline(res)
 	fmt.Fprintf(w, "  %s\n", head)
 	if why != "" {
@@ -281,6 +287,7 @@ type BreakpointReport struct {
 	Mode            string         `json:"mode"`
 	LeetTestVersion string         `json:"leettest_version"`
 	Target          string         `json:"target"`
+	MethodsSource   *string        `json:"methods_source"`
 	Method          string         `json:"method"`
 	StartedAt       string         `json:"started_at"`
 	Breakpoint      jsonBreakpoint `json:"breakpoint"`
@@ -345,6 +352,7 @@ func NewBreakpointReport(run BreakpointRun) BreakpointReport {
 		if len(run.Runs) == len(res.Steps) {
 			r = run.Runs[i]
 		}
+		r.MethodsSource = run.MethodsSource
 		outcome := OutcomeComplete
 		switch {
 		case s.Cause == breakpoint.CauseClockStep || s.Cause == breakpoint.CauseRequestErrors:
@@ -366,8 +374,9 @@ func NewBreakpointReport(run BreakpointRun) BreakpointReport {
 	return BreakpointReport{
 		SchemaVersion: JSONSchemaVersion, Mode: ModeBreakpoint,
 		LeetTestVersion: run.Version, Target: run.Target, Method: run.Method,
-		StartedAt:  run.StartedAt.UTC().Format(time.RFC3339Nano),
-		Breakpoint: bp,
+		MethodsSource: run.MethodsSource.kind(),
+		StartedAt:     run.StartedAt.UTC().Format(time.RFC3339Nano),
+		Breakpoint:    bp,
 	}
 }
 
