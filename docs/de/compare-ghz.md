@@ -48,11 +48,18 @@ Last in jedem Lauf:
 - ein Timeout von 5s;
 - eine Verbindung.
 
-Die ghz-Flags sind:
+Die ghz-Flags im synchronen Modus (ein geschlossenes Modell):
 
 ```
 ghz --insecure --call grpc.health.v1.Health/Check -d '{}' --rps 200 -z 30s -t 5s \
-    --duration-stop wait --connections 1 -c 10 [--async]
+    --duration-stop wait --connections 1 -c 10
+```
+
+Die ghz-Flags mit `--async` (ein offenes Modell):
+
+```
+ghz --insecure --call grpc.health.v1.Health/Check -d '{}' --rps 200 -z 30s -t 5s \
+    --duration-stop wait --connections 1 -c 10 --async
 ```
 
 Synchrones ghz läuft mit `-c 10` und mit dem ghz-Standard `-c 50`. `--duration-stop wait` lässt

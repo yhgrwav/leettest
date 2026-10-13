@@ -41,11 +41,18 @@ LeetTest. У LeetTest есть только открытая модель.
 - таймаут 5s;
 - одно соединение.
 
-Флаги ghz:
+Флаги ghz, синхронный режим (закрытая модель):
 
 ```
 ghz --insecure --call grpc.health.v1.Health/Check -d '{}' --rps 200 -z 30s -t 5s \
-    --duration-stop wait --connections 1 -c 10 [--async]
+    --duration-stop wait --connections 1 -c 10
+```
+
+Флаги ghz с `--async` (открытая модель):
+
+```
+ghz --insecure --call grpc.health.v1.Health/Check -d '{}' --rps 200 -z 30s -t 5s \
+    --duration-stop wait --connections 1 -c 10 --async
 ```
 
 Синхронный ghz запускается с `-c 10` и с `-c 50` по умолчанию. `--duration-stop wait` даёт

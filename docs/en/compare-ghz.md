@@ -44,11 +44,18 @@ Load in every run:
 - a 5s timeout;
 - one connection.
 
-The ghz flags are:
+The ghz flags, synchronous mode (a closed model):
 
 ```
 ghz --insecure --call grpc.health.v1.Health/Check -d '{}' --rps 200 -z 30s -t 5s \
-    --duration-stop wait --connections 1 -c 10 [--async]
+    --duration-stop wait --connections 1 -c 10
+```
+
+The ghz flags with `--async` (an open model):
+
+```
+ghz --insecure --call grpc.health.v1.Health/Check -d '{}' --rps 200 -z 30s -t 5s \
+    --duration-stop wait --connections 1 -c 10 --async
 ```
 
 Synchronous ghz runs with `-c 10` and with ghz's default `-c 50`. `--duration-stop wait` lets calls

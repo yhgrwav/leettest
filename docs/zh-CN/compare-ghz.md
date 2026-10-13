@@ -41,11 +41,18 @@
 - 超时 5s；
 - 一条连接。
 
-ghz 的参数：
+ghz 的参数，同步模式（封闭模型）：
 
 ```
 ghz --insecure --call grpc.health.v1.Health/Check -d '{}' --rps 200 -z 30s -t 5s \
-    --duration-stop wait --connections 1 -c 10 [--async]
+    --duration-stop wait --connections 1 -c 10
+```
+
+ghz 的参数，使用 `--async`（开放模型）：
+
+```
+ghz --insecure --call grpc.health.v1.Health/Check -d '{}' --rps 200 -z 30s -t 5s \
+    --duration-stop wait --connections 1 -c 10 --async
 ```
 
 同步模式的 ghz 分别以 `-c 10` 和 ghz 默认的 `-c 50` 运行。`--duration-stop wait` 让 30s 时仍在
