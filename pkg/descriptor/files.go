@@ -127,7 +127,7 @@ func NewProtoResolver(files, importPaths []string) (*FileResolver, error) {
 // nameUnder is file's path relative to the first of importPaths that holds it,
 // with forward slashes, which is how an import spells it, and the index of that
 // import path.
-func nameUnder(file string, importPaths []string) (string, int, bool) {
+func nameUnder(file string, importPaths []string) (name string, index int, ok bool) {
 	abs, err := filepath.Abs(file)
 	if err != nil {
 		return "", 0, false
