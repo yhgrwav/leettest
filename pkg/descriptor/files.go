@@ -47,6 +47,9 @@ var (
 	ErrCompile = errors.New("cannot compile the .proto files")
 	// ErrOutsideImportPaths is an entry file under none of the import paths.
 	ErrOutsideImportPaths = errors.New("the .proto file is not under any import path")
+	// ErrShadowedInput is an entry file that an earlier import path shadows with
+	// a different file of the same name.
+	ErrShadowedInput = errors.New("the .proto file is shadowed by an earlier import path")
 	// ErrMissingDependency is a protoset that lacks a file one of its files imports.
 	ErrMissingDependency = errors.New("the protoset lacks a file its files import")
 	// ErrBadProtoset is bytes that are not a usable FileDescriptorSet.
