@@ -41,6 +41,9 @@ type Method struct {
 	Path   string
 	Input  protoreflect.MessageDescriptor
 	Output protoreflect.MessageDescriptor
+	// Types finds the message types a payload may name, such as the @type of an
+	// Any. Nil means protojson's default, the process's global registry.
+	Types Types
 }
 
 // Payload is JSON. An unknown field is an error, so a typo in the config is caught here
