@@ -15,17 +15,9 @@
 
 ---
 
-> 这是 `main` 分支：这里有尚未发布的内容，标记为“未发布”。已发布版本的文档见[最新发布](https://github.com/yhgrwav/leettest/releases/latest)。
-
-> 译自 [README.md](../../README.md)，对应 67f8732，2026-10-08。如有出入，以俄文版为准。
+> 译自 [README.md](../../README.md)，对应 c726cb6，2026-10-14。如有出入，以俄文版为准。
 > 另附中文文档目录，俄文原文中没有。
 > **可能滞后：** 中文版在每次发布前同步，最新内容请看[英文版](../en/README.md)。
-
-> **早期阶段。** 已可用：对真实服务施加 unary 负载，一次运行中多个方法各自设定 RPS，
-> 找出崩溃点，每次调用使用不同数据（`dataset`），多个连接，控制台报告和供脚本使用的 JSON。
-> 尚未提供：爬坡、CI 的通过/失败阈值、指标导出——
-> **[接下来会有什么 →](roadmap.md)**。缺少某项功能——
-> [提交 issue](https://github.com/yhgrwav/leettest/issues/new/choose)。下文只描述已经可用的功能。
 
 本工具回答人们做压测时要问的问题：**服务在多大负载下开始扛不住，瓶颈在哪里。** 它施加接近生产的
 负载——多个方法同时进行，每个方法有自己的 RPS——并且在服务退化时也保证测出的数字不说谎。不需要
@@ -33,20 +25,36 @@
 
 优先级依次为：数字不说谎；工具好用——含糊的错误提示与错误的数字同样是缺陷；压测机本身绝不成为瓶颈。
 
+项目在发展：目前已经可用的功能见下文，接下来的计划见[路线图](roadmap.md)。
+
+这是一次运行的样子：负载进行到一半，服务冻结三秒——屏幕上在途调用不断堆积，报告则统计没有得到
+应答的调用。
+
+<img src="../../assets/demo.gif" width="100%" alt="终端中的 LeetTest 运行：负载界面，目标冻结三秒，报告显示没有应答的调用和超过 2 秒的 p99">
+
+LeetTest 回答哪些问题——[列表](../en/questions.md)（英文）。
+
 ## 安装
+
+Linux 和 macOS（amd64 与 arm64）——一条命令：
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/yhgrwav/leettest/main/install.sh | sh
+```
+
+脚本会把最新发布版安装到 `~/.local/bin`，校验校验和；如果该目录不在 `PATH` 中，则打印要写入 shell
+配置文件的那一行。Windows——从[发布页面](https://github.com/yhgrwav/leettest/releases/latest)下载压缩包。
+或者用 Go 1.26+：
 
 ```sh
 go install github.com/yhgrwav/leettest/cmd/leettest@latest
 ```
 
-需要 Go 1.26 或更高版本。预编译的二进制文件在 Releases 页面。
+检查：`leettest -version`。如果 `go install` 之后找不到该命令——
+`export PATH="$PATH:$(go env GOPATH)/bin"`。
 
-**在哪里运行。** 在 Linux 上、紧挨着目标：同一网络、同一集群、CI runner。压测机与目标之间的一切
-都会计入延迟，看起来像目标的耗时：在我们的测试台上以 1000 RPS 压测，经 Docker Desktop 端口转发
-p99 为 38 ms，在 Docker 网络内为 2 ms。精确的调用调度只在 Linux 上提供；在 CPU 配额低于两个核的
-容器里，偶尔会出现最长为配额周期（通常 100 ms）的启动延迟，报告会显示出来。在 L4 负载均衡器后面
-只有一个后端承受负载——[见下文](#阅读报告)。在 Windows 上时钟步长约 0.5 ms，针对快速服务的运行
-会被判为无效。
+**在哪里运行：**在 Linux 上、紧挨着目标——同一网络、同一集群或 CI runner。压测机与目标之间的一切
+都会计入延迟。详见[参考手册](reference.md#在哪里运行)。
 
 **[快速上手 →](quickstart.md)**——在参考测试台上演示全部能力：包含所有字段的配置、阅读报告、
 目标的其他行为、CI。通过 AI 智能体工作——把 [AGENTS.md](../../AGENTS.md) 交给它。
@@ -77,10 +85,12 @@ leettest -c leettest.yaml
 ```
 
 方法名使用全名 `package.Service/Method`。工具通过 gRPC server reflection 从服务获取方法的结构，
-因此不需要 `.proto`。配置、地址、方法和请求体都在启动前检查：任何错误都意味着退出码 1，且不会向
+因此不需要 `.proto`。没有 reflection 的服务（自 v0.3 起）：结构来自 `.proto` 文件或 protoset——
+[`examples/proto.yaml`](../../examples/proto.yaml)，字段 `app.proto` / `app.protoset`（未发布）见
+[参考手册](reference.md)。配置、地址、方法和请求体都在启动前检查：任何错误都意味着退出码 1，且不会向
 目标发出任何调用。前 `warmup` 秒不计入统计。一个方法的每次调用都使用同一个请求体：对于带幂等键的
 写操作，测到的是重复请求的路径，而不是创建记录。每次调用使用不同的请求：用 `dataset` 指定文件，
-每行一个 JSON，按顺序循环使用。所有字段、TLS、请求头、请求体和命令行参数都在
+每行一个 JSON，按顺序循环使用（`dataset_order: random` 则按随机顺序，报告中的 seed 可复现该顺序）。所有字段、TLS、请求头、请求体和命令行参数都在
 **[参考手册](reference.md)**中。
 
 在终端中运行时全屏显示，按 `q` 停止。没有终端时（CI、重定向输出）——每秒一行进度：
@@ -90,6 +100,16 @@ leettest -c leettest.yaml
 ```
 
 报告输出到 stdout，进度和错误输出到 stderr。没有屏幕时（例如通过 ssh）：`-plain`。
+
+## 通过 AI 智能体
+
+不想自己写配置——把链接交给你的智能体：它会安装 LeetTest，询问你的服务，并运行负载。
+
+```text
+Read https://raw.githubusercontent.com/yhgrwav/leettest/main/AGENTS.md and load-test my gRPC service
+```
+
+它所依据的指南是 [AGENTS.md](../../AGENTS.md)。
 
 ## 阅读报告
 
@@ -255,17 +275,16 @@ load:
 退出码：`broke`、`broke_at_first`、`held_all`、`run_limit` 为 `0`——它们是发现；`invalid` 为 `2`；
 单次 Ctrl+C 停止为 `3`。
 
-## 尚未提供
-
-从零爬坡到目标 RPS、通过/失败阈值、导出到 Prometheus。会有什么、按什么顺序——
-**[计划](roadmap.md)**；你缺少什么——[issue](https://github.com/yhgrwav/leettest/issues/new/choose)。
-
 ## 深入了解
+
+我们有产品的发展计划——**[roadmap](roadmap.md)**。缺少某项功能——
+[提交 issue](https://github.com/yhgrwav/leettest/issues/new/choose)。
 
 **[参考手册 →](reference.md)**——每个配置字段和命令行参数。
 
 | 问题 | |
 |---|---|
+| LeetTest 回答哪些问题？ | [阅读](../en/questions.md)（英文） |
 | LeetTest 解决什么问题？ | [阅读](problem.md) |
 | 为什么选这个工具？ | [阅读](why.md) |
 | 它解决了压测中的哪些问题？ | [阅读](pitfalls.md) |

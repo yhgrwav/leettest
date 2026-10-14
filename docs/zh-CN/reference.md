@@ -3,7 +3,7 @@
 [Русский](../ru/reference.md) · [English](../en/reference.md) · [Deutsch](../de/reference.md) · [简体中文](reference.md)
 [← 首页](README.md)
 
-> 译自 [docs/ru/reference.md](../ru/reference.md)，对应 67f8732，2026-10-08。如有出入，以俄文版为准。
+> 译自 [docs/ru/reference.md](../ru/reference.md)，对应 c726cb6，2026-10-14。如有出入，以俄文版为准。
 > **可能滞后：** 中文版在每次发布前同步，最新内容请看[英文版](../en/reference.md)。
 
 每个配置字段、每个命令行参数，以及工具在启动前检查什么。如何阅读报告见
@@ -39,6 +39,9 @@ load:
 | `app.metadata` | 每次调用的请求头：`authorization`、`x-api-key` 等。`${NAME}` 取自环境变量 |
 | `app.max_response_size` | 一次调用接受的最大应答：`16MiB`、`512KB`。单位必填（`MB` = 10⁶ 字节，`MiB` = 2²⁰），小于 2 GiB。省略时为 4 MiB，与 gRPC 相同。更大的应答算作 `bad response`。在途的调用最多可能缓冲上限的两倍：默认每个最多 8 MiB |
 | `app.connections` | 向目标打开多少条连接，1 到 256 的整数。省略时为 1。调用在这些连接间轮流进行，报告打印一个 `Connections:` 块，每条连接一行 |
+| `app.proto.files` | 提供服务定义的 `.proto` 文件，用于没有 reflection 的服务。路径从配置文件所在目录算起。每个文件必须位于某个 `import_paths` 之内——未发布 |
+| `app.proto.import_paths` | 在哪里查找这些文件及其 import，与 `protoc -I` 相同。路径从配置文件所在目录算起。省略时为该目录。标准类型（`google/protobuf/…`）不需要路径——未发布 |
+| `app.protoset` | 用描述符集文件代替 `.proto` 文件，由 `protoc --include_imports --descriptor_set_out=FILE` 生成。路径从配置文件所在目录算起。不能与 `app.proto` 同时使用；两者都没有时，方法通过 reflection 获取——未发布 |
 | `load.warmup` | 前 N 秒不计入百分位和 `sent`：冷缓存会扭曲它们。预热调用确实会到达目标；报告用一行 `warm-up N sent (M failed), excluded from stats` 输出它们——`sent` 加上这一行就是压测机尝试过的全部调用。除计为 unreachable 或 client error 的调用外，目标都收到了；`cut off` 和超时的调用可能没有完整到达：不打开 HTTP/2 窗口（流量控制）的目标只会收到请求头，它的计数器可能看不到这次调用。计入 `duration`，必须短于每个调用 |
 | `load.calls[].method` | 方法全名：`package.Service/Method` |
 | `load.calls[].rps` | 该方法每秒的请求数 |
@@ -46,6 +49,9 @@ load:
 | `load.calls[].timeout` | 等待应答的时长。省略时为 `2s`。零不会关闭超时，而是错误 |
 | `load.calls[].data` | 请求体，见[下文](#请求体)。省略时为空消息 |
 | `load.calls[].dataset` | 用请求体文件代替 `data`，见[下文](#每次调用不同的请求dataset)。不能与 `data` 同时使用 |
+| `load.calls[].dataset_order` | `file`（省略时）或 `random`：文件中请求的顺序。需要 `dataset`——未发布 |
+| `load.calls[].dataset_seed` | 0 到 9007199254740991 的整数，固定随机顺序。需要 `dataset_order: random`。省略时自行选取并在报告中输出——未发布 |
+| `load.calls[].dataset_reuse` | `true`（省略时）或 `false`：为 `false` 时，整个进程中没有任何一条记录会发出两次。需要 `dataset`——未发布 |
 
 配置严格解析：字段名拼写错误会报错并给出行号，取值错误会报错并给出调用的序号和方法，而不是以空负载
 运行。`rps` 是整数：`10.5` 会被拒绝，而不是悄悄取整为十。`warmup` 必须短于每个调用，否则该调用
@@ -83,8 +89,10 @@ token 不会出现在 `ps` 或 shell 历史中。工具不会在任何地方输�
 信息中都不会。
 
 **请求头。** 名称转为小写，HTTP/2 本来也是这样传输的。以下是启动前的配置错误：以 `grpc-` 开头的
-键（gRPC 保留）、`:path` 之类的伪请求头、以 `-bin` 结尾的键（暂不支持二进制请求头）、超出可打印
-ASCII 的值。启动前的方法检查也会带上同样的请求头和证书。如果设置了请求头而目标对检查返回
+键（gRPC 保留）、`:path` 之类的伪请求头、以 `-bin` 结尾的键（暂不支持二进制请求头）、`content-type` 和 `te`（由传输层自己写入）、
+`connection`、`keep-alive`、`proxy-connection`、`transfer-encoding`、`upgrade`（HTTP/2 中没有这些）、
+超出可打印 ASCII 的值。`user-agent` 是允许的：目标只会看到一个请求头，即你的值，后面跟着
+` grpc-go/<版本>`。启动前的方法检查也会带上同样的请求头和证书。如果设置了请求头而目标对检查返回
 `Unauthenticated`，运行不会开始：“target rejected credentials”。`PermissionDenied` 不会阻止运行：
 token 已被接受，可能可以用于调用，只是不允许访问 reflection；这些方法会被标记为未检查。没有请求头时
 返回 `Unauthenticated` 也不会阻止运行，并有提示：“target requires credentials; app.metadata is not
@@ -169,6 +177,17 @@ reflection 已关闭、拒绝了请求，或根本没有应答。
 目标看到了什么：在文件中出现两次的请求会发出两次，没有到达目标的调用也会被计入。在崩溃点搜索中，
 每一级都从上一级结束的地方继续，这一行统计整个搜索。
 
+`dataset_order: random` 按随机顺序给出请求：每遍文件都是一次新的排列，其中每个请求恰好发出一次，
+所以上面的数字不变。这一行此时以 `, random order, seed 42` 结尾。要重复这次运行，把这个数填进
+`dataset_seed`（0 到 9007199254740991 的整数）：相同的 seed、文件和请求数量给出相同的顺序。省略时
+seed 在启动时选取，每个调用各有一个。
+
+`dataset_reuse: false` 让每条记录最多发送一次，按调用并在整个进程范围内：预热、搜索的每一级和每条
+连接都从同一个计数中取记录（两个调用用同一个文件——两个计数）。这一行此时是：
+`data: 3 of 3 requests from wallets.jsonl, each at most once`。文件无法覆盖的运行会在发送前被拒绝，
+并给出两个数字。搜索需要一条记录而文件中已没有时，像按 Ctrl+C 一样停止（退出码 3）：正在进行的
+运行不做判定，报告会指出文件和速率。只限一个进程：记录不会在机器之间共享，停止会让记录保持未发送。
+
 ## 命令行参数
 
 | 参数 | 作用 |
@@ -196,6 +215,18 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 停止：编排器会在几秒后杀死进程，报告必须来得及输出。如果截断已在进行中，SIGTERM 不会打断它。
 
 停止的运行在报告中标记为未完成（退出码 3）：数字是诚实的，但涵盖的内容少于计划。
+
+## 在哪里运行
+
+在 Linux 上、紧挨着目标：同一网络、同一集群、CI runner。压测机与目标之间的一切都会计入延迟，看起来
+像目标的耗时：在我们的测试台上以 1000 RPS 压测，经 Docker Desktop 端口转发 p99 为 38 ms，在 Docker
+网络内为 2 ms。
+
+- 精确的调用调度只在 Linux 上提供。在 CPU 配额低于两个核的容器里，偶尔会出现最长为配额周期
+  （通常 100 ms）的启动延迟；报告会显示出来。
+- 在 L4 负载均衡器后面只有一个后端承受负载：一条连接——一个后端。见
+  [阅读报告](README.md#阅读报告)。
+- 在 Windows 上时钟步长约 0.5 ms，针对快速服务的运行会被判为无效（`clock_step`，退出码 2）。
 
 ## JSON 字段
 
