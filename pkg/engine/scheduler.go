@@ -59,6 +59,9 @@ func (s *Scheduler) Run(ctx context.Context, out chan<- Request) error {
 	if err := s.validate(); err != nil {
 		return err
 	}
+	if s.Call.Dataset != nil && s.Call.Dataset.Once {
+		return fmt.Errorf("%s: %w", s.Call.Method, ErrOnceNeedsEngine)
+	}
 
 	stageStart := time.Now()
 

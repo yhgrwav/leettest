@@ -93,8 +93,8 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 	method := strings.TrimPrefix(call.Method, "/")
 
 	// Who ended the search first: a key pressed, or a dataset that ran out.
-	var stopWhy atomic.Pointer[string]
-	stopFor := func(reason string) { stopWhy.CompareAndSwap(nil, &reason) }
+	var stopWhy stopReason
+	stopFor := stopWhy.stopFor
 
 	var current atomic.Pointer[engine.Engine]
 	st := cli.NewStopper(
@@ -223,12 +223,12 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 	}
 
 	info, _ := debug.ReadBuildInfo()
-	var stopReason string
-	if why := stopWhy.Load(); why != nil && res.Outcome == breakpoint.Stopped {
-		stopReason = *why
+	var reason string
+	if res.Outcome == breakpoint.Stopped {
+		reason = stopWhy.get()
 	}
 	report := cli.BreakpointRun{
-		StopReason: stopReason,
+		StopReason: reason,
 		Target:     s.target, Version: versionString(version, info), Method: method,
 		StartedAt: started, Plan: plan, Result: res, Runs: aligned(res.Steps, runs),
 		MethodsSource: s.source,

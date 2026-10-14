@@ -21,7 +21,7 @@ type stopReason struct {
 	why atomic.Pointer[string]
 }
 
-func (r *stopReason) stopFor(reason string) { r.why.Store(&reason) }
+func (r *stopReason) stopFor(reason string) { r.why.CompareAndSwap(nil, &reason) }
 
 // get is the reason, or "" when nobody stopped the search.
 func (r *stopReason) get() string {

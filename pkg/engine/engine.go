@@ -100,6 +100,7 @@ type DatasetRef struct {
 	Counter *RecordCounter
 	// Once: no record is handed out twice. The call that needs a record after
 	// the last one went out ends the run gently (Report.DatasetExhausted).
+	// Honoured by Engine; Scheduler.Run refuses it (ErrOnceNeedsEngine).
 	Once bool
 }
 
