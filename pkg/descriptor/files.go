@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/bufbuild/protocompile"
@@ -318,18 +319,26 @@ func (r *FileResolver) resolveOne(method string) (*Method, error) {
 	return &Method{Path: "/" + method, Input: md.Input(), Output: md.Output(), Types: r.types}, nil
 }
 
-// found lists the methods of the files, listedNames of them and how many more.
+// found lists the methods the files can call, listedNames of them and how
+// many more: the entry files' first, then those of the imported files sorted.
 func (r *FileResolver) found() string {
+	entry := make(map[string]bool, len(r.files))
 	var names []string
 	for _, f := range r.files {
-		services := f.Services()
-		for i := range services.Len() {
-			methods := services.Get(i).Methods()
-			for j := range methods.Len() {
-				names = append(names, string(services.Get(i).FullName())+"/"+string(methods.Get(j).Name()))
-			}
-		}
+		entry[f.Path()] = true
+		names = appendMethods(names, f)
 	}
+
+	var imported []string
+	r.reg.RangeFiles(func(f protoreflect.FileDescriptor) bool {
+		if !entry[f.Path()] {
+			imported = appendMethods(imported, f)
+		}
+
+		return true
+	})
+	slices.Sort(imported)
+	names = append(names, imported...)
 
 	switch {
 	case len(names) == 0:
@@ -339,6 +348,18 @@ func (r *FileResolver) found() string {
 	}
 
 	return strings.Join(names, ", ")
+}
+
+func appendMethods(names []string, f protoreflect.FileDescriptor) []string {
+	services := f.Services()
+	for i := range services.Len() {
+		methods := services.Get(i).Methods()
+		for j := range methods.Len() {
+			names = append(names, string(services.Get(i).FullName())+"/"+string(methods.Get(j).Name()))
+		}
+	}
+
+	return names
 }
 
 // fileTypes finds the types of the files; of the global registry only the

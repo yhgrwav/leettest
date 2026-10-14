@@ -537,28 +537,29 @@ func svcProto(pkg string, imports []string, methods ...string) string {
 	return b.String()
 }
 
-// The list is what can be called: a method of an imported file is in it, after
-// the methods of the entry file.
+// The list is what can be called: a method of an imported file is in it, once,
+// after the methods of the entry file. The imported package sorts before the
+// entry one, so a plain sort of everything would put it first.
 // Ground: decision — the list shows every method the files can call (brain, 2026-10-14).
 func TestProtoResolver_AnUnknownMethodListsTheMethodsOfImportedFilesAfterTheEntryOnes(t *testing.T) {
 	dir := tree(t, map[string]string{
-		"a.proto": svcProto("apkg.v1", []string{"b.proto"}, "AlphaOne", "AlphaTwo"),
+		"a.proto": svcProto("zpkg.v1", []string{"b.proto"}, "ZetaOne", "ZetaTwo"),
 		"b.proto": svcProto("bpkg.v1", nil, "BetaOne"),
 	})
 	r := compile(t, dir, []string{"a.proto"}, []string{"."})
 
-	_, err := r.Resolve(t.Context(), "apkg.v1.Svc/Absent")
+	_, err := r.Resolve(t.Context(), "zpkg.v1.Svc/Absent")
 
 	if !errors.Is(err, descriptor.ErrMethodNotFound) {
 		t.Fatalf("err = %v, want descriptor.ErrMethodNotFound", err)
 	}
 	text := err.Error()
-	for _, want := range []string{"apkg.v1.Svc/AlphaOne", "apkg.v1.Svc/AlphaTwo", "bpkg.v1.Svc/BetaOne"} {
-		if !strings.Contains(text, want) {
-			t.Errorf("error %q does not list %q", text, want)
+	for _, want := range []string{"zpkg.v1.Svc/ZetaOne", "zpkg.v1.Svc/ZetaTwo", "bpkg.v1.Svc/BetaOne"} {
+		if got := strings.Count(text, want); got != 1 {
+			t.Errorf("error %q lists %q %d times, want once", text, want, got)
 		}
 	}
-	lastEntry := strings.LastIndex(text, "AlphaTwo")
+	lastEntry := strings.LastIndex(text, "ZetaTwo")
 	imported := strings.Index(text, "BetaOne")
 	if lastEntry < 0 || imported < 0 || imported < lastEntry {
 		t.Errorf("imported method must come after the entry file's methods:\n%s", text)
