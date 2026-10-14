@@ -349,6 +349,7 @@ SIGTERM (`docker stop`, Kubernetes, отмена джоба в CI) сразу о
 | `methods[].planned_duration_us` | int | Сколько метод должен был идти, как задано — не выпущено |
 | `methods[].latency` | object | Задержка успешных вызовов, с таймаутами и оборванными как нижними границами |
 | `methods[].latency.min`, `methods[].latency.p50`, `methods[].latency.p90`, `methods[].latency.p95`, `methods[].latency.p99`, `methods[].latency.max` | перцентиль? | Минимум, перцентили, максимум |
+| `methods[].latency.p999` | перцентиль? | p99.9 по тому же правилу; null, пока у метода меньше 1000 наблюдений (`observations`): тогда p99.9 был бы максимумом — не выпущено |
 | `methods[].p99_without_client_waits` | перцентиль? | p99 тех же вызовов без ожиданий на стороне клиента; может выйти немного заниженным |
 | `methods[].observations` | int | Наблюдений за перцентилями `latency` |
 | `methods[].censored` | int | Из них известна только нижняя граница |

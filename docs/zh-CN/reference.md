@@ -324,6 +324,7 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `methods[].planned_duration_us` | int | 该方法计划运行多久，按配置——未发布 |
 | `methods[].latency` | object | 成功调用的延迟，超时和被截断的调用作为下界 |
 | `methods[].latency.min`、`methods[].latency.p50`、`methods[].latency.p90`、`methods[].latency.p95`、`methods[].latency.p99`、`methods[].latency.max` | percentile? | 最小值、百分位、最大值 |
+| `methods[].latency.p999` | percentile? | 按同一规则得出的 p99.9；方法的观测数（`observations`）少于 1000 时为 null，此时 p99.9 只会是最大值——未发布 |
 | `methods[].p99_without_client_waits` | percentile? | 同一批调用去掉客户端侧等待后的 p99；可能略微偏低 |
 | `methods[].observations` | int | `latency` 百分位背后的观测数 |
 | `methods[].censored` | int | 其中只知道下界的数量 |

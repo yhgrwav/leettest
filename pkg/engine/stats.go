@@ -136,7 +136,10 @@ type MethodReport struct {
 	P90    metrics.Quantile
 	P95    metrics.Quantile
 	P99    metrics.Quantile
-	Max    metrics.Quantile
+	// P999 is Defined only when Latencies >= metrics.MinCount(0.999): with
+	// fewer observations p99.9 is the max.
+	P999 metrics.Quantile
+	Max  metrics.Quantile
 	// Dataset is nil for a call without a dataset.
 	Dataset *DatasetReport
 	// P99WithoutClientWaits is P99 of the same calls with each one's
