@@ -292,6 +292,7 @@ unten den Typ „percentile?" hat.
 | `mode` | string | `run` bei einem gewöhnlichen Lauf, `breakpoint` bei der Suche nach dem Bruchpunkt |
 | `leettest_version` | string | Die Version des Werkzeugs; ein Build aus dem Quellcode gibt den Commit an |
 | `target` | string | Die Zieladresse aus der Konfiguration, `fake target` mit `-fake` |
+| `name` | string | Der Name des Laufs: `name` aus der Konfiguration, sonst der Dienstname, sonst der Name der Konfigurationsdatei; immer ein String — nicht veröffentlicht |
 | `methods_source` | string? | Woher die Methoden stammen: `reflection`, `proto` (die Dateien aus `app.proto`) oder `protoset`; `null` mit `-fake` — nicht veröffentlicht |
 | `outcome` | string | `complete`, `invalid`, `incomplete` — entspricht Exit-Code `0`, `2`, `3` |
 | `invalid_reasons` | []string | Warum der Lauf ungültig ist: `in_flight_cap`, `nothing_measured`, `clock_step`. Leer — gültig |

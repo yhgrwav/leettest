@@ -490,7 +490,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		var err error
 		if data, err = encodeJSON(func(w io.Writer) error {
 			return cli.WriteJSON(w, cli.JSONRun{
-				Target: target, Version: versionString(version, info), Outcome: outcome,
+				Target: target, Name: cli.ServiceLabel(cfg, *configPath), Version: versionString(version, info), Outcome: outcome,
 				StartedAt: report.StartedAt, Run: report,
 			})
 		}); err != nil {

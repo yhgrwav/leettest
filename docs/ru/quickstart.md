@@ -111,7 +111,7 @@ load:
       dataset_seed: 42
 ```
 
-- **`name`** — как прогон называется в заголовке.
+- **`name`** — как прогон называется в заголовке и в JSON-отчёте (`name`, не выпущено).
 - **`tls: false`** — стенд без шифрования. По умолчанию TLS включён; `ca`, `cert`, `key`,
   `server_name` — в [`examples/tour-tls.yaml`](../../examples/ru/tour-tls.yaml) (ниже, «TLS»).
 - **`metadata`** — заголовки каждого вызова. `${LEETTEST_TOKEN}` берётся из окружения: токен не

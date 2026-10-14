@@ -284,6 +284,7 @@ measured calls only. The first column is the field's full path.
 | `mode` | string | `run` for a plain run, `breakpoint` for a breaking-point search |
 | `leettest_version` | string | The tool's version; a build from source gives the commit |
 | `target` | string | The target address from the config, `fake target` with `-fake` |
+| `name` | string | The run's name: the config's `name`, else the service name, else the config file name; always a string — not released |
 | `methods_source` | string? | Where the methods came from: `reflection`, `proto` (the `app.proto` files) or `protoset`; `null` with `-fake` — not released |
 | `outcome` | string | `complete`, `invalid`, `incomplete` — matches exit code `0`, `2`, `3`; with `-json-file` and a failed write the code is `1` and `outcome` stays the run's |
 | `invalid_reasons` | []string | Why the run is invalid: `in_flight_cap`, `nothing_measured`, `clock_step`. Empty — valid |
