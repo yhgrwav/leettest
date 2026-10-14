@@ -314,8 +314,8 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `methods[].dataset.records` | int | 文件中的请求数 |
 | `methods[].dataset.used` | int | 其中至少发出过一次的数量 |
 | `methods[].dataset.used_max` | int | 被用得最多的那条发出了几次；在搜索中——从第一步算到本次运行结束 |
-| `methods[].dataset.order` | string | `file` 或 `random`：请求发出的顺序 |
-| `methods[].dataset.seed` | int? | 随机顺序的 seed，0 到 9007199254740991；文件顺序为 `null` |
+| `methods[].dataset.order` | string | `file` 或 `random`：请求发出的顺序——未发布 |
+| `methods[].dataset.seed` | int? | 随机顺序的 seed，0 到 9007199254740991；文件顺序为 `null`——未发布 |
 | `methods[].seconds` | []object | 按秒的时间线，见下文 |
 
 ### 秒：`methods[].seconds[]`
