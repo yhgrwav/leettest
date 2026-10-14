@@ -285,7 +285,7 @@ Exit codes:
 | Code | Meaning |
 |---|---|
 | `0` | The plan ran, the report is complete |
-| `1` | No run: flags, config, connection. No report |
+| `1` | The report you asked for was not produced: the run did not happen (flags, config, connection) or the report could not be written to `-json-file` (not released). stderr says why |
 | `2` | Invalid run: the in-flight cap, every call of a method a request error, or the host clock coarser than a quarter of the p50. A report exists; its numbers are not about the load |
 | `3` | Stopped before the plan ended. The report covers what ran |
 | `130`, `143` | Killed by Ctrl+C or SIGTERM, no report |

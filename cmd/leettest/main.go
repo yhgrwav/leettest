@@ -131,7 +131,8 @@ func printError(w io.Writer, err error) {
 // set yet, so a finished run exits 0 however the target answered.
 //
 //	0   the plan ran to its end and the report is complete
-//	1   the run never started: bad flags, bad config, no connection
+//	1   no report as asked: the run never started (bad flags, bad config,
+//	    no connection), or the -json-file write failed
 //	2   the run is invalid: its numbers do not describe the target
 //	3   the run stopped before its planned end; the report covers less
 //	130 aborted without a report after Ctrl+C
