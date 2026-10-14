@@ -153,7 +153,8 @@ without a live backend answers `UNAVAILABLE`, and the client cannot tell one fro
 - `failure`: the status says the call broke: `INTERNAL`, `UNKNOWN`, `DATA_LOSS`, `CANCELLED` from
   the other end, `ABORTED` (a conflict between concurrent changes, not a lack of capacity).
 - `bad response`: a reply came and the client did not accept it: over `app.max_response_size`, or
-  compressed with an encoding the client did not announce.
+  compressed with an encoding the client did not announce, or it breaks the one-reply shape: an OK
+  with no message, or an extra message.
 - `client error`: the client itself refused to send: the request did not encode, or a codec or an
   interceptor failed.
 
@@ -168,7 +169,7 @@ whatever its code: not the target's refusal.
 | `INVALID_ARGUMENT`, `NOT_FOUND`, `ALREADY_EXISTS`, `PERMISSION_DENIED`, `UNAUTHENTICATED`, `FAILED_PRECONDITION`, `OUT_OF_RANGE`, `UNIMPLEMENTED` | `request error` | `cut off` | `client error` |
 | `RESOURCE_EXHAUSTED` | `overload`; grpc-go's "larger than max" is a `request error` | `cut off`; a reply over our limit is a `bad response` | `client error` |
 | `UNAVAILABLE` | `overload` | `cut off`; a stream the target refused before processing it is `overload` | `unreachable`; the same |
-| `CANCELLED`, `UNKNOWN`, `INTERNAL`, `DATA_LOSS`, `ABORTED` | `failure` | `cut off`; a reply that did not decompress is a `bad response` | `client error` |
+| `CANCELLED`, `UNKNOWN`, `INTERNAL`, `DATA_LOSS`, `ABORTED` | `failure`; an OK with no reply, as grpc-go sees it, is a `bad response` | `cut off`; a reply that did not decompress is a `bad response` | `client error` |
 | `DEADLINE_EXCEEDED` | timeout | timeout | timeout, not sent |
 
 A request too large is recognised by grpc-go's error text. A target on another implementation
