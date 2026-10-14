@@ -127,3 +127,34 @@ func TestLoad_DatasetOrderRandomWithSeed(t *testing.T) {
 		t.Errorf("call = order set %v seed set %v records %d, want random, 5, 2", c.DatasetOrder != nil, c.DatasetSeed != nil, len(c.Records))
 	}
 }
+
+// A key written with no value is lost by the decoder as a key left out: the
+// repeat run that forgot its number would draw another seed and say nothing.
+// Ground: contract — as `dataset:` with no value (TestParse_DatasetNullIsAnError).
+func TestParse_DatasetOrderAndSeedWithNoValueIsAnError(t *testing.T) {
+	for _, key := range []struct {
+		name string
+		want error
+	}{
+		{"dataset_order", config.ErrDatasetOrder},
+		{"dataset_seed", config.ErrDatasetSeed},
+	} {
+		for _, value := range []string{"", " ~", " null", " &a ~"} {
+			t.Run(key.name+value, func(t *testing.T) {
+				lines := orderLines("      dataset_order: random\n      " + key.name + ":" + value + "\n")
+				if key.name == "dataset_order" {
+					lines = orderLines("      dataset_order:" + value + "\n")
+				}
+
+				_, err := config.Parse([]byte(datasetYAML(lines)))
+
+				if !errors.Is(err, key.want) {
+					t.Fatalf("error = %v, want %v", err, key.want)
+				}
+				if !strings.Contains(err.Error(), "line ") || !strings.Contains(err.Error(), key.name) {
+					t.Errorf("error %q does not give the line of %s", err, key.name)
+				}
+			})
+		}
+	}
+}

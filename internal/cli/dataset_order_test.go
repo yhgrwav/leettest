@@ -322,18 +322,20 @@ func TestRandomDataset_ConfigSeedIsReported(t *testing.T) {
 // Ground: contract — file order, or none written, stays file order: not random,
 // no seed drawn.
 func TestRandomDataset_FileOrderDrawsNoSeed(t *testing.T) {
-	for _, order := range []string{"", "file"} {
+	file := "file"
+	// nil is what the config gives for a key that is not written.
+	for name, order := range map[string]*string{"not written": nil, "file": &file} {
 		cfg := randomConfig([]string{"a.B/One"}, []*int64{nil})
-		cfg.Load.Calls[0].DatasetOrder = &order
+		cfg.Load.Calls[0].DatasetOrder = order
 
 		sent, reports := runOf(t, cfg)
 
 		if r := reports["/a.B/One"]; r == nil || r.Random || r.Seed != 0 {
-			t.Errorf("order %q: report %+v, want file order and no seed", order, r)
+			t.Errorf("order %s: report %+v, want file order and no seed", name, r)
 		}
 		want := []int{0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0, 1, 2, 3, 4}
 		if got := sent["/a.B/One"]; !slices.Equal(got, want) {
-			t.Errorf("order %q: sent %v, want the file's order %v", order, got, want)
+			t.Errorf("order %s: sent %v, want the file's order %v", name, got, want)
 		}
 	}
 }

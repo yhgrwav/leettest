@@ -85,7 +85,10 @@ func TestDispatcher_RandomDatasetOtherSeedOtherSequence(t *testing.T) {
 func TestDispatcher_RandomDatasetPassesDiffer(t *testing.T) {
 	got := handOut(t, randomCall(5, goldenSeed, 15))["a.B/One"]
 
-	if len(got) == 15 && (slices.Equal(got[0:5], got[5:10]) || slices.Equal(got[5:10], got[10:15])) {
+	if len(got) != 15 {
+		t.Fatalf("handed out %d, want 15", len(got))
+	}
+	if slices.Equal(got[0:5], got[5:10]) || slices.Equal(got[5:10], got[10:15]) {
 		t.Errorf("two passes alike in %v: one permutation reused", got)
 	}
 }
