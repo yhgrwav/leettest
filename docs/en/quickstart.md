@@ -113,7 +113,7 @@ load:
       dataset_seed: 42
 ```
 
-- **`name`** — the run's name in the header.
+- **`name`** — the run's name in the header and in the JSON report (`name`, not released).
 - **`tls: false`** — the stand has no encryption. TLS is on by default; `ca`, `cert`, `key`,
   `server_name` are in [`examples/tour-tls.yaml`](../../examples/tour-tls.yaml) (below, "TLS").
 - **`metadata`** — headers on every call. `${LEETTEST_TOKEN}` comes from the environment: the

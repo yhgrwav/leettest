@@ -231,7 +231,7 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 	}
 	report := cli.BreakpointRun{
 		StopReason: reason,
-		Target:     s.target, Version: versionString(version, info), Method: method,
+		Target:     s.target, Name: cli.ServiceLabel(s.cfg, s.configPath), Version: versionString(version, info), Method: method,
 		StartedAt: started, Plan: plan, Result: res, Runs: aligned(res.Steps, runs),
 		MethodsSource: s.source,
 	}
