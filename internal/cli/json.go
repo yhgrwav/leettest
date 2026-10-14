@@ -74,11 +74,13 @@ type JSONReport struct {
 	// or connection; null without that verdict.
 	TailWaitCause *string `json:"tail_wait_cause"`
 	// ClockStepNS is the host clock step: every latency and wait is +/- it.
-	ClockStepNS       int64           `json:"clock_step_ns"`
-	StartedAt         string          `json:"started_at"`
-	DurationUS        int64           `json:"duration_us"`
-	PlannedUS         int64           `json:"planned_us"`
-	WarmupUS          int64           `json:"warmup_us"`
+	ClockStepNS int64  `json:"clock_step_ns"`
+	StartedAt   string `json:"started_at"`
+	DurationUS  int64  `json:"duration_us"`
+	PlannedUS   int64  `json:"planned_us"`
+	WarmupUS    int64  `json:"warmup_us"`
+	// Settings echo what the run was started with, as configured.
+	Settings          jsonSettings    `json:"settings"`
 	Sent              int             `json:"sent"`
 	Failed            int             `json:"failed"`
 	Aborted           int             `json:"aborted"`
@@ -98,6 +100,24 @@ type JSONReport struct {
 	Unchecked         []jsonUnchecked `json:"unchecked"`
 	// Notes are the text report's notes: for people, and reworded freely.
 	Notes []string `json:"notes"`
+}
+
+// jsonSettings is a run's configured settings: the cap and the connections
+// as set, the warm-up in whole microseconds.
+type jsonSettings struct {
+	MaxInFlight int   `json:"max_in_flight"`
+	Connections int   `json:"connections"`
+	WarmupUS    int64 `json:"warmup_us"`
+}
+
+// settingsOf is the echo as JSON has it; nil, which nobody told, gives zeros
+// and is never filled in from what the run measured.
+func settingsOf(s *RunSettings) jsonSettings {
+	if s == nil {
+		return jsonSettings{}
+	}
+
+	return jsonSettings{MaxInFlight: s.MaxInFlight, Connections: s.Connections, WarmupUS: micros(s.Warmup)}
 }
 
 type jsonQuantile struct {
@@ -223,6 +243,7 @@ type jsonMethod struct {
 	TimeoutUS             int64         `json:"timeout_us"`
 	PlannedRPSLow         int           `json:"planned_rps_low"`
 	PlannedRPSHigh        int           `json:"planned_rps_high"`
+	PlannedDurationUS     int64         `json:"planned_duration_us"`
 	Latency               jsonLatency   `json:"latency"`
 	P99WithoutClientWaits *jsonQuantile `json:"p99_without_client_waits"`
 	Observations          int           `json:"observations"`
@@ -335,6 +356,7 @@ func NewJSONReport(run JSONRun) JSONReport {
 		DurationUS:        micros(r.Duration),
 		PlannedUS:         micros(r.Planned),
 		WarmupUS:          micros(r.Warmup),
+		Settings:          settingsOf(run.Run.Settings),
 		Sent:              r.Sent,
 		Failed:            r.Failed,
 		Aborted:           r.Aborted,
@@ -438,6 +460,7 @@ func jsonMethodOf(m *engine.MethodReport, warmup time.Duration) jsonMethod {
 		NotSentConnection: m.NotSentConnection,
 		WarmupSent:        m.WarmupSent, WarmupFailed: m.WarmupFailed, WarmupNotSent: m.WarmupNotSent,
 		TimeoutUS: micros(m.Timeout), PlannedRPSLow: m.RPSLow, PlannedRPSHigh: m.RPSHigh,
+		PlannedDurationUS: micros(m.PlannedDuration),
 		Latency: jsonLatency{
 			Min: quantile(m.Min), P50: quantile(m.P50), P90: quantile(m.P90),
 			P95: quantile(m.P95), P99: quantile(m.P99), Max: quantile(m.Max),
