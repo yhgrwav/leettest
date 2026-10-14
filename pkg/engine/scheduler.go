@@ -26,6 +26,9 @@ var (
 	ErrStageRPS      = errors.New("stage rps must be positive")
 	ErrStageDuration = errors.New("stage duration must be positive")
 	ErrRampNotYet    = errors.New("gradual ramp is not implemented yet")
+	// ErrOnceNeedsEngine is what Scheduler.Run returns for a call whose dataset
+	// has Once set: only Engine counts records across runs.
+	ErrOnceNeedsEngine = errors.New("a dataset with Once needs the engine; Scheduler.Run does not honour it")
 )
 
 type Request struct {
