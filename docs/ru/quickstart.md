@@ -182,11 +182,15 @@ bin/leettest -c examples/ru/tour-tls.yaml
 
 ```
 run finished: 127.0.0.1:50051 in 40.5s
+name: tour
+settings: warm-up 3s, max in flight 5000, connections 1
 sent 12950, failed 5248
 
 method                                           sent   failed    sent/s       p50       p90       p95       p99
 grpc.health.v1.Health/Check                     11100     4499       300    20.5ms    >500ms    >500ms    >500ms
+  plan: 300 rps for 40s
 wallet.v1.WalletService/GetBalance               1850      749        50    20.5ms    >500ms    >500ms    >500ms
+  plan: 50 rps for 40s
   data: 4 of 4 requests from wallets.jsonl, each used up to 500 times, random order, seed 42
 
 warm-up 1050 sent, excluded from stats
@@ -208,6 +212,9 @@ is a lower bound: the real tail lies above it. Raise the timeout to see it.
 
 Что здесь главное:
 
+- **Какой это прогон.** `name:` и `settings:` повторяют имя прогона и с чем он запущен, а `plan:`
+  под методом — заданные ему темп и длительность: отчёт, вставленный в тикет, можно сравнить
+  с другим (не выпущено).
 - **При какой нагрузке сервис перестал справляться.** «at 300 rps … nothing after the call sent at
   25.0s» — цель замолчала на 25-й секунде, ровно когда стенду велели. Момент считается по отправке
   вызова, а не по расписанию: отставание генератора не выдаётся за тишину цели.

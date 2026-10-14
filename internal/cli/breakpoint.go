@@ -57,6 +57,8 @@ type BreakpointRun struct {
 	// Runs, when it has one per Result.Steps, are the runs with what only
 	// the CLI knows (the clock step); otherwise each run is its engine report.
 	Runs []RunReport
+	// Connections is app.connections as configured.
+	Connections int
 }
 
 // PlanLine is the line printed before the first step: how many steps and the
@@ -319,7 +321,17 @@ type BreakpointReport struct {
 	MethodsSource   *string        `json:"methods_source"`
 	Method          string         `json:"method"`
 	StartedAt       string         `json:"started_at"`
+	Settings        jsonSearch     `json:"settings"`
 	Breakpoint      jsonBreakpoint `json:"breakpoint"`
+}
+
+// jsonSearch is the search's own settings: the flag's cap, null when the
+// flag is not set and each step takes the smallest it can run with; the
+// settle as warmup_us.
+type jsonSearch struct {
+	MaxInFlight *int  `json:"max_in_flight"`
+	Connections int   `json:"connections"`
+	WarmupUS    int64 `json:"warmup_us"`
 }
 
 type jsonBreakpoint struct {

@@ -183,11 +183,15 @@ The report goes to stdout, ASCII only — save it to a file or `grep` it. The to
 
 ```
 run finished: 127.0.0.1:50051 in 40.5s
+name: tour
+settings: warm-up 3s, max in flight 5000, connections 1
 sent 12950, failed 5248
 
 method                                           sent   failed    sent/s       p50       p90       p95       p99
 grpc.health.v1.Health/Check                     11100     4499       300    20.5ms    >500ms    >500ms    >500ms
+  plan: 300 rps for 40s
 wallet.v1.WalletService/GetBalance               1850      749        50    20.5ms    >500ms    >500ms    >500ms
+  plan: 50 rps for 40s
   data: 4 of 4 requests from wallets.jsonl, each used up to 500 times, random order, seed 42
 
 warm-up 1050 sent, excluded from stats
@@ -209,6 +213,9 @@ is a lower bound: the real tail lies above it. Raise the timeout to see it.
 
 What matters here:
 
+- **Which run it is.** `name:` and `settings:` repeat the run's name and what it was started with,
+  and `plan:` under a method its configured rate and duration, so a report pasted into a ticket
+  can be compared with another (not released).
 - **At what load the service stopped coping.** "at 300 rps … nothing after the call sent at
   25.0s" — the target went silent at second 25, exactly when the stand was told to. The moment is
   when the call went out, not when it was due: a lagging generator is not passed off as the

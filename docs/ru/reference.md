@@ -284,6 +284,10 @@ SIGTERM (`docker stop`, Kubernetes, отмена джоба в CI) сразу о
 | `duration_us` | int | Сколько прогон шёл, прогрев включён |
 | `planned_us` | int | Сколько он должен был идти |
 | `warmup_us` | int | Длина прогрева |
+| `settings` | object | С чем запущен прогон, как задано, а не как измерено — не выпущено |
+| `settings.max_in_flight` | int | Потолок запросов в полёте: значение `-max-in-flight`, иначе по умолчанию. Поиск: `null` без флага (каждый прогон берёт наименьший потолок, с которым идёт); в его прогонах — потолок этого прогона — не выпущено |
+| `settings.connections` | int | `app.connections` как задано, по умолчанию 1; `connections.open` — сколько открылось — не выпущено |
+| `settings.warmup_us` | int | Прогрев как задан. Поиск: время `settle` — не выпущено |
 | `sent` | int | Измеренные вызовы, кроме `not_sent`. `unreachable` и `aborted` входят |
 | `failed` | int | Из `sent` — все неуспешные, кроме `aborted` |
 | `aborted` | int | Оборваны нашей остановкой |
@@ -342,6 +346,7 @@ SIGTERM (`docker stop`, Kubernetes, отмена джоба в CI) сразу о
 | `methods[].rps` | float? | `sent/s`: отправленные, делённые на время отправки; `null` — ни одного вызова |
 | `methods[].timeout_us` | int | Таймаут метода |
 | `methods[].planned_rps_low`, `methods[].planned_rps_high` | int | Наименьший и наибольший плановый темп всего плана |
+| `methods[].planned_duration_us` | int | Сколько метод должен был идти, как задано — не выпущено |
 | `methods[].latency` | object | Задержка успешных вызовов, с таймаутами и оборванными как нижними границами |
 | `methods[].latency.min`, `methods[].latency.p50`, `methods[].latency.p90`, `methods[].latency.p95`, `methods[].latency.p99`, `methods[].latency.max` | перцентиль? | Минимум, перцентили, максимум |
 | `methods[].p99_without_client_waits` | перцентиль? | p99 тех же вызовов без ожиданий на стороне клиента; может выйти немного заниженным |

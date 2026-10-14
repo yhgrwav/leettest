@@ -294,6 +294,10 @@ measured calls only. The first column is the field's full path.
 | `duration_us` | int | How long the run went, warm-up included |
 | `planned_us` | int | How long it was meant to go |
 | `warmup_us` | int | Warm-up length |
+| `settings` | object | What the run was started with, as configured, not as measured — not released |
+| `settings.max_in_flight` | int | The in-flight cap: the `-max-in-flight` value, else the default. A search: `null` without the flag (each run takes the smallest cap it can run with); in its runs, that run's cap — not released |
+| `settings.connections` | int | `app.connections` as configured, 1 by default; `connections.open` is what opened — not released |
+| `settings.warmup_us` | int | The warm-up as configured. A search: the settle — not released |
 | `sent` | int | Measured calls, except `not_sent`. `unreachable` and `aborted` are in it |
 | `failed` | int | Of `sent` — every call that did not succeed, except `aborted` |
 | `aborted` | int | Cut off by our own stop |
@@ -352,6 +356,7 @@ The rest are plain counters.
 | `methods[].rps` | float? | `sent/s`: calls sent divided by the sending time; `null` — no calls |
 | `methods[].timeout_us` | int | The method's timeout |
 | `methods[].planned_rps_low`, `methods[].planned_rps_high` | int | Lowest and highest planned rate of the whole plan |
+| `methods[].planned_duration_us` | int | How long the method was meant to go, as configured — not released |
 | `methods[].latency` | object | Latency of successful calls, with timeouts and aborted calls as lower bounds |
 | `methods[].latency.min`, `methods[].latency.p50`, `methods[].latency.p90`, `methods[].latency.p95`, `methods[].latency.p99`, `methods[].latency.max` | percentile? | Minimum, percentiles, maximum |
 | `methods[].p99_without_client_waits` | percentile? | p99 of the same calls without client-side waits; may come out slightly low |

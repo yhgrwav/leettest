@@ -49,6 +49,24 @@ type RunReport struct {
 	// Target is what the run went to, as the config wrote it; the report
 	// printers set it, the notes about connections name its host.
 	Target string
+	// Name is what the run is called (ServiceLabel), the same string as the
+	// JSON report's name; empty prints no name line.
+	Name string
+	// Settings are what the run was started with; nil prints no settings line.
+	Settings *RunSettings
+}
+
+// RunSettings echoes what a run was started with, as configured: the
+// reader of a pasted report sees which run it is.
+type RunSettings struct {
+	// MaxInFlight is the flag value, else the default; in a search's step the
+	// cap of that step.
+	MaxInFlight int
+	// Connections is app.connections, not what opened.
+	Connections int
+	// Warmup is the warm-up as the config wrote it; in a search's step the
+	// settle.
+	Warmup time.Duration
 }
 
 // ClockTooCoarse says the clock step is over a quarter of some method's p50.
