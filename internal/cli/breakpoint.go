@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -57,6 +58,8 @@ type BreakpointRun struct {
 	// Runs, when it has one per Result.Steps, are the runs with what only
 	// the CLI knows (the clock step); otherwise each run is its engine report.
 	Runs []RunReport
+	// Connections is app.connections as configured.
+	Connections int
 }
 
 // PlanLine is the line printed before the first step: how many steps and the
@@ -263,6 +266,12 @@ func PrintBreakpoint(w io.Writer, run BreakpointRun) {
 	}
 	fmt.Fprintln(w)
 
+	if run.Name != "" {
+		fmt.Fprintf(w, "name: %s\n", run.Name)
+	}
+	fmt.Fprintf(w, "settings: settle %s, hold %s, max in flight %s, connections %d\n\n",
+		run.Plan.Settle, run.Plan.Hold, searchCap(run.Plan), run.Connections)
+
 	verdicts := make([]string, len(res.Steps))
 	for i := range res.Steps {
 		verdicts[i] = verdict(&res, i)
@@ -275,6 +284,15 @@ func PrintBreakpoint(w io.Writer, run BreakpointRun) {
 			fmt.Fprintf(w, "  - %s\n", n)
 		}
 	}
+}
+
+// searchCap is the cap the search was told: the flag's, else each step's own.
+func searchCap(p breakpoint.Plan) string {
+	if p.MaxInFlight > 0 {
+		return strconv.Itoa(p.MaxInFlight)
+	}
+
+	return "per step"
 }
 
 // exhaustedLine says which dataset ended the search, at which rate; empty when
@@ -319,7 +337,17 @@ type BreakpointReport struct {
 	MethodsSource   *string        `json:"methods_source"`
 	Method          string         `json:"method"`
 	StartedAt       string         `json:"started_at"`
+	Settings        jsonSearch     `json:"settings"`
 	Breakpoint      jsonBreakpoint `json:"breakpoint"`
+}
+
+// jsonSearch is the search's own settings: the flag's cap, null when the
+// flag is not set and each step takes the smallest it can run with; the
+// settle as warmup_us.
+type jsonSearch struct {
+	MaxInFlight *int  `json:"max_in_flight"`
+	Connections int   `json:"connections"`
+	WarmupUS    int64 `json:"warmup_us"`
 }
 
 type jsonBreakpoint struct {
@@ -406,7 +434,13 @@ func NewBreakpointReport(run BreakpointRun) BreakpointReport {
 		})
 	}
 
+	settings := jsonSearch{Connections: run.Connections, WarmupUS: micros(run.Plan.Settle)}
+	if run.Plan.MaxInFlight > 0 {
+		settings.MaxInFlight = &run.Plan.MaxInFlight
+	}
+
 	return BreakpointReport{
+		Settings:      settings,
 		SchemaVersion: JSONSchemaVersion, Mode: ModeBreakpoint,
 		LeetTestVersion: run.Version, Target: run.Target, Name: run.Name, Method: run.Method,
 		MethodsSource: run.MethodsSource.kind(),

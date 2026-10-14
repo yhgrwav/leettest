@@ -233,6 +233,9 @@ type MethodReport struct {
 	SilentPlannedLow, SilentPlannedHigh int
 	// Timeout is the method's timeout, the T of "no answer within T".
 	Timeout time.Duration
+	// PlannedDuration is the method's own planned length: its stages summed,
+	// not the longest of the run's calls.
+	PlannedDuration time.Duration
 }
 
 // CapHit is how a run stopped on the in-flight cap. In a run the budget

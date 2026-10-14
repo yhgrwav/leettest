@@ -302,6 +302,10 @@ unten den Typ „percentile?" hat.
 | `duration_us` | int | Wie lange der Lauf ging, Aufwärmen eingeschlossen |
 | `planned_us` | int | Wie lange er gehen sollte |
 | `warmup_us` | int | Länge des Aufwärmens |
+| `settings` | object | Womit der Lauf gestartet wurde, wie konfiguriert, nicht wie gemessen — nicht veröffentlicht |
+| `settings.max_in_flight` | int; Suche: `int?` | Die Obergrenze für Anfragen im Flug: der Wert von `-max-in-flight`, sonst der Standard. Suche: `null` ohne die Option (jeder Lauf nimmt die kleinste Grenze, mit der er läuft); in ihren Läufen die Grenze dieses Laufs — nicht veröffentlicht |
+| `settings.connections` | int | `app.connections` wie konfiguriert, standardmäßig 1; `connections.open` ist, was sich geöffnet hat — nicht veröffentlicht |
+| `settings.warmup_us` | int | Das Aufwärmen wie konfiguriert. Suche: die Einschwingzeit `settle` — nicht veröffentlicht |
 | `sent` | int | Gemessene Aufrufe, außer `not_sent`. `unreachable` und `aborted` sind enthalten |
 | `failed` | int | Aus `sent` — jeder Aufruf, der nicht erfolgreich war, außer `aborted` |
 | `aborted` | int | Durch unser eigenes Anhalten abgeschnitten |
@@ -360,6 +364,7 @@ Die übrigen sind einfache Zähler.
 | `methods[].rps` | float? | `sent/s`: gesendete Aufrufe geteilt durch die Sendezeit; `null` — keine Aufrufe |
 | `methods[].timeout_us` | int | Das Timeout der Methode |
 | `methods[].planned_rps_low`, `methods[].planned_rps_high` | int | Niedrigste und höchste geplante Rate des ganzen Plans |
+| `methods[].planned_duration_us` | int | Wie lange die Methode gehen sollte, wie konfiguriert — nicht veröffentlicht |
 | `methods[].latency` | object | Latenz erfolgreicher Aufrufe, mit Timeouts und abgebrochenen Aufrufen als Untergrenzen |
 | `methods[].latency.min`, `methods[].latency.p50`, `methods[].latency.p90`, `methods[].latency.p95`, `methods[].latency.p99`, `methods[].latency.max` | percentile? | Minimum, Perzentile, Maximum |
 | `methods[].p99_without_client_waits` | percentile? | p99 derselben Aufrufe ohne Wartezeiten auf Client-Seite; kann etwas zu niedrig ausfallen |

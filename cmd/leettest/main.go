@@ -464,6 +464,10 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 			Report: report, Unchecked: unchecked, MaxResponse: maxResponse, MethodsSource: source,
 			ClockStep: max(stepBefore, time.Duration(stepAfter.Load())), ClockStepBefore: stepBefore,
 			GeneratorCPU: meter.Result(report, cores),
+			Name:         cli.ServiceLabel(cfg, *configPath),
+			Settings: &cli.RunSettings{
+				MaxInFlight: *maxInFlight, Connections: cfg.App.Connections, Warmup: cfg.Load.Warmup,
+			},
 		}
 	}
 

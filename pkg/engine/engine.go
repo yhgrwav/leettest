@@ -374,6 +374,10 @@ func (e *Engine) Report() Report {
 			}
 
 			m.Timeout = call.Timeout
+			m.PlannedDuration = 0
+			for _, stage := range call.Stages {
+				m.PlannedDuration += stage.Duration
+			}
 			if call.Dataset != nil {
 				m.Dataset = e.datasetReport(call)
 			}

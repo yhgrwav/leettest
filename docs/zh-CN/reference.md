@@ -260,6 +260,10 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `duration_us` | int | 运行实际持续时间，包括预热 |
 | `planned_us` | int | 计划持续时间 |
 | `warmup_us` | int | 预热时长 |
+| `settings` | object | 运行启动时的设置，按配置而非测量值——未发布 |
+| `settings.max_in_flight` | int；搜索：`int?` | 在途请求上限：`-max-in-flight` 的值，否则为默认值。搜索：未设该参数时为 `null`（每次运行取其能运行的最小上限）；在其各次运行中为该次运行的上限——未发布 |
+| `settings.connections` | int | 按配置的 `app.connections`，默认 1；`connections.open` 是实际打开的数量——未发布 |
+| `settings.warmup_us` | int | 按配置的预热。搜索：`settle` 时长——未发布 |
 | `sent` | int | 被测量的调用，不含 `not_sent`。包括 `unreachable` 和 `aborted` |
 | `failed` | int | `sent` 中所有未成功的调用，不含 `aborted` |
 | `aborted` | int | 被我们自己的停止截断 |
@@ -317,6 +321,7 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `methods[].rps` | float? | `sent/s`：已发送调用数除以发送时间；`null`——没有调用 |
 | `methods[].timeout_us` | int | 该方法的超时 |
 | `methods[].planned_rps_low`、`methods[].planned_rps_high` | int | 整个计划中最低和最高的计划速率 |
+| `methods[].planned_duration_us` | int | 该方法计划运行多久，按配置——未发布 |
 | `methods[].latency` | object | 成功调用的延迟，超时和被截断的调用作为下界 |
 | `methods[].latency.min`、`methods[].latency.p50`、`methods[].latency.p90`、`methods[].latency.p95`、`methods[].latency.p99`、`methods[].latency.max` | percentile? | 最小值、百分位、最大值 |
 | `methods[].p99_without_client_waits` | percentile? | 同一批调用去掉客户端侧等待后的 p99；可能略微偏低 |

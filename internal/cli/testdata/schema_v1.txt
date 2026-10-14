@@ -12,6 +12,10 @@ started_at string
 duration_us int
 planned_us int
 warmup_us int
+settings object
+settings.max_in_flight int
+settings.connections int
+settings.warmup_us int
 sent int
 failed int
 aborted int
@@ -83,6 +87,7 @@ methods[].rps float?
 methods[].timeout_us int
 methods[].planned_rps_low int
 methods[].planned_rps_high int
+methods[].planned_duration_us int
 methods[].latency object
 methods[].latency.min object?
 methods[].latency.min.us int

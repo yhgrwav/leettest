@@ -6,6 +6,10 @@ name string
 methods_source string?
 method string
 started_at string
+settings object
+settings.max_in_flight int?
+settings.connections int
+settings.warmup_us int
 breakpoint object
 breakpoint.outcome string
 breakpoint.held_rps int?

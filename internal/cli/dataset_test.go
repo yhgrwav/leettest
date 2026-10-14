@@ -673,7 +673,7 @@ func TestJSON_DatasetIsCumulativePerRun(t *testing.T) {
 
 	for k := range out {
 		switch k {
-		case "schema_version", "mode", "leettest_version", "target", "name", "methods_source", "method", "started_at", "breakpoint":
+		case "schema_version", "mode", "leettest_version", "target", "name", "methods_source", "method", "started_at", "settings", "breakpoint":
 		default:
 			t.Errorf("top level has %q, a field no schema has", k)
 		}

@@ -178,6 +178,7 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 			Report: report, Unchecked: s.unchecked, MaxResponse: maxResponse,
 			ClockStep: max(before, clockStep()), ClockStepBefore: before,
 			GeneratorCPU: meter.Result(report, cores),
+			Settings:     searchSettings(s, need, settle),
 		}
 		runs = append(runs, run)
 		r := run.Report
@@ -232,8 +233,8 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 	report := cli.BreakpointRun{
 		StopReason: reason,
 		Target:     s.target, Name: cli.ServiceLabel(s.cfg, s.configPath), Version: versionString(version, info), Method: method,
-		StartedAt: started, Plan: plan, Result: res, Runs: aligned(res.Steps, runs),
-		MethodsSource: s.source,
+		StartedAt: started, Plan: plan, Result: res, Runs: aligned(res.Steps, runs, searchSettings(s, s.maxInFlight, plan.Settle)),
+		MethodsSource: s.source, Connections: s.cfg.App.Connections,
 	}
 	var data []byte
 	if s.json || s.jsonFile != "" {
@@ -265,6 +266,12 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 	return nil
 }
 
+// searchSettings are what a step of the search is started with: the cap, the
+// configured connections and the settle as its warm-up.
+func searchSettings(s searchSetup, maxInFlight int, settle time.Duration) *cli.RunSettings {
+	return &cli.RunSettings{MaxInFlight: maxInFlight, Connections: s.cfg.App.Connections, Warmup: settle}
+}
+
 // screenSettings are the screen's settings, set up on first use as for a
 // plain run.
 func screenSettings() (*cli.Settings, error) {
@@ -283,11 +290,12 @@ func screenSettings() (*cli.Settings, error) {
 
 // aligned pairs each step with the run it made, in order; a step that never
 // ran (a cap too low for it) gets its empty engine report.
-func aligned(steps []breakpoint.Step, runs []cli.RunReport) []cli.RunReport {
+// A step that never ran carries refused, the settings it was tried with.
+func aligned(steps []breakpoint.Step, runs []cli.RunReport, refused *cli.RunSettings) []cli.RunReport {
 	out := make([]cli.RunReport, 0, len(steps))
 	for i := range steps {
 		if steps[i].Report.StartedAt.IsZero() || len(runs) == 0 {
-			out = append(out, cli.RunReport{Report: steps[i].Report})
+			out = append(out, cli.RunReport{Report: steps[i].Report, Settings: refused})
 
 			continue
 		}
