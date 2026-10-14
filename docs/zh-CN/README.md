@@ -15,7 +15,7 @@
 
 ---
 
-> 译自 [README.md](../../README.md)，对应 c726cb6，2026-10-14。如有出入，以俄文版为准。
+> 译自 [README.md](../../README.md)，对应 f077ae3，2026-10-14。如有出入，以俄文版为准。
 > 另附中文文档目录，俄文原文中没有。
 > **可能滞后：** 中文版在每次发布前同步，最新内容请看[英文版](../en/README.md)。
 
@@ -136,8 +136,8 @@ Read https://raw.githubusercontent.com/yhgrwav/leettest/main/AGENTS.md and load-
   说法，不是对目标的诊断。
 - `failure`：状态表示调用出错：`INTERNAL`、`UNKNOWN`、`DATA_LOSS`、对端发来的 `CANCELLED`、
   `ABORTED`（并发修改冲突，而不是容量不足）。
-- `bad response`：收到了应答，但客户端不接受：超过 `app.max_response_size`，或使用了客户端
-  未声明的编码压缩。
+- `bad response`：收到了应答，但客户端不接受：超过 `app.max_response_size`，使用了客户端
+  未声明的编码压缩，或违反单次应答的形式：没有消息的 OK，或多余的消息。
 - `client error`：客户端自己拒绝发送：请求无法编码，或编解码器、拦截器出错。
 
 从未到达目标的调用计为失败，但不进入百分位。已经发出却没有收到状态的请求——对端重置了流或断开了
@@ -149,7 +149,7 @@ Read https://raw.githubusercontent.com/yhgrwav/leettest/main/AGENTS.md and load-
 | `INVALID_ARGUMENT`、`NOT_FOUND`、`ALREADY_EXISTS`、`PERMISSION_DENIED`、`UNAUTHENTICATED`、`FAILED_PRECONDITION`、`OUT_OF_RANGE`、`UNIMPLEMENTED` | `request error` | `cut off` | `client error` |
 | `RESOURCE_EXHAUSTED` | `overload`；grpc-go 的 “larger than max” 是 `request error` | `cut off`；超过我们上限的应答是 `bad response` | `client error` |
 | `UNAVAILABLE` | `overload` | `cut off`；目标在处理前拒绝的流是 `overload` | `unreachable`；同样 |
-| `CANCELLED`、`UNKNOWN`、`INTERNAL`、`DATA_LOSS`、`ABORTED` | `failure` | `cut off`；无法解压的应答是 `bad response` | `client error` |
+| `CANCELLED`、`UNKNOWN`、`INTERNAL`、`DATA_LOSS`、`ABORTED` | `failure`；grpc-go 看到的没有应答的 OK 是 `bad response` | `cut off`；无法解压的应答是 `bad response` | `client error` |
 | `DEADLINE_EXCEEDED` | 超时 | 超时 | 超时，未发送 |
 
 请求过大是根据 grpc-go 的错误文本识别的。基于其他实现的目标（Envoy、Java）措辞不同，它的拒绝

@@ -15,7 +15,7 @@
 
 ---
 
-> Übersetzt aus [README.md](../../README.md) bei c726cb6, 2026-10-14. Bei Abweichungen gilt die
+> Übersetzt aus [README.md](../../README.md) bei f077ae3, 2026-10-14. Bei Abweichungen gilt die
 > russische Fassung. Dazu ein Verzeichnis der deutschen Dokumentation, das im Original fehlt.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/README.md).
@@ -159,7 +159,8 @@ unterscheiden.
   `CANCELLED` von der Gegenseite, `ABORTED` (ein Konflikt gleichzeitiger Änderungen, kein
   Kapazitätsmangel).
 - `bad response`: Eine Antwort kam, und der Client nahm sie nicht an: größer als
-  `app.max_response_size` oder mit einer Kodierung komprimiert, die der Client nicht angekündigt hat.
+  `app.max_response_size`, mit einer Kodierung komprimiert, die der Client nicht angekündigt hat,
+  oder sie verletzt die Einzelantwort-Form: ein OK ohne Nachricht oder eine zusätzliche Nachricht.
 - `client error`: Der Client selbst verweigerte das Senden: Die Anfrage ließ sich nicht kodieren,
   oder ein Codec oder Interceptor schlug fehl.
 
@@ -175,7 +176,7 @@ keine Ablehnung durch das Ziel.
 | `INVALID_ARGUMENT`, `NOT_FOUND`, `ALREADY_EXISTS`, `PERMISSION_DENIED`, `UNAUTHENTICATED`, `FAILED_PRECONDITION`, `OUT_OF_RANGE`, `UNIMPLEMENTED` | `request error` | `cut off` | `client error` |
 | `RESOURCE_EXHAUSTED` | `overload`; „larger than max" von grpc-go ist ein `request error` | `cut off`; eine Antwort über unserem Limit ist eine `bad response` | `client error` |
 | `UNAVAILABLE` | `overload` | `cut off`; ein vom Ziel vor der Verarbeitung abgelehnter Stream ist `overload` | `unreachable`; dasselbe |
-| `CANCELLED`, `UNKNOWN`, `INTERNAL`, `DATA_LOSS`, `ABORTED` | `failure` | `cut off`; eine Antwort, die sich nicht entpacken ließ, ist eine `bad response` | `client error` |
+| `CANCELLED`, `UNKNOWN`, `INTERNAL`, `DATA_LOSS`, `ABORTED` | `failure`; ein OK ohne Antwort, wie grpc-go es sieht, ist eine `bad response` | `cut off`; eine Antwort, die sich nicht entpacken ließ, ist eine `bad response` | `client error` |
 | `DEADLINE_EXCEEDED` | Timeout | Timeout | Timeout, nicht gesendet |
 
 Eine zu große Anfrage wird am Fehlertext von grpc-go erkannt. Ein Ziel mit anderer Implementierung
