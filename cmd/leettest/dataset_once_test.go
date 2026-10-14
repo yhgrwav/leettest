@@ -252,7 +252,7 @@ func TestRun_ASearchStoppedByCtrlCSaysRequested(t *testing.T) {
 // Ground: contract — "the CLI never meets exhaustion outside a search".
 func TestRun_OnceChecksTheTicksOfTheScheduleNotRpsTimesDuration(t *testing.T) {
 	need := engine.ScheduledAfter([]engine.Stage{{StartRPS: 3, TargetRPS: 3, Duration: 1500 * time.Millisecond}}, 0)
-	if need == int(3*1.5) {
+	if need == 4 { // 3 rps x 1.5s = 4.5, truncated
 		t.Fatalf("the plan hands out %d, the product truncated: the test would not tell them apart", need)
 	}
 

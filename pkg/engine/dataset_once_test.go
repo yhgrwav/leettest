@@ -107,6 +107,11 @@ func TestEngine_OnceEndsTheRunGentlyWhenTheFileRunsOut(t *testing.T) {
 	if m.Sent != n || m.Failed != 0 {
 		t.Errorf("sent %d failed %d, want %d and 0: the calls in flight finish", m.Sent, m.Failed, n)
 	}
+	// The sending ended at the tick that found no record (10 requests in 50ms,
+	// 200 per second), not when the last call came back 60ms later (about 95).
+	if m.RPS < 150 {
+		t.Errorf("sent/s = %.0f, want about 200: the sending ends where the file does", m.RPS)
+	}
 	if got := len(sender.records()); got != n {
 		t.Errorf("the sender saw %d requests, want %d", got, n)
 	}
