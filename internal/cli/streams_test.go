@@ -315,3 +315,25 @@ func TestNotes_AnUnsentCallWithoutACauseIsNamed(t *testing.T) {
 		t.Errorf("no %q in:\n%s", want, strings.Join(reportNotes(report, ""), "\n\n"))
 	}
 }
+
+// Ground: contract — one change reads "changed once", never "1 times"; two or more read
+// "changed N times". A mutation printing the count with a bare "times" turns the first case red.
+func TestNotes_ALimitChangedOnceReadsOnce(t *testing.T) {
+	for _, tc := range []struct {
+		changes int
+		want    string
+	}{{1, "1 to 4, changed once"}, {2, "1 to 4, changed 2 times"}} {
+		report := oneStream()
+		report.Connections = &engine.Connections{
+			Open: 1, LimitAnnounced: true, FirstLimit: 1, LastLimit: 4, LimitChanges: tc.changes,
+		}
+
+		n, ok := noteStarting(reportNotes(report, ""), "connections: 1")
+		if !ok {
+			t.Fatalf("changes %d: no connections line in:\n%s", tc.changes, strings.Join(reportNotes(report, ""), "\n\n"))
+		}
+		if !strings.HasSuffix(n, tc.want+".") {
+			t.Errorf("changes %d: line %q does not end with %q", tc.changes, n, tc.want)
+		}
+	}
+}

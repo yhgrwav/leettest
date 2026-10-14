@@ -308,3 +308,56 @@ func TestReport_ConnectionsNotes(t *testing.T) {
 		})
 	}
 }
+
+// Ground: boundary — a note names at most maxNamed addresses and counts the rest, as the lists of
+// connections do, in the text and in JSON alike. Seven addresses and two connections leave five
+// unused (all named); nine leave seven (five named, "and 2 more"). Thirteen connections over seven
+// addresses put six over the even share (five named, "and 1 more").
+func TestReport_ConnectionsNotesNameAtMostFiveAddresses(t *testing.T) {
+	const name = "api.example.com:443"
+
+	addrs := func(n int) []string {
+		out := make([]string, n)
+		for i := range out {
+			out[i] = fmt.Sprintf("10.0.1.%d:443", i+1)
+		}
+
+		return out
+	}
+
+	cases := []struct {
+		name     string
+		resolved []string
+		each     []string
+		want     string
+	}{
+		{"five unused are all named", addrs(7), addrs(2),
+			"api.example.com resolved to 7 addresses; 2 connections load 2 of them: " +
+				"10.0.1.3:443, 10.0.1.4:443, 10.0.1.5:443, 10.0.1.6:443, 10.0.1.7:443 got no calls."},
+		{"seven unused: five named", addrs(9), addrs(2),
+			"api.example.com resolved to 9 addresses; 2 connections load 2 of them: " +
+				"10.0.1.3:443, 10.0.1.4:443, 10.0.1.5:443, 10.0.1.6:443, 10.0.1.7:443 and 2 more got no calls."},
+		{"six over the share: five named", addrs(7), append(addrs(7), addrs(6)...),
+			"13 connections over 7 addresses: 10.0.1.1:443 carries 2 of 13, 10.0.1.2:443 carries 2 of 13, " +
+				"10.0.1.3:443 carries 2 of 13, 10.0.1.4:443 carries 2 of 13, 10.0.1.5:443 carries 2 of 13 " +
+				"and 1 more, the backends are loaded unevenly."},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			links := make([]engine.LinkReport, len(tc.each))
+			for i, a := range tc.each {
+				links[i] = callsOn(a, 10, 0)
+			}
+
+			text, listed := notesOf(t, name, overConnections(several(tc.resolved, links...)))
+
+			if !strings.Contains(text, "\n"+tc.want+"\n") {
+				t.Errorf("no note %q in the text report:\n%s", tc.want, text)
+			}
+			if !slices.Contains(listed, tc.want) {
+				t.Errorf("no note %q in the JSON notes:\n%q", tc.want, listed)
+			}
+		})
+	}
+}
