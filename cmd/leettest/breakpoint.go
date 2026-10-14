@@ -92,9 +92,14 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 	screen := searchScreen(s.interactive, s.json)
 	method := strings.TrimPrefix(call.Method, "/")
 
+	// Who ended the search first: a key pressed, or a dataset that ran out.
+	var stopWhy atomic.Pointer[string]
+	stopFor := func(reason string) { stopWhy.CompareAndSwap(nil, &reason) }
+
 	var current atomic.Pointer[engine.Engine]
 	st := cli.NewStopper(
 		func() {
+			stopFor(cli.StopRequested)
 			if !screen {
 				fmt.Fprintln(stderr, "stopping: the search ends with this run; waiting for its calls in flight. Ctrl+C again to cut them off")
 			}
@@ -104,6 +109,7 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 			}
 		},
 		func() {
+			stopFor(cli.StopRequested)
 			if !screen {
 				fmt.Fprintln(stderr, "aborting: requests in flight are cut off and counted as aborted. Ctrl+C again to exit without a report")
 			}
@@ -177,6 +183,12 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 			fmt.Fprintf(stderr, "%d rps: sent %d of %d, failed %d\n", rps, r.Sent, r.Scheduled, r.Failed)
 		}
 
+		if r.DatasetExhausted != nil {
+			// The same path as Ctrl-C: this run is not judged, the search ends as stopped.
+			stopFor(cli.StopDatasetExhausted)
+			stopSearch()
+		}
+
 		switch {
 		case runErr != nil && !errors.Is(runErr, context.Canceled) && !errors.Is(runErr, engine.ErrInFlightCapExceeded):
 			return r, runErr
@@ -211,8 +223,13 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 	}
 
 	info, _ := debug.ReadBuildInfo()
+	var stopReason string
+	if why := stopWhy.Load(); why != nil && res.Outcome == breakpoint.Stopped {
+		stopReason = *why
+	}
 	report := cli.BreakpointRun{
-		Target: s.target, Version: versionString(version, info), Method: method,
+		StopReason: stopReason,
+		Target:     s.target, Version: versionString(version, info), Method: method,
 		StartedAt: started, Plan: plan, Result: res, Runs: aligned(res.Steps, runs),
 		MethodsSource: s.source,
 	}
@@ -266,4 +283,23 @@ func aligned(steps []breakpoint.Step, runs []cli.RunReport) []cli.RunReport {
 	}
 
 	return out
+}
+
+// firstRuns is calls as the first run will hand them out: a plain run's calls
+// as they are, a search's one call held at its first rate for the plan's hold.
+func firstRuns(cfg *config.MasterConfig, calls []engine.Call) []engine.Call {
+	if cfg.Load.Breakpoint == nil || len(calls) == 0 {
+		return calls
+	}
+
+	plan := cfg.Load.Breakpoint.Plan(calls[0].Timeout, 0)
+	rates, err := plan.Rates()
+	if err != nil || len(rates) == 0 {
+		return calls
+	}
+
+	first := slices.Clone(calls)
+	first[0].Stages = []engine.Stage{{StartRPS: rates[0], TargetRPS: rates[0], Duration: plan.Hold}}
+
+	return first
 }

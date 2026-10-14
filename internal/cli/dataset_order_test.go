@@ -134,8 +134,8 @@ func TestJSON_DatasetOrderAndSeed(t *testing.T) {
 	}
 
 	for i, obj := range []map[string]any{random, file, zero} {
-		if len(obj) != 6 {
-			t.Errorf("method %d: dataset has %d keys (%v), want 6: file, records, used, used_max, order, seed", i, len(obj), obj)
+		if len(obj) != 7 {
+			t.Errorf("method %d: dataset has %d keys (%v), want 7: file, records, used, used_max, order, seed, reuse", i, len(obj), obj)
 		}
 	}
 }

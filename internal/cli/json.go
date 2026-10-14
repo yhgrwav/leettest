@@ -196,6 +196,8 @@ type jsonDataset struct {
 	// Order is "file" or "random"; Seed the seed of a random order, null for the file's.
 	Order string  `json:"order"`
 	Seed  *uint64 `json:"seed"`
+	// Reuse is false when the call sends each record at most once.
+	Reuse bool `json:"reuse"`
 }
 
 type jsonMethod struct {
@@ -465,7 +467,7 @@ func jsonMethodOf(m *engine.MethodReport, warmup time.Duration) jsonMethod {
 		out.LastAnswerAtUS = &at
 	}
 	if d := m.Dataset; d != nil {
-		out.Dataset = &jsonDataset{File: d.File, Records: d.Records, Used: d.Used, UsedMax: d.UsedMax, Order: "file"}
+		out.Dataset = &jsonDataset{File: d.File, Records: d.Records, Used: d.Used, UsedMax: d.UsedMax, Order: "file", Reuse: !d.Once}
 		if d.Random {
 			out.Dataset.Order, out.Dataset.Seed = "random", &d.Seed
 		}

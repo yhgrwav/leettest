@@ -77,6 +77,10 @@ func (d *Dispatcher) Run(ctx context.Context, out chan<- Request) error {
 			return err
 		}
 
+		if c.call.spent() {
+			return &DatasetExhaustedError{Method: c.call.Method, File: c.call.Dataset.File}
+		}
+
 		select {
 		case <-ctx.Done():
 			return ctx.Err()

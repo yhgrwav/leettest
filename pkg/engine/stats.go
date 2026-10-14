@@ -114,6 +114,16 @@ type DatasetReport struct {
 	// the seed of that order.
 	Random bool
 	Seed   uint64
+	// Once is set when the call's records go out at most once each.
+	Once bool
+}
+
+// DatasetExhausted says which call's file ran out and so ended the run.
+type DatasetExhausted struct {
+	// Method is the call's gRPC path as in Call.Method.
+	Method string
+	// File is the dataset path as the config wrote it.
+	File string
 }
 
 type MethodReport struct {
@@ -333,6 +343,9 @@ type Report struct {
 	// Incomplete says the run ended before its plan, by Stop or by an abort.
 	// Every number is honest, but it covers less than was asked for.
 	Incomplete bool
+	// DatasetExhausted is set when a call with Once needed a record and its
+	// file had none left: the run ended gently there. Nil otherwise.
+	DatasetExhausted *DatasetExhausted
 }
 
 type Stats struct {
