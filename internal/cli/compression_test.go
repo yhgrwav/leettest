@@ -53,11 +53,12 @@ func TestCompression_AMethodTellsItsRequestBytes(t *testing.T) {
 	lines := echoLines(RunReport{Report: report, Name: "x", Settings: &RunSettings{MaxInFlight: 5000, Connections: 1, Compression: "gzip"}})
 
 	row := indexOfPrefix(lines, "a.B/One")
-	if row < 0 || row+3 >= len(lines) {
+	if row < 0 || row+4 >= len(lines) {
 		t.Fatalf("no method row:\n%s", strings.Join(lines, "\n"))
 	}
-	if lines[row+1] != "  plan: 300 rps for 40s" || lines[row+2] != "  bytes: 1200 -> 310 per call" || !strings.HasPrefix(lines[row+3], "  data:") {
-		t.Errorf("under the row want plan, bytes, data; got:\n%s", strings.Join(lines[row:row+4], "\n"))
+	if lines[row+1] != "  plan: 300 rps for 40s" || !strings.HasPrefix(lines[row+2], "  p99.9:") ||
+		lines[row+3] != "  bytes: 1200 -> 310 per call" || !strings.HasPrefix(lines[row+4], "  data:") {
+		t.Errorf("under the row want plan, p99.9, bytes, data; got:\n%s", strings.Join(lines[row:row+5], "\n"))
 	}
 }
 
