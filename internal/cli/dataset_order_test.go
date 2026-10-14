@@ -224,7 +224,7 @@ func randomConfig(methods []string, seeds []*int64) *config.MasterConfig {
 
 // runOf runs the calls CallsFromConfig builds from cfg, each record carrying
 // its own number, and returns what each method sent and what the report says.
-func runOf(t *testing.T, cfg *config.MasterConfig) (map[string][]int, map[string]*engine.DatasetReport) {
+func runOf(t *testing.T, cfg *config.MasterConfig) (sent map[string][]int, reports map[string]*engine.DatasetReport) {
 	t.Helper()
 
 	calls, err := CallsFromConfig(cfg)
@@ -246,9 +246,11 @@ func runOf(t *testing.T, cfg *config.MasterConfig) (map[string][]int, map[string
 		t.Fatalf("run: %v", err)
 	}
 
-	sent := map[string][]int{}
-	reports := map[string]*engine.DatasetReport{}
-	for _, m := range eng.Report().Methods {
+	sent = map[string][]int{}
+	reports = map[string]*engine.DatasetReport{}
+	report := eng.Report()
+	for i := range report.Methods {
+		m := &report.Methods[i]
 		sent[m.Method] = sender.recordsOf(m.Method)
 		reports[m.Method] = m.Dataset
 	}

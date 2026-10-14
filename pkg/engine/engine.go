@@ -38,7 +38,8 @@ type Call struct {
 	// Payload is the request when the call has no dataset.
 	Payload []byte
 	// Payloads are the requests of a dataset call, one record each; request
-	// number S goes out with Payloads[S mod len]. Used only with Dataset; nil
+	// number S goes out with Payloads[S mod len], or in the order of the
+	// Dataset counter when that one is shuffled. Used only with Dataset; nil
 	// or empty: Payload.
 	Payloads [][]byte
 	// Dataset is set for a call whose Payloads are a file's records: what the
@@ -57,7 +58,12 @@ func (c *Call) payload() []byte {
 		return c.Payload
 	}
 
-	return c.Payloads[c.Dataset.Counter.Handed()%len(c.Payloads)]
+	counter := c.Dataset.Counter
+	if counter.shuffle != nil {
+		return c.Payloads[counter.shuffle.current.Load()]
+	}
+
+	return c.Payloads[counter.Handed()%len(c.Payloads)]
 }
 
 // handedOut counts one request of the call as handed out, once it has left the
@@ -116,14 +122,20 @@ func countedCalls(calls []Call) []Call {
 // Only the dispatcher moves it; any goroutine may read it.
 type RecordCounter struct {
 	n atomic.Int64
+	// shuffle is set for a random order; nil is the file's.
+	shuffle *shuffler
 }
 
 // NewShuffledCounter is a counter for a dataset of n records handed out in a
-// random order: each pass is a fresh permutation, from the generator seeded by seed.
+// random order: each pass is a fresh permutation, from the generator seeded by
+// seed (0 to MaxShuffleSeed). The same seed, n and number of requests give the
+// same order. n must be the number of the call's Payloads.
 func NewShuffledCounter(n int, seed uint64) *RecordCounter {
-	_, _ = n, seed
+	if n < 1 {
+		return &RecordCounter{}
+	}
 
-	return &RecordCounter{}
+	return &RecordCounter{shuffle: newShuffler(n, seed)}
 }
 
 // NewRecordCounter is a counter at zero.
@@ -143,6 +155,9 @@ func (c *RecordCounter) Handed() int {
 func (c *RecordCounter) add() {
 	if c != nil {
 		c.n.Add(1)
+		if c.shuffle != nil {
+			c.shuffle.step()
+		}
 	}
 }
 
@@ -361,6 +376,9 @@ func (e *Engine) datasetReport(call Call) *DatasetReport {
 	report := &DatasetReport{File: call.Dataset.File, Records: n, Used: min(s, n)}
 	if n > 0 {
 		report.UsedMax = (s + n - 1) / n
+	}
+	if shuffle := call.Dataset.Counter.shuffle; shuffle != nil {
+		report.Random, report.Seed = true, shuffle.seed
 	}
 
 	return report

@@ -15,6 +15,8 @@
 package cli
 
 import (
+	"crypto/rand"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -35,7 +37,8 @@ func CallsFromConfig(cfg *config.MasterConfig) ([]engine.Call, error) {
 
 	var errs []error
 
-	for _, call := range cfg.Load.Calls {
+	for i := range cfg.Load.Calls {
+		call := &cfg.Load.Calls[i]
 		built := engine.Call{
 			// gRPC sends /pkg.Service/Method; the config writes it without the slash.
 			Method:  "/" + call.Method,
@@ -56,7 +59,13 @@ func CallsFromConfig(cfg *config.MasterConfig) ([]engine.Call, error) {
 			}
 
 			built.Payloads = make([][]byte, len(call.Records))
-			built.Dataset = &engine.DatasetRef{File: call.Dataset, Counter: engine.NewRecordCounter()}
+			counter, err := datasetCounter(call)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", call.Method, err))
+
+				continue
+			}
+			built.Dataset = &engine.DatasetRef{File: call.Dataset, Counter: counter}
 		}
 
 		calls = append(calls, built)
@@ -67,6 +76,26 @@ func CallsFromConfig(cfg *config.MasterConfig) ([]engine.Call, error) {
 	}
 
 	return calls, nil
+}
+
+// datasetCounter is the counter of a dataset call: the file's order, or a
+// random one. A random order without a seed in the config draws one here, once
+// per call, so that the report can name it.
+func datasetCounter(call *config.Call) (*engine.RecordCounter, error) {
+	if call.DatasetOrder == nil || *call.DatasetOrder != config.DatasetOrderRandom {
+		return engine.NewRecordCounter(), nil
+	}
+
+	if call.DatasetSeed != nil {
+		return engine.NewShuffledCounter(len(call.Records), uint64(*call.DatasetSeed)), nil
+	}
+
+	var raw [8]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return nil, fmt.Errorf("draw a seed: %w", err)
+	}
+
+	return engine.NewShuffledCounter(len(call.Records), binary.LittleEndian.Uint64(raw[:])&engine.MaxShuffleSeed), nil
 }
 
 // displayMethod shows a method the way the config names it: the engine carries
@@ -85,8 +114,8 @@ func ServiceLabel(cfg *config.MasterConfig, configPath string) string {
 
 	service := ""
 
-	for _, call := range cfg.Load.Calls {
-		full, _, _ := strings.Cut(call.Method, "/")
+	for i := range cfg.Load.Calls {
+		full, _, _ := strings.Cut(cfg.Load.Calls[i].Method, "/")
 		if service != "" && full != service {
 			return strings.TrimSuffix(filepath.Base(configPath), filepath.Ext(configPath))
 		}
