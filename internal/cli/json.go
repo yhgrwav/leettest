@@ -193,6 +193,9 @@ type jsonDataset struct {
 	Records int    `json:"records"`
 	Used    int    `json:"used"`
 	UsedMax int    `json:"used_max"`
+	// Order is "file" or "random"; Seed the seed of a random order, null for the file's.
+	Order string  `json:"order"`
+	Seed  *uint64 `json:"seed"`
 }
 
 type jsonMethod struct {
@@ -462,7 +465,10 @@ func jsonMethodOf(m *engine.MethodReport, warmup time.Duration) jsonMethod {
 		out.LastAnswerAtUS = &at
 	}
 	if d := m.Dataset; d != nil {
-		out.Dataset = &jsonDataset{File: d.File, Records: d.Records, Used: d.Used, UsedMax: d.UsedMax}
+		out.Dataset = &jsonDataset{File: d.File, Records: d.Records, Used: d.Used, UsedMax: d.UsedMax, Order: "file"}
+		if d.Random {
+			out.Dataset.Order, out.Dataset.Seed = "random", &d.Seed
+		}
 	}
 	for _, c := range m.FailureCodes {
 		name, ok := canonicalCodes[c.Code]

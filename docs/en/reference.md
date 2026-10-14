@@ -49,6 +49,8 @@ load:
 | `load.calls[].timeout` | How long to wait for a reply. Left out — `2s`. Zero does not turn it off, it is an error |
 | `load.calls[].data` | The request body, see [below](#request-body). Left out — an empty message |
 | `load.calls[].dataset` | A file of request bodies instead of `data`, see [below](#a-different-request-each-call-a-dataset). Not together with `data` |
+| `load.calls[].dataset_order` | `file` (left out) or `random`: the order of the dataset's requests. Needs `dataset` — not released |
+| `load.calls[].dataset_seed` | A whole number from 0 to 9007199254740991 that fixes a random order. Needs `dataset_order: random`. Left out — one is drawn and the report prints it — not released |
 
 The config is read strictly: a typo in a field name is an error with the line number, a wrong
 value is an error with the call's number and method, not a run with an empty load. `rps` is a
@@ -196,6 +198,12 @@ Under the method's row the report says how much of the file was used:
 was handed to the sender, not what the target saw: a request that stands twice in the file goes
 out twice, and a call that never reached the target is counted too. In a breaking-point search
 every step goes on where the one before ended, and the line counts the whole search.
+
+`dataset_order: random` hands the requests out in a random order: every pass through the file is
+a new shuffle in which each request goes out once, so the numbers above stay as they are. The
+line then ends with `, random order, seed 42`. To repeat a run, put that number in
+`dataset_seed` (a whole number from 0 to 9007199254740991): the same seed, file and number of
+requests give the same order. Left out, a seed is drawn at the start, one per call.
 
 ## Flags
 
@@ -362,6 +370,8 @@ The rest are plain counters.
 | `methods[].dataset.records` | int | Requests in the file |
 | `methods[].dataset.used` | int | How many of them were handed to the sender at least once |
 | `methods[].dataset.used_max` | int | How many times the most used one was handed to the sender; in a search, counted from its first step to the end of this run |
+| `methods[].dataset.order` | string | `file` or `random`: the order the requests went out in — not released |
+| `methods[].dataset.seed` | int? | The seed of a random order, 0 to 9007199254740991; `null` for file order — not released |
 | `methods[].seconds` | []object | The per-second timeline, see below |
 
 ### Second: `methods[].seconds[]`
