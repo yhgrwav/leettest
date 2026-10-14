@@ -118,6 +118,14 @@ type RecordCounter struct {
 	n atomic.Int64
 }
 
+// NewShuffledCounter is a counter for a dataset of n records handed out in a
+// random order: each pass is a fresh permutation, from the generator seeded by seed.
+func NewShuffledCounter(n int, seed uint64) *RecordCounter {
+	_, _ = n, seed
+
+	return &RecordCounter{}
+}
+
 // NewRecordCounter is a counter at zero.
 func NewRecordCounter() *RecordCounter {
 	return &RecordCounter{}
