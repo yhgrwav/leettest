@@ -43,6 +43,14 @@ var (
 	ErrInvalidTimeout      = errors.New("timeout must be positive: without one, requests to a hung target pile up until the in-flight cap ends the run")
 	ErrDataAndDataset      = errors.New("data and dataset are both set; use one")
 	ErrEmptyDatasetPath    = errors.New("dataset must be the path of a file")
+	// ErrDatasetOrder is a dataset_order that is neither file nor random.
+	ErrDatasetOrder = errors.New("dataset_order must be file or random")
+	// ErrOrderWithoutDataset is dataset_order or dataset_seed on a call without a dataset.
+	ErrOrderWithoutDataset = errors.New("dataset_order and dataset_seed need a dataset")
+	// ErrSeedWithoutRandom is dataset_seed without dataset_order: random.
+	ErrSeedWithoutRandom = errors.New("dataset_seed needs dataset_order: random")
+	// ErrDatasetSeed is a dataset_seed outside 0 to 2^53-1.
+	ErrDatasetSeed = errors.New("dataset_seed must be a whole number from 0 to 9007199254740991")
 	// ErrDuplicateAnchor is a YAML anchor name defined twice in the config.
 	ErrDuplicateAnchor = errors.New("anchor is already defined")
 	// ErrBreakpoint is a breakpoint section that cannot run as written.
@@ -184,7 +192,8 @@ func (l Load) validateSearch() []error {
 	if l.Warmup != 0 {
 		errs = append(errs, fmt.Errorf("%w: load.warmup with load.breakpoint: each step has its breakpoint.settle", ErrBreakpoint))
 	}
-	for i, call := range l.Calls {
+	for i := range l.Calls {
+		call := &l.Calls[i]
 		if call.RPS != 0 {
 			errs = append(errs, fmt.Errorf("%w: %s: rps with load.breakpoint: the search sets it", ErrBreakpoint, call.where(i)))
 		}
@@ -225,6 +234,14 @@ func (c *ConnectionCount) UnmarshalYAML(raw []byte) error {
 	return nil
 }
 
+// The values of dataset_order, and the largest dataset_seed: 2^53-1, the
+// largest integer a JSON reader on float64 holds exactly.
+const (
+	DatasetOrderFile   = "file"
+	DatasetOrderRandom = "random"
+	MaxDatasetSeed     = 1<<53 - 1
+)
+
 type Call struct {
 	Method   string        `yaml:"method"`
 	RPS      Rate          `yaml:"rps"`
@@ -238,6 +255,9 @@ type Call struct {
 	RawDataset *string         `yaml:"dataset"`
 	Dataset    string          `yaml:"-"`
 	Records    []DatasetRecord `yaml:"-"`
+	// DatasetOrder is file or random; DatasetSeed the seed of random. Nil when left out.
+	DatasetOrder *string `yaml:"dataset_order"`
+	DatasetSeed  *int64  `yaml:"dataset_seed"`
 	// RawTimeout is the field as written; nil means it was left out.
 	RawTimeout *time.Duration `yaml:"timeout"`
 	Timeout    time.Duration  `yaml:"-"`
@@ -289,8 +309,9 @@ func (l Load) Validate() error {
 		errs = append(errs, l.validateSearch()...)
 	}
 	first := make(map[string]int, len(l.Calls))
-	for i, call := range l.Calls {
-		checked := call
+	for i := range l.Calls {
+		call := &l.Calls[i]
+		checked := *call
 		if l.Breakpoint != nil {
 			// The search sets rps and duration; the rest is checked as always.
 			checked.RPS, checked.Duration = 1, time.Second
@@ -343,8 +364,40 @@ func (c Call) Validate() error {
 	if c.RawDataset != nil && c.Data != nil {
 		errs = append(errs, ErrDataAndDataset)
 	}
+	errs = append(errs, c.validateDatasetOrder()...)
 
 	return errors.Join(errs...)
+}
+
+// validateDatasetOrder checks dataset_order and dataset_seed: the values, and
+// that they stand with a dataset and, for the seed, with the random order.
+func (c Call) validateDatasetOrder() []error {
+	var errs []error
+
+	random := false
+
+	if c.DatasetOrder != nil {
+		switch *c.DatasetOrder {
+		case DatasetOrderFile:
+		case DatasetOrderRandom:
+			random = true
+		default:
+			errs = append(errs, fmt.Errorf("%w: %q", ErrDatasetOrder, *c.DatasetOrder))
+		}
+	}
+	if (c.DatasetOrder != nil || c.DatasetSeed != nil) && c.RawDataset == nil {
+		errs = append(errs, ErrOrderWithoutDataset)
+	}
+	if c.DatasetSeed != nil {
+		if *c.DatasetSeed < 0 || *c.DatasetSeed > MaxDatasetSeed {
+			errs = append(errs, fmt.Errorf("%w: %d", ErrDatasetSeed, *c.DatasetSeed))
+		}
+		if !random && (c.DatasetOrder == nil || *c.DatasetOrder == DatasetOrderFile) {
+			errs = append(errs, ErrSeedWithoutRandom)
+		}
+	}
+
+	return errs
 }
 
 func isMethodName(method string) bool {

@@ -110,6 +110,10 @@ type DatasetReport struct {
 	Used int
 	// UsedMax is ceil(S / Records).
 	UsedMax int
+	// Random is set when the records went out in a random order; Seed is then
+	// the seed of that order.
+	Random bool
+	Seed   uint64
 }
 
 type MethodReport struct {

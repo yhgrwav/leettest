@@ -31,12 +31,17 @@ func datasetLine(d *engine.DatasetReport) string {
 	// it used.
 	name := path.Base(strings.ReplaceAll(d.File, `\`, "/"))
 
-	if d.Used == 0 {
-		return fmt.Sprintf("  data: none of %d %s from %s used", d.Records, noun(d.Records, "request"), name)
+	order := ""
+	if d.Random {
+		order = fmt.Sprintf(", random order, seed %d", d.Seed)
 	}
 
-	return fmt.Sprintf("  data: %d of %d %s from %s, each used up to %d %s",
-		d.Used, d.Records, noun(d.Records, "request"), name, d.UsedMax, noun(d.UsedMax, "time"))
+	if d.Used == 0 {
+		return fmt.Sprintf("  data: none of %d %s from %s used%s", d.Records, noun(d.Records, "request"), name, order)
+	}
+
+	return fmt.Sprintf("  data: %d of %d %s from %s, each used up to %d %s%s",
+		d.Used, d.Records, noun(d.Records, "request"), name, d.UsedMax, noun(d.UsedMax, "time"), order)
 }
 
 // noun is word, in the plural unless n is 1.

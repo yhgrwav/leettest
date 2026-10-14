@@ -107,6 +107,8 @@ load:
       duration: 40s
       timeout: 500ms
       dataset: wallets.jsonl
+      dataset_order: random
+      dataset_seed: 42
 ```
 
 - **`name`** — как прогон называется в заголовке.
@@ -126,7 +128,8 @@ load:
 - **`dataset`** — файл с телами запросов вместо `data`, по одному JSON на строку
   ([`examples/ru/wallets.jsonl`](../../examples/ru/wallets.jsonl)): первый вызов уходит с первой
   строкой, второй — со второй, после последней — снова с первой. Рядом со строкой метода отчёт
-  говорит, сколько файла использовано.
+  говорит, сколько файла использовано. `dataset_order: random` перемешивает файл на каждом
+  проходе; отчёт печатает seed, а `dataset_seed` повторяет порядок.
 - **`connections`** — сколько соединений несут нагрузку (по умолчанию 1). За
   L4-балансировщиком одно соединение нагружает один бэкенд; при N ≥ 2 в отчёте появляется блок
   `Connections:` — строка на соединение.
@@ -184,7 +187,7 @@ sent 12950, failed 5248
 method                                           sent   failed    sent/s       p50       p90       p95       p99
 grpc.health.v1.Health/Check                     11100     4499       300    20.5ms    >500ms    >500ms    >500ms
 wallet.v1.WalletService/GetBalance               1850      749        50    20.5ms    >500ms    >500ms    >500ms
-  data: 4 of 4 requests from wallets.jsonl, each used up to 500 times
+  data: 4 of 4 requests from wallets.jsonl, each used up to 500 times, random order, seed 42
 
 warm-up 1050 sent, excluded from stats
 

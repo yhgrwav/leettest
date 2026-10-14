@@ -54,8 +54,8 @@ func (r *fakeResolver) ResolveAll(ctx context.Context, methods []string) (map[st
 func loadOf(methods ...config.Call) (*config.MasterConfig, []engine.Call) {
 	cfg := &config.MasterConfig{Load: config.Load{Calls: methods}}
 	calls := make([]engine.Call, len(methods))
-	for i, c := range methods {
-		calls[i] = engine.Call{Method: "/" + c.Method}
+	for i := range methods {
+		calls[i] = engine.Call{Method: "/" + methods[i].Method}
 	}
 
 	return cfg, calls

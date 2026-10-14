@@ -31,3 +31,5 @@ load:
       duration: 40s
       timeout: 500ms
       dataset: wallets.jsonl        # a different request each call: one JSON per line, in order, then again
+      dataset_order: random         # file (default) or random: a new permutation of the file on each pass
+      dataset_seed: 42              # random only; left out, a seed is drawn and the report prints it

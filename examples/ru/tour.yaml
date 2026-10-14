@@ -31,3 +31,5 @@ load:
       duration: 40s
       timeout: 500ms
       dataset: wallets.jsonl        # каждый вызов с новым запросом: по JSON на строку, по порядку, затем снова
+      dataset_order: random         # file (по умолчанию) или random: на каждом проходе файла новая перестановка
+      dataset_seed: 42              # только для random; не задан — seed выбирается сам и печатается в отчёте
