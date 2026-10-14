@@ -18,8 +18,10 @@ on:
 
 permissions: {}
 
+# A new push (synchronize) has its own group: in the shared one a pending
+# synchronize run could be replaced by a later run and leave the label on.
 concurrency:
-  group: merge-ok-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.run_id }}
+  group: merge-ok${{ github.event.action == 'synchronize' && '-sync' || '' }}-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -93,6 +95,10 @@ jobs:
 
           behind=$(gh api "repos/${REPO}/compare/main...${sha}" --jq .behind_by)
           [ "${behind}" = "0" ] || skip "#${PR_NUMBER} is ${behind} commits behind main"
+
+          # The label may have been taken off while the checks were read.
+          [ "$(gh api "repos/${REPO}/issues/${PR_NUMBER}" --jq '[.labels[].name] | index("merge-ok") != null')" = "true" ] \
+            || skip "#${PR_NUMBER} lost the merge-ok label meanwhile"
 
           # sha makes GitHub refuse the merge if the head moved after the checks.
           gh api -X PUT "repos/${REPO}/pulls/${PR_NUMBER}/merge" \
