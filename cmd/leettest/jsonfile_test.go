@@ -136,12 +136,23 @@ func TestRun_JSONFileBesideTheTextReport(t *testing.T) {
 	if err := json.Unmarshal(readFile(t, path), &inFile); err != nil {
 		t.Fatalf("the file is not JSON: %v", err)
 	}
+	// The same run: the numbers in the file are the numbers in the text.
+	sent, failed := reportRow(t, res.stdout, checkMethod)
+	row, _ := inFile["methods"].([]any)
+	if len(row) == 0 {
+		t.Fatalf("the file lists no methods: keys %v", keys(inFile))
+	}
+	method, _ := row[0].(map[string]any)
+	if method["sent"] != float64(sent) || method["failed"] != float64(failed) || sent == 0 {
+		t.Errorf("file says sent %v, failed %v; the text of the same run says sent %d, failed %d",
+			method["sent"], method["failed"], sent, failed)
+	}
 	printed := decodeOnly(t, runCLI(t.Context(), t, 10*time.Second, "-fake", "-output", "json", "-c", cfg).stdout)
 
 	if !reflect.DeepEqual(shape(inFile), shape(printed)) {
 		t.Errorf("the file and -output json differ in shape:\nfile    %v\nstdout  %v", keys(inFile), keys(printed))
 	}
-	for _, k := range []string{"schema_version", "outcome", "target", "version"} {
+	for _, k := range []string{"schema_version", "outcome", "target", "leettest_version"} {
 		if inFile[k] != printed[k] || inFile[k] == nil {
 			t.Errorf("%s: file %v, -output json %v", k, inFile[k], printed[k])
 		}
@@ -318,8 +329,9 @@ func TestExitNow_RemovesTheJSONFileOfTheRunInProgress(t *testing.T) {
 
 	var exitedWith atomic.Int64
 	exitedWith.Store(-1)
+	origExit := exitProcess
 	exitProcess = func(code int) { exitedWith.Store(int64(code)) }
-	t.Cleanup(func() { exitProcess = os.Exit })
+	t.Cleanup(func() { exitProcess = origExit })
 
 	var existedBefore, missingAfter bool
 	runSignalled(t, "      timeout: 300ms\n", func(stops, _ chan<- struct{}) {
@@ -365,12 +377,13 @@ func TestRun_JSONFileWriteFailureIsExitOne(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			var tried atomic.Bool
+			origWrite := writeJSONFile
+			t.Cleanup(func() { writeJSONFile = origWrite })
 			writeJSONFile = func(string, []byte) error {
 				tried.Store(true)
 
 				return boom
 			}
-			t.Cleanup(func() { writeJSONFile = func(string, []byte) error { return nil } })
 
 			path := newJSONPath(t)
 			res := runCLI(t.Context(), t, 10*time.Second, append([]string{"-json-file", path}, c.args(t)...)...)

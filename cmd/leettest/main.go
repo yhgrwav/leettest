@@ -62,17 +62,12 @@ var ErrIncomplete = errors.New("the run stopped before its planned end; the repo
 var exitNow = func() {
 	fmt.Fprintln(os.Stderr, "leettest: aborted without a report")
 	sig, _ := lastSignal.Load().(os.Signal)
+	discardJSONFile()
 	exitProcess(abortCode(sig))
 }
 
 // exitProcess is os.Exit; tests replace it to see the exit without leaving.
 var exitProcess = os.Exit
-
-// writeJSONFile puts the report's bytes into the file named by -json-file;
-// tests replace it to fail the write.
-var writeJSONFile = func(path string, data []byte) error {
-	return nil
-}
 
 // lastSignal is what asked the run to stop, so an abort without a report
 // exits the way that signal would have: a script reads 143 from an
@@ -234,7 +229,6 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		return err
 	}
 
-	_, _ = jsonFile, writeJSONFile // red-test stub: the flag is accepted and does nothing yet
 	interactive := liveView(*plain, terminal)
 	if *showVersion {
 		info, _ := debug.ReadBuildInfo()
@@ -310,6 +304,15 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		return withBudgetAdvice(err, opts)
 	}
 
+	// Created before the network: a path that cannot be used ends the command
+	// before any call. Removed on every way out that has no report.
+	if *jsonFile != "" {
+		if err = reserveJSONFile(*jsonFile); err != nil {
+			return err
+		}
+		defer discardJSONFile()
+	}
+
 	// Methods nothing could be checked against: named again with the report,
 	// where a full-screen run does not scroll them away.
 	var (
@@ -368,7 +371,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		return runSearch(ctx, abort, &stopper, searchSetup{
 			cfg: cfg, configPath: *configPath, target: target, sender: sender, calls: opts.Calls,
 			unchecked: unchecked, maxInFlight: *maxInFlight, capSet: capSet, connect: connectWithin,
-			json: *output == "json", interactive: interactive, stepBefore: stepBefore,
+			json: *output == "json", jsonFile: *jsonFile, interactive: interactive, stepBefore: stepBefore,
 			source: source,
 		}, stdout, stderr)
 	}
@@ -476,22 +479,36 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 
 	report := reportOf()
 	result := runResult(report, runErr)
-	if *output == "json" {
-		// Only a run that happened has a report: on exit 1 stdout stays empty,
-		// and a script reads the exit code first.
-		if outcome, ok := outcomeOf(result); ok {
-			info, _ := debug.ReadBuildInfo()
-			if err := cli.WriteJSON(stdout, cli.JSONRun{
+	// Only a run that happened has a report: on exit 1 stdout stays empty,
+	// and a script reads the exit code first. One encoding feeds stdout and
+	// the file, so they hold the same bytes.
+	var data []byte
+	if outcome, ok := outcomeOf(result); ok && (*output == "json" || *jsonFile != "") {
+		info, _ := debug.ReadBuildInfo()
+
+		var err error
+		if data, err = encodeJSON(func(w io.Writer) error {
+			return cli.WriteJSON(w, cli.JSONRun{
 				Target: target, Version: versionString(version, info), Outcome: outcome,
 				StartedAt: report.StartedAt, Run: report,
-			}); err != nil {
-				return fmt.Errorf("write the JSON report: %w", err)
-			}
+			})
+		}); err != nil {
+			return err
+		}
+	}
+	if *output == "json" {
+		if _, err := stdout.Write(data); err != nil {
+			return fmt.Errorf("write the JSON report: %w", err)
 		}
 	} else {
 		cli.PrintReport(stdout, target, report)
 	}
 	s.Finish()
+
+	// A report that was asked for and not saved is not a pass: exit 1.
+	if err := saveJSONFile(*jsonFile, data); err != nil {
+		return err
+	}
 
 	return result
 }
