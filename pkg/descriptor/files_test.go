@@ -660,6 +660,108 @@ func TestProtoResolver_AnUnknownServiceListsWhatWasFound(t *testing.T) {
 	}
 }
 
+// svcProto is a file of package pkg with one service Svc of the given methods,
+// importing the given files.
+func svcProto(pkg string, imports []string, methods ...string) string {
+	var b strings.Builder
+	b.WriteString("syntax = \"proto3\";\npackage " + pkg + ";\n")
+	for _, imp := range imports {
+		fmt.Fprintf(&b, "import %q;\n", imp)
+	}
+	b.WriteString("message Req {}\nmessage Resp {}\nservice Svc {\n")
+	for _, m := range methods {
+		fmt.Fprintf(&b, "  rpc %s(Req) returns (Resp);\n", m)
+	}
+	b.WriteString("}\n")
+
+	return b.String()
+}
+
+// The list is what can be called: a method of an imported file is in it, once,
+// after the methods of the entry file. The imported package sorts before the
+// entry one, so a plain sort of everything would put it first.
+// Ground: decision — the list shows every method the files can call (brain, 2026-10-14).
+func TestProtoResolver_AnUnknownMethodListsTheMethodsOfImportedFilesAfterTheEntryOnes(t *testing.T) {
+	dir := tree(t, map[string]string{
+		"a.proto": svcProto("zpkg.v1", []string{"b.proto"}, "ZetaOne", "ZetaTwo"),
+		"b.proto": svcProto("bpkg.v1", nil, "BetaOne"),
+	})
+	r := compile(t, dir, []string{"a.proto"}, []string{"."})
+
+	_, err := r.Resolve(t.Context(), "zpkg.v1.Svc/Absent")
+
+	if !errors.Is(err, descriptor.ErrMethodNotFound) {
+		t.Fatalf("err = %v, want descriptor.ErrMethodNotFound", err)
+	}
+	text := err.Error()
+	for _, want := range []string{"zpkg.v1.Svc/ZetaOne", "zpkg.v1.Svc/ZetaTwo", "bpkg.v1.Svc/BetaOne"} {
+		if got := strings.Count(text, want); got != 1 {
+			t.Errorf("error %q lists %q %d times, want once", text, want, got)
+		}
+	}
+	lastEntry := strings.LastIndex(text, "ZetaTwo")
+	imported := strings.Index(text, "BetaOne")
+	if lastEntry < 0 || imported < 0 || imported < lastEntry {
+		t.Errorf("imported method must come after the entry file's methods:\n%s", text)
+	}
+}
+
+// Characterization: what the list shows is callable.
+// Ground: contract — a method of an imported file resolves.
+func TestProtoResolver_AMethodOfAnImportedFileResolves(t *testing.T) {
+	dir := tree(t, map[string]string{
+		"a.proto": svcProto("apkg.v1", []string{"b.proto"}, "AlphaOne"),
+		"b.proto": svcProto("bpkg.v1", nil, "BetaOne"),
+	})
+	r := compile(t, dir, []string{"a.proto"}, []string{"."})
+
+	m, err := r.Resolve(t.Context(), "bpkg.v1.Svc/BetaOne")
+
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if m.Path != "/bpkg.v1.Svc/BetaOne" {
+		t.Errorf("path = %q, want /bpkg.v1.Svc/BetaOne", m.Path)
+	}
+}
+
+// Imported files are listed sorted by full name, the same text every time:
+// the registry's own order is not stable.
+// Ground: decision — imported methods sorted by full name (brain, 2026-10-14).
+func TestProtoResolver_ImportedMethodsAreListedSortedAndTheTextIsStable(t *testing.T) {
+	files := map[string]string{
+		"a.proto": svcProto("apkg.v1", []string{"z.proto", "m.proto", "c.proto"}, "AlphaOne"),
+		"z.proto": svcProto("zpkg.v1", nil, "ZetaOne"),
+		"m.proto": svcProto("mpkg.v1", nil, "MuOne"),
+		"c.proto": svcProto("cpkg.v1", nil, "CeeOne"),
+	}
+	dir := tree(t, files)
+	wantOrder := []string{"apkg.v1.Svc/AlphaOne", "cpkg.v1.Svc/CeeOne", "mpkg.v1.Svc/MuOne", "zpkg.v1.Svc/ZetaOne"}
+
+	var first string
+	for i := range 12 {
+		r := compile(t, dir, []string{"a.proto"}, []string{"."})
+		_, err := r.Resolve(t.Context(), "apkg.v1.Svc/Absent")
+		if !errors.Is(err, descriptor.ErrMethodNotFound) {
+			t.Fatalf("err = %v, want descriptor.ErrMethodNotFound", err)
+		}
+		text := err.Error()
+		prev := -1
+		for _, name := range wantOrder {
+			at := strings.Index(text, name)
+			if at < 0 || at < prev {
+				t.Fatalf("run %d: %q missing or out of order (want %v):\n%s", i, name, wantOrder, text)
+			}
+			prev = at
+		}
+		if i == 0 {
+			first = text
+		} else if text != first {
+			t.Fatalf("run %d: text differs from run 0:\n%s\n%s", i, text, first)
+		}
+	}
+}
+
 // Ground: contract — streaming is refused as it is under reflection.
 func TestProtoResolver_AStreamingMethodIsRefused(t *testing.T) {
 	dir := tree(t, map[string]string{"shop.proto": shopProto})
