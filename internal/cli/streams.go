@@ -75,6 +75,15 @@ func plural(n int, word string) string {
 	return fmt.Sprintf("%d %ss", n, word)
 }
 
+// changedTimes is "once" for one change, "N times" for more.
+func changedTimes(n int) string {
+	if n == 1 {
+		return "once"
+	}
+
+	return fmt.Sprintf("%d times", n)
+}
+
 // cause is one reason calls waited: tail counts the calls that waited over
 // the floor for it among those that set p99, plus the unsent it kept back; n
 // counts them over the whole run.
@@ -262,7 +271,7 @@ func streamNotes(report engine.Report) []string {
 
 		switch {
 		case c.LimitChanges > 0:
-			line += fmt.Sprintf("; target stream limit %d to %d, changed %d times", c.FirstLimit, c.LastLimit, c.LimitChanges)
+			line += fmt.Sprintf("; target stream limit %d to %d, changed %s", c.FirstLimit, c.LastLimit, changedTimes(c.LimitChanges))
 		case c.LimitAnnounced:
 			line += fmt.Sprintf("; target stream limit %d", c.LastLimit)
 		default:

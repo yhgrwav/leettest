@@ -25,6 +25,17 @@ import (
 // maxNamed is how many connections a line names before it says "and <m> more".
 const maxNamed = 5
 
+// namedList joins at most maxNamed items and counts the rest.
+func namedList(items []string) string {
+	list := strings.Join(items[:min(len(items), maxNamed)], ", ")
+
+	if more := len(items) - maxNamed; more > 0 {
+		list += fmt.Sprintf(" and %d more", more)
+	}
+
+	return list
+}
+
 // severalConnections says the run had more than one connection and the engine
 // counted each: the only case with something to tell per connection. With one,
 // every report is as it was before connections: N.
@@ -163,7 +174,7 @@ func connectionNotes(target string, c *engine.Connections) []string {
 		}
 
 		notes = append(notes, fmt.Sprintf("%d connections over %d addresses: %s, the backends are loaded unevenly.",
-			n, m, strings.Join(over, ", ")))
+			n, m, namedList(over)))
 	}
 
 	if m > n {
@@ -176,7 +187,7 @@ func connectionNotes(target string, c *engine.Connections) []string {
 		}
 
 		notes = append(notes, fmt.Sprintf("%s resolved to %d addresses; %d connections load %d of them: %s got no calls.",
-			host, m, n, m-len(unused), strings.Join(unused, ", ")))
+			host, m, n, m-len(unused), namedList(unused)))
 	}
 
 	return notes
