@@ -1,4 +1,4 @@
-> 译自 [docs/ru/quickstart.md](../ru/quickstart.md)，对应 c726cb6，2026-10-14。如有出入，以俄文版为准。
+> 译自 [docs/ru/quickstart.md](../ru/quickstart.md)，对应 5c75feb，2026-10-14。如有出入，以俄文版为准。
 > **可能滞后：** 中文版在每次发布前同步，最新内容请看[英文版](../en/quickstart.md)。
 
 # 快速上手
@@ -168,11 +168,15 @@ bin/leettest -c examples/tour-tls.yaml
 
 ```
 run finished: 127.0.0.1:50051 in 40.5s
+name: tour
+settings: warm-up 3s, max in flight 5000, connections 1
 sent 12950, failed 5248
 
 method                                           sent   failed    sent/s       p50       p90       p95       p99
 grpc.health.v1.Health/Check                     11100     4499       300    20.5ms    >500ms    >500ms    >500ms
+  plan: 300 rps for 40s
 wallet.v1.WalletService/GetBalance               1850      749        50    20.5ms    >500ms    >500ms    >500ms
+  plan: 50 rps for 40s
   data: 4 of 4 requests from wallets.jsonl, each used up to 500 times, random order, seed 42
 
 warm-up 1050 sent, excluded from stats
@@ -194,6 +198,8 @@ is a lower bound: the real tail lies above it. Raise the timeout to see it.
 
 要点：
 
+- **这是哪一次运行。** `name:` 和 `settings:` 重复运行的名称及其启动设置，方法下的 `plan:`
+  是为它配置的速率和时长：贴进工单的报告可以与另一份对比（未发布）。
 - **服务在多大负载下开始扛不住。** “at 300 rps … nothing after the call sent at 25.0s”——目标在
   第 25 秒沉默，恰好是测试台被设定的时刻。时刻按调用实际发出的时间计算，而不是按计划时间：落后的
   压测机不会被当成目标的沉默。
@@ -261,7 +267,7 @@ JSON 是版本化的（`schema_version`）；结论以字段而不是文本给�
 | 代码 | 含义 |
 |---|---|
 | `0` | 计划执行完毕，报告完整 |
-| `1` | 没有运行：命令行参数、配置、连接。没有报告 |
+| `1` | 没有得到所要求的报告：运行没有发生（命令行参数、配置、连接），或报告无法写入 `-json-file`（未发布）。原因见 stderr |
 | `2` | 运行无效：触及在途上限、某个方法所有调用都是请求错误，或主机时钟比 p50 的四分之一还粗。有报告，但数字与负载无关 |
 | `3` | 在计划结束前停止。报告涵盖已运行的部分 |
 | `130`、`143` | 被 Ctrl+C 或 SIGTERM 终止，没有报告 |
