@@ -65,7 +65,7 @@ func CallsFromConfig(cfg *config.MasterConfig) ([]engine.Call, error) {
 
 				continue
 			}
-			built.Dataset = &engine.DatasetRef{File: call.Dataset, Counter: counter}
+			built.Dataset = &engine.DatasetRef{File: call.Dataset, Counter: counter, Once: call.DatasetReuse != nil && !*call.DatasetReuse}
 		}
 
 		calls = append(calls, built)
