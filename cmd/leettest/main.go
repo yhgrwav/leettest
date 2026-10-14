@@ -62,7 +62,16 @@ var ErrIncomplete = errors.New("the run stopped before its planned end; the repo
 var exitNow = func() {
 	fmt.Fprintln(os.Stderr, "leettest: aborted without a report")
 	sig, _ := lastSignal.Load().(os.Signal)
-	os.Exit(abortCode(sig))
+	exitProcess(abortCode(sig))
+}
+
+// exitProcess is os.Exit; tests replace it to see the exit without leaving.
+var exitProcess = os.Exit
+
+// writeJSONFile puts the report's bytes into the file named by -json-file;
+// tests replace it to fail the write.
+var writeJSONFile = func(path string, data []byte) error {
+	return nil
 }
 
 // lastSignal is what asked the run to stop, so an abort without a report
@@ -217,6 +226,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		fakeFail       = flags.Float64("fake-fail-ratio", 0, "share of fake replies that fail, 0 to 1, with -fake")
 		showVersion    = flags.Bool("version", false, "print the version and exit")
 		output         = flags.String("output", "text", "report format on stdout: text, or json for scripts")
+		jsonFile       = flags.String("json-file", "", "also write the JSON report to this new file")
 		plain          = flags.Bool("plain", false, "no live screen: progress lines on stderr, as when stderr is not a terminal")
 	)
 
@@ -224,6 +234,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		return err
 	}
 
+	_, _ = jsonFile, writeJSONFile // red-test stub: the flag is accepted and does nothing yet
 	interactive := liveView(*plain, terminal)
 	if *showVersion {
 		info, _ := debug.ReadBuildInfo()
