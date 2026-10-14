@@ -3,7 +3,7 @@
 [Русский](../ru/reference.md) · [English](../en/reference.md) · [Deutsch](reference.md) · [简体中文](../zh-CN/reference.md)
 [← Startseite](README.md)
 
-> Übersetzt aus [docs/ru/reference.md](../ru/reference.md) bei 67f8732, 2026-10-08. Bei
+> Übersetzt aus [docs/ru/reference.md](../ru/reference.md) bei c726cb6, 2026-10-14. Bei
 > Abweichungen gilt die russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/reference.md).
@@ -41,6 +41,9 @@ load:
 | `app.metadata` | Header jedes Aufrufs: `authorization`, `x-api-key` usw. `${NAME}` kommt aus einer Umgebungsvariable |
 | `app.max_response_size` | Die größte Antwort, die ein Aufruf annimmt: `16MiB`, `512KB`. Die Einheit ist Pflicht (`MB` = 10⁶ Bytes, `MiB` = 2²⁰), unter 2 GiB. Weggelassen — 4 MiB, wie in gRPC. Eine größere Antwort ist eine `bad response`. Ein laufender Aufruf kann bis zum Doppelten des Limits puffern: standardmäßig bis zu 8 MiB je Aufruf |
 | `app.connections` | Wie viele Verbindungen zum Ziel geöffnet werden, eine ganze Zahl von 1 bis 256. Weggelassen — 1. Die Aufrufe nehmen die Verbindungen reihum, der Bericht druckt einen Block `Connections:`, eine Zeile je Verbindung |
+| `app.proto.files` | `.proto`-Dateien, aus denen die Dienste genommen werden, für einen Dienst ohne Reflection. Pfade gelten ab dem Verzeichnis der Konfigurationsdatei. Jede Datei muss in einem der `import_paths` liegen — nicht veröffentlicht |
+| `app.proto.import_paths` | Wo die Dateien und ihre Imports gesucht werden, wie bei `protoc -I`. Pfade gelten ab dem Verzeichnis der Konfigurationsdatei. Weggelassen — dieses Verzeichnis. Für Standardtypen (`google/protobuf/…`) braucht es keinen Pfad — nicht veröffentlicht |
+| `app.protoset` | Eine Deskriptorsatz-Datei statt `.proto`-Dateien, gebaut mit `protoc --include_imports --descriptor_set_out=FILE`. Der Pfad gilt ab dem Verzeichnis der Konfigurationsdatei. Nicht zusammen mit `app.proto`; ist keines von beiden gesetzt, werden die Methoden über Reflection geholt — nicht veröffentlicht |
 | `load.warmup` | Die ersten N Sekunden bleiben aus den Perzentilen und aus `sent`: kalte Caches verderben sie. Aufwärm-Aufrufe erreichen das Ziel durchaus; der Bericht gibt sie auf einer Zeile `warm-up N sent (M failed), excluded from stats` aus — `sent` plus diese Zeile ist jeder Aufruf, den der Generator versucht hat. Das Ziel bekam sie alle bis auf die als unreachable oder client error gezählten; `cut off` und abgelaufene haben es vielleicht nicht vollständig erreicht: Ein Ziel, das sein HTTP/2-Fenster nicht öffnet (Flusskontrolle), bekommt nur die Header, und seine Zähler sehen den Aufruf womöglich nicht. Zählt zu `duration`, kürzer als jeder Aufruf |
 | `load.calls[].method` | Der volle Methodenname: `package.Service/Method` |
 | `load.calls[].rps` | Anfragen pro Sekunde für diese Methode |
@@ -48,6 +51,9 @@ load:
 | `load.calls[].timeout` | Wie lange auf eine Antwort gewartet wird. Weggelassen — `2s`. Null schaltet es nicht ab, es ist ein Fehler |
 | `load.calls[].data` | Der Anfrage-Body, siehe [unten](#anfrage-body). Weggelassen — eine leere Nachricht |
 | `load.calls[].dataset` | Eine Datei mit Anfrage-Bodies statt `data`, siehe [unten](#bei-jedem-aufruf-eine-andere-anfrage-dataset). Zusammen mit `data` nicht erlaubt |
+| `load.calls[].dataset_order` | `file` (weggelassen) oder `random`: die Reihenfolge der Anfragen aus der Datei. Braucht `dataset` — nicht veröffentlicht |
+| `load.calls[].dataset_seed` | Eine ganze Zahl von 0 bis 9007199254740991, legt eine zufällige Reihenfolge fest. Braucht `dataset_order: random`. Weggelassen — wird selbst gewählt und im Bericht ausgegeben — nicht veröffentlicht |
+| `load.calls[].dataset_reuse` | `true` (weggelassen) oder `false`: bei `false` geht kein Datensatz im ganzen Prozess zweimal raus. Braucht `dataset` — nicht veröffentlicht |
 
 Die Konfiguration wird streng gelesen: Ein Tippfehler in einem Feldnamen ist ein Fehler mit der
 Zeilennummer, ein falscher Wert ein Fehler mit Nummer und Methode des Aufrufs, kein Lauf mit leerer
@@ -93,8 +99,10 @@ Bericht, nicht während des Laufs, nicht in Fehlern.
 
 **Header.** Namen werden kleingeschrieben, wie HTTP/2 sie ohnehin trägt. Ein Konfigurationsfehler
 vor dem Start: ein Schlüssel, der mit `grpc-` beginnt (von gRPC reserviert), Pseudo-Header wie
-`:path`, ein Schlüssel, der auf `-bin` endet (binäre Header werden noch nicht unterstützt), ein Wert
-außerhalb von druckbarem ASCII. Dieselben Header und dasselbe Zertifikat gehen in die Methodenprüfung
+`:path`, ein Schlüssel, der auf `-bin` endet (binäre Header werden noch nicht unterstützt), `content-type` und `te` (die schreibt der Transport
+selbst), `connection`, `keep-alive`, `proxy-connection`, `transfer-encoding`, `upgrade` (in HTTP/2
+gibt es sie nicht), ein Wert außerhalb von druckbarem ASCII. `user-agent` ist erlaubt: Das Ziel sieht
+einen Header, Ihren Wert und danach ` grpc-go/<Version>`. Dieselben Header und dasselbe Zertifikat gehen in die Methodenprüfung
 vor dem Start. Hat das Ziel sie bei gesetzten Headern mit `Unauthenticated` beantwortet, startet der
 Lauf nicht: „target rejected credentials". `PermissionDenied` hält den Lauf nicht an: Der Token wurde
 angenommen und kann für Aufrufe gelten, ohne in die Reflection zu lassen; die Methoden werden als
@@ -197,6 +205,22 @@ steht, geht zweimal raus, und ein Aufruf, der das Ziel nie erreicht hat, wird au
 Suche nach dem Bruchpunkt macht jeder Schritt dort weiter, wo der vorige endete, und die Zeile zählt
 die ganze Suche.
 
+`dataset_order: random` gibt die Anfragen in zufälliger Reihenfolge aus: Jeder Durchgang durch die
+Datei ist eine neue Permutation, in der jede Anfrage einmal rausgeht, deshalb bleiben die Zahlen
+oben dieselben. Die Zeile endet dann auf `, random order, seed 42`. Um den Lauf zu wiederholen,
+tragen Sie diese Zahl in `dataset_seed` ein (eine ganze Zahl von 0 bis 9007199254740991): Derselbe
+Seed, dieselbe Datei und dieselbe Anzahl Anfragen ergeben dieselbe Reihenfolge. Weggelassen — der
+Seed wird beim Start gewählt, je Aufruf ein eigener.
+
+`dataset_reuse: false` sendet jeden Datensatz höchstens einmal, je Aufruf und im ganzen Prozess:
+Warm-up, jeder Schritt der Suche und jede Verbindung nehmen die Datensätze aus einem Zähler (zwei
+Aufrufe mit derselben Datei — zwei Zähler). Die Zeile lautet dann:
+`data: 3 of 3 requests from wallets.jsonl, each at most once`. Ein Lauf, den die Datei nicht abdeckt, wird vor dem Senden
+abgelehnt, mit beiden Zahlen. Eine Suche, die einen Datensatz braucht, während die Datei keinen mehr
+hat, hält an wie bei Ctrl+C (Exit-Code 3): Der laufende Lauf wird nicht beurteilt, der Bericht nennt
+die Datei und die Rate. Nur ein Prozess: Die Datensätze werden nicht zwischen Maschinen geteilt, und
+ein Anhalten lässt Datensätze ungesendet.
+
 ## Flags
 
 | Flag | Was es tut |
@@ -229,6 +253,21 @@ es nicht.
 
 Ein angehaltener Lauf wird im Bericht als unvollständig markiert (Exit 3): Seine Zahlen sind ehrlich,
 decken aber weniger ab als geplant.
+
+## Wo man es ausführt
+
+Unter Linux neben dem Ziel: im selben Netz, im selben Cluster, auf einem CI-Runner. Alles zwischen
+Generator und Ziel landet in der Latenz und sieht aus wie die Zeit des Ziels: auf unserem Stand bei
+1000 RPS lag p99 über die Portweiterleitung von Docker Desktop bei 38 ms, innerhalb des Docker-Netzes
+bei 2 ms.
+
+- Den exakten Aufrufplan gibt es nur unter Linux. In einem Container mit einer CPU-Quote unter zwei
+  Kernen sind seltene Startverzögerungen bis zur Quotenperiode (meist 100 ms) möglich; der Bericht
+  zeigt sie.
+- Hinter einem L4-Balancer wird ein Backend belastet: eine Verbindung — ein Backend. Siehe
+  [den Bericht lesen](README.md#den-bericht-lesen).
+- Unter Windows springt die Uhr in Schritten von etwa 0,5 ms, und ein Lauf gegen einen schnellen
+  Dienst wird für ungültig erklärt (`clock_step`, Exit-Code 2).
 
 ## JSON-Felder
 

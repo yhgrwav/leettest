@@ -1,4 +1,4 @@
-> Übersetzt aus [docs/ru/quickstart.md](../ru/quickstart.md) bei 67f8732, 2026-10-08. Bei
+> Übersetzt aus [docs/ru/quickstart.md](../ru/quickstart.md) bei c726cb6, 2026-10-14. Bei
 > Abweichungen gilt die russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/quickstart.md).
@@ -115,6 +115,8 @@ load:
       duration: 40s
       timeout: 500ms
       dataset: wallets.jsonl
+      dataset_order: random
+      dataset_seed: 42
 ```
 
 - **`name`** — der Name des Laufs in der Kopfzeile.
@@ -136,7 +138,9 @@ load:
 - **`dataset`** — eine Datei mit Anfrage-Bodies statt `data`, ein JSON je Zeile
   ([`examples/wallets.jsonl`](../../examples/wallets.jsonl)): Der erste Aufruf geht mit der ersten
   Zeile raus, der zweite mit der zweiten, nach der letzten fängt es von vorn an. Neben der
-  Methodenzeile sagt der Bericht, wie viel der Datei benutzt wurde.
+  Methodenzeile sagt der Bericht, wie viel der Datei benutzt wurde. `dataset_order: random` mischt
+  die Datei bei jedem Durchgang; der Bericht gibt den Seed aus, und `dataset_seed` wiederholt die
+  Reihenfolge.
 - **`connections`** — wie viele Verbindungen die Last tragen (standardmäßig 1).
   Hinter einem L4-Balancer belastet eine Verbindung ein Backend; ab N ≥ 2 bekommt der Bericht einen
   Block `Connections:`, eine Zeile je Verbindung.
@@ -150,6 +154,11 @@ ist je Methode.
 export LEETTEST_TOKEN=demo
 bin/leettest -c examples/tour.yaml
 ```
+
+`demo` ist der gemeinsame Token, den wir den ersten Nutzern schenken.
+
+Der erste Start im Terminal fragt nach einem Farbschema: Pfeiltasten und Enter, die Frage kommt nur
+einmal (`-plain` überspringt die Frage und die Live-Ansicht).
 
 Vor dem Start verbindet sich LeetTest mit dem Ziel, prüft jede Methode über Reflection, baut den
 Anfrage-Body und prüft, dass die In-Flight-Grenze (`-max-in-flight`) ein hängendes Ziel aushält.
@@ -190,7 +199,7 @@ sent 12950, failed 5248
 method                                           sent   failed    sent/s       p50       p90       p95       p99
 grpc.health.v1.Health/Check                     11100     4499       300    20.5ms    >500ms    >500ms    >500ms
 wallet.v1.WalletService/GetBalance               1850      749        50    20.5ms    >500ms    >500ms    >500ms
-  data: 4 of 4 requests from wallets.jsonl, each used up to 500 times
+  data: 4 of 4 requests from wallets.jsonl, each used up to 500 times, random order, seed 42
 
 warm-up 1050 sent, excluded from stats
 
@@ -231,6 +240,9 @@ Worauf es ankommt:
 Die Fehlerkategorien (`overload`, `failure`, `request error`, `timed out`, `cut off`, `unreachable`
 und andere) und ihre Bedeutung stehen im
 [README, „Den Bericht lesen"](README.md#den-bericht-lesen).
+
+Exit-Code `0` heißt nicht „der Dienst ist gesund": Lesen Sie die Lastgrenze und die Ursachen
+([README, „Exit-Codes"](README.md#exit-codes)).
 
 ## 6. Andere Verhaltensweisen des Ziels
 

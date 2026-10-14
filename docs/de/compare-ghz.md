@@ -1,6 +1,6 @@
 # LeetTest und ghz auf demselben Stand
 
-> Übersetzt aus [docs/ru/compare-ghz.md](../ru/compare-ghz.md) bei 6adffbf, 2026-10-12. Bei
+> Übersetzt aus [docs/ru/compare-ghz.md](../ru/compare-ghz.md) bei c726cb6, 2026-10-14. Bei
 > Abweichungen gilt die russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/compare-ghz.md).

@@ -1,4 +1,4 @@
-> 译自 [docs/ru/quickstart.md](../ru/quickstart.md)，对应 67f8732，2026-10-08。如有出入，以俄文版为准。
+> 译自 [docs/ru/quickstart.md](../ru/quickstart.md)，对应 c726cb6，2026-10-14。如有出入，以俄文版为准。
 > **可能滞后：** 中文版在每次发布前同步，最新内容请看[英文版](../en/quickstart.md)。
 
 # 快速上手
@@ -102,6 +102,8 @@ load:
       duration: 40s
       timeout: 500ms
       dataset: wallets.jsonl
+      dataset_order: random
+      dataset_seed: 42
 ```
 
 - **`name`**——运行在标题中的名称。
@@ -119,7 +121,8 @@ load:
   错误会在启动前暴露。
 - **`dataset`**——用请求体文件代替 `data`，每行一个 JSON
   （[`examples/wallets.jsonl`](../../examples/wallets.jsonl)）：第一次调用用第一行，第二次用第二行，
-  用完最后一行后从头再来。报告在方法那一行旁边说明文件用了多少。
+  用完最后一行后从头再来。报告在方法那一行旁边说明文件用了多少。`dataset_order: random`
+  在每一遍都重新打乱文件；报告会输出 seed，`dataset_seed` 可复现该顺序。
 - **`connections`**——多少条连接承载负载（默认 1）。在 L4 负载均衡器后面，一条连接只给
   一个后端施压；N ≥ 2 时报告会多出一个 `Connections:` 块，每条连接一行。
 
@@ -131,6 +134,10 @@ load:
 export LEETTEST_TOKEN=demo
 bin/leettest -c examples/tour.yaml
 ```
+
+`demo` 是我们送给最早一批用户的共用 token。
+
+在终端中首次运行会询问配色主题：用方向键和 Enter 选择，只问一次（`-plain` 同时跳过提问和实时界面）。
 
 启动前，LeetTest 会连接目标，通过 reflection 检查每个方法，构建请求体，并检查在途上限
 （`-max-in-flight`）能否承受目标挂起。运行前能知道的一切，都会在第一次调用之前作为错误报告。
@@ -166,7 +173,7 @@ sent 12950, failed 5248
 method                                           sent   failed    sent/s       p50       p90       p95       p99
 grpc.health.v1.Health/Check                     11100     4499       300    20.5ms    >500ms    >500ms    >500ms
 wallet.v1.WalletService/GetBalance               1850      749        50    20.5ms    >500ms    >500ms    >500ms
-  data: 4 of 4 requests from wallets.jsonl, each used up to 500 times
+  data: 4 of 4 requests from wallets.jsonl, each used up to 500 times, random order, seed 42
 
 warm-up 1050 sent, excluded from stats
 
@@ -201,6 +208,8 @@ is a lower bound: the real tail lies above it. Raise the timeout to see it.
 
 失败类别（`overload`、`failure`、`request error`、`timed out`、`cut off`、`unreachable` 等）
 及其含义见 [README 中的“阅读报告”](README.md#阅读报告)。
+
+退出码 `0` 不代表“服务健康”：请阅读负载上限和原因（[README 中的“退出码”](README.md#退出码)）。
 
 ## 6. 目标的其他行为
 

@@ -2,7 +2,7 @@
 
 [← Zur Übersicht](README.md)
 
-> Übersetzt aus [docs/ru/roadmap.md](../ru/roadmap.md) bei 67f8732, 2026-10-08. Bei Abweichungen gilt die
+> Übersetzt aus [docs/ru/roadmap.md](../ru/roadmap.md) bei c726cb6, 2026-10-14. Bei Abweichungen gilt die
 > russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/roadmap.md).

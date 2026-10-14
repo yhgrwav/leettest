@@ -2,7 +2,7 @@
 
 [← Zur Übersicht](README.md)
 
-> Übersetzt aus [docs/ru/why.md](../ru/why.md) bei 0ca9b60, 2026-10-12. Bei Abweichungen gilt die
+> Übersetzt aus [docs/ru/why.md](../ru/why.md) bei c726cb6, 2026-10-14. Bei Abweichungen gilt die
 > russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/why.md).
@@ -41,6 +41,45 @@ JMeter ist Version 5.6.3 mit einem gRPC-Plugin: JMeter selbst kann kein gRPC [20
 | Die Last bricht nicht ein, wenn das Ziel langsamer wird (Open Model) | 🟡 `--async`, nicht der Standard [4] | 🟡 eigener Executor, nicht der Standard [11] | 🟡 experimentell, nicht der Standard [23] | 🟢 das einzige Modell |
 | Die eigene Verspätung des Generators fließt in die Latenz ein | 🔴 nein: ab dem Senden [5] | 🔴 nein: ab dem Senden, ungesendete in `dropped_iterations` [12][13] | 🔴 nein: ab dem Senden [24] | 🟢 |
 | Fehlgeschlagene und durch Timeout abgebrochene Aufrufe gehen in die Perzentile ein | 🟡 `--count-errors`, nicht der Standard [6] | 🟢 [13] | 🟢 [25] | 🟢 fehlgeschlagene mit eigenen Perzentilen je Kategorie, abgebrochene als untere Schranke |
+
+**Wie viel sie aushält und wie gleichmäßig**
+
+| Was wir messen | ghz | k6 | LeetTest |
+|---|---|---|---|
+| Anfragen pro Sekunde, die ein Kern hält; das Ziel antwortet sofort (mehr ist besser) | 9.300 | 4.750 | **35.550** |
+| Gleichmäßigkeit des Zeitplans bei 1000 Anfragen pro Sekunde: Abstand zwischen benachbarten Anfragen am Ziel, Median / p99 / p99,9 / Maximum; ideal ist 1 ms (Median: näher an 1 ms ist besser; p99 / p99,9 / Maximum: weniger ist besser) ² | **1,1** / 1,75 / 3,5 / 9,3 ms | 0,59 / 1,8 / 2,05 / 14,7 ms | 1,5 / **1,68 / 1,88 / 3,1 ms** |
+| Was das Werkzeug zur Latenz hinzufügt; das Ziel antwortet in 20 ms, 500 Anfragen pro Sekunde; p50 / p99 (weniger ist besser) | **0,33 / 0,31 ms** | **0,33** / 0,49 ms | 0,98 / 1,3 ms ¹ |
+
+JMeter wurde nicht gemessen. ¹ LeetTest zählt die Latenz ab dem Moment, zu dem der Aufruf fällig
+war, ghz und k6 ab dem Senden (die Zeile „Die eigene Verspätung des Generators fließt in die
+Latenz ein“ oben); bei `GOMAXPROCS=1` startet LeetTest Aufrufe verspätet: p99 etwa 1,1 ms, einzelne
+bis 2,5 ms, und diese Verspätung landet nur in seiner Zahl. ² Alle drei Werkzeuge senden in jeder
+stabilen Sekunde 999–1001 Anfragen, der mittlere Abstand beträgt also 1 ms; ein Median abseits von
+1 ms bedeutet, dass die Anfragen ungleichmäßig kommen, nicht dass die Rate eine andere ist.
+
+So wurde gemessen. Jedes Werkzeug läuft in einem eigenen Docker-Container mit einem Kern
+(`--cpus=1`, `GOMAXPROCS=1`), der Referenz-Stand in einem anderen mit vier. Die Zahlen berechnet der
+Stand daraus, wann die Aufrufe bei ihm eintrafen, nicht aus den Berichten der Werkzeuge; in der
+dritten Zeile sind es p50 und p99 des Werkzeugs selbst minus die Zeit, die der Stand die Antwort
+am selben Perzentil zurückhielt. ghz v0.121.0 mit `--async`; k6 v2.3.0 mit konstanter Ankunftsrate
+und 100 vorab angelegten virtuellen Nutzern (es öffnet für jeden eine Verbindung); LeetTest mit
+einer Verbindung. Drei Läufe zu je 20 Sekunden, in der zweiten und dritten Zeile steht der Median.
+Eine Rate in der ersten Zeile gilt als gehalten, wenn, ohne die ersten zwei Sekunden und die
+letzte, mindestens 99,9 % der geplanten Aufrufe beim Stand ankamen und keine Sekunde unter 99 % der
+Rate fiel; ein Punkt zählt, wenn mindestens zwei von drei Läufen ihn hielten. LeetTest mit vier
+Kernen hielt 108.400 Anfragen pro Sekunde, der Stand war in der ersten Zeile also nicht die
+Grenze. Eine Maschine: 24 logische Kerne, Linux in WSL2 unter Docker Desktop, 12.–13. Oktober 2026.
+
+Zum Nachmessen (Docker und Go werden gebraucht; der Befehl läuft im Wurzelverzeichnis des
+Repositorys):
+
+```
+go run ./test/compare-perf -runs 3 -duration 20s
+```
+
+Am Ende gibt der Befehl die Tabellen aus und speichert sie in `test/compare-perf/out/summary.md`;
+ein voller Lauf dauert bis zu drei Stunden. `-plan` gibt alle Einstellungen und Befehle aus, ohne
+etwas zu starten.
 
 Open Model als Standard, Erfassung der Verspätung des Generators und die Suche nach dem
 Ausfallpunkt sind die Zeilen, in denen weder ghz noch k6 noch JMeter ein 🟢 haben. Hochfahren auf
