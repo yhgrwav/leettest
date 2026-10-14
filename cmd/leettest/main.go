@@ -279,7 +279,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 	// A file that cannot cover the run is a config error: the target never sees
 	// a half run. A search is checked against its first run, whose warm-up is
 	// inside the hold; later runs end the search if the file runs out.
-	if err = cli.CheckDatasetsFit(firstRuns(cfg, calls)); err != nil {
+	if err := cli.CheckDatasetsFit(firstRuns(cfg, calls)); err != nil {
 		return err
 	}
 
