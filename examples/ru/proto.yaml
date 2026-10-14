@@ -1,6 +1,6 @@
 # Сервис без server reflection: методы берутся из .proto-файлов, против эталонного стенда, из корня
 # репозитория:
-#   go run ./test/stand/cmd/stand -delay 20ms -life 60s
+#   go run ./test/stand/cmd/stand -no-reflection -delay 20ms -life 60s
 #   leettest -c examples/ru/proto.yaml
 # Набор, собранный protoc, вместо файлов: protoset.yaml.
 

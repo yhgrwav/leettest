@@ -48,6 +48,9 @@ and prints the summary.
   client; it combines with any behaviour. `0` announces no limit at all.
 - `-capacity n` is a stand of known capacity: it serves at most `n` calls a second, first come
   first served; above that calls wait in a queue.
+- `-no-reflection` is a stand without server reflection, like a service that does not serve it:
+  the methods come from `.proto` files or a protoset (`examples/proto.yaml`,
+  `examples/protoset.yaml`); it combines with any behaviour.
 
 **`measure/`** — substitution tests: the full path (scheduler → worker pool → gRPC sender →
 metrics) against the stand, the report's numbers checked against what the stand did.

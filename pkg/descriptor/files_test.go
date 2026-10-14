@@ -430,6 +430,146 @@ func TestProtoResolver_AFileUnderNoImportPathIsRefused(t *testing.T) {
 	}
 }
 
+// Two services in one name under two roots: api/foo/x.proto is service A,
+// vendor/foo/x.proto is service B.
+func shadowTree(t *testing.T) string {
+	t.Helper()
+
+	return tree(t, map[string]string{
+		"api/foo/x.proto": `syntax = "proto3";
+package a.v1;
+message Req {}
+service A { rpc Get(Req) returns (Req); }
+`,
+		"vendor/foo/x.proto": `syntax = "proto3";
+package b.v1;
+message Req {}
+service B { rpc Get(Req) returns (Req); }
+`,
+	})
+}
+
+// protoc refuses ("Input is shadowed in the --proto_path"); compiling the other
+// file under this file's name would be the wrong schema, silently (ghz#206).
+// Ground: contract — an entry file is the file the user listed or an error naming both.
+func TestProtoResolver_AnEntryFileShadowedByAnEarlierImportPathIsRefused(t *testing.T) {
+	dir := shadowTree(t)
+
+	r, err := descriptor.NewProtoResolver(at(dir, "vendor/foo/x.proto"), at(dir, "api", "vendor"))
+
+	if !errors.Is(err, descriptor.ErrShadowedInput) {
+		t.Fatalf("err = %v, want descriptor.ErrShadowedInput", err)
+	}
+	if r != nil {
+		t.Errorf("a resolver came back with the error: it could answer from the other file")
+	}
+	namesBothFilesAndTheWayOut(t, err, dir, "vendor/foo/x.proto", "api/foo/x.proto")
+}
+
+// namesBothFilesAndTheWayOut checks the text of a shadowing refusal: the entry
+// file, the file that shadows it, and the way out. A root is a substring of its
+// file's path, so a bare Contains on the root is met by the file alone; in the
+// right text the shadowing root appears twice (the file in the description and in
+// "list ... instead") and the entry's root twice (the file and "put ... first").
+func namesBothFilesAndTheWayOut(t *testing.T, err error, dir, entry, shadowing string) {
+	t.Helper()
+
+	msg := err.Error()
+	for _, want := range at(dir, entry, shadowing) {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error %q does not name %q", err, want)
+		}
+	}
+	for _, name := range []string{entry, shadowing} {
+		root := at(dir, strings.SplitN(name, "/", 2)[0])[0]
+		if n := strings.Count(msg, root); n < 2 {
+			t.Errorf("error %q names %q %d time(s): the way out (list the other file, or put the entry's root first) is missing", err, root, n)
+		}
+	}
+}
+
+// Ground: contract — the same two files, the entry's root first: nothing shadows it.
+func TestProtoResolver_AnEntryFileFirstInImportPathsIsNotShadowed(t *testing.T) {
+	dir := shadowTree(t)
+	r := compile(t, dir, []string{"vendor/foo/x.proto"}, []string{"vendor", "api"})
+
+	if _, err := r.Resolve(t.Context(), "b.v1.B/Get"); err != nil {
+		t.Errorf("resolve B: %v", err)
+	}
+	if _, err := r.Resolve(t.Context(), "a.v1.A/Get"); err == nil {
+		t.Errorf("A resolved: the other file was compiled too")
+	}
+}
+
+// One file under two roots is one file, not a shadow. A hard link is the
+// spelling that needs no privilege on Windows; nameUnder takes the first root
+// that holds the entry, so two spellings of one directory never reach the check
+// (the second subtest holds that).
+// Ground: contract — the same physical file is not shadowed by itself.
+func TestProtoResolver_TheSameFileUnderTwoImportPathsIsNotShadowed(t *testing.T) {
+	t.Run("a hard link", func(t *testing.T) {
+		dir := tree(t, map[string]string{
+			"api/foo/x.proto": shopProto,
+			"vendor/foo/keep": "",
+		})
+		if err := os.Link(at(dir, "api/foo/x.proto")[0], at(dir, "vendor/foo/x.proto")[0]); err != nil {
+			t.Skipf("no hard links here: %v", err)
+		}
+
+		r := compile(t, dir, []string{"vendor/foo/x.proto"}, []string{"api", "vendor"})
+
+		if _, err := r.Resolve(t.Context(), "shop.v1.Shop/Get"); err != nil {
+			t.Errorf("resolve: %v", err)
+		}
+	})
+
+	t.Run("one root spelled twice", func(t *testing.T) {
+		dir := tree(t, map[string]string{"api/foo/x.proto": shopProto})
+		root := at(dir, "api")[0]
+
+		r, err := descriptor.NewProtoResolver(at(dir, "api/foo/x.proto"), []string{root, root + string(filepath.Separator) + "."})
+		if err != nil {
+			t.Fatalf("compile: %v", err)
+		}
+		if _, err := r.Resolve(t.Context(), "shop.v1.Shop/Get"); err != nil {
+			t.Errorf("resolve: %v", err)
+		}
+	})
+}
+
+// Whatever sits at the name shadows, a directory too: the compiler's own answer
+// there ("is a directory" / "Incorrect function") names neither file nor the way out.
+// Ground: contract — anything but the entry file itself at its name on an earlier path is refused, naming that path.
+func TestProtoResolver_ADirectoryAtTheNameInAnEarlierPathShadowsToo(t *testing.T) {
+	dir := tree(t, map[string]string{
+		"api/foo/x.proto/keep": "",
+		"vendor/foo/x.proto":   shopProto,
+	})
+
+	err := compileErr(dir, []string{"vendor/foo/x.proto"}, []string{"api", "vendor"})
+
+	if !errors.Is(err, descriptor.ErrShadowedInput) {
+		t.Fatalf("err = %v, want descriptor.ErrShadowedInput", err)
+	}
+	namesBothFilesAndTheWayOut(t, err, dir, "vendor/foo/x.proto", "api/foo/x.proto")
+}
+
+// The common case: the entry sits under the second path and the first holds
+// nothing at its name. Absence, or a failed Stat, is not a shadow.
+// Ground: contract — only something at the name on an earlier path shadows; nothing there does not.
+func TestProtoResolver_NothingAtTheNameInAnEarlierPathIsNotShadowed(t *testing.T) {
+	dir := tree(t, map[string]string{
+		"third_party/keep": "",
+		"api/foo/x.proto":  shopProto,
+	})
+
+	r := compile(t, dir, []string{"api/foo/x.proto"}, []string{"third_party", "api"})
+
+	if _, err := r.Resolve(t.Context(), "shop.v1.Shop/Get"); err != nil {
+		t.Errorf("resolve: %v", err)
+	}
+}
+
 // The library does not guess an import path: the config puts the directory of
 // the config file there. With none, no file is under one.
 // Ground: contract — an empty collection of import paths holds no file.

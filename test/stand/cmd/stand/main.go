@@ -54,6 +54,8 @@ type options struct {
 	mtls       bool
 	certs      string
 	arrivals   string
+
+	noReflection bool
 }
 
 func parse(args []string, usage io.Writer) (options, error) {
@@ -74,6 +76,7 @@ func parse(args []string, usage io.Writer) (options, error) {
 	fs.BoolVar(&o.mtls, "mtls", false, "-tls, and require a client certificate signed by the generated CA")
 	fs.StringVar(&o.certs, "certs", "test/stand/certs", "folder the TLS certificates are written to, relative to the working directory")
 	fs.StringVar(&o.arrivals, "arrivals", "", "on exit write this file: when each call arrived, in nanoseconds after the first arrival, one per line")
+	fs.BoolVar(&o.noReflection, "no-reflection", false, "do not serve server reflection: a client needs the .proto files or a protoset")
 
 	if err := fs.Parse(args); err != nil {
 		return o, err
@@ -150,7 +153,11 @@ func run(args []string, out, errOut io.Writer, stop <-chan struct{}, ready func(
 		return err
 	}
 
-	s := stand.StartOn(lis, o.answer(), opts...)
+	start := stand.StartOn
+	if o.noReflection {
+		start = stand.StartBareOn
+	}
+	s := start(lis, o.answer(), opts...)
 	fmt.Fprintf(errOut, "stand on %s (%s): grpc.health.v1.Health/Check, wallet.v1.WalletService/GetBalance and /Transfer\n",
 		s.Target(), mode)
 	ready(s.Target())
