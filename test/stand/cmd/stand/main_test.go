@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -13,7 +15,68 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health/grpc_health_v1"
+
+	"github.com/yhgrwav/leettest/pkg/descriptor"
 )
+
+// -no-reflection reaches the stand it starts: the same lookup resolves with the flag off and
+// finds no reflection with it on, and the flag composes with another one.
+func TestRun_NoReflectionFlagReachesTheStand(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		args []string
+		bare bool
+	}{
+		{"default serves reflection", nil, false},
+		{"flag drops it", []string{"-no-reflection"}, true},
+		{"with another flag", []string{"-no-reflection", "-delay", "1ms"}, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var out, errOut bytes.Buffer
+			stop := make(chan struct{})
+			addr := make(chan string, 1)
+			done := make(chan error, 1)
+
+			go func() {
+				done <- run(append([]string{"-addr", "127.0.0.1:0"}, tt.args...), &out, &errOut, stop, func(a string) { addr <- a })
+			}()
+
+			var target string
+			select {
+			case target = <-addr:
+			case <-time.After(5 * time.Second):
+				t.Fatal("stand did not start")
+			}
+
+			conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
+			if err != nil {
+				t.Fatalf("dial: %v", err)
+			}
+			defer conn.Close()
+
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+
+			_, err = descriptor.NewReflectionResolver(conn).Resolve(ctx, "wallet.v1.WalletService/GetBalance")
+			switch {
+			case tt.bare && !errors.Is(err, descriptor.ErrReflectionUnsupported):
+				t.Errorf("Resolve err = %v, want ErrReflectionUnsupported", err)
+			case !tt.bare && err != nil:
+				t.Errorf("Resolve: %v", err)
+			}
+
+			close(stop)
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Errorf("run: %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Error("run did not return after stop")
+			}
+		})
+	}
+}
 
 func TestParse_RejectsTwoBehaviorsAtOnce(t *testing.T) {
 	_, err := parse([]string{"-freeze-for", "1s", "-hang-from", "8s"}, io.Discard)
