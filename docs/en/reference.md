@@ -220,6 +220,7 @@ not split between machines, and a stop leaves records unsent.
 |---|---|
 | `-c` | Path to the config |
 | `-output` | Report format on stdout: `text` (the default) or `json` for scripts and CI |
+| `-json-file` | Path of a new file: the JSON report (the same object `-output json` prints) is written to it, and stdout stays as `-output` says. An existing file or a missing directory is exit 1 before the start. A run with no report leaves no file. A failed write is exit 1 — not released |
 | `-connect-timeout` | How long to wait for a service that accepted the connection but stays silent. Default `10s`. A refused connection and a wrong address are not waited for |
 | `-max-in-flight` | Cap on requests waiting for a reply. Default `5000` |
 | `-plain` | No live screen: a progress line once a second on stderr, as without a terminal, and no first-run dialog. The report and exit codes are the same |
@@ -284,7 +285,7 @@ measured calls only. The first column is the field's full path.
 | `leettest_version` | string | The tool's version; a build from source gives the commit |
 | `target` | string | The target address from the config, `fake target` with `-fake` |
 | `methods_source` | string? | Where the methods came from: `reflection`, `proto` (the `app.proto` files) or `protoset`; `null` with `-fake` — not released |
-| `outcome` | string | `complete`, `invalid`, `incomplete` — matches exit code `0`, `2`, `3` |
+| `outcome` | string | `complete`, `invalid`, `incomplete` — matches exit code `0`, `2`, `3`; with `-json-file` and a failed write the code is `1` and `outcome` stays the run's |
 | `invalid_reasons` | []string | Why the run is invalid: `in_flight_cap`, `nothing_measured`, `clock_step`. Empty — valid |
 | `tail_wait_cause` | string? | The client-side wait that set the tail: `generator`, `stream`, `connection`; `null` — no verdict |
 | `clock_step_ns` | int | The host clock step, ns: every latency and wait is ± it |

@@ -62,8 +62,12 @@ var ErrIncomplete = errors.New("the run stopped before its planned end; the repo
 var exitNow = func() {
 	fmt.Fprintln(os.Stderr, "leettest: aborted without a report")
 	sig, _ := lastSignal.Load().(os.Signal)
-	os.Exit(abortCode(sig))
+	discardJSONFile()
+	exitProcess(abortCode(sig))
 }
+
+// exitProcess is os.Exit; tests replace it to see the exit without leaving.
+var exitProcess = os.Exit
 
 // lastSignal is what asked the run to stop, so an abort without a report
 // exits the way that signal would have: a script reads 143 from an
@@ -127,7 +131,8 @@ func printError(w io.Writer, err error) {
 // set yet, so a finished run exits 0 however the target answered.
 //
 //	0   the plan ran to its end and the report is complete
-//	1   the run never started: bad flags, bad config, no connection
+//	1   no report as asked: the run never started (bad flags, bad config,
+//	    no connection), or the -json-file write failed
 //	2   the run is invalid: its numbers do not describe the target
 //	3   the run stopped before its planned end; the report covers less
 //	130 aborted without a report after Ctrl+C
@@ -217,6 +222,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		fakeFail       = flags.Float64("fake-fail-ratio", 0, "share of fake replies that fail, 0 to 1, with -fake")
 		showVersion    = flags.Bool("version", false, "print the version and exit")
 		output         = flags.String("output", "text", "report format on stdout: text, or json for scripts")
+		jsonFile       = flags.String("json-file", "", "also write the JSON report to this new file")
 		plain          = flags.Bool("plain", false, "no live screen: progress lines on stderr, as when stderr is not a terminal")
 	)
 
@@ -299,6 +305,15 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		return withBudgetAdvice(err, opts)
 	}
 
+	// Created before the network: a path that cannot be used ends the command
+	// before any call. Removed on every way out that has no report.
+	if *jsonFile != "" {
+		if reserveErr := reserveJSONFile(*jsonFile); reserveErr != nil {
+			return reserveErr
+		}
+		defer discardJSONFile()
+	}
+
 	// Methods nothing could be checked against: named again with the report,
 	// where a full-screen run does not scroll them away.
 	var (
@@ -357,7 +372,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		return runSearch(ctx, abort, &stopper, searchSetup{
 			cfg: cfg, configPath: *configPath, target: target, sender: sender, calls: opts.Calls,
 			unchecked: unchecked, maxInFlight: *maxInFlight, capSet: capSet, connect: connectWithin,
-			json: *output == "json", interactive: interactive, stepBefore: stepBefore,
+			json: *output == "json", jsonFile: *jsonFile, interactive: interactive, stepBefore: stepBefore,
 			source: source,
 		}, stdout, stderr)
 	}
@@ -465,22 +480,36 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 
 	report := reportOf()
 	result := runResult(report, runErr)
-	if *output == "json" {
-		// Only a run that happened has a report: on exit 1 stdout stays empty,
-		// and a script reads the exit code first.
-		if outcome, ok := outcomeOf(result); ok {
-			info, _ := debug.ReadBuildInfo()
-			if err := cli.WriteJSON(stdout, cli.JSONRun{
+	// Only a run that happened has a report: on exit 1 stdout stays empty,
+	// and a script reads the exit code first. One encoding feeds stdout and
+	// the file, so they hold the same bytes.
+	var data []byte
+	if outcome, ok := outcomeOf(result); ok && (*output == "json" || *jsonFile != "") {
+		info, _ := debug.ReadBuildInfo()
+
+		var err error
+		if data, err = encodeJSON(func(w io.Writer) error {
+			return cli.WriteJSON(w, cli.JSONRun{
 				Target: target, Version: versionString(version, info), Outcome: outcome,
 				StartedAt: report.StartedAt, Run: report,
-			}); err != nil {
-				return fmt.Errorf("write the JSON report: %w", err)
-			}
+			})
+		}); err != nil {
+			return err
+		}
+	}
+	if *output == "json" {
+		if _, err := stdout.Write(data); err != nil {
+			return fmt.Errorf("write the JSON report: %w", err)
 		}
 	} else {
 		cli.PrintReport(stdout, target, report)
 	}
 	s.Finish()
+
+	// A report that was asked for and not saved is not a pass: exit 1.
+	if err := saveJSONFile(*jsonFile, data); err != nil {
+		return err
+	}
 
 	return result
 }

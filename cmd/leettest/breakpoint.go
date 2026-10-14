@@ -44,9 +44,11 @@ type searchSetup struct {
 	unchecked   []cli.Unchecked
 	maxInFlight int
 	// capSet: -max-in-flight was given; otherwise each step gets its own.
-	capSet      bool
-	connect     time.Duration
-	json        bool
+	capSet  bool
+	connect time.Duration
+	json    bool
+	// jsonFile is the -json-file path, empty when not given.
+	jsonFile    string
 	interactive bool
 	stepBefore  time.Duration
 	// source is where the method came from; nil under -fake.
@@ -233,14 +235,25 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 		StartedAt: started, Plan: plan, Result: res, Runs: aligned(res.Steps, runs),
 		MethodsSource: s.source,
 	}
+	var data []byte
+	if s.json || s.jsonFile != "" {
+		var err error
+		if data, err = encodeJSON(func(w io.Writer) error { return cli.WriteBreakpointJSON(w, report) }); err != nil {
+			return err
+		}
+	}
 	if s.json {
-		if err := cli.WriteBreakpointJSON(stdout, report); err != nil {
+		if _, err := stdout.Write(data); err != nil {
 			return fmt.Errorf("write the JSON report: %w", err)
 		}
 	} else {
 		cli.PrintBreakpoint(stdout, report)
 	}
 	st.Finish()
+
+	if err := saveJSONFile(s.jsonFile, data); err != nil {
+		return err
+	}
 
 	switch searchExitCode(res.Outcome) {
 	case 2:
