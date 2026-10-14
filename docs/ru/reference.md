@@ -274,6 +274,7 @@ SIGTERM (`docker stop`, Kubernetes, отмена джоба в CI) сразу о
 | `mode` | string | `run` у обычного прогона, `breakpoint` у поиска точки отказа |
 | `leettest_version` | string | Версия инструмента; собранное из исходников — коммит |
 | `target` | string | Адрес цели из конфига, `fake target` при `-fake` |
+| `name` | string | Имя прогона: `name` из конфига, иначе имя сервиса, иначе имя файла конфига; всегда строка — не выпущено |
 | `methods_source` | string? | Откуда взяты методы: `reflection`, `proto` (файлы `app.proto`) или `protoset`; `null` при `-fake` — не выпущено |
 | `outcome` | string | `complete`, `invalid`, `incomplete` — совпадает с кодом выхода `0`, `2`, `3`; при `-json-file` и неудачной записи код `1`, `outcome` остаётся прогонным |
 | `invalid_reasons` | []string | Почему прогон недействителен: `in_flight_cap`, `nothing_measured`, `clock_step`. Пустой — действителен |

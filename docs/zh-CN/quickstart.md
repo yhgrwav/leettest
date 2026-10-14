@@ -106,7 +106,7 @@ load:
       dataset_seed: 42
 ```
 
-- **`name`**——运行在标题中的名称。
+- **`name`**——运行在标题和 JSON 报告（`name`，未发布）中的名称。
 - **`tls: false`**——测试台不加密。TLS 默认开启；`ca`、`cert`、`key`、`server_name` 见
   [`examples/tour-tls.yaml`](../../examples/tour-tls.yaml)（下文 “TLS”）。
 - **`metadata`**——每次调用附带的请求头。`${LEETTEST_TOKEN}` 来自环境变量：token 既不出现在配置里，

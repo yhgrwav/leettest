@@ -2,6 +2,7 @@ schema_version int
 mode string
 leettest_version string
 target string
+name string
 methods_source string?
 outcome string
 invalid_reasons []string

@@ -119,7 +119,7 @@ load:
       dataset_seed: 42
 ```
 
-- **`name`** — der Name des Laufs in der Kopfzeile.
+- **`name`** — der Name des Laufs in der Kopfzeile und im JSON-Bericht (`name`, nicht veröffentlicht).
 - **`tls: false`** — der Stand hat keine Verschlüsselung. TLS ist standardmäßig an; `ca`, `cert`,
   `key`, `server_name` stehen in [`examples/tour-tls.yaml`](../../examples/tour-tls.yaml) (unten,
   „TLS").

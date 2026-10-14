@@ -59,6 +59,9 @@ type JSONReport struct {
 	Mode            string `json:"mode"`
 	LeetTestVersion string `json:"leettest_version"`
 	Target          string `json:"target"`
+	// Name is what the run is called: the config's name, else the one
+	// service, else the config file's name (ServiceLabel). Always a string.
+	Name string `json:"name"`
 	// MethodsSource is where the methods came from: reflection, proto or
 	// protoset; null when the run resolved none (-fake).
 	MethodsSource *string `json:"methods_source"`

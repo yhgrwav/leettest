@@ -314,6 +314,7 @@ type BreakpointReport struct {
 	Mode            string         `json:"mode"`
 	LeetTestVersion string         `json:"leettest_version"`
 	Target          string         `json:"target"`
+	Name            string         `json:"name"`
 	MethodsSource   *string        `json:"methods_source"`
 	Method          string         `json:"method"`
 	StartedAt       string         `json:"started_at"`
