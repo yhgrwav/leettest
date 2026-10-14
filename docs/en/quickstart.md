@@ -109,6 +109,8 @@ load:
       duration: 40s
       timeout: 500ms
       dataset: wallets.jsonl
+      dataset_order: random
+      dataset_seed: 42
 ```
 
 - **`name`** — the run's name in the header.
@@ -128,7 +130,8 @@ load:
 - **`dataset`** — a file of request bodies instead of `data`, one JSON per line
   ([`examples/wallets.jsonl`](../../examples/wallets.jsonl)): the first call goes out with the
   first line, the second with the second, and after the last line it starts over. Beside the
-  method's row the report says how much of the file was used.
+  method's row the report says how much of the file was used. `dataset_order: random` shuffles
+  the file on each pass; the report prints the seed, and `dataset_seed` repeats the order.
 - **`connections`** — how many connections carry the load (1 by default). Behind an L4
   balancer one connection loads one backend; with N ≥ 2 the report adds a `Connections:` block, a
   row per connection.

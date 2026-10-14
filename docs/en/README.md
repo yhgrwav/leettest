@@ -93,7 +93,8 @@ methods and the request body are checked before the start: any error means exit 
 call to the target. The first `warmup` seconds stay out of the stats. Every call of a method goes
 out with the same body: for a write with an idempotency key the repeat path is measured, not
 creating the record. A different request for each call: a file in `dataset`, one
-JSON per line, in order, round and round. Every field, TLS, headers, the request body and flags
+JSON per line, in order, round and round (`dataset_order: random` — in a random one, the seed in
+the report repeats the order). Every field, TLS, headers, the request body and flags
 are in the **[reference](reference.md)**.
 
 In a terminal the run goes full-screen, `q` to stop. Without a terminal (CI, redirected output) — a

@@ -349,6 +349,8 @@ Die übrigen sind einfache Zähler.
 | `methods[].dataset.records` | int | Anfragen in der Datei |
 | `methods[].dataset.used` | int | Wie viele davon mindestens einmal rausgingen |
 | `methods[].dataset.used_max` | int | Wie oft die am häufigsten genutzte rausging; in einer Suche — vom ersten Schritt bis zum Ende dieses Laufs |
+| `methods[].dataset.order` | string | `file` oder `random`: in welcher Reihenfolge die Anfragen rausgingen |
+| `methods[].dataset.seed` | int? | Seed einer zufälligen Reihenfolge, 0 bis 9007199254740991; `null` bei der Reihenfolge der Datei |
 | `methods[].seconds` | []object | Die Zeitleiste pro Sekunde, siehe unten |
 
 ### Sekunde: `methods[].seconds[]`
