@@ -57,3 +57,7 @@
 - name: blocked
   color: b60205
   description: Ждёт другого изменения или ответа
+
+- name: merge-ok
+  color: 0e8a16
+  description: Проверено, CI зелёный: GitHub сам сделает squash-мерж
