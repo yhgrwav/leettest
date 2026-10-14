@@ -15,19 +15,10 @@
 
 ---
 
-> Das ist `main`: Hier gibt es Unveröffentlichtes, es ist mit „nicht veröffentlicht" markiert. Die Dokumentation der veröffentlichten Version steht im [letzten Release](https://github.com/yhgrwav/leettest/releases/latest).
-
-> Übersetzt aus [README.md](../../README.md) bei 67f8732, 2026-10-08. Bei Abweichungen gilt die
+> Übersetzt aus [README.md](../../README.md) bei c726cb6, 2026-10-14. Bei Abweichungen gilt die
 > russische Fassung. Dazu ein Verzeichnis der deutschen Dokumentation, das im Original fehlt.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/README.md).
-
-> **Frühes Stadium.** Funktioniert: unäre Last auf einen echten Dienst, mehrere Methoden mit eigener
-> RPS in einem Lauf, Bruchpunkt-Suche, andere Daten in jedem Aufruf (`dataset`), mehrere
-> Verbindungen, ein Bericht in der Konsole und JSON für Skripte. Noch nicht: Hochfahren, Pass/Fail-Schwellen für CI, Metrik-Export —
-> **[was als Nächstes kommt →](roadmap.md)**. Fehlt Ihnen etwas —
-> [eröffnen Sie ein Issue](https://github.com/yhgrwav/leettest/issues/new/choose). Alles Folgende
-> beschreibt, was bereits funktioniert.
 
 Das Werkzeug beantwortet die Frage, mit der man zu einem Lasttest kommt: **ab welcher Last hält der
 Dienst nicht mehr mit, und wo liegt der Engpass.** Es erzeugt Last wie in der Produktion — mehrere
@@ -38,22 +29,37 @@ Prioritäten, der Reihe nach: Die Zahlen lügen nicht; das Werkzeug ist angenehm
 unklare Fehlermeldung ist ebenso ein Defekt wie eine falsche Zahl; der Generator wird nie zum
 Engpass.
 
+Das Projekt entwickelt sich: Was heute funktioniert, steht unten, was als Nächstes kommt, im [Plan](roadmap.md).
+
+So sieht ein Lauf aus: Mitten in der Last friert der Dienst drei Sekunden lang ein — auf dem
+Bildschirm sammeln sich die laufenden Aufrufe, und der Bericht zählt die, die ohne Antwort blieben.
+
+<img src="../../assets/demo.gif" width="100%" alt="Ein LeetTest-Lauf im Terminal: der Lastbildschirm, das Ziel friert drei Sekunden ein, der Bericht zeigt die Aufrufe ohne Antwort und ein p99 über 2 Sekunden">
+
+Welche Fragen LeetTest beantwortet — [als Liste](../en/questions.md) (auf Englisch).
+
 ## Installation
+
+Linux und macOS (amd64 und arm64) — mit einem Befehl:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/yhgrwav/leettest/main/install.sh | sh
+```
+
+Das Skript installiert das neueste Release nach `~/.local/bin`, prüft die Prüfsumme und gibt, wenn
+dieses Verzeichnis nicht im `PATH` liegt, die Zeile für das Shell-Profil aus. Für Windows — das
+Archiv von der [Release-Seite](https://github.com/yhgrwav/leettest/releases/latest). Oder mit Go 1.26+:
 
 ```sh
 go install github.com/yhgrwav/leettest/cmd/leettest@latest
 ```
 
-Benötigt Go 1.26 oder neuer. Fertige Binärdateien liegen auf der Release-Seite.
+Prüfen: `leettest -version`. Wird der Befehl nach `go install` nicht gefunden —
+`export PATH="$PATH:$(go env GOPATH)/bin"`.
 
-**Wo man es ausführt.** Unter Linux neben dem Ziel: im selben Netz, im selben Cluster, auf einem
-CI-Runner. Alles zwischen Generator und Ziel landet in der Latenz und sieht aus wie die Zeit des
-Ziels: auf unserem Stand bei 1000 RPS lag p99 über die Portweiterleitung von Docker Desktop bei
-38 ms, innerhalb des Docker-Netzes bei 2 ms. Den exakten Aufrufplan gibt es nur unter Linux; in einem
-Container mit einer CPU-Quote unter zwei Kernen sind seltene Startverzögerungen bis zur Quotenperiode
-(meist 100 ms) möglich, und der Bericht zeigt sie. Hinter einem L4-Balancer wird ein Backend
-belastet — [siehe unten](#den-bericht-lesen). Unter Windows springt die Uhr in Schritten von etwa
-0,5 ms, und ein Lauf gegen einen schnellen Dienst wird für ungültig erklärt.
+**Wo man es ausführt:** unter Linux neben dem Ziel — im selben Netz, im selben Cluster oder auf einem
+CI-Runner. Alles zwischen Generator und Ziel landet in der Latenz. Mehr in der
+[Referenz](reference.md#wo-man-es-ausführt).
 
 **[Schnellstart →](quickstart.md)** — jede Fähigkeit am Referenz-Stand: eine Konfiguration mit
 allen Feldern, den Bericht lesen, andere Verhaltensweisen des Ziels, CI. Arbeiten Sie mit einem
@@ -85,12 +91,16 @@ leettest -c leettest.yaml
 ```
 
 Der Methodenname ist der volle, `package.Service/Method`. Das Werkzeug holt das Schema der Methode
-über gRPC Server Reflection vom Dienst, deshalb ist kein `.proto` nötig. Konfiguration, Adresse,
+über gRPC Server Reflection vom Dienst, deshalb ist kein `.proto` nötig. Ein Dienst ohne Reflection
+(ab v0.3): Das Schema kommt aus `.proto`-Dateien oder einem Protoset —
+[`examples/proto.yaml`](../../examples/proto.yaml), das Feld `app.proto` / `app.protoset` (nicht veröffentlicht) in der
+[Referenz](reference.md). Konfiguration, Adresse,
 Methoden und Anfrage-Body werden vor dem Start geprüft: Jeder Fehler heißt Exit-Code 1 und kein
 einziger Aufruf ans Ziel. Die ersten `warmup` Sekunden zählen nicht zur Statistik. Jeder Aufruf einer
 Methode geht mit demselben Body raus: Bei einem Schreibvorgang mit Idempotenzschlüssel wird der Weg
 der Wiederholung gemessen, nicht das Anlegen des Datensatzes. Eine andere Anfrage bei jedem Aufruf —
-eine Datei in `dataset`: ein JSON je Zeile, der Reihe nach und im Kreis. Alle
+eine Datei in `dataset`: ein JSON je Zeile, der Reihe nach und im Kreis (`dataset_order: random` —
+in zufälliger Reihenfolge, der Seed im Bericht wiederholt sie). Alle
 Felder, TLS, Header, der Anfrage-Body und die Flags stehen in der **[Referenz](reference.md)**.
 
 Im Terminal läuft der Lauf im Vollbild, `q` zum Anhalten. Ohne Terminal (CI, umgeleitete Ausgabe) —
@@ -102,6 +112,17 @@ eine Fortschrittszeile pro Sekunde:
 
 Der Bericht geht nach stdout, Fortschritt und Fehler nach stderr. Ohne Bildschirm (zum Beispiel über
 ssh): `-plain`.
+
+## Mit Ihrem KI-Agenten
+
+Wenn Sie die Konfiguration nicht selbst schreiben wollen, geben Sie Ihrem Agenten den Link: Er
+installiert LeetTest, fragt nach Ihrem Dienst und fährt die Last.
+
+```text
+Read https://raw.githubusercontent.com/yhgrwav/leettest/main/AGENTS.md and load-test my gRPC service
+```
+
+Die Anleitung, nach der er arbeitet, ist [AGENTS.md](../../AGENTS.md).
 
 ## Den Bericht lesen
 
@@ -307,17 +328,16 @@ in `breakpoint.runs` (`kind`: `step`, `repeat`, `probe`; `planned_rps` und
 Exit-Codes: `0` für `broke`, `broke_at_first`, `held_all`, `run_limit` — das sind Befunde; `2` für
 `invalid`; `3` für das Anhalten mit einem einzelnen Ctrl+C.
 
-## Noch nicht
-
-Hochfahren von null auf die Ziel-RPS, Pass/Fail-Schwellen, Export nach Prometheus. Was kommt und in
-welcher Reihenfolge — **[der Plan](roadmap.md)**; was Ihnen fehlt — [ein Issue](https://github.com/yhgrwav/leettest/issues/new/choose).
-
 ## Mehr erfahren
+
+Für das Produkt gibt es einen Plan — **[roadmap](roadmap.md)**. Fehlt Ihnen etwas —
+[eröffnen Sie ein Issue](https://github.com/yhgrwav/leettest/issues/new/choose).
 
 **[Referenz →](reference.md)** — jedes Konfigurationsfeld und Flag.
 
 | Frage | |
 |---|---|
+| Welche Fragen beantwortet LeetTest? | [Lesen](../en/questions.md) (auf Englisch) |
 | Welches Problem löst LeetTest? | [Lesen](problem.md) |
 | Warum dieses Werkzeug? | [Lesen](why.md) |
 | Welche Probleme von Lasttests behebt es? | [Lesen](pitfalls.md) |

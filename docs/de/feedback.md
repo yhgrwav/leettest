@@ -2,7 +2,7 @@
 
 [← Zur Übersicht](README.md)
 
-> Übersetzt aus [docs/ru/feedback.md](../ru/feedback.md) bei 67f8732, 2026-10-08. Bei Abweichungen gilt die
+> Übersetzt aus [docs/ru/feedback.md](../ru/feedback.md) bei c726cb6, 2026-10-14. Bei Abweichungen gilt die
 > russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/feedback.md).
@@ -23,6 +23,8 @@ Willkommen ist alles:
   der angedachten Lösung;
 - **unklare Dokumentation oder Fehlermeldung** — das ist ein Defekt, keine Kleinigkeit;
 - **eine Frage** — stand die Antwort nicht hier, hat die Dokumentation eine Lücke.
+
+Ein Problem, das beim Arbeiten mit einem KI-Agenten auftrat, hat ein [eigenes Formular](https://github.com/yhgrwav/leettest/issues/new?template=agent_feedback.yml).
 
 Ein Issue zu eröffnen erfordert keine Formalitäten: Das [CLA](../../CLA.md) wird nur für Pull
 Requests mit Code gebraucht.
