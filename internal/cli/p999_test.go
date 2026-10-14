@@ -130,6 +130,25 @@ func TestP999HeldByCensoredCallsIsALowerBoundInTextAndJSON(t *testing.T) {
 }
 
 // Ground: contract — the line follows the method row, before the dataset line.
+// Ground: contract — with a plan line the p99.9 line comes right after it, before the dataset.
+func TestP999LineFollowsThePlanLine(t *testing.T) {
+	m := p999Method(t, 999, 0)
+	m.PlannedDuration = 10 * time.Second
+	m.RPSLow, m.RPSHigh = 100, 100
+	m.Dataset = &engine.DatasetReport{File: "d.jsonl", Records: 5}
+
+	lines := strings.Split(p999Text(m), "\n")
+	for i, l := range lines {
+		if strings.HasPrefix(l, "  plan:") {
+			if i+2 >= len(lines) || !strings.HasPrefix(lines[i+1], "  p99.9:") || !strings.Contains(lines[i+2], "d.jsonl") {
+				t.Fatalf("p99.9 is not between plan and dataset:\n%s", strings.Join(lines, "\n"))
+			}
+			return
+		}
+	}
+	t.Fatalf("no plan line in the report:\n%s", strings.Join(lines, "\n"))
+}
+
 func TestP999LineFollowsTheMethodRow(t *testing.T) {
 	m := p999Method(t, 999, 0)
 	m.Dataset = &engine.DatasetReport{File: "d.jsonl", Records: 5}

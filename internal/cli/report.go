@@ -119,6 +119,12 @@ func PrintReport(w io.Writer, target string, run RunReport) {
 			fmt.Fprintf(w, "  plan: %s rps for %s\n", rate, m.PlannedDuration)
 		}
 
+		if m.P999.Defined {
+			fmt.Fprintf(w, "  p99.9: %s\n", formatQuantile(m.P999))
+		} else {
+			fmt.Fprintf(w, "  p99.9: too few observations (%d of %d)\n", m.Latencies, metrics.MinCount(0.999))
+		}
+
 		if m.Dataset != nil {
 			fmt.Fprintln(w, datasetLine(m.Dataset))
 		}

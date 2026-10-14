@@ -1053,6 +1053,8 @@ func (s *Stats) Report() Report {
 			P99:          v.dist.Percentile(0.99),
 			Max:          v.dist.Percentile(1),
 
+			P999: p999Of(v.dist),
+
 			P99WithoutClientWaits: v.served.Percentile(0.99),
 			FailureCodes:          v.codes,
 			Overload:              refusalOf(v.overload),
@@ -1115,6 +1117,15 @@ func (s *Stats) sendingWindow(elapsed time.Duration) time.Duration {
 	}
 
 	return max(0, window-s.warmup)
+}
+
+// p999Of is p99.9 of the observations, undefined while it would be the max.
+func p999Of(dist *metrics.Snapshot) metrics.Quantile {
+	if dist.Count() < metrics.MinCount(0.999) {
+		return metrics.Quantile{}
+	}
+
+	return dist.Percentile(0.999)
 }
 
 func refusalOf(dist *metrics.Snapshot) RefusalLatency {
