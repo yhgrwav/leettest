@@ -1,6 +1,6 @@
 # 在同一测试台上对比 LeetTest 与 ghz
 
-> 译自 [docs/ru/compare-ghz.md](../ru/compare-ghz.md)，对应 6adffbf，2026-10-12。如有出入，以俄文版为准。
+> 译自 [docs/ru/compare-ghz.md](../ru/compare-ghz.md)，对应 c726cb6，2026-10-14。如有出入，以俄文版为准。
 > **可能滞后：** 中文版在每次发布前同步，最新内容请看[英文版](../en/compare-ghz.md)。
 
 本页在一台行为已知的测试服务器上对比 LeetTest 与 [ghz](https://ghz.sh)。问题很具体：当服务器

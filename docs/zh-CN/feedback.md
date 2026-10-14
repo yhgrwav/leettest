@@ -2,7 +2,7 @@
 
 [← 返回文档](README.md)
 
-> 译自 [docs/ru/feedback.md](../ru/feedback.md)，对应 67f8732，2026-10-08。如有出入，以俄文版为准。
+> 译自 [docs/ru/feedback.md](../ru/feedback.md)，对应 c726cb6，2026-10-14。如有出入，以俄文版为准。
 > **可能滞后：** 中文版在每次发布前同步，最新内容请看[英文版](../en/feedback.md)。
 
 项目尚处早期，此刻反馈比代码更有价值：在接口定型之前，纠正一个糟糕的想法成本很低。
@@ -19,6 +19,8 @@
 - **缺少的能力**——最好说明你想解决的问题，而不只是你设想的方案；
 - **文档或错误提示不清楚**——这是缺陷，不是小题大做；
 - **疑问**——如果这里没有答案，说明文档存在缺口。
+
+通过 AI 智能体工作时遇到的问题，有[专门的表单](https://github.com/yhgrwav/leettest/issues/new?template=agent_feedback.yml)。
 
 创建 issue 不需要任何手续：只有提交代码的 pull request 才需要签署 [CLA](../../CLA.md)。
 
