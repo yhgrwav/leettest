@@ -15,7 +15,7 @@
 
 ---
 
-> Translated from [README.md](../../README.md) at 1bd45f9, 2026-10-12. If they differ, the Russian
+> Translated from [README.md](../../README.md) at ebf39ff, 2026-10-13. If they differ, the Russian
 > one is right. Plus an index of English docs, not in the Russian source.
 
 The tool answers the question people bring to a load test: **at what load does the service stop
@@ -88,7 +88,10 @@ leettest -c leettest.yaml
 ```
 
 The method name is the full one, `package.Service/Method`. The tool takes the method's schema from
-the service through gRPC server reflection, so no `.proto` is needed. The config, the address, the
+the service through gRPC server reflection, so no `.proto` is needed. A service without reflection
+(since v0.3): the schema comes from `.proto` files or a protoset —
+[`examples/proto.yaml`](../../examples/proto.yaml), the `app.proto` / `app.protoset` field (not released) in the
+[reference](reference.md). The config, the address, the
 methods and the request body are checked before the start: any error means exit 1 and not a single
 call to the target. The first `warmup` seconds stay out of the stats. Every call of a method goes
 out with the same body: for a write with an idempotency key the repeat path is measured, not

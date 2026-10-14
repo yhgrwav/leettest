@@ -1,6 +1,6 @@
 # Сервис без server reflection: методы берутся из protoset, против эталонного стенда, из корня
 # репозитория:
-#   go run ./test/stand/cmd/stand -delay 20ms -life 60s
+#   go run ./test/stand/cmd/stand -no-reflection -delay 20ms -life 60s
 #   leettest -c examples/ru/protoset.yaml
 # Набор собран с импортами:
 #   protoc -I test/stand/proto --include_imports --descriptor_set_out=examples/wallet.protoset test/stand/proto/wallet/v1/wallet.proto

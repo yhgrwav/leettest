@@ -50,7 +50,11 @@ queues) from client data, in code or in text.
    every method through reflection and the body; an error is exit 1, names its line or call, sent nothing.
    Reflection off on the service: a method with `data` will not start («server reflection is not
    enabled on the target»). Two ways out: drop `data` (an empty message goes out, with a warning,
-   the method unchecked), or wait for [`.proto` support](https://github.com/yhgrwav/leettest/blob/main/docs/en/roadmap.md).
+   the method unchecked), or, from v0.3, give the schema: `app.proto` (`files` and the
+   `import_paths` their imports are looked up on) or `app.protoset` (built with
+   `protoc --include_imports`) —
+   [`examples/proto.yaml`](https://github.com/yhgrwav/leettest/blob/main/examples/proto.yaml),
+   [`examples/protoset.yaml`](https://github.com/yhgrwav/leettest/blob/main/examples/protoset.yaml).
    Do not guess a body.
 5. **Run:** `leettest -c load.yaml -plain -output json > report.json; echo $?`. It takes the longest
    `duration` (warm-up included) plus the longest `timeout` plus up to 10 s to connect; a breakpoint search
@@ -126,7 +130,8 @@ set; `demo` is the shared token we give the first users) and, for TLS, [`example
 - The config is strict: an unknown field or a wrong value is an error with its line or call, not
   an empty run. `rps` is an integer.
 - One call per method; several methods, each with its own `rps`, go as several calls.
-- `method` is `package.Service/Method`. The schema comes from server reflection: no `.proto`.
+- `method` is `package.Service/Method`. The schema comes from server reflection, or
+  from `app.proto` / `app.protoset` when the service has none (v0.3).
 - Secrets go in `app.metadata` as `${ENV_NAME}` only. Never write a token into a config, a command
   line or a log. LeetTest never prints header values.
 - The in-flight cap must hold `rps × timeout` per method plus margin; LeetTest checks it before
@@ -185,7 +190,7 @@ generalize from the machine you happen to run on:
 cmd/leettest/       CLI: config → core → report → exit code. Thin.
 pkg/engine/         scheduler, rate, in-flight cap, worker pool — the hot path
 pkg/grpcsender/     real gRPC delivery, transport causes
-pkg/descriptor/     method descriptors via server reflection
+pkg/descriptor/     method descriptors via server reflection, .proto files or a protoset
 pkg/metrics/        HDR histograms, percentiles
 pkg/config/         config parsing and validation
 pkg/clock/          host clock step measurement

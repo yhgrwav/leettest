@@ -16,6 +16,8 @@ package stand_test
 
 import (
 	"context"
+	"errors"
+	"net"
 	"sort"
 	"sync"
 	"testing"
@@ -27,7 +29,9 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 
+	"github.com/yhgrwav/leettest/pkg/descriptor"
 	"github.com/yhgrwav/leettest/test/stand"
+	walletv1 "github.com/yhgrwav/leettest/test/stand/proto/wallet/v1"
 )
 
 // The stand is the source of truth for every measurement test built on it, so
@@ -344,5 +348,62 @@ func TestStand_ConcurrentCallsGetDistinctNumbers(t *testing.T) {
 		if n != i+1 {
 			t.Fatalf("call numbers are not 1..%d: %v", calls, seen)
 		}
+	}
+}
+
+// listenTCP is a loopback listener for the stands that need one: StartOn and StartBareOn take
+// a listener, and a client reaches it by its address.
+func listenTCP(t *testing.T) net.Listener {
+	t.Helper()
+
+	lis, err := new(net.ListenConfig).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+
+	return lis
+}
+
+func dialTCP(t *testing.T, s *stand.Stand) *grpc.ClientConn {
+	t.Helper()
+
+	conn, err := grpc.NewClient(s.Target(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("dial the stand: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	return conn
+}
+
+// A bare stand answers the wallet but does not serve reflection, so a client has to bring the schema. The
+// stand with reflection is the control: the same lookup resolves there, so the failure is the missing service.
+func TestStand_BareServesNoReflection(t *testing.T) {
+	const method = "wallet.v1.WalletService/GetBalance"
+
+	bare := stand.StartBareOn(listenTCP(t), nil)
+	t.Cleanup(bare.Stop)
+	conn := dialTCP(t, bare)
+
+	ctx, cancel := context.WithTimeout(t.Context(), ceiling)
+	defer cancel()
+
+	if _, err := descriptor.NewReflectionResolver(conn).Resolve(ctx, method); !errors.Is(err, descriptor.ErrReflectionUnsupported) {
+		t.Fatalf("bare stand: Resolve err = %v, want ErrReflectionUnsupported", err)
+	}
+
+	got, err := walletv1.NewWalletServiceClient(conn).GetBalance(ctx, &walletv1.GetBalanceRequest{WalletId: "w-42"})
+	if err != nil {
+		t.Fatalf("bare stand: GetBalance: %v", err)
+	}
+	if got.GetWalletId() != "w-42" || got.GetAmount() != 1000 {
+		t.Errorf("bare stand answered %v, want wallet w-42 with 1000", got)
+	}
+
+	full := stand.StartOn(listenTCP(t), nil)
+	t.Cleanup(full.Stop)
+
+	if _, err := descriptor.NewReflectionResolver(dialTCP(t, full)).Resolve(ctx, method); err != nil {
+		t.Fatalf("stand with reflection: Resolve: %v", err)
 	}
 }
