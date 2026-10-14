@@ -32,7 +32,7 @@
 
 <img src="../../assets/demo.gif" width="100%" alt="终端中的 LeetTest 运行：负载界面，目标冻结三秒，报告显示没有应答的调用和超过 2 秒的 p99">
 
-LeetTest 回答哪些问题——[列表](../en/questions.md)（英文）。
+LeetTest 回答哪些问题——[列表](questions.md)。
 
 ## 安装
 
@@ -284,7 +284,7 @@ load:
 
 | 问题 | |
 |---|---|
-| LeetTest 回答哪些问题？ | [阅读](../en/questions.md)（英文） |
+| LeetTest 回答哪些问题？ | [阅读](questions.md) |
 | LeetTest 解决什么问题？ | [阅读](problem.md) |
 | 为什么选这个工具？ | [阅读](why.md) |
 | 它解决了压测中的哪些问题？ | [阅读](pitfalls.md) |
