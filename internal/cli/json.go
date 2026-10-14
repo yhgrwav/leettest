@@ -110,6 +110,16 @@ type jsonSettings struct {
 	WarmupUS    int64 `json:"warmup_us"`
 }
 
+// settingsOf is the echo as JSON has it; nil, which nobody told, gives zeros
+// and is never filled in from what the run measured.
+func settingsOf(s *RunSettings) jsonSettings {
+	if s == nil {
+		return jsonSettings{}
+	}
+
+	return jsonSettings{MaxInFlight: s.MaxInFlight, Connections: s.Connections, WarmupUS: micros(s.Warmup)}
+}
+
 type jsonQuantile struct {
 	US         int64 `json:"us"`
 	LowerBound bool  `json:"lower_bound"`
@@ -346,6 +356,7 @@ func NewJSONReport(run JSONRun) JSONReport {
 		DurationUS:        micros(r.Duration),
 		PlannedUS:         micros(r.Planned),
 		WarmupUS:          micros(r.Warmup),
+		Settings:          settingsOf(run.Run.Settings),
 		Sent:              r.Sent,
 		Failed:            r.Failed,
 		Aborted:           r.Aborted,
@@ -449,6 +460,7 @@ func jsonMethodOf(m *engine.MethodReport, warmup time.Duration) jsonMethod {
 		NotSentConnection: m.NotSentConnection,
 		WarmupSent:        m.WarmupSent, WarmupFailed: m.WarmupFailed, WarmupNotSent: m.WarmupNotSent,
 		TimeoutUS: micros(m.Timeout), PlannedRPSLow: m.RPSLow, PlannedRPSHigh: m.RPSHigh,
+		PlannedDurationUS: micros(m.PlannedDuration),
 		Latency: jsonLatency{
 			Min: quantile(m.Min), P50: quantile(m.P50), P90: quantile(m.P90),
 			P95: quantile(m.P95), P99: quantile(m.P99), Max: quantile(m.Max),

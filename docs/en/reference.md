@@ -295,7 +295,7 @@ measured calls only. The first column is the field's full path.
 | `planned_us` | int | How long it was meant to go |
 | `warmup_us` | int | Warm-up length |
 | `settings` | object | What the run was started with, as configured, not as measured — not released |
-| `settings.max_in_flight` | int | The in-flight cap: the `-max-in-flight` value, else the default. A search: `null` without the flag (each run takes the smallest cap it can run with); in its runs, that run's cap — not released |
+| `settings.max_in_flight` | int; search: `int?` | The in-flight cap: the `-max-in-flight` value, else the default. A search: `null` without the flag (each run takes the smallest cap it can run with); in its runs, that run's cap — not released |
 | `settings.connections` | int | `app.connections` as configured, 1 by default; `connections.open` is what opened — not released |
 | `settings.warmup_us` | int | The warm-up as configured. A search: the settle — not released |
 | `sent` | int | Measured calls, except `not_sent`. `unreachable` and `aborted` are in it |

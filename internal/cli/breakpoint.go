@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -265,6 +266,12 @@ func PrintBreakpoint(w io.Writer, run BreakpointRun) {
 	}
 	fmt.Fprintln(w)
 
+	if run.Name != "" {
+		fmt.Fprintf(w, "name: %s\n", run.Name)
+	}
+	fmt.Fprintf(w, "settings: settle %s, hold %s, max in flight %s, connections %d\n\n",
+		run.Plan.Settle, run.Plan.Hold, searchCap(run.Plan), run.Connections)
+
 	verdicts := make([]string, len(res.Steps))
 	for i := range res.Steps {
 		verdicts[i] = verdict(&res, i)
@@ -277,6 +284,15 @@ func PrintBreakpoint(w io.Writer, run BreakpointRun) {
 			fmt.Fprintf(w, "  - %s\n", n)
 		}
 	}
+}
+
+// searchCap is the cap the search was told: the flag's, else each step's own.
+func searchCap(p breakpoint.Plan) string {
+	if p.MaxInFlight > 0 {
+		return strconv.Itoa(p.MaxInFlight)
+	}
+
+	return "per step"
 }
 
 // exhaustedLine says which dataset ended the search, at which rate; empty when
@@ -418,7 +434,13 @@ func NewBreakpointReport(run BreakpointRun) BreakpointReport {
 		})
 	}
 
+	settings := jsonSearch{Connections: run.Connections, WarmupUS: micros(run.Plan.Settle)}
+	if run.Plan.MaxInFlight > 0 {
+		settings.MaxInFlight = &run.Plan.MaxInFlight
+	}
+
 	return BreakpointReport{
+		Settings:      settings,
 		SchemaVersion: JSONSchemaVersion, Mode: ModeBreakpoint,
 		LeetTestVersion: run.Version, Target: run.Target, Name: run.Name, Method: run.Method,
 		MethodsSource: run.MethodsSource.kind(),

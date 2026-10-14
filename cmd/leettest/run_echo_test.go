@@ -178,6 +178,50 @@ func TestRun_ASearchEchoesItsOwnSettings(t *testing.T) {
 		if w := fieldNumber(t, r, "report", "settings", "warmup_us"); w != 50000 {
 			t.Errorf("runs[%d].report.settings.warmup_us = %v, want 50000: the settle", i, w)
 		}
+		if c := fieldNumber(t, r, "report", "settings", "connections"); c != 3 {
+			t.Errorf("runs[%d].report.settings.connections = %v, want 3: app.connections", i, c)
+		}
+		method := r.(map[string]any)["report"].(map[string]any)["methods"].([]any)[0]
+		if d := fieldNumber(t, method, "planned_duration_us"); d != 300000 {
+			t.Errorf("runs[%d].report.methods[0].planned_duration_us = %v, want 300000: the step's hold", i, d)
+		}
+	}
+}
+
+// Ground: contract — a step the cap was too low for never ran, and still
+// says what it was tried with: the flag's cap, the configured connections
+// and the settle, not zeros.
+func TestRun_ARefusedSearchStepEchoesWhatItWasTriedWith(t *testing.T) {
+	cfg := writeSearch(t, closedPort(t), checkMethod)
+	setConnections(t, cfg, 2)
+
+	_, js := echoRun(t, 60*time.Second, "-max-in-flight", "1", "-c", cfg)
+
+	runs := js["breakpoint"].(map[string]any)["runs"].([]any)
+	if len(runs) == 0 {
+		t.Fatalf("the search reports no runs")
+	}
+	for key, want := range map[string]float64{"max_in_flight": 1, "connections": 2, "warmup_us": 50000} {
+		if got := fieldNumber(t, runs[0], "report", "settings", key); got != want {
+			t.Errorf("runs[0].report.settings.%s = %v, want %v for the step that never ran", key, got, want)
+		}
+	}
+	if why := runs[0].(map[string]any)["why"]; why != "in_flight_cap" {
+		t.Fatalf("runs[0].why = %v, want in_flight_cap: the step did not run", why)
+	}
+}
+
+// Ground: contract — without name in the config the text and the JSON still
+// agree: both are ServiceLabel, here the one service.
+func TestRun_TheNameWithoutAConfigNameIsTheSameInTextAndJSON(t *testing.T) {
+	cfg := writeNamedConfig(t, "leettest.yaml", "", checkMethod)
+	text, js := echoRun(t, 20*time.Second, "-c", cfg)
+
+	if js["name"] != "Health" {
+		t.Fatalf("JSON name = %v, want Health", js["name"])
+	}
+	if !strings.Contains(text, "\nname: Health\n") {
+		t.Errorf("the text lacks the same name:\n%s", text)
 	}
 }
 
@@ -194,7 +238,11 @@ func TestRun_ASearchEchoesTheFlag(t *testing.T) {
 	if got := fieldNumber(t, js, "settings", "max_in_flight"); got != 777 {
 		t.Errorf("settings.max_in_flight = %v, want 777", got)
 	}
-	for i, r := range js["breakpoint"].(map[string]any)["runs"].([]any) {
+	runs := js["breakpoint"].(map[string]any)["runs"].([]any)
+	if len(runs) == 0 {
+		t.Fatalf("the search reports no runs")
+	}
+	for i, r := range runs {
 		if got := fieldNumber(t, r, "report", "settings", "max_in_flight"); got != 777 {
 			t.Errorf("runs[%d].report.settings.max_in_flight = %v, want 777: the flag holds for every run", i, got)
 		}

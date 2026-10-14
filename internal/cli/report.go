@@ -86,6 +86,12 @@ func PrintReport(w io.Writer, target string, run RunReport) {
 	if run.MethodsSource != nil {
 		fmt.Fprintln(w, run.MethodsSource.Line())
 	}
+	if run.Name != "" {
+		fmt.Fprintf(w, "name: %s\n", run.Name)
+	}
+	if s := run.Settings; s != nil {
+		fmt.Fprintf(w, "settings: warm-up %s, max in flight %d, connections %d\n", s.Warmup, s.MaxInFlight, s.Connections)
+	}
 	fmt.Fprintf(w, "sent %d, failed %d", report.Sent, report.Failed)
 	if report.NotSent > 0 {
 		fmt.Fprintf(w, ", not sent %d", report.NotSent)
@@ -104,6 +110,14 @@ func PrintReport(w io.Writer, target string, run RunReport) {
 		fmt.Fprintf(w, "%-44s %8d %8d %9.0f %9s %9s %9s %9s\n",
 			displayMethod(m.Method), m.Sent, m.Failed, m.RPS,
 			formatQuantile(m.P50), formatQuantile(m.P90), formatQuantile(m.P95), formatQuantile(m.P99))
+
+		if m.PlannedDuration > 0 {
+			rate := strconv.Itoa(m.RPSLow)
+			if m.RPSHigh != m.RPSLow {
+				rate = fmt.Sprintf("%d-%d", m.RPSLow, m.RPSHigh)
+			}
+			fmt.Fprintf(w, "  plan: %s rps for %s\n", rate, m.PlannedDuration)
+		}
 
 		if m.Dataset != nil {
 			fmt.Fprintln(w, datasetLine(m.Dataset))

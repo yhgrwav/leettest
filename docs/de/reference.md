@@ -303,7 +303,7 @@ unten den Typ „percentile?" hat.
 | `planned_us` | int | Wie lange er gehen sollte |
 | `warmup_us` | int | Länge des Aufwärmens |
 | `settings` | object | Womit der Lauf gestartet wurde, wie konfiguriert, nicht wie gemessen — nicht veröffentlicht |
-| `settings.max_in_flight` | int | Die Obergrenze für Anfragen im Flug: der Wert von `-max-in-flight`, sonst der Standard. Suche: `null` ohne die Option (jeder Lauf nimmt die kleinste Grenze, mit der er läuft); in ihren Läufen die Grenze dieses Laufs — nicht veröffentlicht |
+| `settings.max_in_flight` | int; Suche: `int?` | Die Obergrenze für Anfragen im Flug: der Wert von `-max-in-flight`, sonst der Standard. Suche: `null` ohne die Option (jeder Lauf nimmt die kleinste Grenze, mit der er läuft); in ihren Läufen die Grenze dieses Laufs — nicht veröffentlicht |
 | `settings.connections` | int | `app.connections` wie konfiguriert, standardmäßig 1; `connections.open` ist, was sich geöffnet hat — nicht veröffentlicht |
 | `settings.warmup_us` | int | Das Aufwärmen wie konfiguriert. Suche: die Einschwingzeit `settle` — nicht veröffentlicht |
 | `sent` | int | Gemessene Aufrufe, außer `not_sent`. `unreachable` und `aborted` sind enthalten |

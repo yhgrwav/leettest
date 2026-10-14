@@ -261,7 +261,7 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `planned_us` | int | 计划持续时间 |
 | `warmup_us` | int | 预热时长 |
 | `settings` | object | 运行启动时的设置，按配置而非测量值——未发布 |
-| `settings.max_in_flight` | int | 在途请求上限：`-max-in-flight` 的值，否则为默认值。搜索：未设该参数时为 `null`（每次运行取其能运行的最小上限）；在其各次运行中为该次运行的上限——未发布 |
+| `settings.max_in_flight` | int；搜索：`int?` | 在途请求上限：`-max-in-flight` 的值，否则为默认值。搜索：未设该参数时为 `null`（每次运行取其能运行的最小上限）；在其各次运行中为该次运行的上限——未发布 |
 | `settings.connections` | int | 按配置的 `app.connections`，默认 1；`connections.open` 是实际打开的数量——未发布 |
 | `settings.warmup_us` | int | 按配置的预热。搜索：`settle` 时长——未发布 |
 | `sent` | int | 被测量的调用，不含 `not_sent`。包括 `unreachable` 和 `aborted` |
