@@ -16,7 +16,9 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -197,5 +199,62 @@ func TestEngine_OnceCountsTheWarmup(t *testing.T) {
 	}
 	if report.DatasetExhausted == nil {
 		t.Errorf("DatasetExhausted = nil, want set: the 11th tick had no record")
+	}
+}
+
+func runScheduler(t *testing.T, call Call) (int, error) {
+	t.Helper()
+
+	out := make(chan Request, 64)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err := (&Scheduler{Call: call}).Run(ctx, out)
+
+	return len(out), err
+}
+
+func TestSchedulerRefusesOnce(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		call Call
+	}{
+		{"records", onceCall(nil, 3, 3)},
+		{"no records", func() Call {
+			c := onceCall(nil, 3, 3)
+			c.Payloads = nil
+
+			return c
+		}()},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			queued, err := runScheduler(t, tc.call)
+			if !errors.Is(err, ErrOnceNeedsEngine) {
+				t.Fatalf("err = %v, want ErrOnceNeedsEngine", err)
+			}
+			if !strings.Contains(err.Error(), tc.call.Method) {
+				t.Fatalf("err = %q does not name the call %q", err, tc.call.Method)
+			}
+			if queued != 0 {
+				t.Fatalf("%d requests handed out before the refusal, want none", queued)
+			}
+		})
+	}
+}
+
+func TestSchedulerWithoutOnceRunsAsBefore(t *testing.T) {
+	t.Parallel()
+
+	queued, err := runScheduler(t, datasetCall(3, nil, atRate(200, 3)))
+	if err != nil {
+		t.Fatalf("err = %v, want none", err)
+	}
+	if queued != 3 {
+		t.Fatalf("%d requests, want 3", queued)
 	}
 }

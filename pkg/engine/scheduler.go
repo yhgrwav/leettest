@@ -26,6 +26,9 @@ var (
 	ErrStageRPS      = errors.New("stage rps must be positive")
 	ErrStageDuration = errors.New("stage duration must be positive")
 	ErrRampNotYet    = errors.New("gradual ramp is not implemented yet")
+	// ErrOnceNeedsEngine is what Scheduler.Run returns for a call whose dataset
+	// has Once set: only Engine counts records across runs.
+	ErrOnceNeedsEngine = errors.New("a dataset with Once needs the engine; Scheduler.Run does not honour it")
 )
 
 type Request struct {
@@ -55,6 +58,9 @@ func NewScheduler(call Call) *Scheduler {
 func (s *Scheduler) Run(ctx context.Context, out chan<- Request) error {
 	if err := s.validate(); err != nil {
 		return err
+	}
+	if s.Call.Dataset != nil && s.Call.Dataset.Once {
+		return fmt.Errorf("%s: %w", s.Call.Method, ErrOnceNeedsEngine)
 	}
 
 	stageStart := time.Now()
