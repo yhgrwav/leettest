@@ -44,6 +44,7 @@ type BreakpointRun struct {
 	Target    string
 	Version   string
 	Method    string
+	Name      string
 	StartedAt time.Time
 	Plan      breakpoint.Plan
 	Result    breakpoint.Result
@@ -401,13 +402,13 @@ func NewBreakpointReport(run BreakpointRun) BreakpointReport {
 		bp.Runs = append(bp.Runs, jsonRunBP{
 			Kind: s.Kind.String(), PlannedRPS: s.RPS, SentRPS: sentRPS(run.Plan, s),
 			Broken: s.Broken, Recovered: rec, Why: causeName(s.Cause),
-			Report: NewJSONReport(JSONRun{Target: run.Target, Version: run.Version, Outcome: outcome, StartedAt: s.Report.StartedAt, Run: r}),
+			Report: NewJSONReport(JSONRun{Target: run.Target, Name: run.Name, Version: run.Version, Outcome: outcome, StartedAt: s.Report.StartedAt, Run: r}),
 		})
 	}
 
 	return BreakpointReport{
 		SchemaVersion: JSONSchemaVersion, Mode: ModeBreakpoint,
-		LeetTestVersion: run.Version, Target: run.Target, Method: run.Method,
+		LeetTestVersion: run.Version, Target: run.Target, Name: run.Name, Method: run.Method,
 		MethodsSource: run.MethodsSource.kind(),
 		StartedAt:     run.StartedAt.UTC().Format(time.RFC3339Nano),
 		Breakpoint:    bp,

@@ -43,6 +43,7 @@ const (
 // JSONRun is what the JSON report needs beyond the engine's report.
 type JSONRun struct {
 	Target    string
+	Name      string
 	Version   string
 	Outcome   string
 	StartedAt time.Time
@@ -327,6 +328,7 @@ func NewJSONReport(run JSONRun) JSONReport {
 		Mode:              ModeRun,
 		LeetTestVersion:   run.Version,
 		Target:            run.Target,
+		Name:              run.Name,
 		MethodsSource:     run.Run.MethodsSource.kind(),
 		Outcome:           run.Outcome,
 		StartedAt:         run.StartedAt.UTC().Format(time.RFC3339Nano),
