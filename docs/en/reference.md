@@ -51,6 +51,7 @@ load:
 | `load.calls[].dataset` | A file of request bodies instead of `data`, see [below](#a-different-request-each-call-a-dataset). Not together with `data` |
 | `load.calls[].dataset_order` | `file` (left out) or `random`: the order of the dataset's requests. Needs `dataset` — not released |
 | `load.calls[].dataset_seed` | A whole number from 0 to 9007199254740991 that fixes a random order. Needs `dataset_order: random`. Left out — one is drawn and the report prints it — not released |
+| `load.calls[].dataset_reuse` | `true` (left out) or `false`: with `false` no record goes out twice, in the whole process. Needs `dataset` — not released |
 
 The config is read strictly: a typo in a field name is an error with the line number, a wrong
 value is an error with the call's number and method, not a run with an empty load. `rps` is a
@@ -204,6 +205,14 @@ a new shuffle in which each request goes out once, so the numbers above stay as 
 line then ends with `, random order, seed 42`. To repeat a run, put that number in
 `dataset_seed` (a whole number from 0 to 9007199254740991): the same seed, file and number of
 requests give the same order. Left out, a seed is drawn at the start, one per call.
+
+`dataset_reuse: false` sends each record at most once, per call, in the whole process: warm-up,
+every step of a search and every connection draw from one count (two calls on one file are two
+counts). The line then reads `data: 3 of 3 requests from wallets.jsonl, each at most once`. A run
+the file cannot cover is refused before anything is sent, with both numbers. A search that needs
+a record the file no longer has stops like a Ctrl+C (exit code 3): the run in progress is not
+judged and the report says which file ran out and at which rate. One process only: records are
+not split between machines, and a stop leaves records unsent.
 
 ## Flags
 
@@ -372,6 +381,7 @@ The rest are plain counters.
 | `methods[].dataset.used_max` | int | How many times the most used one was handed to the sender; in a search, counted from its first step to the end of this run |
 | `methods[].dataset.order` | string | `file` or `random`: the order the requests went out in — not released |
 | `methods[].dataset.seed` | int? | The seed of a random order, 0 to 9007199254740991; `null` for file order — not released |
+| `methods[].dataset.reuse` | bool | `false` — the call sends each record at most once (`dataset_reuse: false`); otherwise `true` — not released |
 | `methods[].seconds` | []object | The per-second timeline, see below |
 
 ### Second: `methods[].seconds[]`
@@ -405,6 +415,7 @@ as in the run above, a plain run's other fields are not at the top level. Every 
 | `breakpoint.held_rps` | int? | The highest rate the target held; `null` — none held |
 | `breakpoint.broke_rps` | int? | The lowest rate the target broke at or a run limit stopped the search at; `null` — it did not break |
 | `breakpoint.why` | string? | The cause of the run that ended the search, from a closed list: `errors`, `p99_limit`, `p99_vs_base`, `connection`, `no_recovery`, `generator`, `in_flight_cap`, `stream_limit`, `stream_wait`, `clock_step`, `request_errors`; `null` — no cause |
+| `breakpoint.stop_reason` | string? | Who ended the search: `dataset_exhausted` (a `dataset_reuse: false` file ran out), `requested` (stopped by the user); `null` — the search ended itself — not released |
 | `breakpoint.notes` | []string | The search's notes, text for people in ASCII; do not parse |
 | `breakpoint.runs` | []object | Every run in order |
 | `breakpoint.runs[].kind` | string | `step`, `repeat` or `probe` |

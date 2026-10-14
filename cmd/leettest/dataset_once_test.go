@@ -22,6 +22,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/yhgrwav/leettest/pkg/engine"
 )
 
 // lines is n records of the form {"responseSize":i}, i from 1.
@@ -84,7 +86,7 @@ func TestRun_OnceWithAFileOfExactlyThePlanSendsEachRecordOnce(t *testing.T) {
 	if want := []int32{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}; !slices.Equal(got, want) {
 		t.Errorf("the target saw response_size %v, want %v", got, want)
 	}
-	if want := "  data: 10 of 10 requests from users.jsonl, each used up to 1 time, each at most once\n"; !strings.Contains(res.stdout, want) {
+	if want := "  data: 10 of 10 requests from users.jsonl, each at most once\n"; !strings.Contains(res.stdout, want) {
 		t.Errorf("stdout lacks %q:\n%s", want, res.stdout)
 	}
 }
@@ -241,5 +243,40 @@ func TestRun_ASearchStoppedByCtrlCSaysRequested(t *testing.T) {
 	bp := jsonAt(t, decodeOnly(t, res.stdout), "breakpoint").(map[string]any)
 	if bp["outcome"] != "stopped" || bp["stop_reason"] != "requested" {
 		t.Errorf("breakpoint = outcome %v stop_reason %v, want stopped, requested", bp["outcome"], bp["stop_reason"])
+	}
+}
+
+// The plan's size is the schedule's tick count, not rps times duration: 3 rps
+// for 1.5s is 4.5, and the schedule places 5 requests. A file one short of the
+// count is refused, a file of the count starts. The count is the engine's.
+// Ground: contract — "the CLI never meets exhaustion outside a search".
+func TestRun_OnceChecksTheTicksOfTheScheduleNotRpsTimesDuration(t *testing.T) {
+	need := engine.ScheduledAfter([]engine.Stage{{StartRPS: 3, TargetRPS: 3, Duration: 1500 * time.Millisecond}}, 0)
+	if need == int(3*1.5) {
+		t.Fatalf("the plan hands out %d, the product truncated: the test would not tell them apart", need)
+	}
+
+	write := func(records int) string {
+		body := "app:\n  target:\n    ip: localhost\n    port: 1\n  tls: false\nload:\n  calls:\n    - method: " + unaryCallMethod +
+			"\n      rps: 3\n      duration: 1500ms\n      dataset: '" + writeDataset(t, lines(records)) + "'\n      dataset_reuse: false\n"
+		path := filepath.Join(t.TempDir(), "leettest.yaml")
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatalf("write config: %v", err)
+		}
+
+		return path
+	}
+
+	res := runCLI(t.Context(), t, 10*time.Second, "-fake", "-c", write(need-1))
+	if exitCode(res.err) != 1 {
+		t.Fatalf("a file of %d: exit code %d, want 1\nerr %v", need-1, exitCode(res.err), res.err)
+	}
+	if all := res.err.Error(); !strings.Contains(all, fmt.Sprintf("has %d records", need-1)) || !strings.Contains(all, fmt.Sprintf("hands out %d", need)) {
+		t.Errorf("the error does not give %d and %d:\n%s", need-1, need, all)
+	}
+
+	res = runCLI(t.Context(), t, 10*time.Second, "-fake", "-c", write(need))
+	if res.err != nil {
+		t.Fatalf("a file of %d: %v\n%s", need, res.err, res.stderr)
 	}
 }

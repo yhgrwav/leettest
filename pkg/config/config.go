@@ -394,6 +394,9 @@ func (c Call) validateDatasetOrder() []error {
 	if (c.DatasetOrder != nil || c.DatasetSeed != nil) && c.RawDataset == nil {
 		errs = append(errs, ErrOrderWithoutDataset)
 	}
+	if c.DatasetReuse != nil && c.RawDataset == nil {
+		errs = append(errs, ErrReuseWithoutDataset)
+	}
 	if c.DatasetSeed != nil {
 		if *c.DatasetSeed < 0 || *c.DatasetSeed > MaxDatasetSeed {
 			errs = append(errs, fmt.Errorf("%w: %d", ErrDatasetSeed, *c.DatasetSeed))

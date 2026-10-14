@@ -15,6 +15,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"path"
 	"strings"
@@ -31,13 +32,22 @@ func datasetLine(d *engine.DatasetReport) string {
 	// it used.
 	name := path.Base(strings.ReplaceAll(d.File, `\`, "/"))
 
+	rule := ""
+	if d.Once {
+		rule = ", each at most once"
+	}
+
 	order := ""
 	if d.Random {
 		order = fmt.Sprintf(", random order, seed %d", d.Seed)
 	}
 
 	if d.Used == 0 {
-		return fmt.Sprintf("  data: none of %d %s from %s used%s", d.Records, noun(d.Records, "request"), name, order)
+		return fmt.Sprintf("  data: none of %d %s from %s used%s%s", d.Records, noun(d.Records, "request"), name, rule, order)
+	}
+
+	if d.Once {
+		return fmt.Sprintf("  data: %d of %d %s from %s%s%s", d.Used, d.Records, noun(d.Records, "request"), name, rule, order)
 	}
 
 	return fmt.Sprintf("  data: %d of %d %s from %s, each used up to %d %s%s",
@@ -51,4 +61,28 @@ func noun(n int, word string) string {
 	}
 
 	return word + "s"
+}
+
+// CheckDatasetsFit refuses a run whose plan hands out more requests than a
+// dataset_reuse: false file has records, before anything is sent. The count is
+// the engine's own, warm-up included: the warm-up uses records. A call that
+// reuses its file is not checked.
+func CheckDatasetsFit(calls []engine.Call) error {
+	var errs []error
+
+	for i := range calls {
+		call := &calls[i]
+		if call.Dataset == nil || !call.Dataset.Once {
+			continue
+		}
+
+		need := engine.ScheduledAfter(call.Stages, 0)
+		if have := len(call.Payloads); have < need {
+			errs = append(errs, fmt.Errorf("call %q: dataset %s has %d records, the run hands out %d (warm-up included); "+
+				"dataset_reuse: false sends each at most once",
+				displayMethod(call.Method), path.Base(strings.ReplaceAll(call.Dataset.File, `\`, "/")), have, need))
+		}
+	}
+
+	return errors.Join(errs...)
 }

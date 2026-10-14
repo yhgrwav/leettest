@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -246,6 +247,9 @@ func PrintBreakpoint(w io.Writer, run BreakpointRun) {
 		fmt.Fprintln(w, run.MethodsSource.Line())
 	}
 	head, why := headline(res)
+	if line := exhaustedLine(run); line != "" {
+		why = line
+	}
 	fmt.Fprintf(w, "  %s\n", head)
 	if why != "" {
 		fmt.Fprintf(w, "  %s\n", why)
@@ -270,6 +274,20 @@ func PrintBreakpoint(w io.Writer, run BreakpointRun) {
 			fmt.Fprintf(w, "  - %s\n", n)
 		}
 	}
+}
+
+// exhaustedLine says which dataset ended the search, at which rate; empty when
+// the search was not ended by one. It follows the stop reason, not only the
+// run's report: whoever stopped the search first is the reason.
+func exhaustedLine(run BreakpointRun) string {
+	last, ok := lastWhy(run.Result)
+	if !ok || run.StopReason != StopDatasetExhausted || run.Result.Outcome != breakpoint.Stopped || last.Report.DatasetExhausted == nil {
+		return ""
+	}
+
+	ex := last.Report.DatasetExhausted
+
+	return fmt.Sprintf("dataset %s (call %s) ran out at %d rps", path.Base(strings.ReplaceAll(ex.File, `\`, "/")), displayMethod(ex.Method), last.RPS)
 }
 
 // searchNotes are the search's notes, the same in the text and in JSON, and,
@@ -309,9 +327,12 @@ type jsonBreakpoint struct {
 	BrokeRPS *int   `json:"broke_rps"`
 	// Why is the cause of the run that ended the search, from a closed list;
 	// the numbers are in notes.
-	Why   *string     `json:"why"`
-	Notes []string    `json:"notes"`
-	Runs  []jsonRunBP `json:"runs"`
+	Why *string `json:"why"`
+	// StopReason is who ended the search: "dataset_exhausted", "requested", or
+	// null when it ended itself.
+	StopReason *string     `json:"stop_reason"`
+	Notes      []string    `json:"notes"`
+	Runs       []jsonRunBP `json:"runs"`
 }
 
 type jsonRunBP struct {
@@ -342,6 +363,9 @@ func NewBreakpointReport(run BreakpointRun) BreakpointReport {
 		Why:     causeName(res.Cause),
 		Notes:   searchNotes(res),
 		Runs:    make([]jsonRunBP, 0, len(res.Steps)),
+	}
+	if run.StopReason != "" && res.Outcome == breakpoint.Stopped {
+		bp.StopReason = &run.StopReason
 	}
 	switch res.Outcome {
 	case breakpoint.BrokeBetween, breakpoint.RunLimit:

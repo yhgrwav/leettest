@@ -23,13 +23,14 @@ import (
 	"github.com/goccy/go-yaml/parser"
 )
 
-var callDatasetPath = regexp.MustCompile(`^\$\.load\.calls\[\d+\]\.(dataset|dataset_order|dataset_seed)$`)
+var callDatasetPath = regexp.MustCompile(`^\$\.load\.calls\[\d+\]\.(dataset|dataset_order|dataset_seed|dataset_reuse)$`)
 
 // emptyKeyErrors is the error of each key that must not be written with no value.
 var emptyKeyErrors = map[string]error{
 	"dataset":       ErrEmptyDatasetPath,
 	"dataset_order": ErrDatasetOrder,
 	"dataset_seed":  ErrDatasetSeed,
+	"dataset_reuse": ErrDatasetReuse,
 }
 
 // checkTree runs the checks the decoder cannot make. An anchor name defined

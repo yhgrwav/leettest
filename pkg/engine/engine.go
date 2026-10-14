@@ -74,6 +74,23 @@ func (c *Call) handedOut() {
 	}
 }
 
+// spent says the call needs a record for its next request and has none: a Once
+// call whose file has all gone out. Lazy on purpose: the last record handed out
+// does not end anything, a tick that needs one more does.
+func (c *Call) spent() bool {
+	return c.Dataset != nil && c.Dataset.Once && len(c.Payloads) > 0 && c.Dataset.Counter.Handed() >= len(c.Payloads)
+}
+
+// DatasetExhaustedError is what the dispatcher returns when a Once call has no
+// record left for a tick; Run turns it into a gentle end of the run.
+type DatasetExhaustedError struct {
+	Method, File string
+}
+
+func (e *DatasetExhaustedError) Error() string {
+	return fmt.Sprintf("%s: dataset %s has no record left", e.Method, e.File)
+}
+
 // DatasetRef is what the engine knows of a call's dataset besides the records.
 type DatasetRef struct {
 	// File is the path as the config wrote it; the report carries it.
@@ -186,6 +203,8 @@ type Engine struct {
 	stopped  chan struct{}
 	// incomplete is set when the run ended before its plan: stopped or aborted.
 	incomplete atomic.Bool
+	// exhausted is the dataset that ran out and ended the run, if one did.
+	exhausted atomic.Pointer[DatasetExhausted]
 	// capHit is set when the run ended on the in-flight cap.
 	capHit atomic.Pointer[InFlightCapError]
 	// startedAt is when Run started, for the moment of a cap hit.
@@ -333,6 +352,7 @@ func (e *Engine) longestTimeout() time.Duration {
 func (e *Engine) Report() Report {
 	report := e.stats.Report()
 	report.Incomplete = e.incomplete.Load()
+	report.DatasetExhausted = e.exhausted.Load()
 	report.Planned = e.plannedDuration()
 	for _, call := range e.opts.Calls {
 		report.Scheduled += ScheduledAfter(call.Stages, e.opts.Warmup)
@@ -380,6 +400,7 @@ func (e *Engine) datasetReport(call Call) *DatasetReport {
 	if n > 0 {
 		report.UsedMax = (s + n - 1) / n
 	}
+	report.Once = call.Dataset.Once
 	if shuffle := call.Dataset.Counter.shuffle; shuffle != nil {
 		report.Random, report.Seed = true, shuffle.seed
 	}
@@ -556,6 +577,14 @@ func (e *Engine) Run(ctx context.Context) error {
 		defer schedulers.Done()
 
 		err := dispatcher.Run(scheduleCtx, requests)
+		if spent := (*DatasetExhaustedError)(nil); errors.As(err, &spent) {
+			// A file ran out: the plan is cut short like a Stop, calls in flight finish.
+			e.exhausted.Store(&DatasetExhausted{Method: spent.Method, File: spent.File})
+			e.incomplete.Store(true)
+			stopScheduling()
+
+			return
+		}
 		if err != nil && ctx.Err() == nil && isStopped(e.stopped) {
 			// Stopped by Stop, not by a failure: the plan was cut short.
 			e.incomplete.Store(true)

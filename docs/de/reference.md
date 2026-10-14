@@ -351,6 +351,7 @@ Die übrigen sind einfache Zähler.
 | `methods[].dataset.used_max` | int | Wie oft die am häufigsten genutzte rausging; in einer Suche — vom ersten Schritt bis zum Ende dieses Laufs |
 | `methods[].dataset.order` | string | `file` oder `random`: in welcher Reihenfolge die Anfragen rausgingen — nicht veröffentlicht |
 | `methods[].dataset.seed` | int? | Seed einer zufälligen Reihenfolge, 0 bis 9007199254740991; `null` bei der Reihenfolge der Datei — nicht veröffentlicht |
+| `methods[].dataset.reuse` | bool | `false` — der Aufruf sendet jeden Datensatz höchstens einmal (`dataset_reuse: false`); sonst `true` — nicht veröffentlicht |
 | `methods[].seconds` | []object | Die Zeitleiste pro Sekunde, siehe unten |
 
 ### Sekunde: `methods[].seconds[]`
@@ -384,6 +385,7 @@ obersten Ebene. Jeder Lauf liegt mit seinem vollständigen Bericht in `breakpoin
 | `breakpoint.held_rps` | int? | Die höchste Rate, die das Ziel gehalten hat; `null` — keine gehalten |
 | `breakpoint.broke_rps` | int? | Die niedrigste Rate, bei der das Ziel brach oder ein Lauflimit die Suche stoppte; `null` — es brach nicht |
 | `breakpoint.why` | string? | Ursache des Laufs, der die Suche beendet hat, aus einer geschlossenen Liste: `errors`, `p99_limit`, `p99_vs_base`, `connection`, `no_recovery`, `generator`, `in_flight_cap`, `stream_limit`, `stream_wait`, `clock_step`, `request_errors`; `null` — keine Ursache |
+| `breakpoint.stop_reason` | string? | Wer die Suche beendet hat: `dataset_exhausted` (eine Datei mit `dataset_reuse: false` war aufgebraucht), `requested` (vom Nutzer gestoppt); `null` — die Suche endete von selbst — nicht veröffentlicht |
 | `breakpoint.notes` | []string | Hinweise der Suche, Text für Menschen in ASCII; nicht auswerten |
 | `breakpoint.runs` | []object | Alle Läufe der Reihe nach |
 | `breakpoint.runs[].kind` | string | `step`, `repeat` oder `probe` |

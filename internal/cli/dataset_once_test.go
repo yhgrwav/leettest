@@ -33,8 +33,8 @@ func onceOf(file string, records, used int) *engine.DatasetReport {
 	return d
 }
 
-// The line of a call that sends each record at most once ends with the words
-// saying so, after the order when there is one; a call that reuses prints as
+// The line of a call that sends each record at most once carries the words
+// saying so in place of the use count, before the order; a call that reuses prints as
 // it did.
 // Ground: contract — the one place the text says the file was not wrapped.
 func TestReport_DatasetLineEachAtMostOnce(t *testing.T) {
@@ -47,13 +47,13 @@ func TestReport_DatasetLineEachAtMostOnce(t *testing.T) {
 		want string
 	}{
 		{"file order", onceOf("data/users.jsonl", 3, 3),
-			"  data: 3 of 3 requests from users.jsonl, each used up to 1 time, each at most once"},
+			"  data: 3 of 3 requests from users.jsonl, each at most once"},
 		{"part of the file", onceOf("data/users.jsonl", 5, 2),
-			"  data: 2 of 5 requests from users.jsonl, each used up to 1 time, each at most once"},
+			"  data: 2 of 5 requests from users.jsonl, each at most once"},
 		{"nothing used", onceOf("data/users.jsonl", 3, 0),
 			"  data: none of 3 requests from users.jsonl used, each at most once"},
 		{"random order", random,
-			"  data: 3 of 3 requests from users.jsonl, each used up to 1 time, random order, seed 42, each at most once"},
+			"  data: 3 of 3 requests from users.jsonl, each at most once, random order, seed 42"},
 		{"reuse says nothing of it", datasetOf("data/users.jsonl", 3, 3, 2),
 			"  data: 3 of 3 requests from users.jsonl, each used up to 2 times"},
 	} {
