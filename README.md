@@ -146,7 +146,8 @@ server reflection, поэтому `.proto` не нужен. Сервис без 
 - `failure` — статус говорит, что вызов сломался: `INTERNAL`, `UNKNOWN`, `DATA_LOSS`, `CANCELLED` от
   другой стороны, `ABORTED` (конфликт одновременных изменений, а не нехватка ёмкости).
 - `bad response` — ответ пришёл, но клиент его не принял: больше `app.max_response_size` или сжат
-  кодировкой, которую клиент не объявлял.
+  кодировкой, которую клиент не объявлял, или нарушает унарность: OK без сообщения или лишнее
+  сообщение.
 - `client error` — клиент сам отказался отправлять: запрос не закодировался, упал кодек или
   перехватчик.
 
@@ -161,7 +162,7 @@ server reflection, поэтому `.proto` не нужен. Сервис без 
 | `INVALID_ARGUMENT`, `NOT_FOUND`, `ALREADY_EXISTS`, `PERMISSION_DENIED`, `UNAUTHENTICATED`, `FAILED_PRECONDITION`, `OUT_OF_RANGE`, `UNIMPLEMENTED` | `request error` | `cut off` | `client error` |
 | `RESOURCE_EXHAUSTED` | `overload`; «larger than max» от grpc-go — `request error` | `cut off`; ответ больше нашего лимита — `bad response` | `client error` |
 | `UNAVAILABLE` | `overload` | `cut off`; поток, отвергнутый целью до обработки, — `overload` | `unreachable`; то же |
-| `CANCELLED`, `UNKNOWN`, `INTERNAL`, `DATA_LOSS`, `ABORTED` | `failure` | `cut off`; ответ не распаковался — `bad response` | `client error` |
+| `CANCELLED`, `UNKNOWN`, `INTERNAL`, `DATA_LOSS`, `ABORTED` | `failure`; OK без ответа от grpc-go — `bad response` | `cut off`; ответ не распаковался — `bad response` | `client error` |
 | `DEADLINE_EXCEEDED` | тайм-аут | тайм-аут | тайм-аут, не отправлен |
 
 Слишком большой запрос узнаётся по тексту ошибки grpc-go. Цель на другой реализации (Envoy, Java)

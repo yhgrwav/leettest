@@ -31,7 +31,7 @@ import (
 const sizeLimit = "larger than max"
 
 // replyRefusals are how our grpc-go words a reply it received and would not
-// accept for its encoding (v1.84.0, rpc_util.go and stream.go). Only our
+// accept, for its encoding or its shape (v1.84.0, rpc_util.go, stream.go, call.go). Only our
 // client writes them, so they are ours whatever came over the wire: the
 // target's trailer may well have said OK.
 var replyRefusals = []string{
@@ -40,6 +40,11 @@ var replyRefusals = []string{
 	"grpc: no decompressor available",
 	"which is not allowed by AcceptCompressors",
 	"message after decompression larger than max",
+	// A unary reply that is not one message (stream.go:1296, call.go:94 and
+	// stream.go:222). The same family on the server side (stream.go:1931,
+	// :1970) is the target's and arrives as a status, so no shared prefix.
+	"received no response message from non-server-streaming RPC",
+	"expected <EOF> for non server-streaming RPCs, but received another message",
 }
 
 // refusedReply reports whether the client itself refused a reply that had
