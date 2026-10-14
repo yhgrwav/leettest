@@ -93,6 +93,9 @@ leettest -c load.yaml -output json > report.json
 echo $?
 ```
 
+To keep the text report on stdout and get the JSON from the same run, add `-json-file report.json`:
+the file must not exist yet, and it is absent after a run that produced no report.
+
 Stdout carries only the report; progress and errors go to stderr. The text report is ASCII; text
 from outside (a method name, the target's error text) is escaped as `\uXXXX`.
 
@@ -103,7 +106,7 @@ Source of truth: [README, «Exit codes»](https://github.com/yhgrwav/leettest/bl
 | Code | What to do |
 |---|---|
 | `0` | Read the report |
-| `1` | No run, no report: read stderr, it names the field, the call or the cause |
+| `1` | The report you asked for was not produced (no run, or `-json-file` not written): read stderr, it names the field, the call, the path or the cause |
 | `2` | Invalid run: read `invalid_reasons`, do not report latency from it |
 | `3` | Partial run: say so |
 | `130`, `143` | Killed, no report: re-run |
