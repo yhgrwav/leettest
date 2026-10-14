@@ -81,6 +81,9 @@ type DatasetRef struct {
 	// Counter is S of the call, shared by every run that carries this Call
 	// (copies of it included); nil gives each run a count of its own.
 	Counter *RecordCounter
+	// Once: no record is handed out twice. The call that needs a record after
+	// the last one went out ends the run gently (Report.DatasetExhausted).
+	Once bool
 }
 
 // counted is call with a counter of its own if it has a dataset and no counter:

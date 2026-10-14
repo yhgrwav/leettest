@@ -51,6 +51,10 @@ var (
 	ErrSeedWithoutRandom = errors.New("dataset_seed needs dataset_order: random")
 	// ErrDatasetSeed is a dataset_seed outside 0 to 2^53-1.
 	ErrDatasetSeed = errors.New("dataset_seed must be a whole number from 0 to 9007199254740991")
+	// ErrDatasetReuse is a dataset_reuse that is not true or false.
+	ErrDatasetReuse = errors.New("dataset_reuse must be true or false")
+	// ErrReuseWithoutDataset is dataset_reuse on a call without a dataset.
+	ErrReuseWithoutDataset = errors.New("dataset_reuse needs a dataset")
 	// ErrDuplicateAnchor is a YAML anchor name defined twice in the config.
 	ErrDuplicateAnchor = errors.New("anchor is already defined")
 	// ErrBreakpoint is a breakpoint section that cannot run as written.
@@ -258,6 +262,8 @@ type Call struct {
 	// DatasetOrder is file or random; DatasetSeed the seed of random. Nil when left out.
 	DatasetOrder *string `yaml:"dataset_order"`
 	DatasetSeed  *int64  `yaml:"dataset_seed"`
+	// DatasetReuse is dataset_reuse; nil when left out, which is true.
+	DatasetReuse *bool `yaml:"dataset_reuse"`
 	// RawTimeout is the field as written; nil means it was left out.
 	RawTimeout *time.Duration `yaml:"timeout"`
 	Timeout    time.Duration  `yaml:"-"`

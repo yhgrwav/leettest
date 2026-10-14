@@ -31,6 +31,12 @@ const (
 	ModeBreakpoint = "breakpoint"
 )
 
+// The values of BreakpointRun.StopReason and of the JSON stop_reason.
+const (
+	StopDatasetExhausted = "dataset_exhausted"
+	StopRequested        = "requested"
+)
+
 // BreakpointRun is what the breaking-point report needs: the search's plan
 // and result, and the run's header.
 type BreakpointRun struct {
@@ -40,6 +46,9 @@ type BreakpointRun struct {
 	StartedAt time.Time
 	Plan      breakpoint.Plan
 	Result    breakpoint.Result
+	// StopReason is who ended the search: StopDatasetExhausted, StopRequested,
+	// or "" when nobody did.
+	StopReason string
 	// MethodsSource is where the method came from; nil when none was resolved
 	// (-fake).
 	MethodsSource *MethodsSource

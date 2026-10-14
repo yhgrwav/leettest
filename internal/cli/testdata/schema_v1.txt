@@ -198,6 +198,7 @@ methods[].dataset.used int
 methods[].dataset.used_max int
 methods[].dataset.order string
 methods[].dataset.seed int?
+methods[].dataset.reuse bool
 methods[].seconds []object
 methods[].seconds[].warmup bool
 methods[].seconds[].begun int
