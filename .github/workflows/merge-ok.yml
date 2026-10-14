@@ -4,10 +4,12 @@ name: Merge by label
 # condition below holds; otherwise it says why in a notice and does nothing.
 # It runs when the label is put and when a workflow that runs on pull requests
 # ends, so a label put while CI is still running merges when CI is done.
+# A new push to a labelled pull request takes the label off: the label stands
+# for the head that was approved.
 # Nothing from the pull request is checked out or executed: only the API.
 on:
   pull_request_target:
-    types: [labeled]
+    types: [labeled, synchronize]
   # check_suite is not usable here: GitHub does not deliver it for suites that
   # Actions created. workflow_run is delivered for them.
   workflow_run:
@@ -23,13 +25,27 @@ concurrency:
 jobs:
   merge:
     name: merge-ok
-    if: github.event_name != 'pull_request_target' || github.event.label.name == 'merge-ok'
+    if: github.event_name != 'pull_request_target' || github.event.action == 'synchronize' || github.event.label.name == 'merge-ok'
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
     steps:
+      - name: Take the label off a new push
+        if: github.event.action == 'synchronize'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          has=$(gh api "repos/${REPO}/issues/${PR_NUMBER}" --jq '[.labels[].name] | index("merge-ok") != null')
+          [ "${has}" = "true" ] || { echo "::notice::merge-ok: #${PR_NUMBER} has no merge-ok label, nothing to remove"; exit 0; }
+          gh api -X DELETE "repos/${REPO}/issues/${PR_NUMBER}/labels/merge-ok" >/dev/null
+          echo "::notice::merge-ok: label removed from #${PR_NUMBER}: a new push needs a new verdict"
+
       - name: Merge when every condition holds
+        if: github.event.action != 'synchronize'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
@@ -65,9 +81,14 @@ jobs:
             esac
           done <<<"${files}"
 
-          # Every check run on the head, this job's own run excluded.
-          bad=$(gh api "repos/${REPO}/commits/${sha}/check-runs?per_page=100" --paginate \
-            --jq '.check_runs[] | select(.name != "merge-ok") | select(.status != "completed" or ((.conclusion // "") | IN("success", "skipped", "neutral") | not)) | "\(.name): \(.status)/\(.conclusion // "-")"')
+          # Check runs on the head, this job's own run excluded. A re-run or a
+          # fixed title leaves an old run of the same name beside the new one:
+          # only the latest per name counts (latest started_at, tie: highest id).
+          runs=$(gh api "repos/${REPO}/commits/${sha}/check-runs?per_page=100" --paginate --jq '.check_runs[]')
+          bad=$(jq -rs 'group_by(.name) | map(max_by([(.started_at // ""), .id])) | .[]
+            | select(.name != "merge-ok")
+            | select(.status != "completed" or ((.conclusion // "") | IN("success", "skipped", "neutral") | not))
+            | "\(.name): \(.status)/\(.conclusion // "-")"' <<<"${runs}")
           [ -z "${bad}" ] || skip "checks not green on ${sha:0:7}: $(tr '\n' ';' <<<"${bad}")"
 
           behind=$(gh api "repos/${REPO}/compare/main...${sha}" --jq .behind_by)
