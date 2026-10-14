@@ -104,18 +104,24 @@ func writeFileAtomic(path string, data []byte) (err error) {
 		}
 	}()
 
-	if _, err = tmp.Write(data); err != nil {
-		return err
-	}
-	if err = tmp.Sync(); err != nil {
-		return err
-	}
-	if err = tmp.Chmod(0o644); err != nil {
-		return err
-	}
-	if err = tmp.Close(); err != nil {
-		return err
+	if fillErr := fillTemp(tmp, data); fillErr != nil {
+		return fillErr
 	}
 
 	return os.Rename(tmp.Name(), path)
+}
+
+// fillTemp writes data, makes it durable and closes the file.
+func fillTemp(tmp *os.File, data []byte) error {
+	if _, err := tmp.Write(data); err != nil {
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		return err
+	}
+	if err := tmp.Chmod(0o644); err != nil {
+		return err
+	}
+
+	return tmp.Close()
 }

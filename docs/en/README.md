@@ -220,7 +220,7 @@ an invalid run (`2`) outranks an incomplete one (`3`); a stop that did print a r
 | Code | What happened |
 |---|---|
 | `0` | The plan ran, the report is complete |
-| `1` | The run did not happen: flags, config, connection. No report |
+| `1` | The report you asked for was not produced: the run did not happen (flags, config, connection) or the report could not be written to `-json-file` (not released). stderr says why |
 | `2` | The run is invalid (see above). There is a report, but its numbers are not about the load |
 | `3` | The run stopped before its plan. There is a report, and it covers only what got through |
 | `130` | Aborted without a report after Ctrl+C |
@@ -234,7 +234,20 @@ Code `4` is reserved for thresholds. How stopping works is in the
 With `-output json`, stdout gets exactly one JSON object and a newline; everything else goes to
 stderr, so stdout can go straight into `jq`. The object is printed only for a run that happened
 (codes `0`, `2`, `3`); on `1`, `130` and `143` stdout is empty. The `outcome` field (`complete`,
-`invalid` or `incomplete`) always matches the exit code.
+`invalid` or `incomplete`) always matches the exit code, except in one case: if the report could not
+be written to the file (not released), the code is `1` and stdout still holds the run's object.
+
+For the text in the log and the JSON for the next step from one run, use `-json-file` (not released):
+
+```sh
+leettest -c load.yaml -json-file report.json
+```
+
+Stdout is whatever `-output` says (text by default); `report.json` holds the same object
+`-output json` prints. The file is created before the start and never overwritten: if it exists
+or its directory does not, the code is `1` and the target gets no call. A run with no report (for
+example `1` on the connection, or `130`) leaves no file. If the write after the run fails, stderr
+names the path and the error, and the code is `1`.
 
 The schema is versioned by `schema_version`, now `1`, and it is a contract; the screen text is not:
 parse the JSON, not the screen. The rules:

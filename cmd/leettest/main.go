@@ -307,8 +307,8 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 	// Created before the network: a path that cannot be used ends the command
 	// before any call. Removed on every way out that has no report.
 	if *jsonFile != "" {
-		if err = reserveJSONFile(*jsonFile); err != nil {
-			return err
+		if reserveErr := reserveJSONFile(*jsonFile); reserveErr != nil {
+			return reserveErr
 		}
 		defer discardJSONFile()
 	}
