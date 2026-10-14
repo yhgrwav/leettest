@@ -1,0 +1,83 @@
+name: Merge by label
+
+# Squash-merges a pull request that carries the label merge-ok once every
+# condition below holds; otherwise it says why in a notice and does nothing.
+# It runs when the label is put and when a workflow that runs on pull requests
+# ends, so a label put while CI is still running merges when CI is done.
+# Nothing from the pull request is checked out or executed: only the API.
+on:
+  pull_request_target:
+    types: [labeled]
+  # check_suite is not usable here: GitHub does not deliver it for suites that
+  # Actions created. workflow_run is delivered for them.
+  workflow_run:
+    workflows: [CI, PR title, Labeler, CLA]
+    types: [completed]
+
+permissions: {}
+
+concurrency:
+  group: merge-ok-${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  merge:
+    name: merge-ok
+    if: github.event_name != 'pull_request_target' || github.event.label.name == 'merge-ok'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Merge when every condition holds
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.workflow_run.pull_requests[0].number }}
+        run: |
+          set -euo pipefail
+          skip() { echo "::notice::merge-ok: $1"; exit 0; }
+
+          [ -n "${PR_NUMBER}" ] || skip "no pull request in this event"
+          pr=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}")
+          field() { jq -r "$1" <<<"${pr}"; }
+
+          [ "$(field .state)" = "open" ] || skip "#${PR_NUMBER} is not open"
+          [ "$(field '[.labels[].name] | index("merge-ok") != null')" = "true" ] || skip "#${PR_NUMBER} has no merge-ok label"
+          [ "$(field .draft)" = "false" ] || skip "#${PR_NUMBER} is a draft"
+          [ "$(field .head.repo.full_name)" = "${REPO}" ] || skip "#${PR_NUMBER} comes from a fork"
+          base=$(field .base.ref)
+          case "${base}" in
+            release/*) skip "release: Egor's да (base ${base})" ;;
+            main) ;;
+            *) skip "base is ${base}, not main" ;;
+          esac
+
+          sha=$(field .head.sha)
+          ref=$(field .head.ref)
+          title=$(field .title)
+
+          files=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}/files" --paginate --jq '.[] | .filename, (.previous_filename // empty)')
+          while IFS= read -r f; do
+            case "${f}" in
+              .github/workflows/release.yml | .goreleaser* | docs/release-notes/*)
+                skip "release: Egor's да (touches ${f})" ;;
+            esac
+          done <<<"${files}"
+
+          # Every check run on the head, this job's own run excluded.
+          bad=$(gh api "repos/${REPO}/commits/${sha}/check-runs?per_page=100" --paginate \
+            --jq '.check_runs[] | select(.name != "merge-ok") | select(.status != "completed" or ((.conclusion // "") | IN("success", "skipped", "neutral") | not)) | "\(.name): \(.status)/\(.conclusion // "-")"')
+          [ -z "${bad}" ] || skip "checks not green on ${sha:0:7}: $(tr '\n' ';' <<<"${bad}")"
+
+          behind=$(gh api "repos/${REPO}/compare/main...${sha}" --jq .behind_by)
+          [ "${behind}" = "0" ] || skip "#${PR_NUMBER} is ${behind} commits behind main"
+
+          # sha makes GitHub refuse the merge if the head moved after the checks.
+          gh api -X PUT "repos/${REPO}/pulls/${PR_NUMBER}/merge" \
+            -f merge_method=squash -f sha="${sha}" \
+            -f commit_title="${title} (#${PR_NUMBER})" -f commit_message=""
+          echo "::notice::merge-ok: merged #${PR_NUMBER} at ${sha:0:7}"
+
+          gh api -X DELETE "repos/${REPO}/git/refs/heads/${ref}" \
+            || echo "::warning::merge-ok: branch ${ref} was not deleted (probably already gone)"

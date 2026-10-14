@@ -15,6 +15,8 @@
 package examples_test
 
 import (
+	"context"
+	"net"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -25,8 +27,16 @@ import (
 	"time"
 
 	"github.com/goccy/go-yaml"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protodesc"
+	"google.golang.org/protobuf/types/descriptorpb"
 
+	"github.com/yhgrwav/leettest/internal/cli"
 	"github.com/yhgrwav/leettest/pkg/config"
+	"github.com/yhgrwav/leettest/test/stand"
+	walletv1 "github.com/yhgrwav/leettest/test/stand/proto/wallet/v1"
 )
 
 // examples are the English examples, the names their ru copies share.
@@ -159,6 +169,104 @@ func TestExamples_Load(t *testing.T) {
 	for _, name := range examples(t) {
 		loadExample(t, name)
 		loadExample(t, filepath.Join("ru", name))
+	}
+}
+
+// wallet.protoset is committed as built by protoc, so it is checked against the schema the stand
+// really serves: a stand whose proto changed under the example would otherwise be run against a
+// stale set, and the example would pass on a schema the stand no longer has.
+func TestExamples_ProtosetIsTheStandSchema(t *testing.T) {
+	raw, err := os.ReadFile("wallet.protoset")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var set descriptorpb.FileDescriptorSet
+	if err := proto.Unmarshal(raw, &set); err != nil {
+		t.Fatalf("wallet.protoset: %v", err)
+	}
+
+	byName := map[string]*descriptorpb.FileDescriptorProto{}
+	for _, file := range set.GetFile() {
+		byName[file.GetName()] = file
+	}
+
+	want := protodesc.ToFileDescriptorProto(walletv1.File_wallet_v1_wallet_proto)
+	got, ok := byName[want.GetName()]
+	if !ok {
+		t.Fatalf("wallet.protoset has no %s, it holds %d files", want.GetName(), len(byName))
+	}
+
+	// Positions in the source are not part of the schema.
+	want.SourceCodeInfo, got.SourceCodeInfo = nil, nil
+	if !proto.Equal(got, want) {
+		t.Errorf("%s in wallet.protoset differs from the stand's:\nset:   %v\nstand: %v", want.GetName(), got, want)
+	}
+
+	for _, dep := range want.GetDependency() {
+		if _, ok := byName[dep]; !ok {
+			t.Errorf("wallet.protoset lacks %s, which %s imports: build it with --include_imports", dep, want.GetName())
+		}
+	}
+}
+
+// The proto examples run against a stand that serves no reflection: each method they call
+// resolves from the files alone, and the stand answers it through that schema.
+func TestExamples_ProtoExamplesRunWithoutReflection(t *testing.T) {
+	lis, err := new(net.ListenConfig).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bare := stand.StartBareOn(lis, nil)
+	t.Cleanup(bare.Stop)
+
+	conn, err := grpc.NewClient(bare.Target(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	for _, path := range []string{"proto.yaml", "protoset.yaml", "ru/proto.yaml", "ru/protoset.yaml"} {
+		t.Run(path, func(t *testing.T) {
+			cfg := loadExample(t, path)
+
+			resolver, _, err := cli.FileResolver(cfg)
+			if err != nil || resolver == nil {
+				t.Fatalf("FileResolver: %v, resolver %v", err, resolver)
+			}
+			if len(cfg.Load.Calls) == 0 {
+				t.Fatal("the example calls no method")
+			}
+
+			ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+
+			for _, call := range cfg.Load.Calls {
+				method, err := resolver.Resolve(ctx, call.Method)
+				if err != nil {
+					t.Fatalf("%s: %v", call.Method, err)
+				}
+
+				body, err := cli.RequestBody(method.Input, call.Data)
+				if err != nil {
+					t.Fatalf("%s: %v", call.Method, err)
+				}
+				req, err := method.NewRequest(nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := proto.Unmarshal(body, req); err != nil {
+					t.Fatal(err)
+				}
+
+				resp := method.NewResponse()
+				if err := conn.Invoke(ctx, method.Path, req, resp); err != nil {
+					t.Fatalf("%s on the stand without reflection: %v", call.Method, err)
+				}
+				if proto.Size(resp) == 0 {
+					t.Errorf("%s: the stand answered an empty message", call.Method)
+				}
+			}
+		})
 	}
 }
 

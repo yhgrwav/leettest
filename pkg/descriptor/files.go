@@ -19,7 +19,9 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/bufbuild/protocompile"
@@ -47,6 +49,9 @@ var (
 	ErrCompile = errors.New("cannot compile the .proto files")
 	// ErrOutsideImportPaths is an entry file under none of the import paths.
 	ErrOutsideImportPaths = errors.New("the .proto file is not under any import path")
+	// ErrShadowedInput is an entry file that an earlier import path shadows with
+	// a different file of the same name.
+	ErrShadowedInput = errors.New("the .proto file is shadowed by an earlier import path")
 	// ErrMissingDependency is a protoset that lacks a file one of its files imports.
 	ErrMissingDependency = errors.New("the protoset lacks a file its files import")
 	// ErrBadProtoset is bytes that are not a usable FileDescriptorSet.
@@ -83,13 +88,18 @@ func newFileResolver(reg *protoregistry.Files, files []protoreflect.FileDescript
 // each under one of importPaths; their imports are looked up on importPaths,
 // and the well-known types need no path. A file is named by its path under the
 // first import path that holds it, as protoc names it, so one file is one name
-// whether listed or imported. No import paths hold no file.
+// whether listed or imported. No import paths hold no file. Something else at
+// a file's name under an earlier import path shadows it: ErrShadowedInput.
 func NewProtoResolver(files, importPaths []string) (*FileResolver, error) {
 	names := make([]string, len(files))
 	for i, file := range files {
-		name, ok := nameUnder(file, importPaths)
+		name, held, ok := nameUnder(file, importPaths)
 		if !ok {
 			return nil, fmt.Errorf("%w: %s; import paths: %s", ErrOutsideImportPaths, file, listPaths(importPaths))
+		}
+		if other, shadowed := shadowedBy(name, importPaths[:held], file); shadowed {
+			return nil, fmt.Errorf("%w: %s is shadowed by %s; list %s instead, or put %s first in the import paths",
+				ErrShadowedInput, file, other, other, importPaths[held])
 		}
 		names[i] = name
 	}
@@ -116,14 +126,15 @@ func NewProtoResolver(files, importPaths []string) (*FileResolver, error) {
 }
 
 // nameUnder is file's path relative to the first of importPaths that holds it,
-// with forward slashes, which is how an import spells it.
-func nameUnder(file string, importPaths []string) (string, bool) {
+// with forward slashes, which is how an import spells it, and the index of that
+// import path.
+func nameUnder(file string, importPaths []string) (name string, index int, ok bool) {
 	abs, err := filepath.Abs(file)
 	if err != nil {
-		return "", false
+		return "", 0, false
 	}
 
-	for _, ip := range importPaths {
+	for i, ip := range importPaths {
 		root, err := filepath.Abs(ip)
 		if err != nil {
 			continue
@@ -133,7 +144,30 @@ func nameUnder(file string, importPaths []string) (string, bool) {
 			continue
 		}
 
-		return filepath.ToSlash(rel), true
+		return filepath.ToSlash(rel), i, true
+	}
+
+	return "", 0, false
+}
+
+// shadowedBy is the path of what the compiler would read for name instead of
+// entry: anything found at name under one of earlier, a directory included,
+// that is not entry itself.
+func shadowedBy(name string, earlier []string, entry string) (string, bool) {
+	own, err := os.Stat(entry)
+	if err != nil {
+		return "", false
+	}
+
+	for _, ip := range earlier {
+		p := filepath.Join(ip, filepath.FromSlash(name))
+		info, err := os.Stat(p)
+		if err != nil {
+			continue
+		}
+		if !os.SameFile(info, own) {
+			return p, true
+		}
 	}
 
 	return "", false
@@ -318,18 +352,26 @@ func (r *FileResolver) resolveOne(method string) (*Method, error) {
 	return &Method{Path: "/" + method, Input: md.Input(), Output: md.Output(), Types: r.types}, nil
 }
 
-// found lists the methods of the files, listedNames of them and how many more.
+// found lists the methods the files can call, listedNames of them and how
+// many more: the entry files' first, then those of the imported files sorted.
 func (r *FileResolver) found() string {
+	entry := make(map[string]bool, len(r.files))
 	var names []string
 	for _, f := range r.files {
-		services := f.Services()
-		for i := range services.Len() {
-			methods := services.Get(i).Methods()
-			for j := range methods.Len() {
-				names = append(names, string(services.Get(i).FullName())+"/"+string(methods.Get(j).Name()))
-			}
-		}
+		entry[f.Path()] = true
+		names = appendMethods(names, f)
 	}
+
+	var imported []string
+	r.reg.RangeFiles(func(f protoreflect.FileDescriptor) bool {
+		if !entry[f.Path()] {
+			imported = appendMethods(imported, f)
+		}
+
+		return true
+	})
+	slices.Sort(imported)
+	names = append(names, imported...)
 
 	switch {
 	case len(names) == 0:
@@ -339,6 +381,18 @@ func (r *FileResolver) found() string {
 	}
 
 	return strings.Join(names, ", ")
+}
+
+func appendMethods(names []string, f protoreflect.FileDescriptor) []string {
+	services := f.Services()
+	for i := range services.Len() {
+		methods := services.Get(i).Methods()
+		for j := range methods.Len() {
+			names = append(names, string(services.Get(i).FullName())+"/"+string(methods.Get(j).Name()))
+		}
+	}
+
+	return names
 }
 
 // fileTypes finds the types of the files; of the global registry only the
