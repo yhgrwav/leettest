@@ -36,7 +36,7 @@ Bildschirm sammeln sich die laufenden Aufrufe, und der Bericht zählt die, die o
 
 <img src="../../assets/demo.gif" width="100%" alt="Ein LeetTest-Lauf im Terminal: der Lastbildschirm, das Ziel friert drei Sekunden ein, der Bericht zeigt die Aufrufe ohne Antwort und ein p99 über 2 Sekunden">
 
-Welche Fragen LeetTest beantwortet — [als Liste](../en/questions.md) (auf Englisch).
+Welche Fragen LeetTest beantwortet — [als Liste](questions.md).
 
 ## Installation
 
@@ -337,7 +337,7 @@ Für das Produkt gibt es einen Plan — **[roadmap](roadmap.md)**. Fehlt Ihnen e
 
 | Frage | |
 |---|---|
-| Welche Fragen beantwortet LeetTest? | [Lesen](../en/questions.md) (auf Englisch) |
+| Welche Fragen beantwortet LeetTest? | [Lesen](questions.md) |
 | Welches Problem löst LeetTest? | [Lesen](problem.md) |
 | Warum dieses Werkzeug? | [Lesen](why.md) |
 | Welche Probleme von Lasttests behebt es? | [Lesen](pitfalls.md) |
