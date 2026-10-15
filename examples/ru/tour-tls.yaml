@@ -14,6 +14,7 @@ app:
   cert: ../../test/stand/certs/client.pem   # клиентский сертификат, если цель его просит
   key: ../../test/stand/certs/client-key.pem
   server_name: localhost            # имя, с которым сверяется сертификат цели
+  compression: gzip                 # сжимать тела запросов; стенд принимает gzip
 
 load:
   calls:

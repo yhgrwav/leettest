@@ -123,6 +123,8 @@ jobs:
           sleep 1
           bin/leettest -c examples/tour-tls.yaml -output json > tour-tls.json
           jq -e '.sent == 2000' tour-tls.json
+          # gzip on: the stand accepted it and the sizes are told.
+          jq -e '.settings.compression == "gzip" and ([.methods[] | .request_bytes.wire > 0] | all) and ([.methods[] | .request_error.count == 0] | all)'tour-tls.json
       - name: Run examples/leettest.yaml
         run: |
           pkill -x stand || true

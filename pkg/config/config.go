@@ -107,9 +107,11 @@ type App struct {
 	// 256; 1 when the file leaves it out.
 	RawConnections *ConnectionCount `yaml:"connections"`
 	Connections    int              `yaml:"-"`
+	// RawCompression is the value as written, nil when it was left out.
 	// Compression is how request bodies are compressed: "gzip", or empty
 	// when the file leaves it out.
-	Compression string `yaml:"compression"`
+	RawCompression *string `yaml:"compression"`
+	Compression    string  `yaml:"-"`
 	// Proto names the .proto files the methods come from instead of the
 	// target's reflection; nil when app.proto is not set. RawProtoset is
 	// app.protoset as written, a FileDescriptorSet file, nil when not set;

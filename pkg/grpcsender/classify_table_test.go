@@ -158,6 +158,7 @@ func TestCategorize_DecompressorRefusalByWhoSaidIt(t *testing.T) {
 		{"INTERNAL with a status over the wire: our client refused the reply", codes.Internal, true, engine.CategoryBadResponse, false},
 		{"INTERNAL without one", codes.Internal, false, engine.CategoryBadResponse, false},
 		{"UNIMPLEMENTED over the wire: the target refused our request", codes.Unimplemented, true, engine.CategoryClientFault, true},
+		{"UNIMPLEMENTED with no status over the wire: set by the client after sending", codes.Unimplemented, false, engine.CategoryCutOff, false},
 	} {
 		err := status.Error(c.code, words)
 		if got := categorize(err, c.answered, true); got != c.want {

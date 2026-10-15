@@ -271,8 +271,8 @@ func PrintBreakpoint(w io.Writer, run BreakpointRun) {
 	if run.Name != "" {
 		fmt.Fprintf(w, "name: %s\n", run.Name)
 	}
-	fmt.Fprintf(w, "settings: settle %s, hold %s, max in flight %s, connections %d\n\n",
-		run.Plan.Settle, run.Plan.Hold, searchCap(run.Plan), run.Connections)
+	fmt.Fprintf(w, "settings: settle %s, hold %s, max in flight %s, connections %d%s\n\n",
+		run.Plan.Settle, run.Plan.Hold, searchCap(run.Plan), run.Connections, compressionSuffix(run.Compression))
 
 	verdicts := make([]string, len(res.Steps))
 	for i := range res.Steps {
@@ -286,6 +286,15 @@ func PrintBreakpoint(w io.Writer, run BreakpointRun) {
 			fmt.Fprintf(w, "  - %s\n", n)
 		}
 	}
+}
+
+// compressionSuffix ends the settings line: ", compression gzip", nothing for none.
+func compressionSuffix(name string) string {
+	if name == "" {
+		return ""
+	}
+
+	return ", compression " + name
 }
 
 // searchCap is the cap the search was told: the flag's, else each step's own.
@@ -438,7 +447,7 @@ func NewBreakpointReport(run BreakpointRun) BreakpointReport {
 		})
 	}
 
-	settings := jsonSearch{Connections: run.Connections, WarmupUS: micros(run.Plan.Settle)}
+	settings := jsonSearch{Connections: run.Connections, WarmupUS: micros(run.Plan.Settle), Compression: compressionOf(run.Compression)}
 	if run.Plan.MaxInFlight > 0 {
 		settings.MaxInFlight = &run.Plan.MaxInFlight
 	}

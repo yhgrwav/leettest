@@ -92,7 +92,7 @@ func PrintReport(w io.Writer, target string, run RunReport) {
 		fmt.Fprintf(w, "name: %s\n", run.Name)
 	}
 	if s := run.Settings; s != nil {
-		fmt.Fprintf(w, "settings: warm-up %s, max in flight %d, connections %d\n", s.Warmup, s.MaxInFlight, s.Connections)
+		fmt.Fprintf(w, "settings: warm-up %s, max in flight %d, connections %d%s\n", s.Warmup, s.MaxInFlight, s.Connections, compressionSuffix(s.Compression))
 	}
 	fmt.Fprintf(w, "sent %d, failed %d", report.Sent, report.Failed)
 	if report.NotSent > 0 {
@@ -119,6 +119,11 @@ func PrintReport(w io.Writer, target string, run RunReport) {
 				rate = fmt.Sprintf("%d-%d", m.RPSLow, m.RPSHigh)
 			}
 			fmt.Fprintf(w, "  plan: %s rps for %s\n", rate, m.PlannedDuration)
+		}
+
+		// Without compression raw and wire are the same number: no line.
+		if b := m.RequestBytes; b != nil && run.Settings != nil && run.Settings.Compression != "" {
+			fmt.Fprintf(w, "  bytes: %.0f -> %.0f per call\n", b.Raw, b.Wire)
 		}
 
 		if m.Dataset != nil {

@@ -450,12 +450,15 @@ func (s *Stats) LinkCounts() []LinkReport {
 }
 
 type methodStats struct {
-	sent       int
-	failed     int
-	unanswered int
-	cutOff     int
-	unknown    int
-	timedOut   int
+	// bodies counts the measured calls that handed a request body to the
+	// transport; rawBytes and wireBytes sum their sizes.
+	bodies, rawBytes, wireBytes int64
+	sent                        int
+	failed                      int
+	unanswered                  int
+	cutOff                      int
+	unknown                     int
+	timedOut                    int
 	// timedOutLate counts timeouts sent with less than half the deadline left.
 	timedOutLate int
 	unsentOut    int
@@ -676,6 +679,11 @@ func (s *Stats) Record(r Result) {
 	}
 
 	method.sent++
+	if r.RawBytes > 0 || r.WireBytes > 0 {
+		method.bodies++
+		method.rawBytes += int64(r.RawBytes)
+		method.wireBytes += int64(r.WireBytes)
+	}
 	if failed {
 		method.failed++
 		if r.Code != "" {
@@ -986,6 +994,10 @@ func (s *Stats) Report() Report {
 			WarmupFailed:      method.warmupFailed,
 			WarmupNotSent:     method.warmupNotSent,
 		}
+		if method.bodies > 0 {
+			n := float64(method.bodies)
+			entry.RequestBytes = &RequestBytes{Raw: float64(method.rawBytes) / n, Wire: float64(method.wireBytes) / n}
+		}
 		if from, ok := method.timeline.silentFrom(); ok {
 			entry.SilentFrom = &from
 			entry.SentRPS = method.timeline.sentRate(from)
@@ -1082,6 +1094,7 @@ func (s *Stats) Report() Report {
 			WarmupSent:        timelines[v.name].WarmupSent,
 			WarmupFailed:      timelines[v.name].WarmupFailed,
 			WarmupNotSent:     timelines[v.name].WarmupNotSent,
+			RequestBytes:      timelines[v.name].RequestBytes,
 			SilentFrom:        timelines[v.name].SilentFrom,
 			SentRPS:           timelines[v.name].SentRPS,
 			LastAnswerAt:      timelines[v.name].LastAnswerAt,

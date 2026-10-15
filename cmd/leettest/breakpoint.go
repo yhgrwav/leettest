@@ -235,6 +235,7 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 		Target:     s.target, Name: cli.ServiceLabel(s.cfg, s.configPath), Version: versionString(version, info), Method: method,
 		StartedAt: started, Plan: plan, Result: res, Runs: aligned(res.Steps, runs, searchSettings(s, s.maxInFlight, plan.Settle)),
 		MethodsSource: s.source, Connections: s.cfg.App.Connections,
+		Compression: s.cfg.App.Compression,
 	}
 	var data []byte
 	if s.json || s.jsonFile != "" {
@@ -269,7 +270,7 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 // searchSettings are what a step of the search is started with: the cap, the
 // configured connections and the settle as its warm-up.
 func searchSettings(s searchSetup, maxInFlight int, settle time.Duration) *cli.RunSettings {
-	return &cli.RunSettings{MaxInFlight: maxInFlight, Connections: s.cfg.App.Connections, Warmup: settle}
+	return &cli.RunSettings{MaxInFlight: maxInFlight, Connections: s.cfg.App.Connections, Warmup: settle, Compression: s.cfg.App.Compression}
 }
 
 // screenSettings are the screen's settings, set up on first use as for a

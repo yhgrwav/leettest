@@ -31,6 +31,7 @@ import (
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/status"
 
 	"github.com/yhgrwav/leettest/pkg/engine"
@@ -275,6 +276,9 @@ func (s *Sender) setLimit(limit int) {
 	s.call = []grpc.CallOption{
 		grpc.ForceCodec(&rawCodec{limit: limit}),
 		grpc.MaxCallRecvMsgSize(int(min(2*int64(limit), math.MaxInt32))),
+	}
+	if s.opts.Compression == gzip.Name {
+		s.call = append(s.call, grpc.UseCompressor(gzip.Name))
 	}
 }
 
@@ -639,6 +643,8 @@ func (s *Sender) Send(ctx context.Context, req engine.Request) (engine.Outcome, 
 		StreamWait: times.streamWait(),
 		ConnWait:   times.connWait,
 		DoneAt:     doneAt,
+		RawBytes:   times.rawBytes,
+		WireBytes:  times.wireBytes,
 		Category:   category,
 		Code:       code.String(),
 		Err:        err,

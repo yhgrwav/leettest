@@ -16,7 +16,7 @@ app:
     x-request-source: leettest-tour
   max_response_size: 1MiB           # ответ больше — bad response, а не успех
   connections: 1                    # N соединений, вызовы берут их по очереди; по умолчанию 1
-  compression: gzip                 # сжимать тела запросов; не указано - без сжатия
+  # compression: gzip               # сжимать тела запросов; не указано - без сжатия (цель должна принимать gzip)
 
 load:
   warmup: 3s                        # вызовы уходят, но в перцентили не попадают

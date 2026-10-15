@@ -119,7 +119,16 @@ func settingsOf(s *RunSettings) jsonSettings {
 		return jsonSettings{}
 	}
 
-	return jsonSettings{MaxInFlight: s.MaxInFlight, Connections: s.Connections, WarmupUS: micros(s.Warmup)}
+	return jsonSettings{MaxInFlight: s.MaxInFlight, Connections: s.Connections, WarmupUS: micros(s.Warmup), Compression: compressionOf(s.Compression)}
+}
+
+// compressionOf is the configured compression, null for none.
+func compressionOf(name string) *string {
+	if name == "" {
+		return nil
+	}
+
+	return &name
 }
 
 // jsonRequestBytes is the mean request body in bytes: the message and what
@@ -427,7 +436,12 @@ func NewJSONReport(run JSONRun) JSONReport {
 		out.Connections = conns
 	}
 	for i := range r.Methods {
-		out.Methods = append(out.Methods, jsonMethodOf(&r.Methods[i], r.Warmup))
+		m := jsonMethodOf(&r.Methods[i], r.Warmup)
+		// Without compression raw and wire are the same number: null.
+		if b := r.Methods[i].RequestBytes; b != nil && out.Settings.Compression != nil {
+			m.RequestBytes = &jsonRequestBytes{Raw: b.Raw, Wire: b.Wire}
+		}
+		out.Methods = append(out.Methods, m)
 	}
 	if note := uncheckedNote(run.Run.Unchecked); note != "" {
 		out.Notes = append(out.Notes, note)
