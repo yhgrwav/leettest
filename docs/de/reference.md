@@ -3,7 +3,7 @@
 [Русский](../ru/reference.md) · [English](../en/reference.md) · [Deutsch](reference.md) · [简体中文](../zh-CN/reference.md)
 [← Startseite](README.md)
 
-> Übersetzt aus [docs/ru/reference.md](../ru/reference.md) bei c726cb6, 2026-10-14. Bei
+> Übersetzt aus [docs/ru/reference.md](../ru/reference.md) bei 5c75feb, 2026-10-14. Bei
 > Abweichungen gilt die russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/reference.md).
@@ -227,6 +227,7 @@ ein Anhalten lässt Datensätze ungesendet.
 |---|---|
 | `-c` | Pfad zur Konfiguration |
 | `-output` | Berichtsformat auf stdout: `text` (Standard) oder `json` für Skripte und CI |
+| `-json-file` | Pfad einer neuen Datei: der JSON-Bericht (dasselbe Objekt wie bei `-output json`) wird hineingeschrieben, stdout bleibt, wie `-output` es sagt. Eine vorhandene Datei oder ein fehlendes Verzeichnis ist Exit 1 vor dem Start. Ein Lauf ohne Bericht hinterlässt keine Datei. Ein fehlgeschlagenes Schreiben ist Exit 1 — nicht veröffentlicht |
 | `-connect-timeout` | Wie lange auf einen Dienst gewartet wird, der die Verbindung angenommen hat, aber schweigt. Standard `10s`. Auf eine abgelehnte Verbindung und eine falsche Adresse wird nicht gewartet |
 | `-max-in-flight` | Grenze für Anfragen, die auf eine Antwort warten. Standard `5000` |
 | `-plain` | Ohne Live-Bildschirm: eine Fortschrittszeile pro Sekunde auf stderr, wie ohne Terminal, und ohne den Dialog beim ersten Start. Der Bericht und die Exit-Codes sind dieselben |
@@ -294,7 +295,7 @@ unten den Typ „percentile?" hat.
 | `target` | string | Die Zieladresse aus der Konfiguration, `fake target` mit `-fake` |
 | `name` | string | Der Name des Laufs: `name` aus der Konfiguration, sonst der Dienstname, sonst der Name der Konfigurationsdatei; immer ein String — nicht veröffentlicht |
 | `methods_source` | string? | Woher die Methoden stammen: `reflection`, `proto` (die Dateien aus `app.proto`) oder `protoset`; `null` mit `-fake` — nicht veröffentlicht |
-| `outcome` | string | `complete`, `invalid`, `incomplete` — entspricht Exit-Code `0`, `2`, `3` |
+| `outcome` | string | `complete`, `invalid`, `incomplete` — entspricht Exit-Code `0`, `2`, `3`; bei `-json-file` und fehlgeschlagenem Schreiben ist der Code `1`, und `outcome` bleibt der des Laufs |
 | `invalid_reasons` | []string | Warum der Lauf ungültig ist: `in_flight_cap`, `nothing_measured`, `clock_step`. Leer — gültig |
 | `tail_wait_cause` | string? | Die Wartezeit auf Client-Seite, die das Ende der Verteilung bestimmt hat: `generator`, `stream`, `connection`; `null` — kein Urteil |
 | `clock_step_ns` | int | Der Uhrenschritt des Hosts, ns: Jede Latenz und Wartezeit ist ± dieser Wert |
