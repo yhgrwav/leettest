@@ -75,6 +75,9 @@ func tableRows(text string) [][]string {
 			if strings.TrimSpace(row) == "" {
 				break
 			}
+			if strings.HasPrefix(row, "  p99.9:") {
+				continue
+			}
 			rows = append(rows, strings.Fields(row))
 		}
 

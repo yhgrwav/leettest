@@ -372,6 +372,7 @@ Die übrigen sind einfache Zähler.
 | `methods[].request_bytes.raw`, `methods[].request_bytes.wire` | float | Bytes vor der Kompression und auf der Leitung (ohne den 5-Byte-Rahmen) — nicht veröffentlicht |
 | `methods[].latency` | object | Latenz erfolgreicher Aufrufe, mit Timeouts und abgebrochenen Aufrufen als Untergrenzen |
 | `methods[].latency.min`, `methods[].latency.p50`, `methods[].latency.p90`, `methods[].latency.p95`, `methods[].latency.p99`, `methods[].latency.max` | percentile? | Minimum, Perzentile, Maximum |
+| `methods[].latency.p999` | percentile? | p99.9 nach derselben Regel; null, solange die Methode weniger als 1000 Beobachtungen (`observations`) hat, dann wäre p99.9 das Maximum — nicht veröffentlicht |
 | `methods[].p99_without_client_waits` | percentile? | p99 derselben Aufrufe ohne Wartezeiten auf Client-Seite; kann etwas zu niedrig ausfallen |
 | `methods[].observations` | int | Beobachtungen hinter den Perzentilen von `latency` |
 | `methods[].censored` | int | Davon ist nur eine Untergrenze bekannt |

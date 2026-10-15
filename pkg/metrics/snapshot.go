@@ -196,6 +196,18 @@ func rankFor(p float64, n int64) int64 {
 	return rank
 }
 
+// MinCount is the smallest number of observations n for which the percentile
+// p lies below the maximum, that is rankFor(p, n) < n; with fewer, p is the
+// max.
+func MinCount(p float64) int64 {
+	n := int64(1)
+	for rankFor(p, n) >= n {
+		n++
+	}
+
+	return n
+}
+
 // addCounts accumulates b into a in place; a and b share the same histogram
 // shape and therefore the same length.
 func addCounts(a, b []int64) {

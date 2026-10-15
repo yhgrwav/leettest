@@ -136,14 +136,14 @@ func TestEcho_AMethodsPlanIsASubline(t *testing.T) {
 	lines := echoLines(RunReport{Report: report, Name: "x", Settings: &RunSettings{MaxInFlight: 5000, Connections: 1}})
 
 	row := indexOfPrefix(lines, "a.B/One")
-	if row < 0 || row+2 >= len(lines) {
+	if row < 0 || row+3 >= len(lines) {
 		t.Fatalf("no method row:\n%s", strings.Join(lines, "\n"))
 	}
 	if lines[row+1] != "  plan: 300 rps for 40s" {
 		t.Errorf("the line under the method = %q, want %q", lines[row+1], "  plan: 300 rps for 40s")
 	}
-	if !strings.HasPrefix(lines[row+2], "  data:") {
-		t.Errorf("the line after the plan = %q, want the dataset line", lines[row+2])
+	if !strings.HasPrefix(lines[row+2], "  p99.9:") || !strings.HasPrefix(lines[row+3], "  data:") {
+		t.Errorf("the lines after the plan = %q, %q, want p99.9 then the dataset line", lines[row+2], lines[row+3])
 	}
 	if header := indexOfPrefix(lines, "method "); header < 0 || len(lines[header]) != len(lines[row]) {
 		t.Errorf("the method row is %d wide, the header %d: the plan went into the table", len(lines[row]), len(lines[header]))

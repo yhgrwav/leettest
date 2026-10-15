@@ -121,6 +121,12 @@ func PrintReport(w io.Writer, target string, run RunReport) {
 			fmt.Fprintf(w, "  plan: %s rps for %s\n", rate, m.PlannedDuration)
 		}
 
+		if m.P999.Defined {
+			fmt.Fprintf(w, "  p99.9: %s\n", formatQuantile(m.P999))
+		} else {
+			fmt.Fprintf(w, "  p99.9: too few observations (%d of %d)\n", m.Latencies, metrics.MinCount(0.999))
+		}
+
 		// Without compression raw and wire are the same number: no line.
 		if b := m.RequestBytes; b != nil && run.Settings != nil && run.Settings.Compression != "" {
 			fmt.Fprintf(w, "  bytes: %.0f -> %.0f per call\n", b.Raw, b.Wire)

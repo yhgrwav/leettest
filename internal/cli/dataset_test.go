@@ -477,6 +477,11 @@ func lineAfter(t *testing.T, out, prefix string) string {
 	lines := strings.Split(out, "\n")
 	for i, l := range lines {
 		if strings.HasPrefix(l, prefix) && i+1 < len(lines) {
+			// The p99.9 subline sits between the method row and the dataset line.
+			if strings.HasPrefix(lines[i+1], "  p99.9:") && i+2 < len(lines) {
+				return lines[i+2]
+			}
+
 			return lines[i+1]
 		}
 	}

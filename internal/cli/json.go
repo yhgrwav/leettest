@@ -210,7 +210,10 @@ type jsonLatency struct {
 	P90 *jsonQuantile `json:"p90"`
 	P95 *jsonQuantile `json:"p95"`
 	P99 *jsonQuantile `json:"p99"`
-	Max *jsonQuantile `json:"max"`
+	// P999 is null while the method has fewer observations than
+	// metrics.MinCount(0.999).
+	P999 *jsonQuantile `json:"p999"`
+	Max  *jsonQuantile `json:"max"`
 }
 
 type jsonAnswers struct {
@@ -488,7 +491,7 @@ func jsonMethodOf(m *engine.MethodReport, warmup time.Duration) jsonMethod {
 		PlannedDurationUS: micros(m.PlannedDuration),
 		Latency: jsonLatency{
 			Min: quantile(m.Min), P50: quantile(m.P50), P90: quantile(m.P90),
-			P95: quantile(m.P95), P99: quantile(m.P99), Max: quantile(m.Max),
+			P95: quantile(m.P95), P99: quantile(m.P99), P999: quantile(m.P999), Max: quantile(m.Max),
 		},
 		P99WithoutClientWaits: quantile(m.P99WithoutClientWaits),
 		Observations:          m.Latencies, Censored: m.Censored, InvalidLatencies: m.Invalid,

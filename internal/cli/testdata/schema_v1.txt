@@ -108,6 +108,9 @@ methods[].latency.p95.lower_bound bool
 methods[].latency.p99 object?
 methods[].latency.p99.us int
 methods[].latency.p99.lower_bound bool
+methods[].latency.p999 object?
+methods[].latency.p999.us int
+methods[].latency.p999.lower_bound bool
 methods[].latency.max object?
 methods[].latency.max.us int
 methods[].latency.max.lower_bound bool
