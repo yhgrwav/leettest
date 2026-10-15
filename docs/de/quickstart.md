@@ -1,4 +1,4 @@
-> Übersetzt aus [docs/ru/quickstart.md](../ru/quickstart.md) bei c726cb6, 2026-10-14. Bei
+> Übersetzt aus [docs/ru/quickstart.md](../ru/quickstart.md) bei 5c75feb, 2026-10-14. Bei
 > Abweichungen gilt die russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/quickstart.md).
@@ -194,11 +194,15 @@ mit `grep`. Der Rundgang oben endet so:
 
 ```
 run finished: 127.0.0.1:50051 in 40.5s
+name: tour
+settings: warm-up 3s, max in flight 5000, connections 1
 sent 12950, failed 5248
 
 method                                           sent   failed    sent/s       p50       p90       p95       p99
 grpc.health.v1.Health/Check                     11100     4499       300    20.5ms    >500ms    >500ms    >500ms
+  plan: 300 rps for 40s
 wallet.v1.WalletService/GetBalance               1850      749        50    20.5ms    >500ms    >500ms    >500ms
+  plan: 50 rps for 40s
   data: 4 of 4 requests from wallets.jsonl, each used up to 500 times, random order, seed 42
 
 warm-up 1050 sent, excluded from stats
@@ -220,6 +224,9 @@ is a lower bound: the real tail lies above it. Raise the timeout to see it.
 
 Worauf es ankommt:
 
+- **Welcher Lauf das ist.** `name:` und `settings:` wiederholen den Namen des Laufs und womit er
+  gestartet wurde, `plan:` unter einer Methode ihre konfigurierte Rate und Dauer: ein in ein Ticket
+  eingefügter Bericht lässt sich mit einem anderen vergleichen (nicht veröffentlicht).
 - **Bei welcher Last der Dienst nicht mehr mithielt.** „at 300 rps … nothing after the call sent at
   25.0s" — das Ziel verstummte in Sekunde 25, genau wann es dem Stand befohlen war. Der Zeitpunkt
   ist, wann der Aufruf rausging, nicht wann er fällig war: Ein nachhinkender Generator wird nicht
@@ -298,7 +305,7 @@ Exit-Codes:
 | Code | Bedeutung |
 |---|---|
 | `0` | Der Plan lief durch, der Bericht ist vollständig |
-| `1` | Kein Lauf: Flags, Konfiguration, Verbindung. Kein Bericht |
+| `1` | Der gewünschte Bericht wurde nicht erzeugt: der Lauf fand nicht statt (Flags, Konfiguration, Verbindung) oder der Bericht konnte nicht in `-json-file` geschrieben werden (nicht veröffentlicht). stderr nennt den Grund |
 | `2` | Ungültiger Lauf: die In-Flight-Grenze, jeder Aufruf einer Methode ein Anfragefehler oder eine Host-Uhr gröber als ein Viertel des p50. Es gibt einen Bericht; seine Zahlen handeln nicht von der Last |
 | `3` | Vor dem Ende des Plans angehalten. Der Bericht deckt ab, was lief |
 | `130`, `143` | Durch Ctrl+C oder SIGTERM beendet, kein Bericht |

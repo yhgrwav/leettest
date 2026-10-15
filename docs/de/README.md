@@ -15,7 +15,7 @@
 
 ---
 
-> Übersetzt aus [README.md](../../README.md) bei f077ae3, 2026-10-14. Bei Abweichungen gilt die
+> Übersetzt aus [README.md](../../README.md) bei 5c75feb, 2026-10-14. Bei Abweichungen gilt die
 > russische Fassung. Dazu ein Verzeichnis der deutschen Dokumentation, das im Original fehlt.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/README.md).
@@ -232,7 +232,7 @@ das einen Bericht ausgab, ist immer `3`.
 | Code | Was passiert ist |
 |---|---|
 | `0` | Der Plan lief durch, der Bericht ist vollständig |
-| `1` | Der Lauf fand nicht statt: Flags, Konfiguration, Verbindung. Kein Bericht |
+| `1` | Der gewünschte Bericht wurde nicht erzeugt: der Lauf fand nicht statt (Flags, Konfiguration, Verbindung) oder der Bericht konnte nicht in `-json-file` geschrieben werden (nicht veröffentlicht). stderr nennt den Grund |
 | `2` | Der Lauf ist ungültig (siehe oben). Es gibt einen Bericht, aber seine Zahlen handeln nicht von der Last |
 | `3` | Der Lauf hielt vor seinem Plan an. Es gibt einen Bericht, und er deckt nur ab, was durchging |
 | `130` | Ohne Bericht abgebrochen nach Ctrl+C |
@@ -246,7 +246,22 @@ Code `4` ist für Schwellen reserviert. Wie das Anhalten funktioniert, steht in 
 Mit `-output json` bekommt stdout genau ein JSON-Objekt und einen Zeilenumbruch; alles andere geht
 nach stderr, sodass stdout direkt in `jq` gehen kann. Das Objekt wird nur für einen Lauf ausgegeben,
 der stattfand (Codes `0`, `2`, `3`); bei `1`, `130` und `143` ist stdout leer. Das Feld `outcome`
-(`complete`, `invalid` oder `incomplete`) passt immer zum Exit-Code.
+(`complete`, `invalid` oder `incomplete`) passt immer zum Exit-Code, außer in einem Fall: Konnte der
+Bericht nicht in die Datei geschrieben werden (nicht veröffentlicht), ist der Code `1`, und auf
+stdout steht weiter das Objekt des Laufs.
+
+Den Text im Log und das JSON für den nächsten Schritt aus einem Lauf liefert
+`-json-file` (nicht veröffentlicht):
+
+```sh
+leettest -c load.yaml -json-file report.json
+```
+
+Auf stdout steht, was `-output` sagt (standardmäßig Text); `report.json` enthält dasselbe Objekt,
+das `-output json` ausgibt. Die Datei wird vor dem Start angelegt und nie überschrieben: Existiert
+sie oder fehlt ihr Verzeichnis, ist der Code `1` und das Ziel bekommt keinen Aufruf. Ein Lauf ohne
+Bericht (etwa `1` bei der Verbindung oder `130`) hinterlässt keine Datei. Schlägt das Schreiben nach
+dem Lauf fehl, nennt stderr den Pfad und den Fehler, und der Code ist `1`.
 
 Das Schema ist über `schema_version` versioniert, derzeit `1`, und es ist ein Vertrag; der
 Bildschirmtext ist es nicht: Werten Sie das JSON aus, nicht den Bildschirm. Die Regeln:

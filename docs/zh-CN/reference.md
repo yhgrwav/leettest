@@ -3,7 +3,7 @@
 [Русский](../ru/reference.md) · [English](../en/reference.md) · [Deutsch](../de/reference.md) · [简体中文](reference.md)
 [← 首页](README.md)
 
-> 译自 [docs/ru/reference.md](../ru/reference.md)，对应 c726cb6，2026-10-14。如有出入，以俄文版为准。
+> 译自 [docs/ru/reference.md](../ru/reference.md)，对应 5c75feb，2026-10-14。如有出入，以俄文版为准。
 > **可能滞后：** 中文版在每次发布前同步，最新内容请看[英文版](../en/reference.md)。
 
 每个配置字段、每个命令行参数，以及工具在启动前检查什么。如何阅读报告见
@@ -194,6 +194,7 @@ seed 在启动时选取，每个调用各有一个。
 |---|---|
 | `-c` | 配置文件路径 |
 | `-output` | stdout 上的报告格式：`text`（默认）或供脚本和 CI 使用的 `json` |
+| `-json-file` | 新文件的路径：JSON 报告（与 `-output json` 输出的对象相同）写入该文件，stdout 仍按 `-output` 的设定。文件已存在或目录不存在，则在开始前退出码 1。没有报告的运行不留下文件。写入失败为退出码 1——未发布 |
 | `-connect-timeout` | 服务接受了连接却不应答时等待多久。默认 `10s`。连接被拒绝和地址错误不会等待 |
 | `-max-in-flight` | 等待应答的请求数上限。默认 `5000` |
 | `-plain` | 不用实时屏幕：每秒一行进度输出到 stderr，与没有终端时相同，并且没有首次运行的对话。报告和退出码不变 |
@@ -252,7 +253,7 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `target` | string | 配置中的目标地址，使用 `-fake` 时为 `fake target` |
 | `name` | string | 运行的名称：配置中的 `name`，否则为服务名，否则为配置文件名；始终是字符串——未发布 |
 | `methods_source` | string? | 方法的来源：`reflection`、`proto`（`app.proto` 的文件）或 `protoset`；使用 `-fake` 时为 `null`——未发布 |
-| `outcome` | string | `complete`、`invalid`、`incomplete`——对应退出码 `0`、`2`、`3` |
+| `outcome` | string | `complete`、`invalid`、`incomplete`——对应退出码 `0`、`2`、`3`；使用 `-json-file` 且写入失败时退出码为 `1`，`outcome` 仍是该次运行的 |
 | `invalid_reasons` | []string | 运行无效的原因：`in_flight_cap`、`nothing_measured`、`clock_step`。为空——有效 |
 | `tail_wait_cause` | string? | 决定尾部的客户端侧等待：`generator`、`stream`、`connection`；`null`——没有结论 |
 | `clock_step_ns` | int | 主机时钟步长，纳秒：每个延迟和等待都有 ± 这个值的误差 |
