@@ -137,6 +137,22 @@ func printableASCII(s string) bool {
 	return true
 }
 
+// resolveCompression reads app.compression: gzip, or left out for none. The
+// name is exact; it is the encoding's registered one.
+func (a *App) resolveCompression() error {
+	if a.RawCompression == nil {
+		return nil
+	}
+
+	if *a.RawCompression != "gzip" {
+		return fmt.Errorf("%w: %q", ErrInvalidCompression, *a.RawCompression)
+	}
+
+	a.Compression = *a.RawCompression
+
+	return nil
+}
+
 var sizeUnits = map[string]int64{
 	"b": 1, "kb": 1e3, "mb": 1e6, "gb": 1e9, "kib": 1 << 10, "mib": 1 << 20, "gib": 1 << 30,
 }

@@ -97,7 +97,11 @@ type Outcome struct {
 	// 2.2 ms measured under -race on two CPUs — and is not counted.
 	ConnWait time.Duration
 	DoneAt   time.Time
-	Category Category
+	// RawBytes and WireBytes are the request body of the last attempt before
+	// and after compression, without the 5-byte frame; 0 when no attempt
+	// handed one to the transport.
+	RawBytes, WireBytes int
+	Category            Category
 	// Err is the error as reported by the transport, including any text from
 	// the target. Nil for CategorySuccess, non-nil otherwise. pkg/engine
 	// does not inspect or print it; that is left to the caller.

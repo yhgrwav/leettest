@@ -31,6 +31,7 @@ import (
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/status"
 
 	"github.com/yhgrwav/leettest/pkg/engine"
@@ -124,6 +125,9 @@ type Options struct {
 	// name that resolves to an address that does not serve (localhost to ::1,
 	// the server on 127.0.0.1 only) Connect fails and names the address.
 	Connections int
+	// Compression is "gzip" to compress every request body, empty for none.
+	// One call option is built at Connect; empty adds nothing to a call.
+	Compression string
 	// Lookup resolves Target (host:port) to host:port addresses, in the order
 	// to use them; none or an error fails Connect. nil resolves by DNS, each
 	// address once, in the resolver's order. It is asked once, and only for two
@@ -272,6 +276,9 @@ func (s *Sender) setLimit(limit int) {
 	s.call = []grpc.CallOption{
 		grpc.ForceCodec(&rawCodec{limit: limit}),
 		grpc.MaxCallRecvMsgSize(int(min(2*int64(limit), math.MaxInt32))),
+	}
+	if s.opts.Compression == gzip.Name {
+		s.call = append(s.call, grpc.UseCompressor(gzip.Name))
 	}
 }
 
@@ -636,6 +643,8 @@ func (s *Sender) Send(ctx context.Context, req engine.Request) (engine.Outcome, 
 		StreamWait: times.streamWait(),
 		ConnWait:   times.connWait,
 		DoneAt:     doneAt,
+		RawBytes:   times.rawBytes,
+		WireBytes:  times.wireBytes,
 		Category:   category,
 		Code:       code.String(),
 		Err:        err,

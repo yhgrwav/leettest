@@ -14,6 +14,7 @@ app:
   cert: ../test/stand/certs/client.pem   # a client certificate, for a target that asks for one
   key: ../test/stand/certs/client-key.pem
   server_name: localhost            # the name the target's certificate is checked against
+  compression: gzip                 # compress request bodies; the stand accepts gzip
 
 load:
   calls:

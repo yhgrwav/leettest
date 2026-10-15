@@ -36,6 +36,7 @@ load:
 | `app.metadata` | Заголовки каждого вызова: `authorization`, `x-api-key` и т. п. `${ИМЯ}` берётся из переменной окружения |
 | `app.max_response_size` | Самый большой ответ, который примет вызов: `16MiB`, `512KB`. Единица обязательна (`MB` = 10⁶ байт, `MiB` = 2²⁰), меньше 2 GiB. Не указан — 4 MiB, как у gRPC. Ответ больше — `bad response`. Вызов в полёте держит в памяти до двух лимитов: по умолчанию до 8 MiB на каждый |
 | `app.connections` | Сколько соединений открыть к цели, целое от 1 до 256. Не указано — 1. Вызовы идут по соединениям по кругу, отчёт печатает блок `Connections:` — строку на соединение |
+| `app.compression` | Сжимать тела запросов: `gzip`. Не указано — без сжатия. Отчёт печатает под методом `bytes: <до> -> <на проводе> per call` — не выпущено |
 | `app.proto.files` | Файлы `.proto`, из которых брать сервисы, для сервиса без reflection. Пути — от каталога файла конфига. Каждый файл должен лежать внутри одного из `import_paths` — не выпущено |
 | `app.proto.import_paths` | Где искать файлы и их импорты, как `protoc -I`. Пути — от каталога файла конфига. Не указано — этот каталог. Стандартным типам (`google/protobuf/…`) путь не нужен — не выпущено |
 | `app.protoset` | Файл набора дескрипторов вместо файлов `.proto`, собранный `protoc --include_imports --descriptor_set_out=FILE`. Путь — от каталога файла конфига. Не вместе с `app.proto`; нет ни того, ни другого — методы берутся через reflection — не выпущено |
@@ -288,6 +289,7 @@ SIGTERM (`docker stop`, Kubernetes, отмена джоба в CI) сразу о
 | `settings.max_in_flight` | int; поиск: `int?` | Потолок запросов в полёте: значение `-max-in-flight`, иначе по умолчанию. Поиск: `null` без флага (каждый прогон берёт наименьший потолок, с которым идёт); в его прогонах — потолок этого прогона — не выпущено |
 | `settings.connections` | int | `app.connections` как задано, по умолчанию 1; `connections.open` — сколько открылось — не выпущено |
 | `settings.warmup_us` | int | Прогрев как задан. Поиск: время `settle` — не выпущено |
+| `settings.compression` | string? | `app.compression` как задано: `"gzip"`, `null` — не указано — не выпущено |
 | `sent` | int | Измеренные вызовы, кроме `not_sent`. `unreachable` и `aborted` входят |
 | `failed` | int | Из `sent` — все неуспешные, кроме `aborted` |
 | `aborted` | int | Оборваны нашей остановкой |
@@ -347,6 +349,8 @@ SIGTERM (`docker stop`, Kubernetes, отмена джоба в CI) сразу о
 | `methods[].timeout_us` | int | Таймаут метода |
 | `methods[].planned_rps_low`, `methods[].planned_rps_high` | int | Наименьший и наибольший плановый темп всего плана |
 | `methods[].planned_duration_us` | int | Сколько метод должен был идти, как задано — не выпущено |
+| `methods[].request_bytes` | object? | Тело запроса в среднем по измеренным вызовам, ушедшим к цели; `null` без сжатия — не выпущено |
+| `methods[].request_bytes.raw`, `methods[].request_bytes.wire` | float | Байт до сжатия и на проводе (без 5-байтовой рамки) — не выпущено |
 | `methods[].latency` | object | Задержка успешных вызовов, с таймаутами и оборванными как нижними границами |
 | `methods[].latency.min`, `methods[].latency.p50`, `methods[].latency.p90`, `methods[].latency.p95`, `methods[].latency.p99`, `methods[].latency.max` | перцентиль? | Минимум, перцентили, максимум |
 | `methods[].p99_without_client_waits` | перцентиль? | p99 тех же вызовов без ожиданий на стороне клиента; может выйти немного заниженным |
