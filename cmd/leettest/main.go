@@ -467,6 +467,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 			Name:         cli.ServiceLabel(cfg, *configPath),
 			Settings: &cli.RunSettings{
 				MaxInFlight: *maxInFlight, Connections: cfg.App.Connections, Warmup: cfg.Load.Warmup,
+				Compression: cfg.App.Compression,
 			},
 		}
 	}
@@ -601,6 +602,7 @@ func senderOptions(app *config.App) (grpcsender.Options, error) {
 		ServerName:       app.ServerName,
 		MaxResponseBytes: app.MaxResponseBytes,
 		Connections:      app.Connections,
+		Compression:      app.Compression,
 	}
 
 	if app.CA != "" {

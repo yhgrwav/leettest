@@ -137,3 +137,35 @@ func TestCategorize_MessagesThatDidNotFit(t *testing.T) {
 		}
 	}
 }
+
+// The same words, two authors. Our grpc-go refuses a reply it cannot decode
+// with INTERNAL (rpc_util.go:919); a target without gzip refuses our request
+// with UNIMPLEMENTED (server.go:1402, rpc_util.go:917) over the wire. Told
+// apart by the code: the first is the client's, the second the target's and an
+// ordinary request_error.
+//
+// Ground: signal grpc-go v1.84.0 — the two sites word the refusal alike.
+func TestCategorize_DecompressorRefusalByWhoSaidIt(t *testing.T) {
+	const words = `grpc: Decompressor is not installed for grpc-encoding "gzip"`
+
+	for _, c := range []struct {
+		name       string
+		code       codes.Code
+		answered   bool
+		want       engine.Category
+		fromTarget bool
+	}{
+		{"INTERNAL with a status over the wire: our client refused the reply", codes.Internal, true, engine.CategoryBadResponse, false},
+		{"INTERNAL without one", codes.Internal, false, engine.CategoryBadResponse, false},
+		{"UNIMPLEMENTED over the wire: the target refused our request", codes.Unimplemented, true, engine.CategoryClientFault, true},
+		{"UNIMPLEMENTED with no status over the wire: set by the client after sending", codes.Unimplemented, false, engine.CategoryCutOff, false},
+	} {
+		err := status.Error(c.code, words)
+		if got := categorize(err, c.answered, true); got != c.want {
+			t.Errorf("%s: category %v, want %v", c.name, got, c.want)
+		}
+		if got := c.answered && !refusedReply(err, c.answered); got != c.fromTarget {
+			t.Errorf("%s: sent by the target %v, want %v", c.name, got, c.fromTarget)
+		}
+	}
+}

@@ -27,6 +27,9 @@ type callKey struct{}
 // callTimes is what one call recorded about itself, as it stood when it was
 // read.
 type callTimes struct {
+	// rawBytes and wireBytes are the last attempt's request body before and
+	// after compression, from OutPayload.
+	rawBytes, wireBytes int
 	// begunAt is when grpc-go began the call; pickedAt, when it got a
 	// connection after waiting for one or began a transparent retry, zero
 	// otherwise.
@@ -184,6 +187,7 @@ func (h handler) HandleRPC(ctx context.Context, rpc stats.RPCStats) {
 		// Taking it here rather than with time.Now() in the worker keeps the Go
 		// scheduler's delay out of the measurement.
 		call.times.sentAt = v.SentTime
+		call.times.rawBytes, call.times.wireBytes = v.Length, v.CompressedLength
 	case *stats.InHeader, *stats.InPayload:
 		call.times.heard = true
 	case *stats.InTrailer:

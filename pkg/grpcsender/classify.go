@@ -36,7 +36,6 @@ const sizeLimit = "larger than max"
 // target's trailer may well have said OK.
 var replyRefusals = []string{
 	"grpc: failed to decompress",
-	"grpc: Decompressor is not installed",
 	"grpc: no decompressor available",
 	"which is not allowed by AcceptCompressors",
 	"message after decompression larger than max",
@@ -52,6 +51,13 @@ var replyRefusals = []string{
 // status from the target is the target refusing our request instead.
 func refusedReply(err error, answered bool) bool {
 	msg := status.Convert(err).Message()
+	// Our client words it INTERNAL (rpc_util.go:919); a target without gzip
+	// sends the same words as UNIMPLEMENTED (server.go:1402): its refusal of
+	// our request, not ours of its reply.
+	if strings.Contains(msg, "grpc: Decompressor is not installed") && status.Code(err) == codes.Internal {
+		return true
+	}
+
 	for _, r := range replyRefusals {
 		if strings.Contains(msg, r) {
 			return true

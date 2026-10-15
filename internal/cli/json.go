@@ -108,6 +108,8 @@ type jsonSettings struct {
 	MaxInFlight int   `json:"max_in_flight"`
 	Connections int   `json:"connections"`
 	WarmupUS    int64 `json:"warmup_us"`
+	// Compression is "gzip" or null.
+	Compression *string `json:"compression"`
 }
 
 // settingsOf is the echo as JSON has it; nil, which nobody told, gives zeros
@@ -117,7 +119,23 @@ func settingsOf(s *RunSettings) jsonSettings {
 		return jsonSettings{}
 	}
 
-	return jsonSettings{MaxInFlight: s.MaxInFlight, Connections: s.Connections, WarmupUS: micros(s.Warmup)}
+	return jsonSettings{MaxInFlight: s.MaxInFlight, Connections: s.Connections, WarmupUS: micros(s.Warmup), Compression: compressionOf(s.Compression)}
+}
+
+// compressionOf is the configured compression, null for none.
+func compressionOf(name string) *string {
+	if name == "" {
+		return nil
+	}
+
+	return &name
+}
+
+// jsonRequestBytes is the mean request body in bytes: the message and what
+// went on the wire.
+type jsonRequestBytes struct {
+	Raw  float64 `json:"raw"`
+	Wire float64 `json:"wire"`
 }
 
 type jsonQuantile struct {
@@ -228,46 +246,48 @@ type jsonMethod struct {
 	Method string `json:"method"`
 	// InvalidReason says the method measured nothing about load: request_error,
 	// client_error, bad_response or mixed; null when it did.
-	InvalidReason         *string       `json:"invalid_reason"`
-	Sent                  int           `json:"sent"`
-	Failed                int           `json:"failed"`
-	Aborted               int           `json:"aborted"`
-	NotSent               int           `json:"not_sent"`
-	NotSentGenerator      int           `json:"not_sent_generator"`
-	NotSentStream         int           `json:"not_sent_stream"`
-	NotSentConnection     int           `json:"not_sent_connection"`
-	WarmupSent            int           `json:"warmup_sent"`
-	WarmupFailed          int           `json:"warmup_failed"`
-	WarmupNotSent         int           `json:"warmup_not_sent"`
-	RPS                   *float64      `json:"rps"`
-	TimeoutUS             int64         `json:"timeout_us"`
-	PlannedRPSLow         int           `json:"planned_rps_low"`
-	PlannedRPSHigh        int           `json:"planned_rps_high"`
-	PlannedDurationUS     int64         `json:"planned_duration_us"`
-	Latency               jsonLatency   `json:"latency"`
-	P99WithoutClientWaits *jsonQuantile `json:"p99_without_client_waits"`
-	Observations          int           `json:"observations"`
-	Censored              int           `json:"censored"`
-	InvalidLatencies      int           `json:"invalid_latencies"`
-	TimedOut              int           `json:"timed_out"`
-	TimedOutAfterWait     int           `json:"timed_out_after_wait"`
-	CutOff                int           `json:"cut_off"`
-	Unreachable           int           `json:"unreachable"`
-	Unclassified          int           `json:"unclassified"`
-	OutsideTimeline       int           `json:"outside_timeline"`
-	RequestError          jsonAnswers   `json:"request_error"`
-	Overload              jsonAnswers   `json:"overload"`
-	Failure               jsonAnswers   `json:"failure"`
-	BadResponse           jsonAnswers   `json:"bad_response"`
-	ClientError           int           `json:"client_error"`
-	FailureCodes          []jsonCode    `json:"failure_codes"`
-	SilentFromS           *int          `json:"silent_from_s"`
-	SilentSentRPS         *int          `json:"silent_sent_rps"`
-	SilentPlannedRPSLow   *int          `json:"silent_planned_rps_low"`
-	SilentPlannedRPSHigh  *int          `json:"silent_planned_rps_high"`
-	LastAnswerAtUS        *int64        `json:"last_answer_at_us"`
-	Dataset               *jsonDataset  `json:"dataset"`
-	Seconds               []jsonSecond  `json:"seconds"`
+	InvalidReason     *string  `json:"invalid_reason"`
+	Sent              int      `json:"sent"`
+	Failed            int      `json:"failed"`
+	Aborted           int      `json:"aborted"`
+	NotSent           int      `json:"not_sent"`
+	NotSentGenerator  int      `json:"not_sent_generator"`
+	NotSentStream     int      `json:"not_sent_stream"`
+	NotSentConnection int      `json:"not_sent_connection"`
+	WarmupSent        int      `json:"warmup_sent"`
+	WarmupFailed      int      `json:"warmup_failed"`
+	WarmupNotSent     int      `json:"warmup_not_sent"`
+	RPS               *float64 `json:"rps"`
+	TimeoutUS         int64    `json:"timeout_us"`
+	PlannedRPSLow     int      `json:"planned_rps_low"`
+	PlannedRPSHigh    int      `json:"planned_rps_high"`
+	PlannedDurationUS int64    `json:"planned_duration_us"`
+	// RequestBytes is null without compression.
+	RequestBytes          *jsonRequestBytes `json:"request_bytes"`
+	Latency               jsonLatency       `json:"latency"`
+	P99WithoutClientWaits *jsonQuantile     `json:"p99_without_client_waits"`
+	Observations          int               `json:"observations"`
+	Censored              int               `json:"censored"`
+	InvalidLatencies      int               `json:"invalid_latencies"`
+	TimedOut              int               `json:"timed_out"`
+	TimedOutAfterWait     int               `json:"timed_out_after_wait"`
+	CutOff                int               `json:"cut_off"`
+	Unreachable           int               `json:"unreachable"`
+	Unclassified          int               `json:"unclassified"`
+	OutsideTimeline       int               `json:"outside_timeline"`
+	RequestError          jsonAnswers       `json:"request_error"`
+	Overload              jsonAnswers       `json:"overload"`
+	Failure               jsonAnswers       `json:"failure"`
+	BadResponse           jsonAnswers       `json:"bad_response"`
+	ClientError           int               `json:"client_error"`
+	FailureCodes          []jsonCode        `json:"failure_codes"`
+	SilentFromS           *int              `json:"silent_from_s"`
+	SilentSentRPS         *int              `json:"silent_sent_rps"`
+	SilentPlannedRPSLow   *int              `json:"silent_planned_rps_low"`
+	SilentPlannedRPSHigh  *int              `json:"silent_planned_rps_high"`
+	LastAnswerAtUS        *int64            `json:"last_answer_at_us"`
+	Dataset               *jsonDataset      `json:"dataset"`
+	Seconds               []jsonSecond      `json:"seconds"`
 }
 
 // jsonSecond counts each category under its Category.Name, but for success.
@@ -416,7 +436,12 @@ func NewJSONReport(run JSONRun) JSONReport {
 		out.Connections = conns
 	}
 	for i := range r.Methods {
-		out.Methods = append(out.Methods, jsonMethodOf(&r.Methods[i], r.Warmup))
+		m := jsonMethodOf(&r.Methods[i], r.Warmup)
+		// Without compression raw and wire are the same number: null.
+		if b := r.Methods[i].RequestBytes; b != nil && out.Settings.Compression != nil {
+			m.RequestBytes = &jsonRequestBytes{Raw: b.Raw, Wire: b.Wire}
+		}
+		out.Methods = append(out.Methods, m)
 	}
 	if note := uncheckedNote(run.Run.Unchecked); note != "" {
 		out.Notes = append(out.Notes, note)
