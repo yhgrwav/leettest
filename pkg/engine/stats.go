@@ -236,6 +236,15 @@ type MethodReport struct {
 	// PlannedDuration is the method's own planned length: its stages summed,
 	// not the longest of the run's calls.
 	PlannedDuration time.Duration
+	// RequestBytes is the mean request body of the measured calls that went
+	// out, before and after compression; nil when none did.
+	RequestBytes *RequestBytes
+}
+
+// RequestBytes is a mean request size in bytes: Raw is the message, Wire the
+// body on the wire without the 5-byte frame. Equal without compression.
+type RequestBytes struct {
+	Raw, Wire float64
 }
 
 // CapHit is how a run stopped on the in-flight cap. In a run the budget

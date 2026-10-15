@@ -60,6 +60,8 @@ type BreakpointRun struct {
 	Runs []RunReport
 	// Connections is app.connections as configured.
 	Connections int
+	// Compression is app.compression: "gzip", or empty for none.
+	Compression string
 }
 
 // PlanLine is the line printed before the first step: how many steps and the
@@ -348,6 +350,8 @@ type jsonSearch struct {
 	MaxInFlight *int  `json:"max_in_flight"`
 	Connections int   `json:"connections"`
 	WarmupUS    int64 `json:"warmup_us"`
+	// Compression is "gzip" or null.
+	Compression *string `json:"compression"`
 }
 
 type jsonBreakpoint struct {

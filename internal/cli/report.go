@@ -67,6 +67,8 @@ type RunSettings struct {
 	// Warmup is the warm-up as the config wrote it; in a search's step the
 	// settle.
 	Warmup time.Duration
+	// Compression is app.compression: "gzip", or empty for none.
+	Compression string
 }
 
 // ClockTooCoarse says the clock step is over a quarter of some method's p50.

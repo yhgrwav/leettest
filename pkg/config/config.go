@@ -63,6 +63,8 @@ var (
 	// ErrInvalidConnections is app.connections outside 1 to 256 or not a whole
 	// number.
 	ErrInvalidConnections = errors.New("app.connections must be a whole number from 1 to 256")
+	// ErrInvalidCompression is app.compression with a value but gzip.
+	ErrInvalidCompression = errors.New("app.compression must be gzip, or left out")
 	// ErrProtoSource is app.proto or app.protoset that cannot be used as written.
 	ErrProtoSource = errors.New("invalid proto source")
 )
@@ -105,6 +107,9 @@ type App struct {
 	// 256; 1 when the file leaves it out.
 	RawConnections *ConnectionCount `yaml:"connections"`
 	Connections    int              `yaml:"-"`
+	// Compression is how request bodies are compressed: "gzip", or empty
+	// when the file leaves it out.
+	Compression string `yaml:"compression"`
 	// Proto names the .proto files the methods come from instead of the
 	// target's reflection; nil when app.proto is not set. RawProtoset is
 	// app.protoset as written, a FileDescriptorSet file, nil when not set;

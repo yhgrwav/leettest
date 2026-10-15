@@ -39,6 +39,7 @@ load:
 | `app.metadata` | Headers of every call: `authorization`, `x-api-key` and so on. `${NAME}` is taken from an environment variable |
 | `app.max_response_size` | The largest reply a call accepts: `16MiB`, `512KB`. The unit is required (`MB` = 10⁶ bytes, `MiB` = 2²⁰), below 2 GiB. Left out — 4 MiB, as in gRPC. A larger reply is a `bad response`. A call in flight may buffer up to twice the limit: by default up to 8 MiB each |
 | `app.connections` | How many connections to open to the target, a whole number from 1 to 256. Left out — 1. Calls take the connections in turn, and the report prints a `Connections:` block, a row per connection |
+| `app.compression` | Compress request bodies: `gzip`. Left out — none. The report prints `bytes: <raw> -> <wire> per call` under the method — not released |
 | `app.proto.files` | The `.proto` files whose services to load, for a service without reflection. Paths are relative to the config file's directory. Each file must lie under one of `import_paths` — not released |
 | `app.proto.import_paths` | Where to look for the files and their imports, as `protoc -I`. Paths are relative to the config file's directory. Left out — that directory. The well-known types (`google/protobuf/…`) need no path — not released |
 | `app.protoset` | A descriptor set file instead of `.proto` files, built with `protoc --include_imports --descriptor_set_out=FILE`. The path is relative to the config file's directory. Not together with `app.proto`; neither of them — methods come from reflection — not released |
@@ -298,6 +299,7 @@ measured calls only. The first column is the field's full path.
 | `settings.max_in_flight` | int; search: `int?` | The in-flight cap: the `-max-in-flight` value, else the default. A search: `null` without the flag (each run takes the smallest cap it can run with); in its runs, that run's cap — not released |
 | `settings.connections` | int | `app.connections` as configured, 1 by default; `connections.open` is what opened — not released |
 | `settings.warmup_us` | int | The warm-up as configured. A search: the settle — not released |
+| `settings.compression` | string? | `app.compression` as configured: `"gzip"`, `null` — left out — not released |
 | `sent` | int | Measured calls, except `not_sent`. `unreachable` and `aborted` are in it |
 | `failed` | int | Of `sent` — every call that did not succeed, except `aborted` |
 | `aborted` | int | Cut off by our own stop |
@@ -357,6 +359,8 @@ The rest are plain counters.
 | `methods[].timeout_us` | int | The method's timeout |
 | `methods[].planned_rps_low`, `methods[].planned_rps_high` | int | Lowest and highest planned rate of the whole plan |
 | `methods[].planned_duration_us` | int | How long the method was meant to go, as configured — not released |
+| `methods[].request_bytes` | object? | The request body, mean over the measured calls that went out; `null` without compression — not released |
+| `methods[].request_bytes.raw`, `methods[].request_bytes.wire` | float | Bytes before compression and on the wire (without the 5-byte frame) — not released |
 | `methods[].latency` | object | Latency of successful calls, with timeouts and aborted calls as lower bounds |
 | `methods[].latency.min`, `methods[].latency.p50`, `methods[].latency.p90`, `methods[].latency.p95`, `methods[].latency.p99`, `methods[].latency.max` | percentile? | Minimum, percentiles, maximum |
 | `methods[].p99_without_client_waits` | percentile? | p99 of the same calls without client-side waits; may come out slightly low |

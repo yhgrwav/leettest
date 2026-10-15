@@ -41,6 +41,7 @@ load:
 | `app.metadata` | Header jedes Aufrufs: `authorization`, `x-api-key` usw. `${NAME}` kommt aus einer Umgebungsvariable |
 | `app.max_response_size` | Die größte Antwort, die ein Aufruf annimmt: `16MiB`, `512KB`. Die Einheit ist Pflicht (`MB` = 10⁶ Bytes, `MiB` = 2²⁰), unter 2 GiB. Weggelassen — 4 MiB, wie in gRPC. Eine größere Antwort ist eine `bad response`. Ein laufender Aufruf kann bis zum Doppelten des Limits puffern: standardmäßig bis zu 8 MiB je Aufruf |
 | `app.connections` | Wie viele Verbindungen zum Ziel geöffnet werden, eine ganze Zahl von 1 bis 256. Weggelassen — 1. Die Aufrufe nehmen die Verbindungen reihum, der Bericht druckt einen Block `Connections:`, eine Zeile je Verbindung |
+| `app.compression` | Anfragekörper komprimieren: `gzip`. Weggelassen — keine. Der Bericht druckt unter der Methode `bytes: <raw> -> <wire> per call` — nicht veröffentlicht |
 | `app.proto.files` | `.proto`-Dateien, aus denen die Dienste genommen werden, für einen Dienst ohne Reflection. Pfade gelten ab dem Verzeichnis der Konfigurationsdatei. Jede Datei muss in einem der `import_paths` liegen — nicht veröffentlicht |
 | `app.proto.import_paths` | Wo die Dateien und ihre Imports gesucht werden, wie bei `protoc -I`. Pfade gelten ab dem Verzeichnis der Konfigurationsdatei. Weggelassen — dieses Verzeichnis. Für Standardtypen (`google/protobuf/…`) braucht es keinen Pfad — nicht veröffentlicht |
 | `app.protoset` | Eine Deskriptorsatz-Datei statt `.proto`-Dateien, gebaut mit `protoc --include_imports --descriptor_set_out=FILE`. Der Pfad gilt ab dem Verzeichnis der Konfigurationsdatei. Nicht zusammen mit `app.proto`; ist keines von beiden gesetzt, werden die Methoden über Reflection geholt — nicht veröffentlicht |
@@ -307,6 +308,7 @@ unten den Typ „percentile?" hat.
 | `settings.max_in_flight` | int; Suche: `int?` | Die Obergrenze für Anfragen im Flug: der Wert von `-max-in-flight`, sonst der Standard. Suche: `null` ohne die Option (jeder Lauf nimmt die kleinste Grenze, mit der er läuft); in ihren Läufen die Grenze dieses Laufs — nicht veröffentlicht |
 | `settings.connections` | int | `app.connections` wie konfiguriert, standardmäßig 1; `connections.open` ist, was sich geöffnet hat — nicht veröffentlicht |
 | `settings.warmup_us` | int | Das Aufwärmen wie konfiguriert. Suche: die Einschwingzeit `settle` — nicht veröffentlicht |
+| `settings.compression` | string? | `app.compression` wie konfiguriert: `"gzip"`, `null` — weggelassen — nicht veröffentlicht |
 | `sent` | int | Gemessene Aufrufe, außer `not_sent`. `unreachable` und `aborted` sind enthalten |
 | `failed` | int | Aus `sent` — jeder Aufruf, der nicht erfolgreich war, außer `aborted` |
 | `aborted` | int | Durch unser eigenes Anhalten abgeschnitten |
@@ -366,6 +368,8 @@ Die übrigen sind einfache Zähler.
 | `methods[].timeout_us` | int | Das Timeout der Methode |
 | `methods[].planned_rps_low`, `methods[].planned_rps_high` | int | Niedrigste und höchste geplante Rate des ganzen Plans |
 | `methods[].planned_duration_us` | int | Wie lange die Methode gehen sollte, wie konfiguriert — nicht veröffentlicht |
+| `methods[].request_bytes` | object? | Der Anfragekörper, Mittel über die gemessenen Aufrufe, die hinausgingen; `null` ohne Kompression — nicht veröffentlicht |
+| `methods[].request_bytes.raw`, `methods[].request_bytes.wire` | float | Bytes vor der Kompression und auf der Leitung (ohne den 5-Byte-Rahmen) — nicht veröffentlicht |
 | `methods[].latency` | object | Latenz erfolgreicher Aufrufe, mit Timeouts und abgebrochenen Aufrufen als Untergrenzen |
 | `methods[].latency.min`, `methods[].latency.p50`, `methods[].latency.p90`, `methods[].latency.p95`, `methods[].latency.p99`, `methods[].latency.max` | percentile? | Minimum, Perzentile, Maximum |
 | `methods[].p99_without_client_waits` | percentile? | p99 derselben Aufrufe ohne Wartezeiten auf Client-Seite; kann etwas zu niedrig ausfallen |

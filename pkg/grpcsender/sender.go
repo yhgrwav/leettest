@@ -124,6 +124,9 @@ type Options struct {
 	// name that resolves to an address that does not serve (localhost to ::1,
 	// the server on 127.0.0.1 only) Connect fails and names the address.
 	Connections int
+	// Compression is "gzip" to compress every request body, empty for none.
+	// One call option is built at Connect; empty adds nothing to a call.
+	Compression string
 	// Lookup resolves Target (host:port) to host:port addresses, in the order
 	// to use them; none or an error fails Connect. nil resolves by DNS, each
 	// address once, in the resolver's order. It is asked once, and only for two
