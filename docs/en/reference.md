@@ -363,6 +363,7 @@ The rest are plain counters.
 | `methods[].request_bytes.raw`, `methods[].request_bytes.wire` | float | Bytes before compression and on the wire (without the 5-byte frame) — not released |
 | `methods[].latency` | object | Latency of successful calls, with timeouts and aborted calls as lower bounds |
 | `methods[].latency.min`, `methods[].latency.p50`, `methods[].latency.p90`, `methods[].latency.p95`, `methods[].latency.p99`, `methods[].latency.max` | percentile? | Minimum, percentiles, maximum |
+| `methods[].latency.p999` | percentile? | p99.9 by the same rule; null while the method has fewer than 1000 observations (`observations`), where p99.9 would be the max — not released |
 | `methods[].p99_without_client_waits` | percentile? | p99 of the same calls without client-side waits; may come out slightly low |
 | `methods[].observations` | int | Observations behind the `latency` percentiles |
 | `methods[].censored` | int | Of them, only a lower bound is known |
