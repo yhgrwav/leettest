@@ -1,0 +1,101 @@
+// Copyright 2026 yhgrwav
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package compare
+
+import "github.com/yhgrwav/leettest/pkg/share"
+
+// Bound says what a capacity's RPS is.
+type Bound int
+
+const (
+	// Exact: the search found the step the service broke above; RPS is the
+	// highest step that held.
+	Exact Bound = iota
+	// Lower: the search ended before it broke; the capacity is at least RPS.
+	Lower
+	// Upper: the search broke at its first step; the capacity is below RPS,
+	// the rate of that step.
+	Upper
+	// None: the search measured no capacity.
+	None
+)
+
+// Capacity is the capacity one breakpoint search found.
+type Capacity struct {
+	RPS   int
+	Bound Bound
+	// Outcome is the search's outcome as the report names it; it only words a
+	// reason.
+	Outcome string
+}
+
+// Verdict is the answer of a capacity check.
+type Verdict int
+
+const (
+	// Unknown: the two capacities cannot tell whether the limit was met.
+	Unknown Verdict = iota
+	Pass
+	Fail
+)
+
+// CapacityDrop judges the fall from base to new against limit. A reason is
+// given only for Unknown.
+//
+// The fall is (base − new) / base. A bound narrows it to a range, and the
+// verdict follows the range: Fail only when the smallest possible fall is
+// over the limit, Pass only when the largest possible fall is within it,
+// otherwise Unknown.
+func CapacityDrop(base, nw Capacity, limit share.Percent) (verdict Verdict, reason string) {
+	switch {
+	case base.Bound == None:
+		return Unknown, "base not measured (" + base.Outcome + ")"
+	case nw.Bound == None:
+		return Unknown, "new not measured (" + nw.Outcome + ")"
+	case base.Bound == Upper:
+		return Unknown, "base broke at the first step: lower the plan to see a drop"
+	case base.RPS <= 0:
+		return Unknown, "base capacity is 0 rps"
+	}
+
+	over := share.Decide(max(base.RPS-nw.RPS, 0), 0, base.RPS, limit) == share.Breaks
+
+	switch {
+	case nw.Bound == Upper:
+		if over {
+			return Fail, ""
+		}
+
+		return Unknown, "new broke at the first step: lower the plan to see the drop"
+	case base.Bound == Lower && nw.Bound == Lower:
+		return Unknown, "both capacities are lower bounds"
+	case base.Bound == Lower:
+		if over {
+			return Fail, ""
+		}
+
+		return Unknown, "base capacity is only a lower bound (" + base.Outcome + ")"
+	case nw.Bound == Lower:
+		if !over {
+			return Pass, ""
+		}
+
+		return Unknown, "new run ended before its capacity (" + nw.Outcome + ")"
+	case over:
+		return Fail, ""
+	}
+
+	return Pass, ""
+}

@@ -152,6 +152,9 @@ func printError(w io.Writer, err error) {
 // is not. 130 and 143 are not outcomes of a run at all — they are the exit
 // that prints nothing, so a stop that did print a report is 3 whichever key
 // ended it.
+//
+// leettest compare uses 0, 1, 2 and 4 with the same meaning: 2 is reports
+// that cannot be compared or a limit that cannot be decided, 4 a limit missed.
 func exitCode(err error) int {
 	switch {
 	case err == nil, errors.Is(err, flag.ErrHelp):
@@ -184,6 +187,10 @@ func abortCode(sig os.Signal) int {
 // Before the run starts either cancels the connection; during the run they go
 // to the three-stage stopper.
 func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdout, stderr io.Writer) error {
+	if len(args) > 0 && args[0] == "compare" {
+		return runCompare(args[1:], stdout, stderr)
+	}
+
 	ctx, abort := context.WithCancel(ctx)
 	defer abort()
 
