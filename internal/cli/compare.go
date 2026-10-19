@@ -197,12 +197,13 @@ func quotaText(q *float64) string {
 }
 
 // datasetHash is the sha256 of the dataset the searched method used, "none"
-// when it used none.
+// when it used none. The report names the method without a leading slash on
+// top and with one in each run's report.
 func datasetHash(r BreakpointReport) string {
 	if len(r.Breakpoint.Runs) > 0 {
 		methods := r.Breakpoint.Runs[0].Report.Methods
 		for i := range methods {
-			if methods[i].Method == r.Method && methods[i].Dataset != nil {
+			if strings.TrimPrefix(methods[i].Method, "/") == strings.TrimPrefix(r.Method, "/") && methods[i].Dataset != nil {
 				return methods[i].Dataset.SHA256
 			}
 		}

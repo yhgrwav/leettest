@@ -94,9 +94,11 @@ func (s reportSpec) run() cli.BreakpointRun {
 			dataset = &engine.DatasetReport{File: "data.jsonl", SHA256: s.datasetSHA, Records: 10}
 		}
 
+		// A search report names the method without the leading slash on top and
+		// with it in each run's report.
 		return breakpoint.Step{
 			RPS: rps, Broken: broken,
-			Report: engine.Report{Sent: rps * 4, Methods: []engine.MethodReport{{Method: s.method, Sent: rps * 4, Dataset: dataset}}},
+			Report: engine.Report{Sent: rps * 4, Methods: []engine.MethodReport{{Method: "/" + s.method, Sent: rps * 4, Dataset: dataset}}},
 		}
 	}
 
