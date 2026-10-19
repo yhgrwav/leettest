@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/yhgrwav/leettest/pkg/breakpoint"
+	"github.com/yhgrwav/leettest/pkg/share"
 	"github.com/yhgrwav/leettest/pkg/threshold"
 )
 
@@ -158,6 +159,11 @@ type Breakpoint struct {
 	Settle   time.Duration `yaml:"settle"`
 	Hold     time.Duration `yaml:"hold"`
 	P99Limit time.Duration `yaml:"p99_limit"`
+	// RawErrorsLimit is errors_limit as written, nil when left out (a key
+	// written with no value is refused before). ErrorsLimit is it read; zero
+	// when left out, and the search then holds share.Default.
+	RawErrorsLimit any           `yaml:"errors_limit"`
+	ErrorsLimit    share.Percent `yaml:"-"`
 	// RawPass is pass as written, nil when left out. Pass is it resolved.
 	RawPass *BreakpointPass       `yaml:"pass"`
 	Pass    threshold.SearchLimit `yaml:"-"`
@@ -169,7 +175,23 @@ func (b Breakpoint) Plan(timeout time.Duration, maxInFlight int) breakpoint.Plan
 	return breakpoint.Plan{
 		From: int(b.From), To: int(b.To), Factor: b.Factor, Step: int(b.Step),
 		Settle: b.Settle, Hold: b.Hold, Timeout: timeout, MaxInFlight: maxInFlight, P99Limit: b.P99Limit,
+		ErrorsLimit: b.ErrorsLimit,
 	}
+}
+
+// resolveErrorsLimit reads errors_limit by the grammar of pass.errors.
+func (b *Breakpoint) resolveErrorsLimit() error {
+	if b.RawErrorsLimit == nil {
+		return nil
+	}
+
+	limit, err := percentLimit(b.RawErrorsLimit, "breakpoint.errors_limit")
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrBreakpoint, err)
+	}
+	b.ErrorsLimit = limit
+
+	return nil
 }
 
 // validate refuses a section breakpoint.Plan.Rates refuses, named by the key

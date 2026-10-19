@@ -21,6 +21,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	shr "github.com/yhgrwav/leettest/pkg/share"
 	"github.com/yhgrwav/leettest/pkg/threshold"
 )
 
@@ -288,57 +289,20 @@ func shareText(r *threshold.Result, run *RunReport) string {
 	return fmt.Sprintf("%s (%d of %d%s)", text, r.Bad, r.Total, parts)
 }
 
-// percentScale is 100% in thousandths of a percent.
-const percentScale = 100 * 1000
-
-// shareWithoutLying prints the share to a tenth of a percent, as the report
-// does elsewhere; when that lands on the wrong side of the printed limit, to
-// as many digits as the limit has, rounded up for a fail so that it is over.
+// shareWithoutLying prints the share beside the limit it was judged by
+// (share.Format); the config has read r.LimitPercent already.
 func shareWithoutLying(r *threshold.Result) string {
-	text := shareAt(r, 1, false)
+	limit, _ := shr.Parse(r.LimitPercent, "")
 
-	limit, decimals := percentThousandths(r.LimitPercent)
-	printed, _ := percentThousandths(text)
-	over := printed > limit
+	verdict := shr.Undecided
 
-	switch {
-	case r.Verdict == threshold.VerdictPass && over:
-		return shareAt(r, max(1, decimals), false)
-	case r.Verdict == threshold.VerdictFail && !over:
-		return shareAt(r, max(1, decimals), true)
+	switch r.Verdict {
+	case threshold.VerdictPass:
+		verdict = shr.Holds
+	case threshold.VerdictFail:
+		verdict = shr.Breaks
+	case threshold.VerdictUnknown:
 	}
 
-	return text
-}
-
-// percentThousandths reads a percent such as "0.125%" in thousandths of a
-// percent, and the digits after its point. The config only lets through up to
-// three.
-func percentThousandths(text string) (thousandths int64, decimals int) {
-	whole, frac, _ := strings.Cut(strings.TrimSuffix(text, "%"), ".")
-	w, _ := strconv.ParseInt(whole, 10, 64)
-	f, _ := strconv.ParseInt((frac + "000")[:3], 10, 64)
-
-	return w*1000 + f, len(frac)
-}
-
-// shareAt is the share of r with decimals digits after the point, rounded
-// half up, or up when up is set. Integer arithmetic: a float would round
-// 0.125 either way.
-func shareAt(r *threshold.Result, decimals int, up bool) string {
-	unit := int64(1)
-	for range 3 - decimals {
-		unit *= 10
-	}
-
-	num, den := int64(r.Bad)*percentScale, unit*int64(r.Total)
-
-	var n int64
-	if up {
-		n = (num + den - 1) / den
-	} else {
-		n = (2*num + den) / (2 * den)
-	}
-
-	return fixed(n, decimals) + "%"
+	return shr.Format(r.Bad, r.Total, limit, verdict)
 }

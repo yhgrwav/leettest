@@ -304,7 +304,7 @@ func TestBreakpoint_JSONIsAContract(t *testing.T) {
 
 // whyNames is the closed list of why, in the spec and the README.
 var whyNames = []any{"errors", "p99_limit", "p99_vs_base", "connection", "no_recovery",
-	"generator", "in_flight_cap", "stream_limit", "stream_wait", "clock_step", "request_errors"}
+	"generator", "in_flight_cap", "stream_limit", "stream_wait", "client_errors", "clock_step", "request_errors"}
 
 // Every cause has its JSON name from the closed list, and the list has no
 // name no cause maps to.

@@ -514,6 +514,9 @@ func TestSearchView_ANewRunStartsWithAFreshPanel(t *testing.T) {
 func TestSearchView_ARealSearchDrivesTheScreen(t *testing.T) {
 	p := breakpoint.Plan{From: 100, To: 400, Settle: 10 * time.Millisecond, Hold: 50 * time.Millisecond}
 	m := testSearchModelOf(t, p)
+	// The reason names errors_limit, which the screen cuts at 100 columns and
+	// the report does not.
+	m.base.width = 130
 	feed := NewSearchFeed(func(msg any) { m.Update(msg) })
 	run := func(_ context.Context, rps int, _, _ time.Duration, _ int) (engine.Report, error) {
 		feed.Starting(stepEngine(t, rps))

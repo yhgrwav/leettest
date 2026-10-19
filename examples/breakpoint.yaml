@@ -21,5 +21,6 @@ load:
     settle: 2s                      # the start of a step, kept out of its verdict
     hold: 10s                       # the length of a step
     p99_limit: 200ms                # a step breaks over it; without it, over 3x the best held p99
+    errors_limit: 1%                # a step breaks when more than this share of calls failed; 1% if left out
     pass:
       held_rps: 244                 # exit code 4 if the search holds less; one of the plan's steps
