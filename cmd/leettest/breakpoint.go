@@ -31,6 +31,7 @@ import (
 	"github.com/yhgrwav/leettest/pkg/breakpoint"
 	"github.com/yhgrwav/leettest/pkg/config"
 	"github.com/yhgrwav/leettest/pkg/engine"
+	"github.com/yhgrwav/leettest/pkg/threshold"
 )
 
 // searchSetup is what run prepared for a search: the connection is made and
@@ -72,6 +73,19 @@ func searchExitCode(outcome breakpoint.Outcome) int {
 	default:
 		return 0
 	}
+}
+
+// searchResult is what a finished search returns: its own outcome's error, and
+// when that is none, what the pass limits decide.
+func searchResult(outcome breakpoint.Outcome, _ []threshold.Result) error {
+	switch searchExitCode(outcome) {
+	case 2:
+		return ErrInvalidRun
+	case 3:
+		return ErrIncomplete
+	}
+
+	return nil
 }
 
 // runSearch runs the breaking-point search over the one call, a step at a
@@ -257,14 +271,7 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 		return err
 	}
 
-	switch searchExitCode(res.Outcome) {
-	case 2:
-		return ErrInvalidRun
-	case 3:
-		return ErrIncomplete
-	}
-
-	return nil
+	return searchResult(res.Outcome, report.Thresholds)
 }
 
 // searchSettings are what a step of the search is started with: the cap, the

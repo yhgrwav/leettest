@@ -57,6 +57,9 @@ var ErrInvalidRun = errors.New("the run is invalid: its numbers do not describe 
 
 var ErrIncomplete = errors.New("the run stopped before its planned end; the report covers only the part that ran")
 
+// ErrThresholdsFailed says the run finished and a limit in pass: was not met.
+var ErrThresholdsFailed = errors.New("a pass limit was not met")
+
 // exitNow is the way out that depends on nothing: the third stop, or an abort
 // that has not finished in time.
 var exitNow = func() {

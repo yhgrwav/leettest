@@ -25,6 +25,7 @@ import (
 	"github.com/yhgrwav/leettest/pkg/descriptor"
 	"github.com/yhgrwav/leettest/pkg/engine"
 	"github.com/yhgrwav/leettest/pkg/metrics"
+	"github.com/yhgrwav/leettest/pkg/threshold"
 )
 
 // RunReport is the engine's report with what only the CLI knows about the
@@ -54,6 +55,9 @@ type RunReport struct {
 	Name string
 	// Settings are what the run was started with; nil prints no settings line.
 	Settings *RunSettings
+	// Thresholds are the verdicts on the limits the config set; nil when it
+	// set none, which prints no block and writes null.
+	Thresholds []threshold.Result
 }
 
 // RunSettings echoes what a run was started with, as configured: the

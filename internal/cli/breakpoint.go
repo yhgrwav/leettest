@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/yhgrwav/leettest/pkg/breakpoint"
+	"github.com/yhgrwav/leettest/pkg/threshold"
 )
 
 // Modes of the JSON report.
@@ -62,6 +63,9 @@ type BreakpointRun struct {
 	Connections int
 	// Compression is app.compression: "gzip", or empty for none.
 	Compression string
+	// Thresholds is the verdict on breakpoint.pass; nil when the config set
+	// none.
+	Thresholds []threshold.Result
 }
 
 // PlanLine is the line printed before the first step: how many steps and the
