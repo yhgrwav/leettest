@@ -158,6 +158,9 @@ func PrintReport(w io.Writer, target string, run RunReport) {
 	if note := uncheckedNote(run.Unchecked); note != "" {
 		fmt.Fprintf(w, "\n%s\n", note)
 	}
+	if block := thresholdsBlock(run.Thresholds, &run); block != "" {
+		fmt.Fprintf(w, "\n%s\n", block)
+	}
 }
 
 // uncheckedNote names the methods nothing could be checked against before

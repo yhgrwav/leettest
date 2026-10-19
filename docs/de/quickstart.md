@@ -308,9 +308,13 @@ Exit-Codes:
 | `1` | Der gewünschte Bericht wurde nicht erzeugt: der Lauf fand nicht statt (Flags, Konfiguration, Verbindung) oder der Bericht konnte nicht in `-json-file` geschrieben werden (nicht veröffentlicht). stderr nennt den Grund |
 | `2` | Ungültiger Lauf: die In-Flight-Grenze, jeder Aufruf einer Methode ein Anfragefehler oder eine Host-Uhr gröber als ein Viertel des p50. Es gibt einen Bericht; seine Zahlen handeln nicht von der Last |
 | `3` | Vor dem Ende des Plans angehalten. Der Bericht deckt ab, was lief |
+| `4` | Ein beendeter Lauf hat eine `pass`-Grenze verfehlt. Es gibt einen Bericht; `thresholds` (nicht veröffentlicht) sagt, welche |
 | `130`, `143` | Durch Ctrl+C oder SIGTERM beendet, kein Bericht |
 
-Pass/Fail-Schwellen gibt es noch nicht: Prüfen Sie in CI den Exit-Code und die JSON-Felder.
+Für ein Pass/Fail-Gate in CI setzen Sie `pass`-Grenzen unter den Aufruf
+([`examples/pass.yaml`](../../examples/pass.yaml), [Referenz, «Grenzen: pass»](reference.md#grenzen-pass))
+und lassen den Build bei einem Exit-Code ungleich null fehlschlagen; das JSON-Feld `thresholds` (nicht veröffentlicht)
+sagt, welche Grenze verfehlt wurde oder sich nicht entscheiden ließ.
 
 ## 8. Ganz ohne Dienst
 

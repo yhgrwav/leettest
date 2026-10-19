@@ -71,6 +71,9 @@ func Parse(raw []byte) (*MasterConfig, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
+	if err := cfg.resolvePass(); err != nil {
+		return nil, err
+	}
 
 	return &cfg, nil
 }

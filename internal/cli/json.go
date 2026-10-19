@@ -68,7 +68,7 @@ type JSONReport struct {
 	MethodsSource *string `json:"methods_source"`
 	Outcome       string  `json:"outcome"`
 	// InvalidReasons are why the run is invalid: in_flight_cap, nothing_measured,
-	// clock_step.
+	// clock_step, thresholds_undecided.
 	InvalidReasons []string `json:"invalid_reasons"`
 	// TailWaitCause is the client-side wait that set the tail: generator, stream
 	// or connection; null without that verdict.
@@ -98,6 +98,9 @@ type JSONReport struct {
 	GeneratorCPU      *jsonGenCPU     `json:"generator_cpu"`
 	Methods           []jsonMethod    `json:"methods"`
 	Unchecked         []jsonUnchecked `json:"unchecked"`
+	// Thresholds are the verdicts on the limits the config set, in its order;
+	// null when it set none.
+	Thresholds *[]jsonThreshold `json:"thresholds"`
 	// Notes are the text report's notes: for people, and reworded freely.
 	Notes []string `json:"notes"`
 }
@@ -402,6 +405,7 @@ func NewJSONReport(run JSONRun) JSONReport {
 		Notes:        runNotes(run.Run),
 		Methods:      make([]jsonMethod, 0, len(r.Methods)),
 		Unchecked:    make([]jsonUnchecked, 0, len(run.Run.Unchecked)),
+		Thresholds:   thresholdsJSON(run.Run.Thresholds),
 	}
 	// The maximum is exact, but there is none without a call.
 	if r.StartLagP99.Defined {
@@ -465,6 +469,9 @@ func NewJSONReport(run JSONRun) JSONReport {
 	}
 	if ClockTooCoarse(run.Run) {
 		out.InvalidReasons = append(out.InvalidReasons, "clock_step")
+	}
+	if thresholdsUndecided(run.Run.Thresholds) {
+		out.InvalidReasons = append(out.InvalidReasons, "thresholds_undecided")
 	}
 	for _, u := range run.Run.Unchecked {
 		reason := "reflection_failed"

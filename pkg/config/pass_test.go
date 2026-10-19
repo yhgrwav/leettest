@@ -313,3 +313,10 @@ func TestPass_BreakpointPassHasOnlyHeldRPS(t *testing.T) {
 		}
 	}
 }
+
+// Ground: boundary — an empty pass: {} judges nothing, so it is refused in a
+// call and in a search rather than read as "no limits".
+func TestPass_AnEmptyPassIsRefused(t *testing.T) {
+	refuses(t, "calls[].pass: {}", passYAML("100", "60s", "", "{}"), "pass has no limits")
+	refuses(t, "breakpoint.pass: {}", []byte(searchYAML+"    pass: {}\n"), "breakpoint.pass", "held_rps")
+}

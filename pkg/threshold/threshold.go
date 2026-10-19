@@ -118,17 +118,189 @@ type Result struct {
 	HeldRPS  int
 }
 
-// Evaluate checks each method's limits against the run's report.
-func Evaluate(_ engine.Report, _ State, _ []MethodLimits) []Result {
-	return nil
+// percentScale turns a share into thousandths of a percent: bad of total is
+// within P thousandths of a percent when bad*percentScale <= P*total.
+const percentScale = 100 * 1000
+
+// Evaluate checks each method's limits against the run's report, one result
+// per limit set, in the order of limits: a method's p50 to p999, then errors.
+// Limits are checked only when state is Complete; otherwise each is unknown.
+func Evaluate(report engine.Report, state State, limits []MethodLimits) []Result {
+	var results []Result
+
+	for i := range limits {
+		var m engine.MethodReport
+		for j := range report.Methods {
+			if report.Methods[j].Method == limits[i].Name {
+				m = report.Methods[j]
+
+				break
+			}
+		}
+
+		results = appendMethod(results, report, &m, state, limits[i])
+	}
+
+	return results
+}
+
+func appendMethod(results []Result, report engine.Report, m *engine.MethodReport, state State, ml MethodLimits) []Result {
+	lim := ml.Limits
+	runSide, runReason := runSideOf(report, m)
+
+	for _, l := range []struct {
+		key   Key
+		limit time.Duration
+		value metrics.Quantile
+	}{
+		{P50, lim.P50, m.P50}, {P90, lim.P90, m.P90}, {P95, lim.P95, m.P95},
+		{P99, lim.P99, m.P99}, {P999, lim.P999, m.P999},
+	} {
+		if l.limit <= 0 {
+			continue
+		}
+
+		r := Result{Method: ml.Name, Key: l.key, Limit: l.limit, Value: l.value}
+
+		switch {
+		case state != Complete:
+			r.Verdict, r.Reason = VerdictUnknown, notComplete(state)
+		case runSide:
+			r.Verdict, r.Reason = VerdictUnknown, runReason
+		default:
+			r.Verdict, r.Reason = latency(l.limit, l.value)
+		}
+
+		results = append(results, r)
+	}
+
+	if lim.Errors != nil {
+		r := Result{Method: ml.Name, Key: Errors, LimitPercent: lim.Errors.Text}
+
+		if state != Complete {
+			r.Verdict, r.Reason = VerdictUnknown, notComplete(state)
+		} else {
+			share(&r, *lim.Errors, m, runSide, runReason)
+		}
+
+		results = append(results, r)
+	}
+
+	return results
+}
+
+func notComplete(state State) Reason {
+	if state == Invalid {
+		return ReasonInvalid
+	}
+
+	return ReasonIncomplete
+}
+
+// runSideOf says the run's own limit, not the target's, shapes the method's
+// numbers: the generator or a stream held calls back, or calls went unsent for
+// a reason other than the connection. The reason is always from the closed
+// list: the wait verdict's when it names the run, else what the method lost.
+func runSideOf(report engine.Report, m *engine.MethodReport) (bool, Reason) {
+	cause, side, ok := report.WaitVerdict()
+	runWait := ok && side == engine.SideRun
+
+	if !runWait && m.NotSent-m.NotSentConnection <= 0 {
+		return false, ""
+	}
+
+	switch {
+	case runWait && cause == engine.WaitStream:
+		return true, ReasonStream
+	case runWait:
+		return true, ReasonGenerator
+	case m.NotSentGenerator > 0:
+		return true, ReasonGenerator
+	case m.NotSentStream > 0:
+		return true, ReasonStream
+	default:
+		return true, ReasonGenerator
+	}
+}
+
+// latency compares the whole microseconds the report prints with the limit.
+// A value that is only a lower bound fails once the bound is over the limit
+// and decides nothing otherwise.
+func latency(limit time.Duration, q metrics.Quantile) (Verdict, Reason) {
+	switch {
+	case !q.Defined:
+		return VerdictUnknown, ReasonFewObservations
+	case q.Value.Microseconds() > limit.Microseconds():
+		return VerdictFail, ""
+	case !q.Exact:
+		return VerdictUnknown, ReasonCensored
+	default:
+		return VerdictPass, ""
+	}
+}
+
+// share decides the failure share. Every failure and every call lost to the
+// connection counts for the pass; for the fail only those the target decided:
+// requests the config or the client got wrong say nothing of the target.
+func share(r *Result, limit Percent, m *engine.MethodReport, runSide bool, runReason Reason) {
+	r.Total = m.Sent + m.NotSentConnection
+	r.Bad = m.Failed + m.NotSentConnection
+	r.BadClient = m.Rejected.Count + m.ClientError + m.BadResponse.Count
+
+	if r.Total == 0 {
+		r.Verdict, r.Reason = VerdictUnknown, ReasonNothingSent
+
+		return
+	}
+
+	allowed := limit.Thousandths * int64(r.Total)
+
+	switch {
+	case int64(r.Bad)*percentScale <= allowed:
+		r.Verdict = VerdictPass
+		if runSide {
+			r.Verdict, r.Reason = VerdictUnknown, runReason
+		}
+	case int64(r.Bad-r.BadClient)*percentScale > allowed:
+		r.Verdict = VerdictFail
+	default:
+		r.Verdict, r.Reason = VerdictUnknown, ReasonClientErrors
+	}
 }
 
 // EvaluateSearch checks the search's result against its limit.
-func EvaluateSearch(_ breakpoint.Result, _ SearchLimit) Result {
-	return Result{}
+func EvaluateSearch(res breakpoint.Result, limit SearchLimit) Result {
+	r := Result{Key: HeldRPS, LimitRPS: limit.HeldRPS, HeldRPS: res.Held}
+
+	switch {
+	case res.Outcome == breakpoint.Stopped:
+		r.Verdict, r.Reason = VerdictUnknown, ReasonIncomplete
+	case res.Outcome == breakpoint.Invalid:
+		r.Verdict, r.Reason = VerdictUnknown, ReasonInvalid
+	case res.Held >= limit.HeldRPS:
+		r.Verdict = VerdictPass
+	case res.Outcome == breakpoint.RunLimit:
+		r.Verdict, r.Reason = VerdictUnknown, ReasonRunLimit
+	default:
+		r.Verdict = VerdictFail
+	}
+
+	return r
 }
 
 // Overall is fail if any result failed, else unknown if any is, else pass.
-func Overall(_ []Result) Verdict {
-	return VerdictPass
+func Overall(results []Result) Verdict {
+	overall := VerdictPass
+
+	for i := range results {
+		switch results[i].Verdict {
+		case VerdictFail:
+			return VerdictFail
+		case VerdictUnknown:
+			overall = VerdictUnknown
+		case VerdictPass:
+		}
+	}
+
+	return overall
 }

@@ -77,7 +77,7 @@ func searchExitCode(outcome breakpoint.Outcome) int {
 
 // searchResult is what a finished search returns: its own outcome's error, and
 // when that is none, what the pass limits decide.
-func searchResult(outcome breakpoint.Outcome, _ []threshold.Result) error {
+func searchResult(outcome breakpoint.Outcome, limits []threshold.Result) error {
 	switch searchExitCode(outcome) {
 	case 2:
 		return ErrInvalidRun
@@ -85,7 +85,7 @@ func searchResult(outcome breakpoint.Outcome, _ []threshold.Result) error {
 		return ErrIncomplete
 	}
 
-	return nil
+	return limitsResult(limits)
 }
 
 // runSearch runs the breaking-point search over the one call, a step at a
@@ -250,6 +250,9 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 		StartedAt: started, Plan: plan, Result: res, Runs: aligned(res.Steps, runs, searchSettings(s, s.maxInFlight, plan.Settle)),
 		MethodsSource: s.source, Connections: s.cfg.App.Connections,
 		Compression: s.cfg.App.Compression,
+	}
+	if b := s.cfg.Load.Breakpoint; b != nil && b.RawPass != nil {
+		report.Thresholds = []threshold.Result{threshold.EvaluateSearch(res, b.Pass)}
 	}
 	var data []byte
 	if s.json || s.jsonFile != "" {

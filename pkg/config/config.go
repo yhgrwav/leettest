@@ -286,21 +286,12 @@ type Call struct {
 	Pass    threshold.Limits `yaml:"-"`
 }
 
-// Pass is a call's pass: section as written. Latencies are durations in whole
-// microseconds; Errors is a percent such as 0.5%.
-type Pass struct {
-	P50    *time.Duration `yaml:"p50"`
-	P90    *time.Duration `yaml:"p90"`
-	P95    *time.Duration `yaml:"p95"`
-	P99    *time.Duration `yaml:"p99"`
-	P999   *time.Duration `yaml:"p999"`
-	Errors *string        `yaml:"errors"`
-}
+// Pass is a call's pass: section as written, key to value, so that a wrong key
+// or a wrong kind of value is refused with the key named. resolvePass reads it.
+type Pass map[string]any
 
 // BreakpointPass is breakpoint.pass as written.
-type BreakpointPass struct {
-	HeldRPS *Rate `yaml:"held_rps"`
-}
+type BreakpointPass map[string]any
 
 // DefaultTimeout applies to a call that sets none. It is short on purpose: in an
 // open model a hung target holds rps × timeout requests in flight, and 2s keeps
