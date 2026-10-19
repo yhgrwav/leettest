@@ -411,6 +411,31 @@ writes `mode: "run"`.
 Exit codes: `0` for `broke`, `broke_at_first`, `held_all`, `run_limit` — they are findings; `2` for
 `invalid`; `3` for a stop by one Ctrl+C; `4` when the search held less than `breakpoint.pass.held_rps`.
 
+### Compare two searches
+
+Two search reports written with `-json-file` (not released), from before a change and after it.
+`leettest compare` (not released) says how far the capacity (`held_rps`) fell and, with
+`-max-capacity-drop`, judges it:
+
+```sh
+leettest compare -max-capacity-drop 10% before.json after.json
+```
+
+```
+base: before.json  svc  2026-10-01T10:00:00Z
+new:  after.json  svc  2026-10-01T10:00:00Z
+capacity: 300 rps -> 240 rps, drop 20.0%, limit 10%: FAIL
+```
+
+Reports are comparable only if the target, method, LeetTest version, run passport (except labels)
+and dataset match; otherwise `differs:` lines name the field and the verdict is `unknown`. When a
+search ended before it broke, its capacity is a lower bound (`>= N rps`); when the target broke at
+the first step, an upper bound (`below N rps`). The drop is then printed as a bound
+(`drop <= 33.4%`), and the limit is decided only if the bound decides it. Without
+`-max-capacity-drop` nothing is judged. Exit codes: `0` within the limit or no limit, `1` a report
+that could not be read, `2` reports that cannot be compared or a limit that cannot be decided, `4`
+the capacity fell past the limit. Plain-run reports are not read yet.
+
 ## Going deeper
 
 We have a roadmap for the product — **[roadmap](roadmap.md)**. Missing something —
