@@ -104,6 +104,24 @@ func fakeSearch(t *testing.T, args ...string) result {
 	return res
 }
 
+// pinProcs makes GOMAXPROCS differ from NumCPU for the test, so that a report
+// which swaps the two cannot pass on a machine where they are equal.
+func pinProcs(t *testing.T) {
+	t.Helper()
+
+	saved := runtime.GOMAXPROCS(runtime.NumCPU() + 1)
+	t.Cleanup(func() { runtime.GOMAXPROCS(saved) })
+}
+
+// fixQuota is the CPU limit the run finds on this machine: nil is "none".
+func fixQuota(t *testing.T, quota *float64) {
+	t.Helper()
+
+	saved := cpuQuota
+	cpuQuota = func() *float64 { return quota }
+	t.Cleanup(func() { cpuQuota = saved })
+}
+
 func passportOf(t *testing.T, doc map[string]any) map[string]any {
 	t.Helper()
 
@@ -146,6 +164,7 @@ func wantLabels(t *testing.T, doc map[string]any, want map[string]string) {
 // config's bytes and the machine that generated the load. Nothing else: the
 // host's name is often a person's.
 func TestPassport_ARunCarriesTheConfigAndTheMachine(t *testing.T) {
+	pinProcs(t)
 	cfg := passportCfg(t)
 	doc, res := fakeRun(t, "-output", "json", "-c", cfg)
 
@@ -202,6 +221,8 @@ func TestPassport_ASearchCarriesOneAtTheTop(t *testing.T) {
 	for i, r := range runs {
 		report, isObject := jsonAt(t, r, "report").(map[string]any)
 		if !isObject {
+			t.Errorf("runs[%d].report is %v, want an object", i, jsonAt(t, r, "report"))
+
 			continue
 		}
 		if _, has := report["passport"]; has {
@@ -211,11 +232,13 @@ func TestPassport_ASearchCarriesOneAtTheTop(t *testing.T) {
 }
 
 // Ground: contract — a dataset is hashed beside its file name, as its bytes
-// were read: a call of its own, not the passport's.
+// were read: a call of its own, not the passport's. The file as it is on disk,
+// a byte-order mark included: the user checks it with sha256sum.
 func TestPassport_ADatasetCarriesItsHash(t *testing.T) {
 	for name, content := range map[string]string{
 		"one": "{\"service\":\"a\"}\n{\"service\":\"b\"}\n",
 		"two": "{\"service\":\"a\"}\n{\"service\":\"c\"}\n",
+		"bom": "\xEF\xBB\xBF{\"service\":\"a\"}\n{\"service\":\"b\"}\n",
 	} {
 		cfg := writeConfigWith(t, closedPort(t), checkMethod, plaintext, "      dataset: users.jsonl\n")
 		if err := os.WriteFile(filepath.Join(filepath.Dir(cfg), "users.jsonl"), []byte(content), 0o600); err != nil {
@@ -300,12 +323,15 @@ func TestPassport_LabelsAtTheEdgesOfTheRules(t *testing.T) {
 	value256 := strings.Repeat("v", 256)
 	wide128 := strings.Repeat("ё", 128)
 
-	cfg := withTopLines(t, passportCfg(t), "labels:\n  "+key64+": "+value256+"\n  wide: "+wide128+"\n")
+	// A version is a string in the config: quoted, "1.10" stays "1.10".
+	cfg := withTopLines(t, passportCfg(t),
+		"labels:\n  "+key64+": "+value256+"\n  wide: "+wide128+"\n  version: \"1.10\"\n  blank: \"\"\n")
 	doc, _ := fakeRun(t, "-output", "json", "-c", cfg,
 		"-label", "a.b_c-D9=1", "-label", "empty=", "-label", "who=Егор", "-label", "eq=a=b")
 
 	wantLabels(t, doc, map[string]string{
-		key64: value256, "wide": wide128, "a.b_c-D9": "1", "empty": "", "who": "Егор", "eq": "a=b",
+		key64: value256, "wide": wide128, "version": "1.10", "blank": "",
+		"a.b_c-D9": "1", "empty": "", "who": "Егор", "eq": "a=b",
 	})
 }
 
@@ -335,6 +361,12 @@ func TestPassport_ABadLabelIsExit1BeforeTheStart(t *testing.T) {
 		{name: "an empty key", yaml: "  \"\": v\n", flag: []string{"-label", "=v"}, wants: nil},
 		{name: "an empty argument", flag: []string{"-label", ""}, wants: nil},
 		{name: "the same key twice", flag: []string{"-label", "dup=1", "-label", "dup=2"}, wants: []string{"dup"}},
+		// A YAML number would be printed as the parser spells it (1.10 as 1.1):
+		// a label in the config is a string, quoted.
+		{name: "a float", yaml: "  version: 1.10\n", wants: []string{"version"}},
+		{name: "an integer", yaml: "  build: 1234\n", wants: []string{"build"}},
+		{name: "a bool", yaml: "  debug: true\n", wants: []string{"debug"}},
+		{name: "a null", yaml: "  env:\n", wants: []string{"env"}},
 	}
 
 	for _, tc := range cases {
@@ -356,6 +388,10 @@ func TestPassport_ABadLabelIsExit1BeforeTheStart(t *testing.T) {
 					if res.err == nil || !strings.Contains(res.err.Error(), w) {
 						t.Errorf("error %v lacks %q", res.err, w)
 					}
+				}
+				// Labels is a known key: refusing the key itself is not the rule.
+				if res.err != nil && strings.Contains(res.err.Error(), "unknown field") {
+					t.Errorf("error %v: labels is unknown to the config, want it parsed and refused", res.err)
 				}
 			})
 		}
@@ -397,6 +433,7 @@ func machineLine(t *testing.T, stdout string) string {
 // search: platform, CPUs, Go, the config's hash cut to 12 hex. "quota" only
 // when the machine has one, and the same number the JSON gives.
 func TestPassport_TheTextSaysTheMachineOnOneLine(t *testing.T) {
+	pinProcs(t)
 	for _, tc := range []struct {
 		name, table string
 		search      bool
@@ -470,6 +507,57 @@ func TestPassport_TheTextListsTheLabelsUnderTheMachine(t *testing.T) {
 	_, res := fakeRun(t, "-c", cfg, "-label", "env=prod")
 	if !strings.Contains(res.stdout, "\nlabels: env=prod\n") || strings.Contains(res.stdout, "staging") {
 		t.Errorf("the flag must win in the text:\n%s", res.stdout)
+	}
+}
+
+// Ground: decisions «Run passport» (Р5) — cpu_quota is whatever the machine's
+// cgroup limit is, to the digit, in the JSON and in the text; no limit is null
+// and no "quota" in the line. The limit is fixed here: a runner may have one,
+// a laptop has none, and a test that waits for the host to say would check
+// only half.
+func TestPassport_TheQuotaIsTheMachinesLimitOrNull(t *testing.T) {
+	one := 1.5
+	for _, tc := range []struct {
+		name  string
+		quota *float64
+		json  any
+		text  string
+	}{
+		{"a limit", &one, 1.5, ", quota 1.5, "},
+		{"no limit", nil, nil, ""},
+	} {
+		for _, search := range []bool{false, true} {
+			kind := "a run"
+			if search {
+				kind = "a search"
+			}
+			t.Run(tc.name+": "+kind, func(t *testing.T) {
+				fixQuota(t, tc.quota)
+				var cfg string
+				var jsonRes, textRes result
+				if search {
+					cfg = passportSearchCfg(t)
+					jsonRes = fakeSearch(t, "-output", "json", "-c", cfg)
+					textRes = fakeSearch(t, "-c", cfg)
+				} else {
+					cfg = passportCfg(t)
+					_, jsonRes = fakeRun(t, "-output", "json", "-c", cfg)
+					_, textRes = fakeRun(t, "-c", cfg)
+				}
+
+				p := passportOf(t, decodeOnly(t, jsonRes.stdout))
+				if q, has := p["cpu_quota"]; !has || q != tc.json {
+					t.Errorf("cpu_quota = %v (present: %v), want %v", q, has, tc.json)
+				}
+				line := machineLine(t, textRes.stdout)
+				if got := strings.Contains(line, ", quota "); got != (tc.quota != nil) {
+					t.Errorf("machine line %q: quota named = %v, want %v", line, got, tc.quota != nil)
+				}
+				if !strings.Contains(line, tc.text) {
+					t.Errorf("machine line %q lacks %q", line, tc.text)
+				}
+			})
+		}
 	}
 }
 

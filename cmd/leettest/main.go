@@ -788,3 +788,7 @@ func methodLimits(cfg *config.MasterConfig) []threshold.MethodLimits {
 // clockStep measures the host clock; the end-to-end tests fix it so that a
 // coarse developer clock does not turn the runs they check into invalid ones.
 var clockStep = func() time.Duration { return clock.StepOf(time.Now) }
+
+// cpuQuota is the CPU limit of this machine's cgroup in cores, nil without
+// one; the tests fix it, as a runner may have a limit and a laptop has none.
+var cpuQuota = cli.HostCPUQuota

@@ -239,3 +239,8 @@ func unescapeMount(s string) string {
 func CPUQuota(root fs.FS) *float64 {
 	return nil
 }
+
+// HostCPUQuota is CPUQuota of this host.
+func HostCPUQuota() *float64 {
+	return nil
+}

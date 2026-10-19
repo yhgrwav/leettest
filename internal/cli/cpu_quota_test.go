@@ -38,7 +38,7 @@ func TestCPUQuota_IsTheCgroupLimitOrNothing(t *testing.T) {
 		want  float64 // 0: no quota, nil
 	}{
 		{"v2", v2("150000 100000\n"), 1.5},
-		{"v2 above any GOMAXPROCS", v2("800000 100000\n"), 8},
+		{"v2 above any GOMAXPROCS", v2("102400000 100000\n"), 1024},
 		{"v2 under one core", v2("50000 100000\n"), 0.5},
 		{"v1", map[string]string{
 			"proc/self/cgroup":                            "11:cpu,cpuacct:/\n",
