@@ -18,12 +18,17 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/goccy/go-yaml/ast"
 	"github.com/goccy/go-yaml/parser"
 )
 
 var callDatasetPath = regexp.MustCompile(`^\$\.load\.calls\[\d+\]\.(dataset|dataset_order|dataset_seed|dataset_reuse)$`)
+
+// passPath matches a pass section of a call or of the search and, when the
+// match has a key, a limit inside it.
+var passPath = regexp.MustCompile(`^\$\.(load\.calls\[\d+\]|load\.breakpoint)\.pass(\.[A-Za-z0-9_]+)?$`)
 
 // emptyKeyErrors is the error of each key that must not be written with no value.
 var emptyKeyErrors = map[string]error{
@@ -42,6 +47,8 @@ var emptyKeyErrors = map[string]error{
 // (`*a`, also behind a tag) of an anchor that marks a null. The decoder reads
 // each as the key left out, so the path is lost without a word and the call
 // runs with an empty message. An alias with no anchor is the decoder's error.
+// The same for `pass:` of a call or of the search and for each limit inside
+// it: a threshold written with no value would never be judged.
 func checkTree(raw []byte) error {
 	file, err := parser.ParseBytes(raw, 0)
 	if err != nil {
@@ -71,31 +78,25 @@ func (v *nullDatasetVisitor) Visit(node ast.Node) ast.Visitor {
 	if !ok {
 		return v
 	}
-	match := callDatasetPath.FindStringSubmatch(pair.GetPath())
+	path := pair.GetPath()
+	if passPath.MatchString(path) {
+		if value, resolved := v.unwrap(pair.Value); resolved {
+			if _, null := value.(*ast.NullNode); null {
+				v.errs = append(v.errs, fmt.Errorf("line %d: %w", pair.Key.GetToken().Position.Line,
+					passErr("%s has no value: write the limit or leave it out", strings.TrimPrefix(path, "$."))))
+			}
+		}
+
+		return v
+	}
+	match := callDatasetPath.FindStringSubmatch(path)
 	if match == nil {
 		return v
 	}
 
-	value := pair.Value
-	followed := map[string]bool{}
-unwrap:
-	for {
-		switch wrapped := value.(type) {
-		case *ast.AnchorNode:
-			value = wrapped.Value
-		case *ast.TagNode:
-			value = wrapped.Value
-		case *ast.AliasNode:
-			name := wrapped.Value.String()
-			target, defined := v.anchors[name]
-			if !defined || followed[name] {
-				return v
-			}
-			followed[name] = true
-			value = target
-		default:
-			break unwrap
-		}
+	value, resolved := v.unwrap(pair.Value)
+	if !resolved {
+		return v
 	}
 
 	_, null := value.(*ast.NullNode)
@@ -106,4 +107,28 @@ unwrap:
 	}
 
 	return v
+}
+
+// unwrap strips anchors and tags and follows aliases to the node a value is.
+// It is false for an alias with no anchor or one that loops.
+func (v *nullDatasetVisitor) unwrap(value ast.Node) (ast.Node, bool) {
+	followed := map[string]bool{}
+	for {
+		switch wrapped := value.(type) {
+		case *ast.AnchorNode:
+			value = wrapped.Value
+		case *ast.TagNode:
+			value = wrapped.Value
+		case *ast.AliasNode:
+			name := wrapped.Value.String()
+			target, defined := v.anchors[name]
+			if !defined || followed[name] {
+				return nil, false
+			}
+			followed[name] = true
+			value = target
+		default:
+			return value, true
+		}
+	}
 }
