@@ -184,6 +184,10 @@ func abortCode(sig os.Signal) int {
 // Before the run starts either cancels the connection; during the run they go
 // to the three-stage stopper.
 func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdout, stderr io.Writer) error {
+	if len(args) > 0 && args[0] == "compare" {
+		return runCompare(args[1:], stdout, stderr)
+	}
+
 	ctx, abort := context.WithCancel(ctx)
 	defer abort()
 
