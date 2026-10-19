@@ -402,17 +402,42 @@ stderr — строка `breakpoint: up to N steps, at most T`: сколько �
 ### Сравнить два поиска
 
 Два отчёта поиска, записанные `-json-file` (не выпущено), — до изменения и после. `leettest compare`
-(не выпущено) говорит, на сколько упала ёмкость (`held_rps`), и с `-max-capacity-drop` судит её:
+(не выпущено) говорит, на сколько упала ёмкость (`held_rps`), и с `-max-capacity-drop` судит её.
+На стенде из корня репозитория: поиск при ёмкости 270 rps (в терминале стенда), затем в другом
+терминале — поиск и отчёт «до»:
+
+```sh
+go run ./test/stand/cmd/stand -capacity 270 -delay 20ms
+```
+
+```sh
+leettest -c examples/breakpoint-step.yaml -json-file before.json
+```
+
+Остановите стенд (Ctrl+C), запустите его с ёмкостью 200 rps и снимите отчёт «после»:
+
+```sh
+go run ./test/stand/cmd/stand -capacity 200 -delay 20ms
+```
+
+```sh
+leettest -c examples/breakpoint-step.yaml -json-file after.json
+```
+
+Сравните (стенд можно остановить):
 
 ```sh
 leettest compare -max-capacity-drop 10% before.json after.json
 ```
 
 ```
-base: before.json  svc  2026-10-01T10:00:00Z
-new:  after.json  svc  2026-10-01T10:00:00Z
-capacity: 300 rps -> 240 rps, drop 20.0%, limit 10%: FAIL
+base: before.json  Health  2026-10-19T19:25:28.941479Z
+new:  after.json  Health  2026-10-19T19:26:46.1806268Z
+capacity: 250 rps -> 200 rps, drop 20.0%, limit 10%: FAIL
 ```
+
+Ёмкость упала с 250 до 200 rps, это 20% при пределе 10%, код выхода `4`. Время и стенд у вас будут
+свои, числа — по ёмкости стенда.
 
 Отчёты сравнимы, только если совпадают цель, метод, версия LeetTest, паспорт прогона (кроме
 меток) и набор данных; иначе строки `differs:` называют поле, а вердикт — `unknown`. Если поиск
