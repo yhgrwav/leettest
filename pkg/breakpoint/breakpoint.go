@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/yhgrwav/leettest/pkg/engine"
+	"github.com/yhgrwav/leettest/pkg/share"
 )
 
 var ErrPlan = errors.New("breaking-point plan")
@@ -49,6 +50,14 @@ type Plan struct {
 	// step breaks on the knee: p99 over KneeRatio times the baseline, the
 	// lowest p99 of the steps that held before it.
 	P99Limit time.Duration
+	// ErrorsLimit is the share of failed calls a step may have and still
+	// hold. Empty Text: share.Default.
+	ErrorsLimit share.Percent
+}
+
+// EffectiveErrorsLimit is ErrorsLimit, or share.Default when none is set.
+func (p Plan) EffectiveErrorsLimit() share.Percent {
+	return share.Percent{}
 }
 
 const (
@@ -162,6 +171,9 @@ const (
 	CauseInFlightCap
 	CauseStreamLimit
 	CauseStreamWait
+	// CauseClientErrors: the step's failures are over errors_limit only with
+	// those the client had in them; the target's own are within it.
+	CauseClientErrors
 	// Validity.
 	CauseClockStep
 	CauseRequestErrors

@@ -378,6 +378,9 @@ type jsonBreakpoint struct {
 	Outcome  string `json:"outcome"`
 	HeldRPS  *int   `json:"held_rps"`
 	BrokeRPS *int   `json:"broke_rps"`
+	// ErrorsLimit is breakpoint.errors_limit as written, "1%" when the
+	// config sets none: the share of failed calls a step may have and hold.
+	ErrorsLimit string `json:"errors_limit"`
 	// Why is the cause of the run that ended the search, from a closed list;
 	// the numbers are in notes.
 	Why *string `json:"why"`

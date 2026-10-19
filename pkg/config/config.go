@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/yhgrwav/leettest/pkg/breakpoint"
+	"github.com/yhgrwav/leettest/pkg/share"
 	"github.com/yhgrwav/leettest/pkg/threshold"
 )
 
@@ -158,6 +159,11 @@ type Breakpoint struct {
 	Settle   time.Duration `yaml:"settle"`
 	Hold     time.Duration `yaml:"hold"`
 	P99Limit time.Duration `yaml:"p99_limit"`
+	// RawErrorsLimit is errors_limit as written, nil when left out.
+	// ErrorsLimit is it read; zero when left out, and the search then holds
+	// share.Default.
+	RawErrorsLimit *string       `yaml:"errors_limit"`
+	ErrorsLimit    share.Percent `yaml:"-"`
 	// RawPass is pass as written, nil when left out. Pass is it resolved.
 	RawPass *BreakpointPass       `yaml:"pass"`
 	Pass    threshold.SearchLimit `yaml:"-"`
