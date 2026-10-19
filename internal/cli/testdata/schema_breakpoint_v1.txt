@@ -15,6 +15,7 @@ breakpoint object
 breakpoint.outcome string
 breakpoint.held_rps int?
 breakpoint.broke_rps int?
+breakpoint.errors_limit string
 breakpoint.why string?
 breakpoint.stop_reason string?
 breakpoint.notes []string
