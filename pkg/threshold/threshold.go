@@ -20,6 +20,7 @@ import (
 	"github.com/yhgrwav/leettest/pkg/breakpoint"
 	"github.com/yhgrwav/leettest/pkg/engine"
 	"github.com/yhgrwav/leettest/pkg/metrics"
+	"github.com/yhgrwav/leettest/pkg/share"
 )
 
 // Key names a limit: a latency percentile, the share of failed calls, or the
@@ -36,12 +37,8 @@ const (
 	HeldRPS Key = "held_rps"
 )
 
-// Percent is a share written in the config, kept in thousandths of a percent
-// so that comparisons are integer: 0.7% is 700. Text is it as written.
-type Percent struct {
-	Thousandths int64
-	Text        string
-}
+// Percent is a share written in the config; see share.Percent.
+type Percent = share.Percent
 
 // Limits are one call's limits. A latency limit is whole microseconds, a
 // zero one is not set; Errors is nil when not set.
@@ -118,10 +115,6 @@ type Result struct {
 	HeldRPS  int
 }
 
-// percentScale turns a share into thousandths of a percent: bad of total is
-// within P thousandths of a percent when bad*percentScale <= P*total.
-const percentScale = 100 * 1000
-
 // Evaluate checks each method's limits against the run's report, one result
 // per limit set, in the order of limits: a method's p50 to p999, then errors.
 // Limits are checked only when state is Complete; otherwise each is unknown.
@@ -180,7 +173,7 @@ func appendMethod(results []Result, report engine.Report, m *engine.MethodReport
 		if state != Complete {
 			r.Verdict, r.Reason = VerdictUnknown, notComplete(state)
 		} else {
-			share(&r, *lim.Errors, m, runSide, runReason)
+			judgeShare(&r, *lim.Errors, m, runSide, runReason)
 		}
 
 		results = append(results, r)
@@ -239,10 +232,11 @@ func latency(limit time.Duration, q metrics.Quantile) (Verdict, Reason) {
 	}
 }
 
-// share decides the failure share. Every failure and every call lost to the
-// connection counts for the pass; for the fail only those the target decided:
-// requests the config or the client got wrong say nothing of the target.
-func share(r *Result, limit Percent, m *engine.MethodReport, runSide bool, runReason Reason) {
+// judgeShare decides the failure share (share.Decide). Every failure and every
+// call lost to the connection counts for the pass; for the fail only those the
+// target decided: requests the config or the client got wrong say nothing of
+// the target.
+func judgeShare(r *Result, limit Percent, m *engine.MethodReport, runSide bool, runReason Reason) {
 	r.Total = m.Sent + m.NotSentConnection
 	r.Bad = m.Failed + m.NotSentConnection
 	r.BadClient = m.Rejected.Count + m.ClientError + m.BadResponse.Count
@@ -253,15 +247,13 @@ func share(r *Result, limit Percent, m *engine.MethodReport, runSide bool, runRe
 		return
 	}
 
-	allowed := limit.Thousandths * int64(r.Total)
-
-	switch {
-	case int64(r.Bad)*percentScale <= allowed:
+	switch share.Decide(r.Bad, r.BadClient, r.Total, limit) {
+	case share.Holds:
 		r.Verdict = VerdictPass
 		if runSide {
 			r.Verdict, r.Reason = VerdictUnknown, runReason
 		}
-	case int64(r.Bad-r.BadClient)*percentScale > allowed:
+	case share.Breaks:
 		r.Verdict = VerdictFail
 	default:
 		r.Verdict, r.Reason = VerdictUnknown, ReasonClientErrors

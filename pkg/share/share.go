@@ -14,6 +14,13 @@
 
 package share
 
+import (
+	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
+)
+
 // Percent is a share written in the config, kept in thousandths of a percent
 // so that comparisons are integer: 0.7% is 700. Text is it as written; empty
 // Text is a Percent nobody wrote.
@@ -39,21 +46,99 @@ const (
 	Breaks
 )
 
-// Parse reads text such as 0.125% for the config key key, which a refusal
+// percentText is a share as written: up to three digits before and after the
+// point, and the sign.
+var percentText = regexp.MustCompile(`^(\d{1,3})(?:\.(\d{1,3}))?%$`)
+
+// scale is 100% in thousandths of a percent: bad of total is within P
+// thousandths of a percent when bad*scale <= P*total.
+const scale = 100 * 1000
+
+// Parse reads written such as 0.125% for the config key key, which a refusal
 // names: up to three digits after the point, at most 100%.
-func Parse(_, _ string) (Percent, error) {
-	return Percent{}, nil
+func Parse(written, key string) (Percent, error) {
+	groups := percentText.FindStringSubmatch(written)
+	if groups == nil {
+		return Percent{}, fmt.Errorf("%s is %s, want a percent such as 1%% or 0.5%%: up to 3 digits after the point, at most 100%%; a number without %% is not guessed", key, written)
+	}
+
+	whole, _ := strconv.Atoi(groups[1])
+	fraction, _ := strconv.Atoi((groups[2] + "000")[:3])
+
+	thousandths := int64(whole)*1000 + int64(fraction)
+	if thousandths > scale {
+		return Percent{}, fmt.Errorf("%s %s is over 100%%", key, written)
+	}
+
+	return Percent{Thousandths: thousandths, Text: written}, nil
 }
 
 // Decide judges bad failed calls of total, badClient of them the client's
 // (rejected requests, client errors, our bad responses). Nothing sent holds.
-func Decide(_, _, _ int, _ Percent) Verdict {
-	return Undecided
+func Decide(bad, badClient, total int, limit Percent) Verdict {
+	allowed := limit.Thousandths * int64(total)
+
+	switch {
+	case int64(bad)*scale <= allowed:
+		return Holds
+	case int64(bad-badClient)*scale > allowed:
+		return Breaks
+	default:
+		return Undecided
+	}
 }
 
 // Format is the share bad/total as a percent to print beside limit: to a
 // tenth of a percent, or, when that lands on the wrong side of the printed
 // limit, to as many digits as the limit has, rounded up for Breaks.
-func Format(_, _ int, _ Percent, _ Verdict) string {
-	return ""
+func Format(bad, total int, limit Percent, v Verdict) string {
+	if total <= 0 {
+		return "-"
+	}
+
+	tenth := at(bad, total, 1, false)
+	over := tenth*100 > limit.Thousandths
+	decimals := max(1, digitsAfterPoint(limit.Text))
+
+	switch {
+	case v == Holds && over:
+		return fixed(at(bad, total, decimals, false), decimals) + "%"
+	case v == Breaks && !over:
+		return fixed(at(bad, total, decimals, true), decimals) + "%"
+	}
+
+	return fixed(tenth, 1) + "%"
+}
+
+func digitsAfterPoint(written string) int {
+	_, fraction, _ := strings.Cut(strings.TrimSuffix(written, "%"), ".")
+
+	return len(fraction)
+}
+
+// at is the share bad/total in units of 10^-decimals percent, rounded half
+// up, or up when up is set. Integer arithmetic: a float would round 0.125
+// either way.
+func at(bad, total, decimals int, up bool) int64 {
+	unit := int64(1)
+	for range 3 - decimals {
+		unit *= 10
+	}
+
+	num, den := int64(bad)*scale, unit*int64(total)
+	if up {
+		return (num + den - 1) / den
+	}
+
+	return (2*num + den) / (2 * den)
+}
+
+// fixed writes n, holding decimals decimals, as a number: 104 with 1 is 10.4.
+func fixed(n int64, decimals int) string {
+	k := int64(1)
+	for range decimals {
+		k *= 10
+	}
+
+	return fmt.Sprintf("%d.%0*d", n/k, decimals, n%k)
 }
