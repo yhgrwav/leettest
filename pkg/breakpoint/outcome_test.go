@@ -338,6 +338,9 @@ func TestSearch_EveryCauseIsReachable(t *testing.T) {
 		{CauseStreamWait, plan, at195(func(r *engine.Report) {
 			r.NotSent, r.NotSentStream, r.StreamTailCalls = 3, 3, 3
 		})},
+		{CauseClientErrors, plan, at195(func(r *engine.Report) {
+			r.Failed, r.Methods[0].Failed, r.Methods[0].Rejected.Count = 100, 100, 100
+		})},
 	} {
 		var asked []int
 		res, _ := Search(t.Context(), tc.plan, fake(tc.target, &asked))

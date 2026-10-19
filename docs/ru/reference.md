@@ -52,6 +52,7 @@ load:
 | `load.calls[].dataset_reuse` | `true` (не указан) или `false`: при `false` ни одна запись не уходит дважды за весь процесс. Нужен `dataset` — не выпущено |
 | `load.calls[].pass` | Пределы, по которым прогон проходит или нет: `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, см. [ниже](#пределы-pass). Не указано — пределов нет — не выпущено |
 | `load.breakpoint.pass` | Предел поиска точки отказа: `held_rps`, см. [ниже](#пределы-pass). Не указано — предела нет — не выпущено |
+| `load.breakpoint.errors_limit` | Процент вида `1%` или `0.5%`, до трёх знаков после точки, не больше `100%`. Ступень поиска ломается, если упало больше этой доли вызовов; ровно столько выдерживается. Не указано — `1%` — не выпущено |
 
 Конфиг читается строго: опечатка в имени поля — ошибка с номером строки, неверное значение —
 ошибка с номером вызова и его методом, а не прогон с пустой нагрузкой. `rps` — целое число:
@@ -479,7 +480,8 @@ SIGTERM (`docker stop`, Kubernetes, отмена джоба в CI) сразу о
 | `breakpoint.outcome` | string | Закрытый список: `broke`, `broke_at_first`, `held_all`, `run_limit`, `stopped`, `invalid` |
 | `breakpoint.held_rps` | int? | Наибольший темп, который цель выдержала; `null` — выдержавшего нет |
 | `breakpoint.broke_rps` | int? | Наименьший темп, на котором цель сломалась или упёрся прогон; `null` — не ломалась |
-| `breakpoint.why` | string? | Причина прогона, закончившего поиск, из закрытого списка: `errors`, `p99_limit`, `p99_vs_base`, `connection`, `no_recovery`, `generator`, `in_flight_cap`, `stream_limit`, `stream_wait`, `clock_step`, `request_errors`; `null` — причины нет |
+| `breakpoint.errors_limit` | string | Предел ошибок, по которому шёл поиск, процентом: по умолчанию `"1%"`. Ступень сломалась выше него; `100%` — ошибки ступень не ломают — не выпущено |
+| `breakpoint.why` | string? | Причина прогона, закончившего поиск, из закрытого списка: `errors`, `p99_limit`, `p99_vs_base`, `connection`, `no_recovery`, `generator`, `in_flight_cap`, `stream_limit`, `stream_wait`, `client_errors`, `clock_step`, `request_errors`; `null` — причины нет. `client_errors`: предел превышен только ошибками клиентской стороны, собственные ошибки цели в его пределах; итог — `run_limit` |
 | `breakpoint.stop_reason` | string? | Кто закончил поиск: `dataset_exhausted` (кончился файл при `dataset_reuse: false`), `requested` (остановил пользователь); `null` — поиск закончился сам — не выпущено |
 | `breakpoint.notes` | []string | Заметки поиска, текст для человека в ASCII; не разбирать |
 | `breakpoint.runs` | []object | Все прогоны по порядку |

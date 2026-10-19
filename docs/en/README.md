@@ -352,9 +352,15 @@ load:
     settle: 5s        # the start of a step, out of its verdict; under half the hold
     hold: 30s         # a step's length
     p99_limit: 200ms  # optional; without it a step breaks at p99 over 3× the best held one
+    errors_limit: 1%  # optional; a step breaks when more than this share of calls failed
 ```
 
-A step breaks when 1% of its calls or more failed or its p99 crossed the line. A broken step is
+A step breaks when more than `errors_limit` of its calls failed (1% by default; exactly that much
+is still held, `100%` means errors do not break) or its p99 crossed the line. A call not sent for
+the connection breaks the step at any `errors_limit`. Failures on the client side (`request_error`,
+`client_error`, `bad_response`) do not prove the target broke: when the limit is crossed only with
+them, the search stops as `run_limit` with the cause `client_errors` instead of naming a breaking
+point; `held_rps` stays. A broken step is
 repeated after a pause and, except the first, after probes at the first step: the target must come
 back to its old p99. A step counts as held only if the generator sent what was planned — at least
 99.9% of the measured window's calls. Otherwise it is the run's limit, not the target's. Before the
@@ -367,7 +373,8 @@ The result (`outcome` in JSON) is a closed list: `broke` (held X, broke at Y), `
 generator, a connection's limit or `-max-in-flight` ran out: nothing is known about the target
 above), `stopped` (Ctrl+C), `invalid` (a step was an invalid run). The cause (`why`) is a closed
 list too: `errors`, `p99_limit`, `p99_vs_base`, `connection`, `no_recovery`, `generator`,
-`in_flight_cap`, `stream_limit`, `stream_wait`, `clock_step`, `request_errors` or `null`.
+`in_flight_cap`, `stream_limit`, `stream_wait`, `client_errors`, `clock_step`, `request_errors` or
+`null`. The error limit in force is in `breakpoint.errors_limit`, a string (`"1%"`) — not released.
 `held_rps` and `broke_rps` are `null` where there is none. In search mode the JSON is another
 object: `mode: "breakpoint"`, none of a plain run's top-level fields, each run with its full report
 in `breakpoint.runs` (`kind`: `step`, `repeat`, `probe`; `planned_rps` and `sent_rps`). A plain run

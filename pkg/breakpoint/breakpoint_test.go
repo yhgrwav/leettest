@@ -521,9 +521,9 @@ func TestSearch_AConnectionNotReadyIsTheTargetBreaking(t *testing.T) {
 	}
 }
 
-// Ground: boundary — the criteria at their edges: failures at exactly 1%
-// break, the knee only past 3× the first step's p99, a user's p99 limit
-// replaces the knee.
+// Ground: boundary — the criteria at their edges: failures at exactly the
+// limit (1% by default) hold and one call over breaks, the knee only past 3×
+// the first step's p99, a user's p99 limit replaces the knee.
 func TestSearch_CriteriaAtTheirEdges(t *testing.T) {
 	const ms = time.Millisecond
 	for _, tc := range []struct {
@@ -532,7 +532,8 @@ func TestSearch_CriteriaAtTheirEdges(t *testing.T) {
 		step2 engine.Report
 		broke bool
 	}{
-		{"failed 1%", 0, report(1000, 10, 20*ms, 20*ms), true},
+		{"failed 1.1%", 0, report(1000, 11, 20*ms, 20*ms), true},
+		{"failed exactly 1%", 0, report(1000, 10, 20*ms, 20*ms), false},
 		{"failed 0.9%", 0, report(1000, 9, 20*ms, 20*ms), false},
 		{"p99 exactly 3x", 0, report(1000, 0, 60*ms, 60*ms), false},
 		{"p99 just over 3x", 0, report(1000, 0, 61*ms, 61*ms), true},

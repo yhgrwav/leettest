@@ -18,12 +18,11 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"regexp"
 	"slices"
 	"sort"
-	"strconv"
 	"time"
 
+	"github.com/yhgrwav/leettest/pkg/share"
 	"github.com/yhgrwav/leettest/pkg/threshold"
 )
 
@@ -33,13 +32,6 @@ const maxLatencyLimit = time.Hour
 
 // minP999Calls is how many observations p99.9 is printed from (#267).
 const minP999Calls = 1000
-
-// percentText is a share as written: up to three digits before and after the
-// point, and the sign.
-var percentText = regexp.MustCompile(`^(\d{1,3})(?:\.(\d{1,3}))?%$`)
-
-// maxPercent is 100% in thousandths of a percent.
-const maxPercent = 100 * 1000
 
 var latencyKeys = []threshold.Key{threshold.P50, threshold.P90, threshold.P95, threshold.P99, threshold.P999}
 
@@ -138,9 +130,9 @@ func (c *Call) resolvePass(warmup time.Duration) (threshold.Limits, error) {
 	}
 
 	if v, set := raw[string(threshold.Errors)]; set {
-		p, err := percentLimit(v)
+		p, err := percentLimit(v, "pass.errors")
 		if err != nil {
-			errs = append(errs, err)
+			errs = append(errs, passErr("%v", err))
 		} else {
 			limits.Errors = &p
 		}
@@ -190,22 +182,16 @@ func (c *Call) latencyLimit(key threshold.Key, v any, warmup time.Duration) (tim
 	return d, nil
 }
 
-func percentLimit(v any) (threshold.Percent, error) {
-	text, ok := v.(string)
-	groups := percentText.FindStringSubmatch(text)
-	if !ok || groups == nil {
-		return threshold.Percent{}, passErr("pass.errors is %v, want a percent such as 1%% or 0.5%%: up to 3 digits after the point, at most 100%%; a number without %% is not guessed", v)
+// percentLimit reads a share for the config key key. A value that is not a
+// string (1, [1%]) is printed as the decoder gave it and refused: no text of
+// that kind passes the grammar.
+func percentLimit(v any, key string) (share.Percent, error) {
+	written, ok := v.(string)
+	if !ok {
+		written = fmt.Sprint(v)
 	}
 
-	whole, _ := strconv.Atoi(groups[1])
-	fraction, _ := strconv.Atoi((groups[2] + "000")[:3])
-
-	thousandths := int64(whole)*1000 + int64(fraction)
-	if thousandths > maxPercent {
-		return threshold.Percent{}, passErr("pass.errors %s is over 100%%", text)
-	}
-
-	return threshold.Percent{Thousandths: thousandths, Text: text}, nil
+	return share.Parse(written, key)
 }
 
 func (b *Breakpoint) resolvePass(timeout time.Duration) (threshold.SearchLimit, error) {

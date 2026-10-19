@@ -19,9 +19,11 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/yhgrwav/leettest/pkg/engine"
+	"github.com/yhgrwav/leettest/pkg/share"
 )
 
 var ErrPlan = errors.New("breaking-point plan")
@@ -49,12 +51,21 @@ type Plan struct {
 	// step breaks on the knee: p99 over KneeRatio times the baseline, the
 	// lowest p99 of the steps that held before it.
 	P99Limit time.Duration
+	// ErrorsLimit is the share of failed calls a step may have and still
+	// hold. Empty Text: share.Default.
+	ErrorsLimit share.Percent
+}
+
+// EffectiveErrorsLimit is ErrorsLimit, or share.Default when none is set.
+func (p Plan) EffectiveErrorsLimit() share.Percent {
+	if p.ErrorsLimit.Text == "" {
+		return share.Default
+	}
+
+	return p.ErrorsLimit
 }
 
 const (
-	// FailShare breaks a step whose failed calls are this share or more of
-	// the sent ones. Hypothesis, docs/decisions.md.
-	FailShare = 0.01
 	// KneeRatio breaks a step whose p99 is over this many times the
 	// baseline, when no P99Limit is set. Hypothesis, docs/decisions.md.
 	KneeRatio = 3
@@ -162,6 +173,9 @@ const (
 	CauseInFlightCap
 	CauseStreamLimit
 	CauseStreamWait
+	// CauseClientErrors: the step's failures are over errors_limit only with
+	// those the client had in them; the target's own are within it.
+	CauseClientErrors
 	// Validity.
 	CauseClockStep
 	CauseRequestErrors
@@ -433,7 +447,7 @@ func (s *search) step(ctx context.Context, rps int, hold time.Duration, kind Kin
 		step.Cause, step.Why = undersent(rps, report)
 	}
 	if step.Why == "" {
-		step.Broken, step.Cause, step.Why = s.broken(report)
+		step.Broken, step.Cause, step.Why = s.broken(report, kind)
 	}
 	if kind == Probe && !step.Broken && step.Why == "" {
 		step.Recovered = float64(p99(report)) <= Recovered*float64(s.baseline)
@@ -506,11 +520,21 @@ func (s *search) waits(rps int, r engine.Report) (broken bool, cause Cause, why 
 	}
 }
 
-// broken judges a step the run held: failures, then the user's p99 limit or
-// the knee over the baseline.
-func (s *search) broken(r engine.Report) (broken bool, cause Cause, why string) {
-	if r.Sent > 0 && float64(r.Failed)/float64(r.Sent) >= FailShare {
-		return true, CauseErrors, fmt.Sprintf("failed %d of %d calls (%.1f%%)", r.Failed, r.Sent, 100*float64(r.Failed)/float64(r.Sent))
+// broken judges a step the run held: failures against errors_limit, then the
+// user's p99 limit or the knee over the baseline. Failures the target's own
+// share keeps within the limit but all of them do not (share.Undecided) say
+// nothing of the target: the step is the run's limit, except for a probe, which
+// only has to show the p99 back.
+func (s *search) broken(r engine.Report, kind Kind) (broken bool, cause Cause, why string) {
+	limit := s.plan.EffectiveErrorsLimit()
+	bad, client, total := failures(r)
+
+	switch verdict := share.Decide(bad, client, total, limit); {
+	case verdict == share.Breaks:
+		return true, CauseErrors, fmt.Sprintf("%s over errors_limit %s", failedText(r, limit, verdict), limit.Text)
+	case verdict == share.Undecided && kind != Probe:
+		return false, CauseClientErrors, fmt.Sprintf("%s over errors_limit %s only with the client's; the target's own are within it, the target above that is untested",
+			failedText(r, limit, verdict), limit.Text)
 	}
 	got := p99(r)
 	if s.plan.P99Limit > 0 {
@@ -525,6 +549,39 @@ func (s *search) broken(r engine.Report) (broken bool, cause Cause, why string) 
 	}
 
 	return false, NoCause, ""
+}
+
+// failures counts a run's calls as a pass threshold on errors does: every
+// failure and every call lost to the connection is bad, those the client got
+// wrong are bad too but say nothing of the target, the calls lost to the
+// connection are among the total. Over the methods, so with several they add up.
+func failures(r engine.Report) (bad, client, total int) {
+	for i := range r.Methods {
+		m := &r.Methods[i]
+		client += m.Rejected.Count + m.ClientError + m.BadResponse.Count
+	}
+
+	return r.Failed + r.NotSentConnection, client, r.Sent + r.NotSentConnection
+}
+
+// failedText names the failures with the share beside the limit it is judged
+// by, and, when there are any, the parts that are not the target's.
+func failedText(r engine.Report, limit share.Percent, v share.Verdict) string {
+	bad, client, total := failures(r)
+	text := fmt.Sprintf("failed %d of %d calls (%s", bad, total, share.Format(bad, total, limit, v))
+
+	if client > 0 || r.NotSentConnection > 0 {
+		parts := []string{fmt.Sprintf("%d failed", bad-r.NotSentConnection)}
+		if r.NotSentConnection > 0 {
+			parts = append(parts, fmt.Sprintf("%d no connection", r.NotSentConnection))
+		}
+		if client > 0 {
+			parts = append(parts, fmt.Sprintf("%d client side", client))
+		}
+		text += ": " + strings.Join(parts, ", ")
+	}
+
+	return text + ")"
 }
 
 // probe runs up to MaxProbes probes at the first step's rate until one comes

@@ -55,6 +55,7 @@ load:
 | `load.calls[].dataset_reuse` | `true` (left out) or `false`: with `false` no record goes out twice, in the whole process. Needs `dataset` — not released |
 | `load.calls[].pass` | The limits a run must meet to pass: `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, see [below](#pass-limits). Left out — no limits — not released |
 | `load.breakpoint.pass` | A breaking-point search's limit: `held_rps`, see [below](#pass-limits). Left out — no limit — not released |
+| `load.breakpoint.errors_limit` | A percent such as `1%` or `0.5%`, up to three digits after the point, at most `100%`. A search step breaks when more than this share of its calls failed; exactly that much holds. Left out — `1%` — not released |
 
 The config is read strictly: a typo in a field name is an error with the line number, a wrong
 value is an error with the call's number and method, not a run with an empty load. `rps` is a
@@ -491,7 +492,8 @@ as in the run above, a plain run's other fields are not at the top level. Every 
 | `breakpoint.outcome` | string | Closed list: `broke`, `broke_at_first`, `held_all`, `run_limit`, `stopped`, `invalid` |
 | `breakpoint.held_rps` | int? | The highest rate the target held; `null` — none held |
 | `breakpoint.broke_rps` | int? | The lowest rate the target broke at or a run limit stopped the search at; `null` — it did not break |
-| `breakpoint.why` | string? | The cause of the run that ended the search, from a closed list: `errors`, `p99_limit`, `p99_vs_base`, `connection`, `no_recovery`, `generator`, `in_flight_cap`, `stream_limit`, `stream_wait`, `clock_step`, `request_errors`; `null` — no cause |
+| `breakpoint.errors_limit` | string | The error limit the search used, as a percent: `"1%"` by default. A step broke over it; `100%` means errors do not break a step — not released |
+| `breakpoint.why` | string? | The cause of the run that ended the search, from a closed list: `errors`, `p99_limit`, `p99_vs_base`, `connection`, `no_recovery`, `generator`, `in_flight_cap`, `stream_limit`, `stream_wait`, `client_errors`, `clock_step`, `request_errors`; `null` — no cause. `client_errors`: the limit is crossed only with failures on the client's side, the target's own are within it; the outcome is `run_limit` |
 | `breakpoint.stop_reason` | string? | Who ended the search: `dataset_exhausted` (a `dataset_reuse: false` file ran out), `requested` (stopped by the user); `null` — the search ended itself — not released |
 | `breakpoint.notes` | []string | The search's notes, text for people in ASCII; do not parse |
 | `breakpoint.runs` | []object | Every run in order |

@@ -103,6 +103,7 @@ var causeNames = map[breakpoint.Cause]string{
 	breakpoint.CauseInFlightCap:   "in_flight_cap",
 	breakpoint.CauseStreamLimit:   "stream_limit",
 	breakpoint.CauseStreamWait:    "stream_wait",
+	breakpoint.CauseClientErrors:  "client_errors",
 	breakpoint.CauseClockStep:     "clock_step",
 	breakpoint.CauseRequestErrors: "request_errors",
 }
@@ -378,6 +379,9 @@ type jsonBreakpoint struct {
 	Outcome  string `json:"outcome"`
 	HeldRPS  *int   `json:"held_rps"`
 	BrokeRPS *int   `json:"broke_rps"`
+	// ErrorsLimit is breakpoint.errors_limit as written, "1%" when the
+	// config sets none: the share of failed calls a step may have and hold.
+	ErrorsLimit string `json:"errors_limit"`
 	// Why is the cause of the run that ended the search, from a closed list;
 	// the numbers are in notes.
 	Why *string `json:"why"`
@@ -412,10 +416,11 @@ func rate(n int) *int {
 func NewBreakpointReport(run BreakpointRun) BreakpointReport {
 	res := run.Result
 	bp := jsonBreakpoint{
-		Outcome: outcomeNames[res.Outcome],
-		Why:     causeName(res.Cause),
-		Notes:   searchNotes(res),
-		Runs:    make([]jsonRunBP, 0, len(res.Steps)),
+		Outcome:     outcomeNames[res.Outcome],
+		ErrorsLimit: run.Plan.EffectiveErrorsLimit().Text,
+		Why:         causeName(res.Cause),
+		Notes:       searchNotes(res),
+		Runs:        make([]jsonRunBP, 0, len(res.Steps)),
 	}
 	if run.StopReason != "" && res.Outcome == breakpoint.Stopped {
 		bp.StopReason = &run.StopReason
