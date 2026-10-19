@@ -1,0 +1,32 @@
+# Пределы pass на здоровом прогоне эталонного стенда, из корня репозитория:
+#   go run ./test/stand/cmd/stand -delay 20ms
+#   leettest -c examples/ru/pass.yaml
+# Стенд отвечает за 20ms, поэтому все пределы держатся и код выхода 0. Пропущенный предел даёт
+# код выхода 4, предел, который нельзя решить, — 2. Предел поиска — в breakpoint.yaml.
+
+app:
+  target:
+    ip: 127.0.0.1
+    port: 50051
+  tls: false
+
+load:
+  warmup: 5s
+  calls:
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 800
+      duration: 1m
+      pass:
+        p50: 50ms
+        p90: 80ms
+        p95: 100ms
+        p99: 200ms
+        p999: 500ms                 # нужно 1000 измеренных вызовов: 800 rps за минуту хватает с запасом
+        errors: 1%                  # доля неудачных от всех посчитанных; пределы задержки требуют его рядом
+
+    - method: wallet.v1.WalletService/Transfer
+      rps: 50
+      duration: 1m
+      pass:
+        p99: 200ms
+        errors: 0.5%

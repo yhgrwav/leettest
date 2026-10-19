@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/yhgrwav/leettest/pkg/breakpoint"
+	"github.com/yhgrwav/leettest/pkg/threshold"
 )
 
 // Modes of the JSON report.
@@ -62,6 +63,9 @@ type BreakpointRun struct {
 	Connections int
 	// Compression is app.compression: "gzip", or empty for none.
 	Compression string
+	// Thresholds is the verdict on breakpoint.pass; nil when the config set
+	// none.
+	Thresholds []threshold.Result
 }
 
 // PlanLine is the line printed before the first step: how many steps and the
@@ -286,6 +290,9 @@ func PrintBreakpoint(w io.Writer, run BreakpointRun) {
 			fmt.Fprintf(w, "  - %s\n", n)
 		}
 	}
+	if block := thresholdsBlock(run.Thresholds, nil); block != "" {
+		fmt.Fprintf(w, "\n%s\n", block)
+	}
 }
 
 // compressionSuffix ends the settings line: ", compression gzip", nothing for none.
@@ -350,6 +357,9 @@ type BreakpointReport struct {
 	StartedAt       string         `json:"started_at"`
 	Settings        jsonSearch     `json:"settings"`
 	Breakpoint      jsonBreakpoint `json:"breakpoint"`
+	// Thresholds is the verdict on breakpoint.pass; null when the config set
+	// none.
+	Thresholds *[]jsonThreshold `json:"thresholds"`
 }
 
 // jsonSearch is the search's own settings: the flag's cap, null when the
@@ -459,6 +469,7 @@ func NewBreakpointReport(run BreakpointRun) BreakpointReport {
 		MethodsSource: run.MethodsSource.kind(),
 		StartedAt:     run.StartedAt.UTC().Format(time.RFC3339Nano),
 		Breakpoint:    bp,
+		Thresholds:    thresholdsJSON(run.Thresholds),
 	}
 }
 

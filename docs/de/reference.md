@@ -55,6 +55,8 @@ load:
 | `load.calls[].dataset_order` | `file` (weggelassen) oder `random`: die Reihenfolge der Anfragen aus der Datei. Braucht `dataset` — nicht veröffentlicht |
 | `load.calls[].dataset_seed` | Eine ganze Zahl von 0 bis 9007199254740991, legt eine zufällige Reihenfolge fest. Braucht `dataset_order: random`. Weggelassen — wird selbst gewählt und im Bericht ausgegeben — nicht veröffentlicht |
 | `load.calls[].dataset_reuse` | `true` (weggelassen) oder `false`: bei `false` geht kein Datensatz im ganzen Prozess zweimal raus. Braucht `dataset` — nicht veröffentlicht |
+| `load.calls[].pass` | Die Grenzen, die ein Lauf einhalten muss, um zu bestehen: `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, siehe [unten](#grenzen-pass). Weggelassen — keine Grenzen — nicht veröffentlicht |
+| `load.breakpoint.pass` | Die Grenze einer Bruchpunkt-Suche: `held_rps`, siehe [unten](#grenzen-pass). Weggelassen — keine Grenze — nicht veröffentlicht |
 
 Die Konfiguration wird streng gelesen: Ein Tippfehler in einem Feldnamen ist ein Fehler mit der
 Zeilennummer, ein falscher Wert ein Fehler mit Nummer und Methode des Aufrufs, kein Lauf mit leerer
@@ -72,6 +74,63 @@ mehr antwortete. Ist die Grenze doch erschöpft, wurden Plätze mehr als 100 ms 
 gehalten — das ist der Generator (zu wenig CPU) oder der Sender, und der Bericht erklärt den Lauf für
 ungültig. Daneben gibt der Bericht aus, wie viele Plätze in diesem Moment über ihre Deadline gehalten
 wurden.
+
+## Grenzen: pass
+
+`pass` unter einem Aufruf sagt, bei welchen Werten der Lauf als bestanden gilt:
+
+```yaml
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 800
+      duration: 1m
+      pass:
+        p99: 200ms
+        errors: 1%
+```
+
+Alle Schlüssel stehen in [`examples/pass.yaml`](../../examples/pass.yaml), die Grenze einer Suche in
+[`examples/breakpoint.yaml`](../../examples/breakpoint.yaml).
+
+| Schlüssel | Grenze |
+|---|---|
+| `p50`, `p90`, `p95`, `p99`, `p999` | Die Latenz ist höchstens die Grenze: eine Dauer mit Einheit (`200ms`), ganze Mikrosekunden, über null, unter dem `timeout` des Aufrufs und unter einer Stunde. Braucht `errors` daneben: Ein Ziel, das Aufrufe sofort ablehnt, bestünde sonst eine Latenzgrenze. `p999` braucht 1000 gemessene Aufrufe: `rps` × (`duration` − `warmup`) |
+| `errors` | Der Anteil fehlgeschlagener Aufrufe ist höchstens die Grenze: ein Prozentwert mit `%` (`1%`, `0.5%`), bis zu drei Stellen nach dem Punkt, höchstens `100%`. Eine Zahl ohne `%` wird nicht erraten. `errors: 100%` schaltet die Fehlerprüfung ab, und dann sind die Latenzgrenzen nichts wert |
+| `breakpoint.pass.held_rps` | Die Suche muss mindestens so viele Aufrufe pro Sekunde halten. Eine ganze Zahl, eine der Stufen des Plans der Suche. Ein `pass` unter einem Aufruf zusammen mit `load.breakpoint` wird abgelehnt |
+
+Eine Konfiguration mit falschem `pass` ist ein Fehler vor dem Start (Exit-Code 1), kein Lauf ohne
+die Prüfung. Auch ein leeres `pass: {}` ist ein Fehler.
+
+**Jede Grenze bekommt ein Urteil**: `pass`, `fail` oder `unknown`. Der Bericht gibt einen Block
+`Thresholds:` mit dem schlechtesten Urteil und eine Zeile je Grenze aus; das JSON hat das Feld
+`thresholds`.
+
+| Ergebnis | Exit-Code |
+|---|---|
+| Jede Grenze ist `pass` | `0` |
+| Ein beendeter Lauf hat eine Grenze verfehlt (`fail`) | `4`, `outcome` bleibt `complete` |
+| Kein `fail`, aber eine Grenze lässt sich nicht entscheiden (`unknown`) | `2`, `invalid_reasons` enthält `thresholds_undecided` |
+| Der Lauf ist ungültig oder angehalten | `2` oder `3`, wie ohne Grenzen: Grenzen ändern daran nichts |
+
+Eine Verfehlung geht vor einer unentschiedenen Grenze: Bei `fail` und `unknown` zusammen ist der
+Code `4`.
+
+Eine Grenze ist `unknown`, wenn man der Zahl nicht trauen kann oder sie fehlt; der Grund stammt aus
+einer geschlossenen Liste: `incomplete` (der Lauf wurde angehalten), `invalid` (der Lauf ist
+ungültig), `few_observations` (das Perzentil wurde nicht gemessen), `run_limit` (die Suche stieß an
+die eigene Grenze des Laufs), `generator` (der Generator war zu spät), `stream` (Aufrufe warteten auf
+einen freien Stream), `client_errors` (die eigenen Fehler des Clients entscheiden, nicht die des
+Ziels), `nothing_sent` (kein einziger Aufruf wurde gesendet), `censored` (am Ende der Verteilung
+stehen Aufrufe ohne Antwort innerhalb des Timeouts: Der Wert ist nur eine Untergrenze, nicht über
+der Grenze).
+
+- Die Latenz wird in ganzen Mikrosekunden verglichen, wie der Bericht sie ausgibt. Eine Untergrenze
+  über der Grenze ist ein `fail`: Der wahre Wert ist noch größer.
+- Der Anteil zählt jeden fehlgeschlagenen Aufruf und jeden Aufruf, der mangels Verbindung nicht
+  gesendet wurde, an allen gezählten. Für ein `fail` zählen nur die Fehler, die das Ziel
+  entschieden hat: Vom Client abgelehnte Anfragen, Client-Fehler und fehlerhafte Antworten sagen
+  nichts über das Ziel.
+- Die Zeile einer Grenze widerspricht nie ihrem Urteil: Läge der auf drei signifikante Stellen
+  gerundete Wert auf der falschen Seite der ausgegebenen Grenze, wird der genaue Wert ausgegeben.
 
 ## Zugang zum Dienst
 
@@ -296,8 +355,8 @@ unten den Typ „percentile?" hat.
 | `target` | string | Die Zieladresse aus der Konfiguration, `fake target` mit `-fake` |
 | `name` | string | Der Name des Laufs: `name` aus der Konfiguration, sonst der Dienstname, sonst der Name der Konfigurationsdatei; immer ein String — nicht veröffentlicht |
 | `methods_source` | string? | Woher die Methoden stammen: `reflection`, `proto` (die Dateien aus `app.proto`) oder `protoset`; `null` mit `-fake` — nicht veröffentlicht |
-| `outcome` | string | `complete`, `invalid`, `incomplete` — entspricht Exit-Code `0`, `2`, `3`; bei `-json-file` und fehlgeschlagenem Schreiben ist der Code `1`, und `outcome` bleibt der des Laufs |
-| `invalid_reasons` | []string | Warum der Lauf ungültig ist: `in_flight_cap`, `nothing_measured`, `clock_step`. Leer — gültig |
+| `outcome` | string | `complete`, `invalid`, `incomplete` — entspricht Exit-Code `0`, `2`, `3`; ein beendeter Lauf, der eine `pass`-Grenze verfehlt hat, ist `complete` mit Code `4`; bei `-json-file` und fehlgeschlagenem Schreiben ist der Code `1`, und `outcome` bleibt der des Laufs |
+| `invalid_reasons` | []string | Warum der Lauf ungültig ist: `in_flight_cap`, `nothing_measured`, `clock_step`, `thresholds_undecided` (eine `pass`-Grenze lässt sich nicht entscheiden, und nicht, weil der Lauf angehalten oder schon ungültig war). Leer — gültig |
 | `tail_wait_cause` | string? | Die Wartezeit auf Client-Seite, die das Ende der Verteilung bestimmt hat: `generator`, `stream`, `connection`; `null` — kein Urteil |
 | `clock_step_ns` | int | Der Uhrenschritt des Hosts, ns: Jede Latenz und Wartezeit ist ± dieser Wert |
 | `started_at` | string | Beginn des Plans, RFC 3339 UTC, Aufwärmen eingeschlossen. Jedes `_us` und `_s` zählt ab hier |
@@ -351,6 +410,16 @@ unten den Typ „percentile?" hat.
 | `unchecked[].method` | string | Die Methode |
 | `unchecked[].reason` | string | `reflection_off` oder `reflection_failed` |
 | `unchecked[].error` | string | Text für Menschen, ändert sich mit grpc-go |
+| `thresholds` | []object? | Urteile über die `pass`-Grenzen, ein Objekt je Grenze, alle mit denselben Schlüsseln; die, die nicht zu einer Grenze gehören, sind `null`. `null` — keine Grenzen gesetzt (keine leere Liste, die sich als „alles bestanden“ läse). Eine Suche schreibt es auf oberster Ebene — nicht veröffentlicht |
+| `thresholds[].method` | string? | Die Methode mit führendem Schrägstrich, wie der Bericht sie nennt; `null` — die Grenze einer Suche — nicht veröffentlicht |
+| `thresholds[].key` | string | `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, `held_rps` — nicht veröffentlicht |
+| `thresholds[].verdict` | string | `pass`, `fail`, `unknown` — nicht veröffentlicht |
+| `thresholds[].reason` | string? | Warum `unknown`, aus der Liste: `incomplete`, `invalid`, `few_observations`, `run_limit`, `generator`, `stream`, `client_errors`, `nothing_sent`, `censored`; `null` bei `pass` und `fail` — nicht veröffentlicht |
+| `thresholds[].limit_us` | int? | Eine Latenzgrenze, ganze Mikrosekunden; `null` bei den anderen Schlüsseln — nicht veröffentlicht |
+| `thresholds[].value` | percentile? | Das gemessene Perzentil, mit dem verglichen wurde; `null` — nicht gemessen, oder der Schlüssel betrifft nicht die Latenz — nicht veröffentlicht |
+| `thresholds[].limit_percent` | string? | Eine `errors`-Grenze, wie in der Konfiguration geschrieben, etwa `"0.5%"`; `null` bei den anderen Schlüsseln — nicht veröffentlicht |
+| `thresholds[].bad`, `thresholds[].bad_client`, `thresholds[].total` | int? | Der `errors`-Anteil: fehlgeschlagene Aufrufe (mit den mangels Verbindung nicht gesendeten), davon die, die nicht das Ziel entschieden hat, alle gezählten. `null` bei den anderen Schlüsseln und wenn kein einziger Aufruf gezählt wurde — nicht veröffentlicht |
+| `thresholds[].limit_rps`, `thresholds[].held_rps` | int? | Die Grenze einer Suche und was sie gehalten hat; `null` bei den anderen Schlüsseln — nicht veröffentlicht |
 | `notes` | []string | Die Hinweise des Berichts, Text für Menschen in ASCII; nicht auswerten |
 
 ### Methode: `methods[]`

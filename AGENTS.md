@@ -109,7 +109,12 @@ Source of truth: [README, «Exit codes»](https://github.com/yhgrwav/leettest/bl
 | `1` | The report you asked for was not produced (no run, or `-json-file` not written): read stderr, it names the field, the call, the path or the cause |
 | `2` | Invalid run: read `invalid_reasons`, do not report latency from it |
 | `3` | Partial run: say so |
+| `4` | A finished run missed a `pass` limit: read `thresholds` for which one (`verdict` `fail`), tell the user the limit and the value |
 | `130`, `143` | Killed, no report: re-run |
+
+`2` also means a `pass` limit that cannot be decided (`invalid_reasons` has `thresholds_undecided`;
+`thresholds[].reason` says why): tell the user the limit was not checked, never that it held.
+`0` with `pass` set means every limit held.
 
 ### Reading the JSON
 
@@ -139,6 +144,10 @@ set; `demo` is the shared token we give the first users) and, for TLS, [`example
   line or a log. LeetTest never prints header values.
 - The in-flight cap must hold `rps × timeout` per method plus margin; LeetTest checks it before
   the start and names both ways out.
+- Limits that the user states ("p99 under 200 ms, under 1% failures") go under the call as `pass`
+  (`p50`, `p90`, `p95`, `p99`, `p999`, `errors`; a search: `breakpoint.pass.held_rps`). Never
+  invent limits the user did not give. A latency limit needs `errors` next to it, and `errors: 100%`
+  switches the failure check off. Every key: [`examples/pass.yaml`](https://github.com/yhgrwav/leettest/blob/main/examples/pass.yaml).
 
 ### Trying without a target
 

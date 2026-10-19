@@ -43,6 +43,7 @@ import (
 	"github.com/yhgrwav/leettest/pkg/descriptor"
 	"github.com/yhgrwav/leettest/pkg/engine"
 	"github.com/yhgrwav/leettest/pkg/grpcsender"
+	"github.com/yhgrwav/leettest/pkg/threshold"
 )
 
 const defaultMaxInFlight = 5000
@@ -56,6 +57,9 @@ const defaultMaxInFlight = 5000
 var ErrInvalidRun = errors.New("the run is invalid: its numbers do not describe the target")
 
 var ErrIncomplete = errors.New("the run stopped before its planned end; the report covers only the part that ran")
+
+// ErrThresholdsFailed says the run finished and a limit in pass: was not met.
+var ErrThresholdsFailed = errors.New("a pass limit was not met")
 
 // exitNow is the way out that depends on nothing: the third stop, or an abort
 // that has not finished in time.
@@ -127,22 +131,27 @@ func printError(w io.Writer, err error) {
 }
 
 // exitCode maps the outcome onto codes a pipeline can tell apart. Whether the
-// target is fast enough is not among them: that needs a threshold, and none is
-// set yet, so a finished run exits 0 however the target answered.
+// target is fast enough is among them only for a run with a pass: section; a
+// finished run without one exits 0 however the target answered.
 //
-//	0   the plan ran to its end and the report is complete
+//	0   the plan ran to its end and the report is complete, and every limit
+//	    in pass: held
 //	1   no report as asked: the run never started (bad flags, bad config,
 //	    no connection), or the -json-file write failed
-//	2   the run is invalid: its numbers do not describe the target
+//	2   the run is invalid: its numbers do not describe the target, or a
+//	    limit in pass: cannot be decided from them
 //	3   the run stopped before its planned end; the report covers less
+//	4   the run finished and a limit in pass: was not met
 //	130 aborted without a report after Ctrl+C
 //	143 aborted without a report after SIGTERM
 //
 // The codes are ranked, not summed: a run that is both invalid and short
 // reports 2, because numbers that do not describe the target are worse news
-// than covering less of the plan. 130 and 143 are not outcomes of a run at
-// all — they are the exit that prints nothing, so a stop that did print a
-// report is 3 whichever key ended it.
+// than covering less of the plan. A missed limit on a finished run is 4 even
+// beside a limit that could not be decided: a miss is a finding, an unknown
+// is not. 130 and 143 are not outcomes of a run at all — they are the exit
+// that prints nothing, so a stop that did print a report is 3 whichever key
+// ended it.
 func exitCode(err error) int {
 	switch {
 	case err == nil, errors.Is(err, flag.ErrHelp):
@@ -151,6 +160,8 @@ func exitCode(err error) int {
 		return 2
 	case errors.Is(err, ErrIncomplete):
 		return 3
+	case errors.Is(err, ErrThresholdsFailed):
+		return 4
 	default:
 		return 1
 	}
@@ -460,7 +471,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 	reportOf := func() cli.RunReport {
 		report := eng.Report()
 
-		return cli.RunReport{
+		run := cli.RunReport{
 			Report: report, Unchecked: unchecked, MaxResponse: maxResponse, MethodsSource: source,
 			ClockStep: max(stepBefore, time.Duration(stepAfter.Load())), ClockStepBefore: stepBefore,
 			GeneratorCPU: meter.Result(report, cores),
@@ -470,6 +481,13 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 				Compression: cfg.App.Compression,
 			},
 		}
+		// The limits are checked against the run as it ended, the clock step
+		// included: it can make the run invalid.
+		if limits := methodLimits(cfg); len(limits) > 0 {
+			run.Thresholds = threshold.Evaluate(report, runState(run), limits)
+		}
+
+		return run
 	}
 
 	var runErr error
@@ -520,10 +538,11 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 }
 
 // outcomeOf names a run's result in the JSON report, the same as its exit code
-// says: 0 complete, 2 invalid, 3 incomplete. Any other error has no report.
+// says: 0 and 4 complete (a missed limit is a finding of a finished run), 2
+// invalid, 3 incomplete. Any other error has no report.
 func outcomeOf(result error) (string, bool) {
 	switch exitCode(result) {
-	case 0:
+	case 0, 4:
 		return cli.OutcomeComplete, true
 	case 2:
 		return cli.OutcomeInvalid, true
@@ -705,20 +724,65 @@ func (l *lockedWriter) Write(p []byte) (int, error) {
 }
 
 // runResult is what run returns once the report is printed. A cap hit is not
-// an error: the report printed its verdict, and the run is incomplete.
+// an error: the report printed its verdict, and the run is incomplete. A run
+// that is invalid or short stays so whatever its limits say; a finished one is
+// decided by them: a missed limit is ErrThresholdsFailed, one that could not
+// be decided ErrInvalidRun.
 func runResult(run cli.RunReport, runErr error) error {
-	report := run.Report
 	if runErr != nil && !errors.Is(runErr, context.Canceled) && !errors.Is(runErr, engine.ErrInFlightCapExceeded) {
 		return runErr
 	}
-	if report.CapHit != nil || report.RequestRejected || cli.ClockTooCoarse(run) {
+
+	switch runState(run) {
+	case threshold.Invalid:
 		return ErrInvalidRun
-	}
-	if report.Incomplete {
+	case threshold.Incomplete:
 		return ErrIncomplete
+	case threshold.Complete:
+	}
+
+	return limitsResult(run.Thresholds)
+}
+
+// runState is how the run ended, which decides whether its limits are
+// checked: an invalid run before a short one, as in the exit code.
+func runState(run cli.RunReport) threshold.State {
+	switch {
+	case run.CapHit != nil || run.RequestRejected || cli.ClockTooCoarse(run):
+		return threshold.Invalid
+	case run.Incomplete:
+		return threshold.Incomplete
+	}
+
+	return threshold.Complete
+}
+
+// limitsResult is what the limits of a finished run or search decide: a miss
+// first, then an undecided one; nil when none was set or all held.
+func limitsResult(results []threshold.Result) error {
+	switch threshold.Overall(results) {
+	case threshold.VerdictFail:
+		return ErrThresholdsFailed
+	case threshold.VerdictUnknown:
+		return ErrInvalidRun
+	case threshold.VerdictPass:
 	}
 
 	return nil
+}
+
+// methodLimits are the limits the config set, by the method as the report
+// names it.
+func methodLimits(cfg *config.MasterConfig) []threshold.MethodLimits {
+	var limits []threshold.MethodLimits
+
+	for i := range cfg.Load.Calls {
+		if call := &cfg.Load.Calls[i]; call.RawPass != nil {
+			limits = append(limits, threshold.MethodLimits{Name: "/" + call.Method, Limits: call.Pass})
+		}
+	}
+
+	return limits
 }
 
 // clockStep measures the host clock; the end-to-end tests fix it so that a

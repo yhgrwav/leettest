@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/yhgrwav/leettest/pkg/breakpoint"
+	"github.com/yhgrwav/leettest/pkg/threshold"
 )
 
 var (
@@ -58,7 +59,9 @@ var (
 	// ErrDuplicateAnchor is a YAML anchor name defined twice in the config.
 	ErrDuplicateAnchor = errors.New("anchor is already defined")
 	// ErrBreakpoint is a breakpoint section that cannot run as written.
-	ErrBreakpoint             = errors.New("invalid breakpoint")
+	ErrBreakpoint = errors.New("invalid breakpoint")
+	// ErrThreshold is a pass section that cannot be judged as written.
+	ErrThreshold              = errors.New("invalid pass")
 	ErrInvalidMaxResponseSize = errors.New("max_response_size must be a positive size below 2GiB with a unit: B, KB, MB, GB, KiB, MiB or GiB")
 	// ErrInvalidConnections is app.connections outside 1 to 256 or not a whole
 	// number.
@@ -155,6 +158,9 @@ type Breakpoint struct {
 	Settle   time.Duration `yaml:"settle"`
 	Hold     time.Duration `yaml:"hold"`
 	P99Limit time.Duration `yaml:"p99_limit"`
+	// RawPass is pass as written, nil when left out. Pass is it resolved.
+	RawPass *BreakpointPass       `yaml:"pass"`
+	Pass    threshold.SearchLimit `yaml:"-"`
 }
 
 // Plan is the search's plan for a call with the given timeout and in-flight
@@ -274,7 +280,18 @@ type Call struct {
 	// RawTimeout is the field as written; nil means it was left out.
 	RawTimeout *time.Duration `yaml:"timeout"`
 	Timeout    time.Duration  `yaml:"-"`
+	// RawPass is pass as written, nil when left out. Pass is it resolved: the
+	// limits the run is judged by, empty when RawPass is nil.
+	RawPass *Pass            `yaml:"pass"`
+	Pass    threshold.Limits `yaml:"-"`
 }
+
+// Pass is a call's pass: section as written, key to value, so that a wrong key
+// or a wrong kind of value is refused with the key named. resolvePass reads it.
+type Pass map[string]any
+
+// BreakpointPass is breakpoint.pass as written.
+type BreakpointPass map[string]any
 
 // DefaultTimeout applies to a call that sets none. It is short on purpose: in an
 // open model a hung target holds rps × timeout requests in flight, and 2s keeps

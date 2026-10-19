@@ -53,6 +53,8 @@ load:
 | `load.calls[].dataset_order` | `file` (left out) or `random`: the order of the dataset's requests. Needs `dataset` — not released |
 | `load.calls[].dataset_seed` | A whole number from 0 to 9007199254740991 that fixes a random order. Needs `dataset_order: random`. Left out — one is drawn and the report prints it — not released |
 | `load.calls[].dataset_reuse` | `true` (left out) or `false`: with `false` no record goes out twice, in the whole process. Needs `dataset` — not released |
+| `load.calls[].pass` | The limits a run must meet to pass: `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, see [below](#pass-limits). Left out — no limits — not released |
+| `load.breakpoint.pass` | A breaking-point search's limit: `held_rps`, see [below](#pass-limits). Left out — no limit — not released |
 
 The config is read strictly: a typo in a field name is an error with the line number, a wrong
 value is an error with the call's number and method, not a run with an empty load. `rps` is a
@@ -69,6 +71,59 @@ the timeout and after which sent call the target answered no more. If the cap do
 were held past their deadline by more than 100 ms — that is the generator (not enough CPU) or the
 sender, and the report declares the run invalid. Next to it the report prints how many slots were
 held past their deadline at that moment.
+
+## Pass limits
+
+`pass` under a call says at what values the run counts as passed:
+
+```yaml
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 800
+      duration: 1m
+      pass:
+        p99: 200ms
+        errors: 1%
+```
+
+Every key is in [`examples/pass.yaml`](../../examples/pass.yaml), a search's limit in
+[`examples/breakpoint.yaml`](../../examples/breakpoint.yaml).
+
+| Key | Limit |
+|---|---|
+| `p50`, `p90`, `p95`, `p99`, `p999` | The latency is at most the limit: a duration with a unit (`200ms`), whole microseconds, above zero, below the call's `timeout` and below an hour. Needs `errors` next to it: a target that rejects calls at once would otherwise pass a latency limit. `p999` needs 1000 measured calls: `rps` × (`duration` − `warmup`) |
+| `errors` | The share of failed calls is at most the limit: a percent with `%` (`1%`, `0.5%`), up to three digits after the point, at most `100%`. A number without `%` is not guessed. `errors: 100%` switches the failure check off, and then the latency limits are worth nothing |
+| `breakpoint.pass.held_rps` | The search must hold at least this many calls a second. A whole number, one of the steps of the search's plan. A call's `pass` together with `load.breakpoint` is refused |
+
+A config with a wrong `pass` is an error before the start (exit code 1), not a run without the
+check. An empty `pass: {}` is an error too.
+
+**Each limit gets a verdict**: `pass`, `fail` or `unknown`. The report prints a `Thresholds:` block
+with the worst of them and a row per limit; the JSON has the `thresholds` field.
+
+| Result | Exit code |
+|---|---|
+| Every limit is `pass` | `0` |
+| A finished run missed a limit (`fail`) | `4`, `outcome` stays `complete` |
+| No `fail`, but a limit cannot be decided (`unknown`) | `2`, `invalid_reasons` has `thresholds_undecided` |
+| The run is invalid or stopped | `2` or `3`, as without limits: limits do not change them |
+
+A miss outranks an undecided limit: with a `fail` and an `unknown` together the code is `4`.
+
+A limit is `unknown` when the number cannot be trusted or is missing; the reason is from a closed
+list: `incomplete` (the run was stopped), `invalid` (the run is invalid), `few_observations` (the
+percentile was not measured), `run_limit` (the search hit the run's own limit), `generator` (the
+generator was late), `stream` (calls waited for a free stream), `client_errors` (the client's own
+failures decide it, not the target's), `nothing_sent` (not a single call was sent), `censored` (the
+tail holds calls with no answer within the timeout: the value is only a lower bound, not above the
+limit).
+
+- Latency is compared in whole microseconds, as the report prints it. A lower bound over the limit
+  is a `fail`: the real value is larger still.
+- The share counts every failed call and every call not sent for lack of a connection, over all
+  counted. For a `fail` only the failures the target decided count: requests the client rejected,
+  client errors and bad responses say nothing of the target.
+- A limit's row never contradicts its verdict: if the value rounded to three significant figures
+  would land on the wrong side of the printed limit, the exact one is printed.
 
 ## Access to the service
 
@@ -287,8 +342,8 @@ measured calls only. The first column is the field's full path.
 | `target` | string | The target address from the config, `fake target` with `-fake` |
 | `name` | string | The run's name: the config's `name`, else the service name, else the config file name; always a string — not released |
 | `methods_source` | string? | Where the methods came from: `reflection`, `proto` (the `app.proto` files) or `protoset`; `null` with `-fake` — not released |
-| `outcome` | string | `complete`, `invalid`, `incomplete` — matches exit code `0`, `2`, `3`; with `-json-file` and a failed write the code is `1` and `outcome` stays the run's |
-| `invalid_reasons` | []string | Why the run is invalid: `in_flight_cap`, `nothing_measured`, `clock_step`. Empty — valid |
+| `outcome` | string | `complete`, `invalid`, `incomplete` — matches exit code `0`, `2`, `3`; a finished run that missed a `pass` limit is `complete` with code `4`; with `-json-file` and a failed write the code is `1` and `outcome` stays the run's |
+| `invalid_reasons` | []string | Why the run is invalid: `in_flight_cap`, `nothing_measured`, `clock_step`, `thresholds_undecided` (a `pass` limit cannot be decided, and not because the run was stopped or already invalid). Empty — valid |
 | `tail_wait_cause` | string? | The client-side wait that set the tail: `generator`, `stream`, `connection`; `null` — no verdict |
 | `clock_step_ns` | int | The host clock step, ns: every latency and wait is ± it |
 | `started_at` | string | Start of the schedule, RFC 3339 UTC, warm-up included. Every `_us` and `_s` counts from it |
@@ -342,6 +397,16 @@ measured calls only. The first column is the field's full path.
 | `unchecked[].method` | string | The method |
 | `unchecked[].reason` | string | `reflection_off` or `reflection_failed` |
 | `unchecked[].error` | string | Text for people, changes with grpc-go |
+| `thresholds` | []object? | Verdicts on the `pass` limits, an object per limit, all with the same keys; the ones that do not belong to a limit are `null`. `null` — no limits set (not an empty list, which would read as "all passed"). A search writes it at the top level — not released |
+| `thresholds[].method` | string? | The method with its leading slash, as the report names it; `null` — a search's limit — not released |
+| `thresholds[].key` | string | `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, `held_rps` — not released |
+| `thresholds[].verdict` | string | `pass`, `fail`, `unknown` — not released |
+| `thresholds[].reason` | string? | Why `unknown`, from the list: `incomplete`, `invalid`, `few_observations`, `run_limit`, `generator`, `stream`, `client_errors`, `nothing_sent`, `censored`; `null` for `pass` and `fail` — not released |
+| `thresholds[].limit_us` | int? | A latency limit, whole microseconds; `null` for the other keys — not released |
+| `thresholds[].value` | percentile? | The measured percentile it was compared with; `null` — not measured, or the key is not about latency — not released |
+| `thresholds[].limit_percent` | string? | An `errors` limit as written in the config, such as `"0.5%"`; `null` for the other keys — not released |
+| `thresholds[].bad`, `thresholds[].bad_client`, `thresholds[].total` | int? | The `errors` share: failed calls (with those not sent for lack of a connection), of them the ones the target did not decide, all counted. `null` for the other keys and when not a single call was counted — not released |
+| `thresholds[].limit_rps`, `thresholds[].held_rps` | int? | A search's limit and what it held; `null` for the other keys — not released |
 | `notes` | []string | The report's notes, text for people in ASCII; do not parse |
 
 ### Method: `methods[]`
