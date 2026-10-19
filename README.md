@@ -2,7 +2,7 @@
 
 <h1><img src="assets/logo.png" width="360" alt="LeetTest"></h1>
 
-**Нагрузочное тестирование gRPC, которое не врёт.**
+**Узнайте, где ломается ваш gRPC-сервис. С цифрами, которым можно верить.**
 
 [Русский](docs/ru/) · [English](docs/en/) · [Deutsch](docs/de/) · [简体中文](docs/zh-CN/)
 

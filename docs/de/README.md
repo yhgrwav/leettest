@@ -2,7 +2,7 @@
 
 <h1><img src="../../assets/logo.png" width="360" alt="LeetTest"></h1>
 
-**gRPC-Lasttests, die nicht lügen.**
+**Finden Sie heraus, wo Ihr gRPC-Dienst bricht — mit Zahlen, denen Sie trauen können.**
 
 [Русский](../ru/) · [English](../en/) · [Deutsch](../de/) · [简体中文](../zh-CN/)
 
