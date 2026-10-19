@@ -2,7 +2,7 @@
 
 <h1><img src="../../assets/logo.png" width="360" alt="LeetTest"></h1>
 
-**gRPC load testing that doesn't lie.**
+**Find where your gRPC service breaks — with numbers you can trust.**
 
 [Русский](../ru/) · [English](../en/) · [Deutsch](../de/) · [简体中文](../zh-CN/)
 
