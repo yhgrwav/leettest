@@ -2,7 +2,7 @@
 
 <h1><img src="../../assets/logo.png" width="360" alt="LeetTest"></h1>
 
-**不说谎的 gRPC 压测。**
+**找出你的 gRPC 服务在哪里崩溃——用可以信赖的数字。**
 
 [Русский](../ru/) · [English](../en/) · [Deutsch](../de/) · [简体中文](../zh-CN/)
 
