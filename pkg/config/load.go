@@ -99,6 +99,12 @@ func (m *MasterConfig) resolve() error {
 		}
 	}
 
+	if b := m.Load.Breakpoint; b != nil {
+		if err := b.resolveErrorsLimit(); err != nil {
+			return err
+		}
+	}
+
 	address, err := m.App.Target.CreateConnectionString()
 	if err != nil {
 		return err

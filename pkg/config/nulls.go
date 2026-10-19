@@ -30,6 +30,10 @@ var callDatasetPath = regexp.MustCompile(`^\$\.load\.calls\[\d+\]\.(dataset|data
 // match has a key, a limit inside it.
 var passPath = regexp.MustCompile(`^\$\.(load\.calls\[\d+\]|load\.breakpoint)\.pass(\.[A-Za-z0-9_]+)?$`)
 
+// errorsLimitPath is the search's errors_limit: left with no value it would
+// be read as left out, and the search would run at the default without a word.
+const errorsLimitPath = "$.load.breakpoint.errors_limit"
+
 // emptyKeyErrors is the error of each key that must not be written with no value.
 var emptyKeyErrors = map[string]error{
 	"dataset":       ErrEmptyDatasetPath,
@@ -90,7 +94,8 @@ func (v *nullDatasetVisitor) Visit(node ast.Node) ast.Visitor {
 		return v
 	}
 	match := callDatasetPath.FindStringSubmatch(path)
-	if match == nil {
+	errorsLimit := path == errorsLimitPath
+	if match == nil && !errorsLimit {
 		return v
 	}
 
@@ -100,6 +105,14 @@ func (v *nullDatasetVisitor) Visit(node ast.Node) ast.Visitor {
 	}
 
 	_, null := value.(*ast.NullNode)
+	if errorsLimit {
+		if null {
+			v.errs = append(v.errs, fmt.Errorf("line %d: %w: breakpoint.errors_limit has no value: write a percent such as 1%%, or leave the key out for the default",
+				pair.Key.GetToken().Position.Line, ErrBreakpoint))
+		}
+
+		return v
+	}
 	// The decoder takes 1.5 and "42" for a whole number; a seed is neither.
 	_, whole := value.(*ast.IntegerNode)
 	if null || (match[1] == "dataset_seed" && !whole) {
