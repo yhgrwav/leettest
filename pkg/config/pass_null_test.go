@@ -15,6 +15,7 @@
 package config_test
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -84,7 +85,7 @@ func TestPass_KeyWithNoValueIsRefusedInACall(t *testing.T) {
 		"p99 with nothing":     {"", "      pass:\n        p99:\n        errors: 1%\n", "pass.p99"},
 		"p99 a tilde":          {"", "      pass:\n        p99: ~\n        errors: 1%\n", "pass.p99"},
 		"p99 null":             {"", "      pass:\n        p99: null\n        errors: 1%\n", "pass.p99"},
-		"p99 a null tag":       {"", "      pass:\n        p99: !!null\n        errors: 1%\n", "pass.p99"},
+		"p99 a null tag":       {"", "      pass:\n        errors: 1%\n        p99: !!null\n", "pass.p99"},
 		"p99 an alias of null": {nullAnchor, "      pass:\n        p99: *n\n        errors: 1%\n", "pass.p99"},
 		"errors with nothing":  {"", "      pass:\n        p99: 200ms\n        errors:\n", "pass.errors"},
 		"errors a tilde":       {"", "      pass:\n        p99: 200ms\n        errors: ~\n", "pass.errors"},
@@ -96,6 +97,16 @@ func TestPass_KeyWithNoValueIsRefusedInACall(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			refuses(t, name, callPass(tc.before, tc.pass), tc.key)
 		})
+	}
+}
+
+// The YAML parser reads a bare !!null as a tag over the next line, so the
+// config never gets as far as the pass checks: it is a read error, not a lost limit.
+// Ground: contract — a bare null tag before another key is refused, by the parser's category.
+func TestPass_BareNullTagBeforeAnotherKeyIsAReadError(t *testing.T) {
+	_, err := config.Parse(callPass("", "      pass:\n        p99: !!null\n        errors: 1%\n"))
+	if !errors.Is(err, config.ErrReadConfig) {
+		t.Errorf("err = %v, want ErrReadConfig", err)
 	}
 }
 
