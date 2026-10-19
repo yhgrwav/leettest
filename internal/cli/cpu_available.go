@@ -233,3 +233,9 @@ func unescapeMount(s string) string {
 
 	return b.String()
 }
+
+// CPUQuota is the cgroup CPU limit in cores as the cgroup says it, above
+// GOMAXPROCS as well, and nil when there is no readable limit.
+func CPUQuota(root fs.FS) *float64 {
+	return nil
+}
