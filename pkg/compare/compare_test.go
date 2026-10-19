@@ -35,6 +35,11 @@ func notMeasured(outcome string) compare.Capacity {
 	return compare.Capacity{Bound: compare.None, Outcome: outcome}
 }
 
+// upper is a search that broke at its first step, which ran at rps.
+func upper(rps int) compare.Capacity {
+	return compare.Capacity{RPS: rps, Bound: compare.Upper, Outcome: "broke_at_first"}
+}
+
 func limit(text string) share.Percent {
 	p, err := share.Parse(text, "limit")
 	if err != nil {
@@ -74,18 +79,21 @@ func TestCapacity_ExactValuesAreJudgedByTheLimit(t *testing.T) {
 	}
 }
 
-// Ground: contract — a base that broke at the first step (exact 0) has no
-// drop to measure: unknown with the reason that says what to do, whatever the
-// new value is.
+// Ground: contract — a base that broke at the first step (an upper bound, the
+// capacity is somewhere below that step) has no drop to measure: unknown with
+// the reason that says what to do, whatever the new value is, also a value at
+// or above the step, where the fall could be nothing at all.
 func TestCapacity_BaseThatBrokeAtTheFirstStepIsUnknown(t *testing.T) {
 	const reason = "base broke at the first step: lower the plan to see a drop"
 
 	for name, nw := range map[string]compare.Capacity{
-		"new also zero": exact(0),
-		"new above":     exact(500),
-		"new a floor":   lower(500, "held_all"),
+		"new below the step":    exact(50),
+		"new at the step":       exact(100),
+		"new above the step":    exact(500),
+		"new a floor":           lower(500, "held_all"),
+		"new also broke at one": upper(100),
 	} {
-		got, why := compare.CapacityDrop(exact(0), nw, limit("10%"))
+		got, why := compare.CapacityDrop(upper(100), nw, limit("10%"))
 		if got != compare.Unknown || why != reason {
 			t.Errorf("%s: %s %q, want unknown %q", name, verdictNames[got], why, reason)
 		}
@@ -104,7 +112,7 @@ func TestCapacity_NotMeasuredIsUnknown(t *testing.T) {
 		{"base invalid", notMeasured("invalid"), exact(800), "base not measured (invalid)"},
 		{"new invalid", exact(1000), notMeasured("invalid"), "new not measured (invalid)"},
 		{"new has no held rate", exact(1000), notMeasured("run_limit"), "new not measured (run_limit)"},
-		{"new not measured beside a zero base", exact(0), notMeasured("invalid"), "new not measured (invalid)"},
+		{"new not measured beside a base that broke at the first step", upper(100), notMeasured("invalid"), "new not measured (invalid)"},
 	} {
 		got, why := compare.CapacityDrop(tc.base, tc.nw, limit("10%"))
 		if got != compare.Unknown || why != tc.reason {
@@ -133,6 +141,38 @@ func TestCapacity_NewLowerBoundNeverFails(t *testing.T) {
 		{"run limit far past the limit", lower(500, "run_limit"), compare.Unknown, "new run ended before its capacity (run_limit)"},
 	} {
 		got, why := compare.CapacityDrop(exact(1000), tc.nw, limit("10%"))
+		if got != tc.want || why != tc.reason {
+			t.Errorf("%s: %s %q, want %s %q", tc.name, verdictNames[got], why, verdictNames[tc.want], tc.reason)
+		}
+	}
+}
+
+// Ground: boundary — a new search that broke at its first step, N rps, has a
+// capacity below N: the fall is more than base − N. Past the limit by that —
+// fail, the smallest possible fall already breaks it; otherwise nothing is
+// known: the grid cannot see below its first step, so a fall of 5% and of 95%
+// look the same. Never a pass. The same for a base that is a lower bound.
+func TestCapacity_NewThatBrokeAtTheFirstStepBoundsTheFall(t *testing.T) {
+	const reason = "new broke at the first step: lower the plan to see the drop"
+
+	for _, tc := range []struct {
+		name   string
+		base   compare.Capacity
+		nw     compare.Capacity
+		want   compare.Verdict
+		reason string
+	}{
+		{"step far below the base", exact(1000), upper(100), compare.Fail, ""},
+		{"step one rps past the limit", exact(1000), upper(899), compare.Fail, ""},
+		{"step exactly on the limit", exact(1000), upper(900), compare.Unknown, reason},
+		{"step one rps inside the limit", exact(1000), upper(901), compare.Unknown, reason},
+		{"step close to the base", exact(1000), upper(950), compare.Unknown, reason},
+		{"step at the base", exact(1000), upper(1000), compare.Unknown, reason},
+		{"step above the base", exact(1000), upper(1100), compare.Unknown, reason},
+		{"base a lower bound, step far below", lower(1000, "held_all"), upper(100), compare.Fail, ""},
+		{"base a lower bound, step close", lower(1000, "held_all"), upper(950), compare.Unknown, reason},
+	} {
+		got, why := compare.CapacityDrop(tc.base, tc.nw, limit("10%"))
 		if got != tc.want || why != tc.reason {
 			t.Errorf("%s: %s %q, want %s %q", tc.name, verdictNames[got], why, verdictNames[tc.want], tc.reason)
 		}

@@ -21,10 +21,13 @@ type Bound int
 
 const (
 	// Exact: the search found the step the service broke above; RPS is the
-	// highest step that held. Zero RPS: it broke at the first step.
+	// highest step that held.
 	Exact Bound = iota
 	// Lower: the search ended before it broke; the capacity is at least RPS.
 	Lower
+	// Upper: the search broke at its first step; the capacity is below RPS,
+	// the rate of that step.
+	Upper
 	// None: the search measured no capacity.
 	None
 )

@@ -69,9 +69,12 @@ func brokeAt(held int) reportSpec {
 }
 
 // brokeAtFirst is a search that broke at its first step, 100 rps.
-func brokeAtFirst() reportSpec {
+func brokeAtFirst() reportSpec { return brokeAtFirstOf(100) }
+
+// brokeAtFirstOf is a search that broke at its first step, which ran at first rps.
+func brokeAtFirstOf(first int) reportSpec {
 	s := brokeAt(0)
-	s.outcome, s.broke = breakpoint.BrokeAtFirst, s.first
+	s.outcome, s.first, s.broke = breakpoint.BrokeAtFirst, first, first
 
 	return s
 }
@@ -141,6 +144,13 @@ func compared(t *testing.T, base, nw reportSpec, flags ...string) (res result, b
 	basePath, newPath = base.write(t, dir, "base.json"), nw.write(t, dir, "new.json")
 
 	return runCLI(t.Context(), t, 10*time.Second, append(append([]string{"compare"}, flags...), basePath, newPath)...), basePath, newPath
+}
+
+// lastLine is the last line of out.
+func lastLine(out string) string {
+	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+
+	return lines[len(lines)-1]
 }
 
 // lineStarting is the one line of out that starts with prefix.
@@ -248,15 +258,25 @@ func TestCompare_CapacityIsPrintedAndJudgedByItsBound(t *testing.T) {
 		{"base is a lower bound, the fall within the limit", endedAt(breakpoint.HeldThroughout, 1000), brokeAt(950),
 			"capacity: >= 1000 rps -> 950 rps, drop >= 5.0%, limit 10%: unknown", "base capacity is only a lower bound (held_all)", 2},
 		{"two lower bounds", endedAt(breakpoint.HeldThroughout, 1000), endedAt(breakpoint.HeldThroughout, 900),
-			"capacity: >= 1000 rps -> >= 900 rps, drop", "both capacities are lower bounds", 2},
+			"capacity: >= 1000 rps -> >= 900 rps, drop -, limit 10%: unknown", "both capacities are lower bounds", 2},
+		{"base is a lower bound, new the same", endedAt(breakpoint.HeldThroughout, 1000), brokeAt(1000),
+			"capacity: >= 1000 rps -> 1000 rps, drop >= 0.0%, limit 10%: unknown", "base capacity is only a lower bound (held_all)", 2},
+		{"base is a lower bound, new above", endedAt(breakpoint.HeldThroughout, 1000), brokeAt(1200),
+			"capacity: >= 1000 rps -> 1200 rps, rise <= 20.0%, limit 10%: unknown", "base capacity is only a lower bound (held_all)", 2},
+		{"new is a lower bound above the base", brokeAt(1000), endedAt(breakpoint.HeldThroughout, 1100),
+			"capacity: 1000 rps -> >= 1100 rps, rise >= 10.0%, limit 10%: pass", "", 0},
+		{"new is a lower bound the same as the base", brokeAt(1000), endedAt(breakpoint.HeldThroughout, 1000),
+			"capacity: 1000 rps -> >= 1000 rps, rise >= 0.0%, limit 10%: pass", "", 0},
 		{"a stopped search is a lower bound", brokeAt(400), endedAt(breakpoint.Stopped, 300),
 			"capacity: 400 rps -> >= 300 rps, drop <= 25.0%, limit 10%: unknown", "new run ended before its capacity (stopped)", 2},
 		{"a run limit with a held rate is a lower bound", brokeAt(400), endedAt(breakpoint.RunLimit, 380),
 			"capacity: 400 rps -> >= 380 rps, drop <= 5.0%, limit 10%: pass", "", 0},
 		{"base broke at the first step", brokeAtFirst(), brokeAt(800),
 			"capacity: below 100 rps -> 800 rps, drop -, limit 10%: unknown", "base broke at the first step: lower the plan to see a drop", 2},
-		{"new broke at the first step", brokeAt(1000), brokeAtFirst(),
-			"capacity: 1000 rps -> below 100 rps, drop 100.0%, limit 10%: FAIL", "", 4},
+		{"new broke at the first step, far below the base", brokeAt(1000), brokeAtFirst(),
+			"capacity: 1000 rps -> below 100 rps, drop >= 90.0%, limit 10%: FAIL", "", 4},
+		{"new broke at the first step, close to the base", brokeAt(1000), brokeAtFirstOf(950),
+			"capacity: 1000 rps -> below 950 rps, drop >= 5.0%, limit 10%: unknown", "new broke at the first step: lower the plan to see the drop", 2},
 		{"base is invalid", endedAt(breakpoint.Invalid, 244), brokeAt(800),
 			"capacity: not measured (invalid) -> 800 rps, drop -, limit 10%: unknown", "base not measured (invalid)", 2},
 		{"new is invalid", brokeAt(1000), endedAt(breakpoint.Invalid, 244),
@@ -271,6 +291,25 @@ func TestCompare_CapacityIsPrintedAndJudgedByItsBound(t *testing.T) {
 		if tc.reason == "" && got != tc.line || tc.reason != "" && (!strings.HasPrefix(got, tc.line) || !strings.Contains(got, tc.reason)) {
 			t.Errorf("%s:\n  got  %q\n  want %q (reason %q)", tc.name, got, tc.line, tc.reason)
 		}
+	}
+}
+
+// Ground: contract — a printed bound never claims more than is known: an
+// upper bound of the fall rounds up, a lower bound rounds down (a third of 3
+// rps is 33.33%), so neither can be read as better or worse than the data.
+func TestCompare_ABoundOfTheFallIsRoundedTowardWhatIsKnown(t *testing.T) {
+	res, _, _ := compared(t, brokeAt(3), endedAt(breakpoint.HeldThroughout, 2))
+
+	wantExit(t, res, 0)
+	if got, want := lineStarting(t, res.stdout, "capacity:"), "capacity: 3 rps -> >= 2 rps, drop <= 33.4%"; got != want {
+		t.Errorf("capacity line %q, want %q", got, want)
+	}
+
+	res, _, _ = compared(t, endedAt(breakpoint.HeldThroughout, 3), brokeAt(2))
+
+	wantExit(t, res, 0)
+	if got, want := lineStarting(t, res.stdout, "capacity:"), "capacity: >= 3 rps -> 2 rps, drop >= 33.3%"; got != want {
+		t.Errorf("capacity line %q, want %q", got, want)
 	}
 }
 
@@ -299,16 +338,11 @@ func TestCompare_EachPassportFieldMakesItUndecidable(t *testing.T) {
 		{"passport.cpu_quota", func(s *reportSpec) { s.passport.CPUQuota = &quota }, "differs: passport.cpu_quota: 4 -> 2"},
 		{"passport.cpu_quota to none", func(s *reportSpec) { s.passport.CPUQuota = nil }, "differs: passport.cpu_quota: 4 -> none"},
 		{"passport.go_version", func(s *reportSpec) { s.passport.GoVersion = "go1.26.9" }, "differs: passport.go_version: go1.27.1 -> go1.26.9"},
-		// The brief does not name this field; the line starts with "dataset".
-		{"dataset", func(s *reportSpec) { s.datasetSHA = strings.Repeat("d", 64) }, "differs: dataset"},
-		{"dataset on the base side only", func(s *reportSpec) { s.datasetSHA = "" }, "differs: dataset"},
+		{"dataset", func(s *reportSpec) { s.datasetSHA = strings.Repeat("d", 64) },
+			"differs: dataset: " + strings.Repeat("c", 64) + " -> " + strings.Repeat("d", 64)},
+		{"dataset missing on the new side", func(s *reportSpec) { s.datasetSHA = "" },
+			"differs: dataset: " + strings.Repeat("c", 64) + " -> none"},
 	} {
-		// What else a dataset line must carry: both hashes, none for no dataset.
-		values := map[string][]string{
-			"dataset":                       {strings.Repeat("c", 64), strings.Repeat("d", 64)},
-			"dataset on the base side only": {strings.Repeat("c", 64), "none"},
-		}[tc.field]
-
 		for _, flags := range [][]string{nil, {"-max-capacity-drop", "10%"}} {
 			base, nw := brokeAt(1000), brokeAt(500)
 			base.datasetSHA, nw.datasetSHA = strings.Repeat("c", 64), strings.Repeat("c", 64)
@@ -317,22 +351,32 @@ func TestCompare_EachPassportFieldMakesItUndecidable(t *testing.T) {
 			res, _, _ := compared(t, base, nw, flags...)
 
 			wantExit(t, res, 2)
-			got := lineStarting(t, res.stdout, "differs:")
-			if !strings.HasPrefix(got, tc.line) {
-				t.Errorf("%s %v: differs line %q, want it to start %q", tc.field, flags, got, tc.line)
-			}
-			for _, value := range values {
-				if !strings.Contains(got, value) {
-					t.Errorf("%s %v: differs line %q, want %q in it", tc.field, flags, got, value)
-				}
+			if got := lineStarting(t, res.stdout, "differs:"); got != tc.line {
+				t.Errorf("%s %v: differs line %q, want %q", tc.field, flags, got, tc.line)
 			}
 			if len(flags) > 0 {
 				capacity := lineStarting(t, res.stdout, "capacity:")
 				if !strings.Contains(capacity, "unknown") || !strings.Contains(capacity, "reports are not comparable") || strings.Contains(capacity, "FAIL") {
 					t.Errorf("%s: capacity line %q, want unknown, reports are not comparable", tc.field, capacity)
 				}
+			} else if got, want := lastLine(res.stdout), "reports are not comparable: nothing judged"; got != want {
+				t.Errorf("%s: last line %q, want %q", tc.field, got, want)
 			}
 		}
+	}
+}
+
+// Ground: contract — the dataset hash is compared with a side that has none:
+// a dataset on the new side only differs too.
+func TestCompare_ADatasetOnTheNewSideOnlyDiffers(t *testing.T) {
+	base, nw := brokeAt(1000), brokeAt(950)
+	nw.datasetSHA = strings.Repeat("d", 64)
+
+	res, _, _ := compared(t, base, nw)
+
+	wantExit(t, res, 2)
+	if got, want := lineStarting(t, res.stdout, "differs:"), "differs: dataset: none -> "+strings.Repeat("d", 64); got != want {
+		t.Errorf("differs line %q, want %q", got, want)
 	}
 }
 
@@ -348,6 +392,9 @@ func TestCompare_TheSameDatasetIsComparable(t *testing.T) {
 	wantExit(t, res, 0)
 	if strings.Contains(res.stdout, "differs:") {
 		t.Errorf("stdout names a difference between equal datasets:\n%s", res.stdout)
+	}
+	if got, want := lineStarting(t, res.stdout, "capacity:"), "capacity: 1000 rps -> 950 rps, drop 5.0%, limit 10%: pass"; got != want {
+		t.Errorf("capacity line %q, want %q", got, want)
 	}
 }
 
@@ -410,6 +457,11 @@ func TestCompare_NoPassportIsUndecidable(t *testing.T) {
 			}
 			if strings.Contains(res.stdout, "FAIL") {
 				t.Errorf("%s %v: a report without a passport failed a check:\n%s", tc.name, flags, res.stdout)
+			}
+			if len(flags) == 0 {
+				if got, want := lastLine(res.stdout), "reports are not comparable: nothing judged"; got != want {
+					t.Errorf("%s: last line %q, want %q", tc.name, got, want)
+				}
 			}
 		}
 	}
@@ -475,6 +527,32 @@ func TestCompare_InputErrorsExit1(t *testing.T) {
 				t.Errorf("%s: error %q (stderr %q), want it to say %q", tc.name, msg, res.stderr, has)
 			}
 		}
+	}
+}
+
+// Ground: contract — a field this leettest does not know is ignored, so a
+// later leettest that adds one to schema 1 does not break the comparison: the
+// report reads and is judged as without it.
+func TestCompare_AFieldItDoesNotKnowIsIgnored(t *testing.T) {
+	dir := t.TempDir()
+
+	raw, err := json.Marshal(cli.NewBreakpointReport(brokeAt(1000).run()))
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	fields["added_in_a_later_leettest"] = map[string]any{"anything": []int{1, 2, 3}}
+	base := writeReportFile(t, dir, "base.json", fields)
+	nw := brokeAt(950).write(t, dir, "new.json")
+
+	res := runCLI(t.Context(), t, 10*time.Second, "compare", "-max-capacity-drop", "10%", base, nw)
+
+	wantExit(t, res, 0)
+	if got, want := lineStarting(t, res.stdout, "capacity:"), "capacity: 1000 rps -> 950 rps, drop 5.0%, limit 10%: pass"; got != want {
+		t.Errorf("capacity line %q, want %q", got, want)
 	}
 }
 
