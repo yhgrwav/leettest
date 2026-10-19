@@ -186,6 +186,8 @@ func TestExamples_LanguagesParseEqual(t *testing.T) {
 		// The ru example reaches the shared files from its own directory, so how
 		// app.protoset is written differs; where it points (Protoset) must not.
 		got.App.RawProtoset = want.App.RawProtoset
+		// The files differ in their comments, so their hashes do.
+		got.SHA256 = want.SHA256
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("ru/%s loads to\n%+v\n%s loads to\n%+v", name, *got, name, *want)
 		}

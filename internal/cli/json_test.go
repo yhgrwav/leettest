@@ -473,7 +473,10 @@ func TestJSON_NoKeyCanBeDroppedFromTheOutput(t *testing.T) {
 		}
 		for i := range rt.NumField() {
 			f := rt.Field(i)
-			if strings.Contains(f.Tag.Get("json"), "omitempty") || strings.Contains(f.Tag.Get("json"), "omitzero") {
+			// The one exception: a search step's report has no passport, the
+			// search report carries it once (TestPassport_*).
+			stepPassport := rt == reflect.TypeFor[JSONReport]() && f.Name == "Passport"
+			if !stepPassport && (strings.Contains(f.Tag.Get("json"), "omitempty") || strings.Contains(f.Tag.Get("json"), "omitzero")) {
 				t.Errorf("%s.%s may be dropped: %q", rt, f.Name, f.Tag.Get("json"))
 			}
 			check(f.Type)

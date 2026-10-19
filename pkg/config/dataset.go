@@ -16,6 +16,8 @@ package config
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -52,13 +54,14 @@ func (m *MasterConfig) readDatasets(dir string) error {
 			path = filepath.Join(dir, path)
 		}
 
-		records, err := readDataset(path, call.Dataset)
+		records, sum, err := readDataset(path, call.Dataset)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s: dataset %w", call.where(i), err))
 
 			continue
 		}
 		call.Records = records
+		call.DatasetSHA256 = sum
 	}
 
 	return errors.Join(errs...)
@@ -70,7 +73,9 @@ func (m *MasterConfig) readDatasets(dir string) error {
 // skipped; every other line must be JSON, which is all that is checked here —
 // its fit to the method's message needs the schema. The records stay bytes: no
 // number passes through a float64. written is the path as the config has it.
-func readDataset(path, written string) ([]DatasetRecord, error) {
+// sum is the sha256 of the file as it is on disk, a byte order mark included,
+// in hex: what sha256sum prints.
+func readDataset(path, written string) (records []DatasetRecord, sum string, err error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		var pathErr *fs.PathError
@@ -79,12 +84,12 @@ func readDataset(path, written string) ([]DatasetRecord, error) {
 			err = pathErr.Err
 		}
 
-		return nil, fmt.Errorf("%s: %w", written, err)
+		return nil, "", fmt.Errorf("%s: %w", written, err)
 	}
 
+	digest := sha256.Sum256(raw)
+	sum = hex.EncodeToString(digest[:])
 	raw = bytes.TrimPrefix(raw, byteOrderMark)
-
-	var records []DatasetRecord
 
 	for n, line := range bytes.Split(raw, []byte{'\n'}) {
 		line = bytes.TrimSuffix(line, []byte{'\r'})
@@ -92,15 +97,15 @@ func readDataset(path, written string) ([]DatasetRecord, error) {
 			continue
 		}
 		if !json.Valid(line) {
-			return nil, fmt.Errorf("%s:%d: not JSON", written, n+1)
+			return nil, "", fmt.Errorf("%s:%d: not JSON", written, n+1)
 		}
 
 		records = append(records, DatasetRecord{Line: n + 1, JSON: line[:len(line):len(line)]})
 	}
 
 	if len(records) == 0 {
-		return nil, fmt.Errorf("%s: no requests", written)
+		return nil, "", fmt.Errorf("%s: no requests", written)
 	}
 
-	return records, nil
+	return records, sum, nil
 }

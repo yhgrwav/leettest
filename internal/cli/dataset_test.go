@@ -624,7 +624,7 @@ func TestBreakpoint_DatasetLineOnlyFromTheLastRun(t *testing.T) {
 	}
 }
 
-// The method object of a plain run: the object, or null; seven keys and no more
+// The method object of a plain run: the object, or null; eight keys and no more
 // (order and seed added with the random order, file order says "file" and null).
 // Ground: contract — the JSON names are an interface (schema_v1.txt).
 func TestJSON_Dataset(t *testing.T) {
@@ -639,7 +639,7 @@ func TestJSON_Dataset(t *testing.T) {
 	if !ok {
 		t.Fatalf("dataset = %v, want an object", field(t, methods[0], "dataset"))
 	}
-	want := map[string]any{"file": "data/users.jsonl", "records": 3.0, "used": 3.0, "used_max": 5.0, "order": "file", "seed": nil, "reuse": true}
+	want := map[string]any{"file": "data/users.jsonl", "sha256": "", "records": 3.0, "used": 3.0, "used_max": 5.0, "order": "file", "seed": nil, "reuse": true}
 	if len(obj) != len(want) {
 		t.Errorf("dataset = %v, want exactly %v", obj, want)
 	}

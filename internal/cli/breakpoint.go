@@ -63,6 +63,9 @@ type BreakpointRun struct {
 	Connections int
 	// Compression is app.compression: "gzip", or empty for none.
 	Compression string
+	// Passport is the config and the machine of the search; nil prints no
+	// machine line and leaves the passport out of the JSON.
+	Passport *Passport
 	// Thresholds is the verdict on breakpoint.pass; nil when the config set
 	// none.
 	Thresholds []threshold.Result
@@ -273,6 +276,7 @@ func PrintBreakpoint(w io.Writer, run BreakpointRun) {
 	}
 	fmt.Fprintln(w)
 
+	printPassport(w, run.Passport)
 	if run.Name != "" {
 		fmt.Fprintf(w, "name: %s\n", run.Name)
 	}
@@ -348,16 +352,19 @@ func searchNotes(res breakpoint.Result) []string {
 // BreakpointReport is the search as --output json writes it: mode
 // "breakpoint", none of a plain run's top-level fields.
 type BreakpointReport struct {
-	SchemaVersion   int            `json:"schema_version"`
-	Mode            string         `json:"mode"`
-	LeetTestVersion string         `json:"leettest_version"`
-	Target          string         `json:"target"`
-	Name            string         `json:"name"`
-	MethodsSource   *string        `json:"methods_source"`
-	Method          string         `json:"method"`
-	StartedAt       string         `json:"started_at"`
-	Settings        jsonSearch     `json:"settings"`
-	Breakpoint      jsonBreakpoint `json:"breakpoint"`
+	SchemaVersion   int        `json:"schema_version"`
+	Mode            string     `json:"mode"`
+	LeetTestVersion string     `json:"leettest_version"`
+	Target          string     `json:"target"`
+	Name            string     `json:"name"`
+	MethodsSource   *string    `json:"methods_source"`
+	Method          string     `json:"method"`
+	StartedAt       string     `json:"started_at"`
+	Settings        jsonSearch `json:"settings"`
+	// Passport is the config and the machine of the search; the steps in
+	// breakpoint.runs carry none.
+	Passport   *jsonPassport  `json:"passport,omitempty"`
+	Breakpoint jsonBreakpoint `json:"breakpoint"`
 	// Thresholds is the verdict on breakpoint.pass; null when the config set
 	// none.
 	Thresholds *[]jsonThreshold `json:"thresholds"`
@@ -469,6 +476,7 @@ func NewBreakpointReport(run BreakpointRun) BreakpointReport {
 
 	return BreakpointReport{
 		Settings:      settings,
+		Passport:      passportJSON(run.Passport),
 		SchemaVersion: JSONSchemaVersion, Mode: ModeBreakpoint,
 		LeetTestVersion: run.Version, Target: run.Target, Name: run.Name, Method: run.Method,
 		MethodsSource: run.MethodsSource.kind(),

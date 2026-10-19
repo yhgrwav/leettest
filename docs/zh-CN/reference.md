@@ -31,6 +31,7 @@ load:
 | 字段 | 作用 |
 |---|---|
 | `name` | 可选。运行在标题中的名称。省略时——如果所有方法属于同一个服务，则为服务名，否则为配置文件名 |
+| `labels` | 可选。报告“护照”打印的 `key: "value"` 键值对，用于区分不同的运行（`env: staging`、`commit: abc123`）。键为 1 到 64 个 `A-Za-z0-9_.-` 字符；值是不超过 256 字节的 YAML 字符串，数字请加引号（`"1.10"`）。`-label` 可添加键值对，或替换配置中的同名键值对——未发布 |
 | `app.target` | 服务地址：`ip` 和 `port` |
 | `app.tls` | TLS。省略时开启。`false`——不加密的连接 |
 | `app.ca` | 用于校验服务的 PEM 证书文件，替代系统证书。需要 TLS |
@@ -245,6 +246,7 @@ seed 在启动时选取，每个调用各有一个。
 | `-c` | 配置文件路径 |
 | `-output` | stdout 上的报告格式：`text`（默认）或供脚本和 CI 使用的 `json` |
 | `-json-file` | 新文件的路径：JSON 报告（与 `-output json` 输出的对象相同）写入该文件，stdout 仍按 `-output` 的设定。文件已存在或目录不存在，则在开始前退出码 1。没有报告的运行不留下文件。写入失败为退出码 1——未发布 |
+| `-label` | 给报告“护照”的 `key=value` 标签；可重复使用。与配置 `labels` 中的同名键冲突时以它为准。同一个键给两次，或违反键、值规则，都在开始前退出码 1——未发布 |
 | `-connect-timeout` | 服务接受了连接却不应答时等待多久。默认 `10s`。连接被拒绝和地址错误不会等待 |
 | `-max-in-flight` | 等待应答的请求数上限。默认 `5000` |
 | `-plain` | 不用实时屏幕：每秒一行进度输出到 stderr，与没有终端时相同，并且没有首次运行的对话。报告和退出码不变 |
@@ -316,6 +318,14 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `settings.connections` | int | 按配置的 `app.connections`，默认 1；`connections.open` 是实际打开的数量——未发布 |
 | `settings.warmup_us` | int | 按配置的预热。搜索：`settle` 时长——未发布 |
 | `settings.compression` | string? | 按配置的 `app.compression`：`"gzip"`，`null` 表示省略——未发布 |
+| `passport` | object? | 这次运行所用的机器和配置，用于区分不同的运行。搜索只在顶层有一个，`breakpoint.runs` 中的各次运行没有——未发布 |
+| `passport.config_sha256` | string | 配置文件读入时字节的 SHA-256，64 位十六进制——未发布 |
+| `passport.os`、`passport.arch` | string | 生成器的 `GOOS` 和 `GOARCH`，如 `linux` 和 `amd64`——未发布 |
+| `passport.num_cpu` | int | 生成器进程看到的逻辑 CPU 数——未发布 |
+| `passport.gomaxprocs` | int | 启动时的 `GOMAXPROCS`——未发布 |
+| `passport.cpu_quota` | float? | cgroup 的 CPU 配额（按 CPU 数，如 `4`、`0.5`），不受 `gomaxprocs` 限制；`null`——没有配额或不是 Linux——未发布 |
+| `passport.go_version` | string | 构建该二进制所用的 Go 版本——未发布 |
+| `passport.labels` | object | 标签，键到字符串；没有时为 `{}`——未发布 |
 | `sent` | int | 被测量的调用，不含 `not_sent`。包括 `unreachable` 和 `aborted` |
 | `failed` | int | `sent` 中所有未成功的调用，不含 `aborted` |
 | `aborted` | int | 被我们自己的停止截断 |
@@ -413,6 +423,7 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `methods[].last_answer_at_us` | int? | 目标应答过的最后一个调用的发出时刻；`null`——从未应答 |
 | `methods[].dataset` | object? | 该调用的请求文件；`null`——没有 |
 | `methods[].dataset.file` | string | 配置里写的路径 |
+| `methods[].dataset.sha256` | string | 文件在磁盘上原样的 SHA-256（含字节序标记），64 位十六进制——未发布 |
 | `methods[].dataset.records` | int | 文件中的请求数 |
 | `methods[].dataset.used` | int | 其中至少发出过一次的数量 |
 | `methods[].dataset.used_max` | int | 被用得最多的那条发出了几次；在搜索中——从第一步算到本次运行结束 |

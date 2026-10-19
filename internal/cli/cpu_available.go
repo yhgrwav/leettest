@@ -49,12 +49,12 @@ func AvailableCPU() float64 {
 func AvailableCores(root fs.FS, gomaxprocs int) float64 {
 	procs := float64(gomaxprocs)
 
-	quota, err := cgroupQuota(root)
-	if err != nil || quota <= 0 {
+	quota := CPUQuota(root)
+	if quota == nil {
 		return procs
 	}
 
-	return min(procs, quota)
+	return min(procs, *quota)
 }
 
 // cgroupQuota is the CPU limit of the process's cgroup in cores.
@@ -237,10 +237,19 @@ func unescapeMount(s string) string {
 // CPUQuota is the cgroup CPU limit in cores as the cgroup says it, above
 // GOMAXPROCS as well, and nil when there is no readable limit.
 func CPUQuota(root fs.FS) *float64 {
-	return nil
+	quota, err := cgroupQuota(root)
+	if err != nil || quota <= 0 {
+		return nil
+	}
+
+	return &quota
 }
 
-// HostCPUQuota is CPUQuota of this host.
+// HostCPUQuota is CPUQuota of this host; nil off Linux.
 func HostCPUQuota() *float64 {
-	return nil
+	if runtime.GOOS != "linux" {
+		return nil
+	}
+
+	return CPUQuota(os.DirFS("/"))
 }

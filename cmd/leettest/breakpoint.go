@@ -54,6 +54,8 @@ type searchSetup struct {
 	stepBefore  time.Duration
 	// source is where the method came from; nil under -fake.
 	source *cli.MethodsSource
+	// passport is the config and the machine of the search.
+	passport *cli.Passport
 }
 
 // searchScreen says whether a search draws its full screen: only in a
@@ -249,7 +251,7 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 		Target:     s.target, Name: cli.ServiceLabel(s.cfg, s.configPath), Version: versionString(version, info), Method: method,
 		StartedAt: started, Plan: plan, Result: res, Runs: aligned(res.Steps, runs, searchSettings(s, s.maxInFlight, plan.Settle)),
 		MethodsSource: s.source, Connections: s.cfg.App.Connections,
-		Compression: s.cfg.App.Compression,
+		Compression: s.cfg.App.Compression, Passport: s.passport,
 	}
 	if b := s.cfg.Load.Breakpoint; b != nil && b.RawPass != nil {
 		report.Thresholds = []threshold.Result{threshold.EvaluateSearch(res, b.Pass)}

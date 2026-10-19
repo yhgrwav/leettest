@@ -235,7 +235,9 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		output         = flags.String("output", "text", "report format on stdout: text, or json for scripts")
 		jsonFile       = flags.String("json-file", "", "also write the JSON report to this new file")
 		plain          = flags.Bool("plain", false, "no live screen: progress lines on stderr, as when stderr is not a terminal")
+		labelArgs      labelFlags
 	)
+	flags.Var(&labelArgs, "label", "a key=value label for the report, repeatable; wins over the config's labels")
 
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -259,11 +261,18 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 	if err := checkFakeFlags(flags, *fake); err != nil {
 		return err
 	}
+	flagLabels, err := parseLabels(labelArgs)
+	if err != nil {
+		return err
+	}
 
 	cfg, err := config.LoadFile(*configPath)
 	if err != nil {
 		return err
 	}
+	// The machine as the run starts; the config is read once, and its hash is
+	// of the bytes that were read.
+	passport := cli.NewPassport(cfg.SHA256, mergeLabels(cfg.Labels, flagLabels), cpuQuota())
 
 	target := string(cfg.App.Address)
 
@@ -384,7 +393,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 			cfg: cfg, configPath: *configPath, target: target, sender: sender, calls: opts.Calls,
 			unchecked: unchecked, maxInFlight: *maxInFlight, capSet: capSet, connect: connectWithin,
 			json: *output == "json", jsonFile: *jsonFile, interactive: interactive, stepBefore: stepBefore,
-			source: source,
+			source: source, passport: passport,
 		}, stdout, stderr)
 	}
 
@@ -476,6 +485,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 			ClockStep: max(stepBefore, time.Duration(stepAfter.Load())), ClockStepBefore: stepBefore,
 			GeneratorCPU: meter.Result(report, cores),
 			Name:         cli.ServiceLabel(cfg, *configPath),
+			Passport:     passport,
 			Settings: &cli.RunSettings{
 				MaxInFlight: *maxInFlight, Connections: cfg.App.Connections, Warmup: cfg.Load.Warmup,
 				Compression: cfg.App.Compression,

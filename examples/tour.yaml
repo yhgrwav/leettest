@@ -5,6 +5,8 @@
 # TLS and mTLS: tour-tls.yaml. The quickstart walks through it: docs/en/quickstart.md.
 
 name: tour                          # the run's name in the header
+labels:                             # key: "value" pairs for the report's passport; -label key=value adds or overrides
+  env: local                        # a value is a string: quote a number, "1.10"
 
 app:
   target:
