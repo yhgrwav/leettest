@@ -11,6 +11,15 @@ settings.max_in_flight int?
 settings.connections int
 settings.warmup_us int
 settings.compression string?
+passport object?
+passport.config_sha256 string
+passport.os string
+passport.arch string
+passport.num_cpu int
+passport.gomaxprocs int
+passport.cpu_quota float?
+passport.go_version string
+passport.labels map
 breakpoint object
 breakpoint.outcome string
 breakpoint.held_rps int?

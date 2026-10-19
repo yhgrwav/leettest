@@ -31,6 +31,7 @@ load:
 | Field | What it does |
 |---|---|
 | `name` | Optional. What to call the run in the header. Left out — the service name if every method belongs to one service, otherwise the config file name |
+| `labels` | Optional. Pairs `key: "value"` the report's passport prints, for telling runs apart (`env: staging`, `commit: abc123`). A key is 1 to 64 characters of `A-Za-z0-9_.-`; a value is a YAML string of up to 256 bytes, so quote a number (`"1.10"`). `-label` adds a pair or replaces the config's — not released |
 | `app.target` | The service address: `ip` and `port` |
 | `app.tls` | TLS. Left out — on. `false` — an unencrypted connection |
 | `app.ca` | A PEM file of certificates to verify the service with instead of the system ones. Needs TLS |
@@ -278,6 +279,7 @@ not split between machines, and a stop leaves records unsent.
 | `-c` | Path to the config |
 | `-output` | Report format on stdout: `text` (the default) or `json` for scripts and CI |
 | `-json-file` | Path of a new file: the JSON report (the same object `-output json` prints) is written to it, and stdout stays as `-output` says. An existing file or a missing directory is exit 1 before the start. A run with no report leaves no file. A failed write is exit 1 — not released |
+| `-label` | A `key=value` label for the report's passport; repeat it for several. Wins over the same key in the config's `labels`. A key given twice, or one that breaks the key and value rules, is exit 1 before the start — not released |
 | `-connect-timeout` | How long to wait for a service that accepted the connection but stays silent. Default `10s`. A refused connection and a wrong address are not waited for |
 | `-max-in-flight` | Cap on requests waiting for a reply. Default `5000` |
 | `-plain` | No live screen: a progress line once a second on stderr, as without a terminal, and no first-run dialog. The report and exit codes are the same |
@@ -356,6 +358,14 @@ measured calls only. The first column is the field's full path.
 | `settings.connections` | int | `app.connections` as configured, 1 by default; `connections.open` is what opened — not released |
 | `settings.warmup_us` | int | The warm-up as configured. A search: the settle — not released |
 | `settings.compression` | string? | `app.compression` as configured: `"gzip"`, `null` — left out — not released |
+| `passport` | object? | The machine and the config the run was made with, for telling runs apart. A search has it once at the top level, its runs in `breakpoint.runs` do not — not released |
+| `passport.config_sha256` | string | SHA-256 of the config file's bytes as read, 64 hex digits — not released |
+| `passport.os`, `passport.arch` | string | `GOOS` and `GOARCH` of the generator, such as `linux` and `amd64` — not released |
+| `passport.num_cpu` | int | Logical CPUs the generator's process sees — not released |
+| `passport.gomaxprocs` | int | `GOMAXPROCS` at the start — not released |
+| `passport.cpu_quota` | float? | The cgroup CPU quota in CPUs as set (`4`, `0.5`), not capped by `gomaxprocs`; `null` — no quota, or not Linux — not released |
+| `passport.go_version` | string | The Go version the binary was built with — not released |
+| `passport.labels` | object | The labels, key to string; `{}` without any — not released |
 | `sent` | int | Measured calls, except `not_sent`. `unreachable` and `aborted` are in it |
 | `failed` | int | Of `sent` — every call that did not succeed, except `aborted` |
 | `aborted` | int | Cut off by our own stop |
@@ -454,6 +464,7 @@ The rest are plain counters.
 | `methods[].last_answer_at_us` | int? | When the last call the target answered went out; `null` — it never answered |
 | `methods[].dataset` | object? | The call's dataset file; `null` — it has none |
 | `methods[].dataset.file` | string | The path as the config wrote it |
+| `methods[].dataset.sha256` | string | SHA-256 of the file as it lies on disk, a byte-order mark included, 64 hex digits — not released |
 | `methods[].dataset.records` | int | Requests in the file |
 | `methods[].dataset.used` | int | How many of them were handed to the sender at least once |
 | `methods[].dataset.used_max` | int | How many times the most used one was handed to the sender; in a search, counted from its first step to the end of this run |

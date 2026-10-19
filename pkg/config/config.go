@@ -71,13 +71,22 @@ var (
 	ErrInvalidCompression = errors.New("app.compression must be gzip, or left out")
 	// ErrProtoSource is app.proto or app.protoset that cannot be used as written.
 	ErrProtoSource = errors.New("invalid proto source")
+	// ErrInvalidLabel is a label that breaks the rules of CheckLabel or is not a string.
+	ErrInvalidLabel = errors.New("invalid label")
 )
 
 type MasterConfig struct {
 	// Name is what the header calls the run; nil leaves it to the service or file.
 	Name *string `yaml:"name"`
-	App  App     `yaml:"app"`
-	Load Load    `yaml:"load"`
+	// RawLabels is labels as written. A value that is not a string is an error
+	// and not a string made of it: 1.10 would come out as 1.1.
+	RawLabels map[string]any `yaml:"labels"`
+	// Labels are the checked labels; empty without any.
+	Labels map[string]string `yaml:"-"`
+	// SHA256 is the sha256 of the config's bytes as Parse got them, hex.
+	SHA256 string `yaml:"-"`
+	App    App    `yaml:"app"`
+	Load   Load   `yaml:"load"`
 }
 
 type App struct {
@@ -294,6 +303,8 @@ type Call struct {
 	RawDataset *string         `yaml:"dataset"`
 	Dataset    string          `yaml:"-"`
 	Records    []DatasetRecord `yaml:"-"`
+	// DatasetSHA256 is the sha256 of the dataset file, hex, as it is on disk.
+	DatasetSHA256 string `yaml:"-"`
 	// DatasetOrder is file or random; DatasetSeed the seed of random. Nil when left out.
 	DatasetOrder *string `yaml:"dataset_order"`
 	DatasetSeed  *int64  `yaml:"dataset_seed"`

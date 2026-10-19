@@ -15,6 +15,8 @@
 package config
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -65,6 +67,9 @@ func Parse(raw []byte) (*MasterConfig, error) {
 		return nil, fmt.Errorf("%w: %w", ErrReadConfig, err)
 	}
 
+	sum := sha256.Sum256(raw)
+	cfg.SHA256 = hex.EncodeToString(sum[:])
+
 	if err := cfg.resolve(); err != nil {
 		return nil, err
 	}
@@ -79,6 +84,9 @@ func Parse(raw []byte) (*MasterConfig, error) {
 }
 
 func (m *MasterConfig) resolve() error {
+	if err := m.resolveLabels(); err != nil {
+		return err
+	}
 	m.App.ResolveTLS()
 	if err := m.App.resolveMetadata(); err != nil {
 		return err

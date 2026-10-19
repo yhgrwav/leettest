@@ -55,6 +55,9 @@ type RunReport struct {
 	Name string
 	// Settings are what the run was started with; nil prints no settings line.
 	Settings *RunSettings
+	// Passport is the config and the machine of the run; nil prints no machine
+	// line and leaves the passport out of the JSON.
+	Passport *Passport
 	// Thresholds are the verdicts on the limits the config set; nil when it
 	// set none, which prints no block and writes null.
 	Thresholds []threshold.Result
@@ -92,6 +95,7 @@ func PrintReport(w io.Writer, target string, run RunReport) {
 	if run.MethodsSource != nil {
 		fmt.Fprintln(w, run.MethodsSource.Line())
 	}
+	printPassport(w, run.Passport)
 	if run.Name != "" {
 		fmt.Fprintf(w, "name: %s\n", run.Name)
 	}

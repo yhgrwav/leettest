@@ -17,6 +17,15 @@ settings.max_in_flight int
 settings.connections int
 settings.warmup_us int
 settings.compression string?
+passport object?
+passport.config_sha256 string
+passport.os string
+passport.arch string
+passport.num_cpu int
+passport.gomaxprocs int
+passport.cpu_quota float?
+passport.go_version string
+passport.labels map
 sent int
 failed int
 aborted int
@@ -206,6 +215,7 @@ methods[].silent_planned_rps_high int?
 methods[].last_answer_at_us int?
 methods[].dataset object?
 methods[].dataset.file string
+methods[].dataset.sha256 string
 methods[].dataset.records int
 methods[].dataset.used int
 methods[].dataset.used_max int

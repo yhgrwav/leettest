@@ -95,6 +95,8 @@ func (e *DatasetExhaustedError) Error() string {
 type DatasetRef struct {
 	// File is the path as the config wrote it; the report carries it.
 	File string
+	// SHA256 is the sha256 of the file, hex; the report carries it.
+	SHA256 string
 	// Counter is S of the call, shared by every run that carries this Call
 	// (copies of it included); nil gives each run a count of its own.
 	Counter *RecordCounter
@@ -401,7 +403,7 @@ func (e *Engine) datasetReport(call Call) *DatasetReport {
 	}
 
 	n := len(call.Payloads)
-	report := &DatasetReport{File: call.Dataset.File, Records: n, Used: min(s, n)}
+	report := &DatasetReport{File: call.Dataset.File, SHA256: call.Dataset.SHA256, Records: n, Used: min(s, n)}
 	if n > 0 {
 		report.UsedMax = (s + n - 1) / n
 	}

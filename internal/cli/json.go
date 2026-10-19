@@ -80,7 +80,10 @@ type JSONReport struct {
 	PlannedUS   int64  `json:"planned_us"`
 	WarmupUS    int64  `json:"warmup_us"`
 	// Settings echo what the run was started with, as configured.
-	Settings          jsonSettings    `json:"settings"`
+	Settings jsonSettings `json:"settings"`
+	// Passport is the config and the machine of the run, at the top of a run's
+	// report; a step inside a search has none and the key is left out.
+	Passport          *jsonPassport   `json:"passport,omitempty"`
 	Sent              int             `json:"sent"`
 	Failed            int             `json:"failed"`
 	Aborted           int             `json:"aborted"`
@@ -237,7 +240,9 @@ type jsonCode struct {
 // jsonDataset is how a call used its dataset file; the file as the config
 // wrote it, and the counts of engine.DatasetReport.
 type jsonDataset struct {
-	File    string `json:"file"`
+	File string `json:"file"`
+	// SHA256 is the sha256 of the file as it is on disk, hex: what sha256sum prints.
+	SHA256  string `json:"sha256"`
 	Records int    `json:"records"`
 	Used    int    `json:"used"`
 	UsedMax int    `json:"used_max"`
@@ -383,6 +388,7 @@ func NewJSONReport(run JSONRun) JSONReport {
 		PlannedUS:         micros(r.Planned),
 		WarmupUS:          micros(r.Warmup),
 		Settings:          settingsOf(run.Run.Settings),
+		Passport:          passportJSON(run.Run.Passport),
 		Sent:              r.Sent,
 		Failed:            r.Failed,
 		Aborted:           r.Aborted,
@@ -530,7 +536,7 @@ func jsonMethodOf(m *engine.MethodReport, warmup time.Duration) jsonMethod {
 		out.LastAnswerAtUS = &at
 	}
 	if d := m.Dataset; d != nil {
-		out.Dataset = &jsonDataset{File: d.File, Records: d.Records, Used: d.Used, UsedMax: d.UsedMax, Order: "file", Reuse: !d.Once}
+		out.Dataset = &jsonDataset{File: d.File, SHA256: d.SHA256, Records: d.Records, Used: d.Used, UsedMax: d.UsedMax, Order: "file", Reuse: !d.Once}
 		if d.Random {
 			out.Dataset.Order, out.Dataset.Seed = "random", &d.Seed
 		}
