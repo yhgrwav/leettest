@@ -53,6 +53,49 @@ const (
 
 // CapacityDrop judges the fall from base to new against limit. A reason is
 // given only for Unknown.
-func CapacityDrop(_, _ Capacity, _ share.Percent) (verdict Verdict, reason string) {
-	return Unknown, ""
+//
+// The fall is (base − new) / base. A bound narrows it to a range, and the
+// verdict follows the range: Fail only when the smallest possible fall is
+// over the limit, Pass only when the largest possible fall is within it,
+// otherwise Unknown.
+func CapacityDrop(base, nw Capacity, limit share.Percent) (verdict Verdict, reason string) {
+	switch {
+	case base.Bound == None:
+		return Unknown, "base not measured (" + base.Outcome + ")"
+	case nw.Bound == None:
+		return Unknown, "new not measured (" + nw.Outcome + ")"
+	case base.Bound == Upper:
+		return Unknown, "base broke at the first step: lower the plan to see a drop"
+	case base.RPS <= 0:
+		return Unknown, "base capacity is 0 rps"
+	}
+
+	over := share.Decide(max(base.RPS-nw.RPS, 0), 0, base.RPS, limit) == share.Breaks
+
+	switch {
+	case nw.Bound == Upper:
+		if over {
+			return Fail, ""
+		}
+
+		return Unknown, "new broke at the first step: lower the plan to see the drop"
+	case base.Bound == Lower && nw.Bound == Lower:
+		return Unknown, "both capacities are lower bounds"
+	case base.Bound == Lower:
+		if over {
+			return Fail, ""
+		}
+
+		return Unknown, "base capacity is only a lower bound (" + base.Outcome + ")"
+	case nw.Bound == Lower:
+		if !over {
+			return Pass, ""
+		}
+
+		return Unknown, "new run ended before its capacity (" + nw.Outcome + ")"
+	case over:
+		return Fail, ""
+	}
+
+	return Pass, ""
 }

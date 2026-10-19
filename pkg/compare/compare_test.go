@@ -100,6 +100,21 @@ func TestCapacity_BaseThatBrokeAtTheFirstStepIsUnknown(t *testing.T) {
 	}
 }
 
+// Ground: boundary — a base of 0 rps has no fall to measure (a share of
+// nothing): unknown, never a pass of 0 against 0 or a fail of anything.
+func TestCapacity_ABaseOfZeroIsUnknown(t *testing.T) {
+	for name, tc := range map[string]struct{ base, nw compare.Capacity }{
+		"exact base, new the same": {exact(0), exact(0)},
+		"exact base, new above":    {exact(0), exact(500)},
+		"lower base":               {lower(0, "held_all"), exact(0)},
+	} {
+		got, why := compare.CapacityDrop(tc.base, tc.nw, limit("10%"))
+		if got != compare.Unknown || why != "base capacity is 0 rps" {
+			t.Errorf("%s: %s %q, want unknown, base capacity is 0 rps", name, verdictNames[got], why)
+		}
+	}
+}
+
 // Ground: contract — a capacity that was not measured makes the check
 // unknown, naming which side and the outcome; this comes before the base-zero
 // rule.
