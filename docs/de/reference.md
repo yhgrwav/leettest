@@ -33,6 +33,7 @@ load:
 | Feld | Was es tut |
 |---|---|
 | `name` | Optional. Wie der Lauf in der Kopfzeile heißt. Weggelassen — der Dienstname, wenn alle Methoden zu einem Dienst gehören, sonst der Name der Konfigurationsdatei |
+| `labels` | Optional. Paare `key: "value"`, die der Pass des Berichts druckt, um Läufe zu unterscheiden (`env: staging`, `commit: abc123`). Ein Schlüssel hat 1 bis 64 Zeichen aus `A-Za-z0-9_.-`; ein Wert ist ein YAML-String von bis zu 256 Bytes, eine Zahl also in Anführungszeichen (`"1.10"`). `-label` fügt ein Paar hinzu oder ersetzt das der Konfiguration — nicht veröffentlicht |
 | `app.target` | Die Adresse des Dienstes: `ip` und `port` |
 | `app.tls` | TLS. Weggelassen — an. `false` — eine unverschlüsselte Verbindung |
 | `app.ca` | Eine PEM-Datei mit Zertifikaten, mit denen der Dienst statt mit den System-Zertifikaten geprüft wird. Braucht TLS |
@@ -288,6 +289,7 @@ ein Anhalten lässt Datensätze ungesendet.
 | `-c` | Pfad zur Konfiguration |
 | `-output` | Berichtsformat auf stdout: `text` (Standard) oder `json` für Skripte und CI |
 | `-json-file` | Pfad einer neuen Datei: der JSON-Bericht (dasselbe Objekt wie bei `-output json`) wird hineingeschrieben, stdout bleibt, wie `-output` es sagt. Eine vorhandene Datei oder ein fehlendes Verzeichnis ist Exit 1 vor dem Start. Ein Lauf ohne Bericht hinterlässt keine Datei. Ein fehlgeschlagenes Schreiben ist Exit 1 — nicht veröffentlicht |
+| `-label` | Ein Label `key=value` für den Pass des Berichts; mehrfach angebbar. Es gewinnt gegen denselben Schlüssel in `labels` der Konfiguration. Ein doppelt angegebener Schlüssel oder einer, der die Regeln für Schlüssel und Wert verletzt, ist Exit 1 vor dem Start — nicht veröffentlicht |
 | `-connect-timeout` | Wie lange auf einen Dienst gewartet wird, der die Verbindung angenommen hat, aber schweigt. Standard `10s`. Auf eine abgelehnte Verbindung und eine falsche Adresse wird nicht gewartet |
 | `-max-in-flight` | Grenze für Anfragen, die auf eine Antwort warten. Standard `5000` |
 | `-plain` | Ohne Live-Bildschirm: eine Fortschrittszeile pro Sekunde auf stderr, wie ohne Terminal, und ohne den Dialog beim ersten Start. Der Bericht und die Exit-Codes sind dieselben |
@@ -368,6 +370,14 @@ unten den Typ „percentile?" hat.
 | `settings.connections` | int | `app.connections` wie konfiguriert, standardmäßig 1; `connections.open` ist, was sich geöffnet hat — nicht veröffentlicht |
 | `settings.warmup_us` | int | Das Aufwärmen wie konfiguriert. Suche: die Einschwingzeit `settle` — nicht veröffentlicht |
 | `settings.compression` | string? | `app.compression` wie konfiguriert: `"gzip"`, `null` — weggelassen — nicht veröffentlicht |
+| `passport` | object? | Die Maschine und die Konfiguration, mit denen der Lauf gemacht wurde, um Läufe zu unterscheiden. Eine Suche hat ihn einmal auf oberster Ebene, ihre Läufe in `breakpoint.runs` nicht — nicht veröffentlicht |
+| `passport.config_sha256` | string | SHA-256 der Bytes der Konfigurationsdatei, wie gelesen, 64 Hexziffern — nicht veröffentlicht |
+| `passport.os`, `passport.arch` | string | `GOOS` und `GOARCH` des Generators, etwa `linux` und `amd64` — nicht veröffentlicht |
+| `passport.num_cpu` | int | Logische CPUs, die der Prozess des Generators sieht — nicht veröffentlicht |
+| `passport.gomaxprocs` | int | `GOMAXPROCS` beim Start — nicht veröffentlicht |
+| `passport.cpu_quota` | float? | Die CPU-Quote der cgroup in CPUs, wie gesetzt (`4`, `0.5`), nicht durch `gomaxprocs` gekappt; `null` — keine Quote oder nicht Linux — nicht veröffentlicht |
+| `passport.go_version` | string | Die Go-Version, mit der das Binary gebaut wurde — nicht veröffentlicht |
+| `passport.labels` | object | Die Labels, Schlüssel auf String; `{}` ohne welche — nicht veröffentlicht |
 | `sent` | int | Gemessene Aufrufe, außer `not_sent`. `unreachable` und `aborted` sind enthalten |
 | `failed` | int | Aus `sent` — jeder Aufruf, der nicht erfolgreich war, außer `aborted` |
 | `aborted` | int | Durch unser eigenes Anhalten abgeschnitten |
@@ -466,6 +476,7 @@ Die übrigen sind einfache Zähler.
 | `methods[].last_answer_at_us` | int? | Wann der letzte Aufruf rausging, den das Ziel beantwortet hat; `null` — es hat nie geantwortet |
 | `methods[].dataset` | object? | Die Anfragedatei des Aufrufs; `null` — er hat keine |
 | `methods[].dataset.file` | string | Der Pfad, wie ihn die Konfiguration schreibt |
+| `methods[].dataset.sha256` | string | SHA-256 der Datei, wie sie auf der Platte liegt, eine Byte-Order-Mark eingeschlossen, 64 Hexziffern — nicht veröffentlicht |
 | `methods[].dataset.records` | int | Anfragen in der Datei |
 | `methods[].dataset.used` | int | Wie viele davon mindestens einmal rausgingen |
 | `methods[].dataset.used_max` | int | Wie oft die am häufigsten genutzte rausging; in einer Suche — vom ersten Schritt bis zum Ende dieses Laufs |

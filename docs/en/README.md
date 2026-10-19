@@ -200,6 +200,34 @@ p99 is a lower bound the shift is unknown and there is no note.
 prints a line `clock step 502us on this host: every latency and wait is +/- 502us`. On Linux the
 step is tens of nanoseconds, and there is no line.
 
+### Run passport
+
+The report opens with a passport: which machine and which config the run was made with, so that two
+reports can be compared without guessing what differs. A run and a breaking-point search both have
+it.
+
+```text
+machine: linux/amd64, 8 CPU, GOMAXPROCS 8, quota 4, go1.27.1; config sha256:3f9a1c0d2b7e
+labels: commit=abc123, env=staging
+```
+
+- `quota` is the container's CPU limit (cgroup) as set; without a limit there is no such part.
+- The hash is the SHA-256 of the config file as it lies on disk, the same as `sha256sum load.yaml`;
+  the text shows the first 12 digits, the JSON all of them. Any edit of the file, a comment
+  included, changes it. It is taken before `${ENV}` is substituted: put secrets in `metadata`
+  through `${ENV}`, not as values in the file.
+- Labels (not released) are `labels:` in the config and `-label key=value` on the command line (repeatable; the
+  flag wins over the same key in the config):
+
+```sh
+leettest -c load.yaml -label env=staging -label commit=abc123
+```
+
+A key is Latin letters, digits and `_.-`, up to 64 characters; a value is a string of up to 256
+bytes, and in YAML a number goes in quotes (`build: "1.10"`). A violation is exit `1` before the
+start. In the JSON the passport is the `passport` field (not released), and a dataset has `sha256` next to `file`;
+every field is in the [reference](reference.md#json-fields).
+
 ## When a run is invalid
 
 There is a report, but its numbers are not about the load on the target (exit 2), if:

@@ -104,7 +104,9 @@ func failureCodes(codes map[codeKey]int) []CodeCount {
 // handed out. All of it from S, the requests handed out in the whole process
 // to that moment, warm-up included.
 type DatasetReport struct {
-	File    string
+	File string
+	// SHA256 is the sha256 of the file as it is on disk, hex.
+	SHA256  string
 	Records int
 	// Used is min(S, Records).
 	Used int
