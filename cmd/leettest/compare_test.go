@@ -312,18 +312,26 @@ func TestCompare_CapacityIsPrintedAndJudgedByItsBound(t *testing.T) {
 // upper bound of the fall rounds up, a lower bound rounds down (a third of 300
 // rps is 33.33%), so neither can be read as better or worse than the data.
 func TestCompare_ABoundOfTheFallIsRoundedTowardWhatIsKnown(t *testing.T) {
-	res, _, _ := compared(t, brokeAt(300), endedAt(breakpoint.HeldThroughout, 200))
+	held := func(rps int) reportSpec { return endedAt(breakpoint.HeldThroughout, rps) }
 
-	wantExit(t, res, 0)
-	if got, want := lineStarting(t, res.stdout, "capacity:"), "capacity: 300 rps -> >= 200 rps, drop <= 33.4%"; got != want {
-		t.Errorf("capacity line %q, want %q", got, want)
-	}
+	for _, tc := range []struct {
+		name     string
+		base, nw reportSpec
+		line     string
+	}{
+		{"fall, new a lower bound", brokeAt(300), held(200), "capacity: 300 rps -> >= 200 rps, drop <= 33.4%"},
+		{"fall, base a lower bound", held(300), brokeAt(200), "capacity: >= 300 rps -> 200 rps, drop >= 33.3%"},
+		{"fall, new broke at the first step", brokeAt(300), brokeAtFirstOf(200), "capacity: 300 rps -> below 200 rps, drop >= 33.3%"},
+		{"rise, new a lower bound", brokeAt(300), held(400), "capacity: 300 rps -> >= 400 rps, rise >= 33.3%"},
+		{"rise, base a lower bound", held(300), brokeAt(400), "capacity: >= 300 rps -> 400 rps, rise <= 33.4%"},
+		{"rise, new broke at the first step", brokeAt(300), brokeAtFirstOf(400), "capacity: 300 rps -> below 400 rps, rise <= 33.4%"},
+	} {
+		res, _, _ := compared(t, tc.base, tc.nw)
 
-	res, _, _ = compared(t, endedAt(breakpoint.HeldThroughout, 300), brokeAt(200))
-
-	wantExit(t, res, 0)
-	if got, want := lineStarting(t, res.stdout, "capacity:"), "capacity: >= 300 rps -> 200 rps, drop >= 33.3%"; got != want {
-		t.Errorf("capacity line %q, want %q", got, want)
+		wantExit(t, res, 0)
+		if got := lineStarting(t, res.stdout, "capacity:"); got != tc.line {
+			t.Errorf("%s: capacity line %q, want %q", tc.name, got, tc.line)
+		}
 	}
 }
 
