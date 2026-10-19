@@ -210,32 +210,82 @@ There is a report, but its numbers are not about the load on the target (exit 2)
   The note names the method, the cause and what to do.
 - **the host clock is coarser than a quarter of the p50** of some method, or the step grew during
   the run to 1 µs or more (`clock_step`). Measure from Linux.
+- **a `pass` limit cannot be decided** (`thresholds_undecided`): too few observations, the
+  generator was late, calls waited for a free stream, a tail of calls with no answer. The
+  `Thresholds:` block names the limit and the reason.
+
+## Pass limits: a run as a check
+
+Without `pass`, a run that reaches its end returns `0` however the target answered. To have the run
+say "holds / does not hold" itself, set limits under the call:
+
+```yaml
+app:
+  target:
+    ip: localhost
+    port: 50051
+  tls: false
+
+load:
+  warmup: 5s
+  calls:
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 800
+      duration: 1m
+      pass:
+        p99: 200ms
+        errors: 1%
+```
+
+```sh
+leettest -c pass.yaml
+echo $?
+```
+
+The report ends with a block: the worst verdict and a row per limit. For a healthy service:
+
+```
+Thresholds: passed
+  wallet.v1.WalletService/GetBalance  p99     <= 200ms  pass  21.2ms
+  wallet.v1.WalletService/GetBalance  errors  <= 1%     pass  0.0% (0 of 44000)
+```
+
+The keys are `p50`, `p90`, `p95`, `p99`, `p999` and `errors`; a latency limit needs `errors` next
+to it, and `errors: 100%` switches the failure check off, which makes the latency limits worth
+nothing. A breaking-point search's limit is `breakpoint.pass.held_rps`. A missed limit gives exit
+code `4`; a limit that cannot be decided (too few observations, a late generator, a tail of calls
+with no answer) gives `2`. All keys, verdicts and reasons are in the
+[reference](reference.md#pass-limits); an example with every key is
+[`examples/pass.yaml`](../../examples/pass.yaml).
 
 ## Exit codes
 
-There are no "holds / does not hold" thresholds yet, so a run that reaches its end returns `0`
-however the target answered: **`0` does not mean "the service is healthy"**. The codes are ranked:
-an invalid run (`2`) outranks an incomplete one (`3`); a stop that did print a report is always `3`.
+Without `pass`, a run that reaches its end returns `0` however the target answered: **`0` does not
+mean "the service is healthy"**. With `pass`, `0` means every limit was checked and held. The codes
+are ranked: an invalid run (`2`) outranks an incomplete one (`3`); a stop that did print a report
+is always `3`; a finished run that missed a limit is `4`, and limits never turn an invalid or
+stopped run into `4`.
 
 | Code | What happened |
 |---|---|
-| `0` | The plan ran, the report is complete |
+| `0` | The plan ran, the report is complete; with `pass`, every limit held |
 | `1` | The report you asked for was not produced: the run did not happen (flags, config, connection) or the report could not be written to `-json-file` (not released). stderr says why |
-| `2` | The run is invalid (see above). There is a report, but its numbers are not about the load |
+| `2` | The run is invalid (see above), or a `pass` limit cannot be decided. There is a report, but its numbers are not about the load or do not answer the limit's question |
 | `3` | The run stopped before its plan. There is a report, and it covers only what got through |
+| `4` | A finished run missed a `pass` limit. There is a report, and `outcome` in the JSON is `complete` |
 | `130` | Aborted without a report after Ctrl+C |
 | `143` | Aborted without a report after SIGTERM |
 
-Code `4` is reserved for thresholds. How stopping works is in the
-[reference](reference.md#stopping).
+How stopping works is in the [reference](reference.md#stopping).
 
 ## JSON for scripts and CI
 
 With `-output json`, stdout gets exactly one JSON object and a newline; everything else goes to
 stderr, so stdout can go straight into `jq`. The object is printed only for a run that happened
-(codes `0`, `2`, `3`); on `1`, `130` and `143` stdout is empty. The `outcome` field (`complete`,
-`invalid` or `incomplete`) always matches the exit code, except in one case: if the report could not
-be written to the file (not released), the code is `1` and stdout still holds the run's object.
+(codes `0`, `2`, `3`, `4`); on `1`, `130` and `143` stdout is empty. The `outcome` field
+(`complete`, `invalid` or `incomplete`) matches exit code `0`, `2`, `3`; code `4` is `complete`, and
+the `thresholds` field (not released) says which limit was missed. The one exception: if the report could not be
+written to the file (not released), the code is `1` and stdout still holds the run's object.
 
 For the text in the log and the JSON for the next step from one run, use `-json-file` (not released):
 
@@ -324,7 +374,7 @@ in `breakpoint.runs` (`kind`: `step`, `repeat`, `probe`; `planned_rps` and `sent
 writes `mode: "run"`.
 
 Exit codes: `0` for `broke`, `broke_at_first`, `held_all`, `run_limit` — they are findings; `2` for
-`invalid`; `3` for a stop by one Ctrl+C.
+`invalid`; `3` for a stop by one Ctrl+C; `4` when the search held less than `breakpoint.pass.held_rps`.
 
 ## Going deeper
 

@@ -134,6 +134,15 @@ jobs:
           bin/leettest -c examples/leettest.yaml -output json > leettest.json
           # (800 + 50) rps for 1m, the 5s warm-up counted apart.
           jq -e '.sent == 46750' leettest.json
+      - name: Run examples/pass.yaml
+        run: |
+          pkill -x stand || true
+          while pgrep -x stand > /dev/null; do sleep 0.2; done
+          bin/stand -delay 20ms -life 75s &
+          sleep 1
+          # A healthy stand: every limit holds, so the exit code is 0 (a miss is 4).
+          bin/leettest -c examples/pass.yaml -output json > pass.json
+          jq -e '(.thresholds | length) == 8 and all(.thresholds[]; .verdict == "pass")' pass.json
 
   # The stand's Go code is generated from wallet.proto with pinned tools:
   # regenerating must change nothing.

@@ -295,9 +295,13 @@ Exit codes:
 | `1` | The report you asked for was not produced: the run did not happen (flags, config, connection) or the report could not be written to `-json-file` (not released). stderr says why |
 | `2` | Invalid run: the in-flight cap, every call of a method a request error, or the host clock coarser than a quarter of the p50. A report exists; its numbers are not about the load |
 | `3` | Stopped before the plan ended. The report covers what ran |
+| `4` | A finished run missed a `pass` limit. The report exists; `thresholds` (not released) says which |
 | `130`, `143` | Killed by Ctrl+C or SIGTERM, no report |
 
-There are no pass/fail thresholds yet: in CI check the exit code and the JSON fields.
+For a pass/fail gate in CI set `pass` limits under the call
+([`examples/pass.yaml`](../../examples/pass.yaml), [README, «Pass limits»](README.md#pass-limits-a-run-as-a-check))
+and fail the build on a non-zero exit code; the `thresholds` JSON field (not released) says which
+limit was missed or could not be decided.
 
 ## 8. No service at all
 

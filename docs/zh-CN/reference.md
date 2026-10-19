@@ -53,6 +53,8 @@ load:
 | `load.calls[].dataset_order` | `file`（省略时）或 `random`：文件中请求的顺序。需要 `dataset`——未发布 |
 | `load.calls[].dataset_seed` | 0 到 9007199254740991 的整数，固定随机顺序。需要 `dataset_order: random`。省略时自行选取并在报告中输出——未发布 |
 | `load.calls[].dataset_reuse` | `true`（省略时）或 `false`：为 `false` 时，整个进程中没有任何一条记录会发出两次。需要 `dataset`——未发布 |
+| `load.calls[].pass` | 运行要通过必须满足的限值：`p50`、`p90`、`p95`、`p99`、`p999`、`errors`，见[下文](#pass-限值)。省略时没有限值——未发布 |
+| `load.breakpoint.pass` | 崩溃点搜索的限值：`held_rps`，见[下文](#pass-限值)。省略时没有限值——未发布 |
 
 配置严格解析：字段名拼写错误会报错并给出行号，取值错误会报错并给出调用的序号和方法，而不是以空负载
 运行。`rps` 是整数：`10.5` 会被拒绝，而不是悄悄取整为十。`warmup` 必须短于每个调用，否则该调用
@@ -65,6 +67,53 @@ load:
 应答，以及目标在哪次发出的调用之后不再应答。如果上限仍被耗尽，说明有名额被占用超过截止时间 100 ms
 以上——原因在压测机（CPU 不足）或发送方，报告会判定运行无效。同时报告会输出当时有多少名额被占用
 超过了截止时间。
+
+## Pass 限值
+
+调用下的 `pass` 规定运行在什么取值下算通过：
+
+```yaml
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 800
+      duration: 1m
+      pass:
+        p99: 200ms
+        errors: 1%
+```
+
+所有键都在 [`examples/pass.yaml`](../../examples/pass.yaml) 中，搜索的限值在
+[`examples/breakpoint.yaml`](../../examples/breakpoint.yaml) 中。
+
+| 键 | 限值 |
+|---|---|
+| `p50`、`p90`、`p95`、`p99`、`p999` | 延迟不超过限值：带单位的时长（`200ms`），整数微秒，大于零，小于该调用的 `timeout`，且小于一小时。旁边必须有 `errors`：否则立即拒绝调用的目标也能通过延迟限值。`p999` 需要 1000 个被测量的调用：`rps` ×（`duration` − `warmup`） |
+| `errors` | 失败调用的占比不超过限值：带 `%` 的百分数（`1%`、`0.5%`），小数点后最多三位，不超过 `100%`。不带 `%` 的数字不会被猜测。`errors: 100%` 会关掉失败检查，这时延迟限值就毫无价值 |
+| `breakpoint.pass.held_rps` | 搜索必须至少守住这么多每秒调用。整数，且是搜索计划中的某一级。调用下的 `pass` 不能与 `load.breakpoint` 同时出现 |
+
+`pass` 写错的配置会在启动前报错（退出码 1），而不是不做检查就运行。空的 `pass: {}` 同样报错。
+
+**每个限值都有一个结论**：`pass`、`fail` 或 `unknown`。报告会输出 `Thresholds:` 块，给出最差的结论，
+并为每个限值一行；JSON 中是 `thresholds` 字段。
+
+| 结果 | 退出码 |
+|---|---|
+| 所有限值都是 `pass` | `0` |
+| 已结束的运行没达到某个限值（`fail`） | `4`，`outcome` 仍为 `complete` |
+| 没有 `fail`，但某个限值无法判定（`unknown`） | `2`，`invalid_reasons` 含 `thresholds_undecided` |
+| 运行无效或被停止 | `2` 或 `3`，与没有限值时相同：限值不改变它们 |
+
+未达标比未判定更重：同时有 `fail` 和 `unknown` 时，退出码为 `4`。
+
+当数字不可信或缺失时，限值为 `unknown`；原因来自封闭列表：`incomplete`（运行被停止）、`invalid`
+（运行无效）、`few_observations`（百分位未被测量）、`run_limit`（搜索触及运行自身的上限）、
+`generator`（压测机来晚了）、`stream`（调用在等空闲的 stream）、`client_errors`（起决定作用的是
+客户端自己的失败，而不是目标的）、`nothing_sent`（一个调用也没发出）、`censored`（尾部有在超时内没有
+应答的调用：该值只是下界，且不高于限值）。
+
+- 延迟按整数微秒比较，与报告输出一致。高于限值的下界算 `fail`：真实值还要更大。
+- 占比统计所有失败的调用，以及因没有连接而未发出的调用，除以所有被统计的调用。对 `fail` 只计由目标
+  决定的失败：被客户端拒绝的请求、客户端错误和错误的响应都说明不了目标。
+- 限值那一行绝不与其结论矛盾：如果四舍五入到三位有效数字的值会落在所输出限值的错误一侧，就输出精确值。
 
 ## 访问服务
 
@@ -254,8 +303,8 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `target` | string | 配置中的目标地址，使用 `-fake` 时为 `fake target` |
 | `name` | string | 运行的名称：配置中的 `name`，否则为服务名，否则为配置文件名；始终是字符串——未发布 |
 | `methods_source` | string? | 方法的来源：`reflection`、`proto`（`app.proto` 的文件）或 `protoset`；使用 `-fake` 时为 `null`——未发布 |
-| `outcome` | string | `complete`、`invalid`、`incomplete`——对应退出码 `0`、`2`、`3`；使用 `-json-file` 且写入失败时退出码为 `1`，`outcome` 仍是该次运行的 |
-| `invalid_reasons` | []string | 运行无效的原因：`in_flight_cap`、`nothing_measured`、`clock_step`。为空——有效 |
+| `outcome` | string | `complete`、`invalid`、`incomplete`——对应退出码 `0`、`2`、`3`；已结束但没达到 `pass` 限值的运行是 `complete`，退出码 `4`；使用 `-json-file` 且写入失败时退出码为 `1`，`outcome` 仍是该次运行的 |
+| `invalid_reasons` | []string | 运行无效的原因：`in_flight_cap`、`nothing_measured`、`clock_step`、`thresholds_undecided`（某个 `pass` 限值无法判定，且原因不是运行被停止或已经无效）。为空——有效 |
 | `tail_wait_cause` | string? | 决定尾部的客户端侧等待：`generator`、`stream`、`connection`；`null`——没有结论 |
 | `clock_step_ns` | int | 主机时钟步长，纳秒：每个延迟和等待都有 ± 这个值的误差 |
 | `started_at` | string | 计划开始时刻，RFC 3339 UTC，包括预热。所有 `_us` 和 `_s` 都从它算起 |
@@ -309,6 +358,16 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `unchecked[].method` | string | 方法 |
 | `unchecked[].reason` | string | `reflection_off` 或 `reflection_failed` |
 | `unchecked[].error` | string | 给人看的文本，随 grpc-go 变化 |
+| `thresholds` | []object? | `pass` 限值的结论，每个限值一个对象，键都相同；不属于该限值的键为 `null`。`null`——没有设置限值（不是空列表，空列表会被读成“全部通过”）。搜索把它写在顶层——未发布 |
+| `thresholds[].method` | string? | 带前导斜杠的方法，与报告中的写法一致；`null`——搜索的限值——未发布 |
+| `thresholds[].key` | string | `p50`、`p90`、`p95`、`p99`、`p999`、`errors`、`held_rps`——未发布 |
+| `thresholds[].verdict` | string | `pass`、`fail`、`unknown`——未发布 |
+| `thresholds[].reason` | string? | 为什么是 `unknown`，取自列表：`incomplete`、`invalid`、`few_observations`、`run_limit`、`generator`、`stream`、`client_errors`、`nothing_sent`、`censored`；`pass` 和 `fail` 时为 `null`——未发布 |
+| `thresholds[].limit_us` | int? | 延迟限值，整数微秒；其他键为 `null`——未发布 |
+| `thresholds[].value` | percentile? | 用来比较的被测百分位；`null`——未被测量，或该键与延迟无关——未发布 |
+| `thresholds[].limit_percent` | string? | `errors` 限值，按配置中的写法，如 `"0.5%"`；其他键为 `null`——未发布 |
+| `thresholds[].bad`、`thresholds[].bad_client`、`thresholds[].total` | int? | `errors` 的占比：失败的调用（含因没有连接而未发出的）、其中不由目标决定的、所有被统计的调用。其他键以及一个调用也没被统计时为 `null`——未发布 |
+| `thresholds[].limit_rps`、`thresholds[].held_rps` | int? | 搜索的限值和它守住的值；其他键为 `null`——未发布 |
 | `notes` | []string | 报告中的提示，给人看的 ASCII 文本；不要解析 |
 
 ### 方法：`methods[]`

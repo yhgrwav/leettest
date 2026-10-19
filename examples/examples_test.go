@@ -138,6 +138,34 @@ func TestExamples_CoverEveryField(t *testing.T) {
 	}
 }
 
+// pass is a map in the config, so the field walk sees one leaf: the keys it
+// takes are checked here, each set in some example.
+func TestExamples_CoverEveryPassKey(t *testing.T) {
+	setKeys := map[string]bool{}
+
+	for _, name := range examples(t) {
+		cfg := loadExample(t, name)
+		for i := range cfg.Load.Calls {
+			if raw := cfg.Load.Calls[i].RawPass; raw != nil {
+				for key := range *raw {
+					setKeys[key] = true
+				}
+			}
+		}
+		if b := cfg.Load.Breakpoint; b != nil && b.RawPass != nil {
+			for key := range *b.RawPass {
+				setKeys[key] = true
+			}
+		}
+	}
+
+	for _, key := range []string{"p50", "p90", "p95", "p99", "p999", "errors", "held_rps"} {
+		if !setKeys[key] {
+			t.Errorf("no example sets pass.%s", key)
+		}
+	}
+}
+
 // The Russian examples are the English ones with Russian comments: the same
 // files, loading to the same config.
 func TestExamples_LanguagesParseEqual(t *testing.T) {
