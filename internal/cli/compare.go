@@ -167,10 +167,11 @@ func differences(base, nw SearchFile) []string {
 	differ("leettest_version", base.Report.LeetTestVersion, nw.Report.LeetTestVersion, "")
 
 	bp, np := base.Report.Passport, nw.Report.Passport
-	for _, f := range []SearchFile{base, nw} {
-		if f.Report.Passport == nil {
-			out = append(out, f.Path+": "+noPassportNote)
-		}
+	if bp == nil {
+		out = append(out, base.Path+": "+noPassportNote)
+	}
+	if np == nil {
+		out = append(out, nw.Path+": "+noPassportNote)
 	}
 	if bp != nil && np != nil {
 		differ("passport.config_sha256", bp.ConfigSHA256, np.ConfigSHA256, " (config bytes differ: a comment or line endings count too)")
@@ -199,9 +200,10 @@ func quotaText(q *float64) string {
 // when it used none.
 func datasetHash(r BreakpointReport) string {
 	if len(r.Breakpoint.Runs) > 0 {
-		for _, m := range r.Breakpoint.Runs[0].Report.Methods {
-			if m.Method == r.Method && m.Dataset != nil {
-				return m.Dataset.SHA256
+		methods := r.Breakpoint.Runs[0].Report.Methods
+		for i := range methods {
+			if methods[i].Method == r.Method && methods[i].Dataset != nil {
+				return methods[i].Dataset.SHA256
 			}
 		}
 	}
