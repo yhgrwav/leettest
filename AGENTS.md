@@ -122,6 +122,12 @@ the capacity fell past the limit, `2` the reports differ in a field the printed 
 names, or the limit cannot be decided from a bound (`>=` or `below`): tell the user it was not
 checked, never that it held.
 
+Two plain-run reports (`-json-file` of a run) take `-max-p99-rise 20%` (the p99 rise per method, in
+percent of the base p99) and `-max-errors-rise 1%` (the rise of the failed share, in points):
+`leettest compare -max-p99-rise 20% before.json after.json`. Same exit codes. `2` also when a run
+is invalid or incomplete, a p99 hit the timeout (`>=`) or client-side errors leave it open: tell the
+user the check was not made. A search report and a run report together is `1`.
+
 ### Reading the JSON
 
 Every JSON field is described in the [reference, «JSON fields»](https://github.com/yhgrwav/leettest/blob/main/docs/en/reference.md#json-fields),
