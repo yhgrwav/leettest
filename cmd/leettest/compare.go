@@ -57,8 +57,20 @@ func runCompare(args []string, stdout, stderr io.Writer) error {
 		flagErrorsRise:   flags.String(flagErrorsRise, "", "plain runs: fail when a method's share of failed calls rose by more than this many points, such as 1%"),
 	}
 
+	output := flags.String("output", "text", "report format: text or json")
+
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+
+	// Stub for the red tests: json mode writes an empty object, the text goes
+	// nowhere.
+	if *output == "json" {
+		if err := cli.WriteCompareJSON(stdout, cli.CompareReport{}); err != nil {
+			return err
+		}
+
+		stdout = io.Discard
 	}
 
 	if flags.NArg() != 2 {

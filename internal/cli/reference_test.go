@@ -90,9 +90,9 @@ type referenceDoc struct {
 }
 
 // documentedPaths are the paths in the first column of every table under the
-// heading, up to the end of the file. The category placeholder runs over
-// answerCategories; the percentile placeholder over every path whose type is
-// a percentile.
+// heading, up to the next heading of its level or the end of the file. The
+// category placeholder runs over answerCategories; the percentile placeholder
+// over every path whose type is a percentile.
 func documentedPaths(t *testing.T, doc referenceDoc) []string {
 	t.Helper()
 
@@ -104,6 +104,7 @@ func documentedPaths(t *testing.T, doc referenceDoc) []string {
 	if !ok {
 		t.Fatalf("%s has no %q section", doc.file, doc.heading)
 	}
+	section, _, _ = strings.Cut(section, "\n## ")
 
 	type row struct {
 		paths      []string
@@ -200,6 +201,65 @@ func TestReference_DescribesEveryJSONField(t *testing.T) {
 		if cats := slices.Sorted(slices.Values(answerCategories())); !slices.Equal(names, cats) {
 			t.Errorf("%s: %s is said to be %v, the JSON has %v", doc.file, doc.category, names, cats)
 		}
+		var missing, extra []string
+		for _, p := range want {
+			if !slices.Contains(got, p) {
+				missing = append(missing, p)
+			}
+		}
+		for _, p := range got {
+			if !slices.Contains(want, p) {
+				extra = append(extra, p)
+			}
+		}
+		if len(missing) > 0 || len(extra) > 0 {
+			t.Errorf("%s, %q: missing %v, not in the schema %v", doc.file, doc.heading, missing, extra)
+		}
+	}
+}
+
+// comparePaths are the field paths of schema_compare_v1.txt, such as
+// "checks[].base_p99.us".
+func comparePaths(t *testing.T) []string {
+	t.Helper()
+
+	data, err := os.ReadFile("testdata/schema_compare_v1.txt")
+	if err != nil {
+		t.Fatalf("read golden schema: %v", err)
+	}
+	var paths []string
+	for line := range strings.Lines(string(data)) {
+		if path, _, _ := strings.Cut(strings.TrimSpace(line), " "); path != "" {
+			paths = append(paths, path)
+		}
+	}
+	slices.Sort(paths)
+
+	return paths
+}
+
+// Every field of `leettest compare -output json` is described in the Russian
+// and English reference by its full path, in a section of its own, and the
+// tables name no path the schema does not have. German and Chinese catch up
+// before the release.
+func TestReference_DescribesEveryCompareJSONField(t *testing.T) {
+	want := comparePaths(t)
+	for _, doc := range []referenceDoc{
+		{"../../docs/ru/reference.md", "## JSON сравнения", "<категория>", "<перцентиль>", "перцентиль"},
+		{"../../docs/en/reference.md", "## Compare JSON", "<category>", "<percentile>", "percentile"},
+	} {
+		got := documentedPaths(t, doc)
+
+		var dup []string
+		for i := 1; i < len(got); i++ {
+			if got[i] == got[i-1] && !slices.Contains(dup, got[i]) {
+				dup = append(dup, got[i])
+			}
+		}
+		if len(dup) > 0 {
+			t.Errorf("%s: described more than once %v", doc.file, dup)
+		}
+
 		var missing, extra []string
 		for _, p := range want {
 			if !slices.Contains(got, p) {
