@@ -118,6 +118,32 @@ func FormatFraction(r *big.Rat, limit Percent, v Verdict) string {
 	return fixed(tenth, 1) + "%"
 }
 
+// FormatBound is the change r, a fraction (1/2 is 50%), printed as a bound
+// that is true of the exact change, with its qualifier: "<= 33.4%" for an
+// upper bound (upper is set), ">= 20.04%" for a lower one, or "> 20%", the
+// limit as written, when no digits kept are over it. limit is nil when there
+// is none; with a limit, Undecided is an unknown verdict. r is not negative.
+//
+// Red-test stub: the text the callers print today, not the rounding the spec
+// asks for.
+func FormatBound(r *big.Rat, upper bool, limit *Percent, v Verdict) string {
+	qualifier := ">= "
+	if upper {
+		qualifier = "<= "
+	}
+
+	if limit != nil && v != Undecided {
+		return qualifier + FormatFraction(r, *limit, v)
+	}
+
+	tenths := new(big.Int).Mul(r.Num(), big.NewInt(1000))
+	if upper {
+		tenths.Add(tenths, r.Denom()).Sub(tenths, big.NewInt(1))
+	}
+
+	return qualifier + fixed(tenths.Div(tenths, r.Denom()).Int64(), 1) + "%"
+}
+
 func digitsAfterPoint(written string) int {
 	_, fraction, _ := strings.Cut(strings.TrimSuffix(written, "%"), ".")
 
