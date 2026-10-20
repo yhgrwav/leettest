@@ -306,6 +306,7 @@ func TestFormatBound_IsATrueBoundOnTheVerdictsSide(t *testing.T) {
 		{"upper, a hair past a tenth, holds", rat(2004, 10000), true, limitOf("21%"), share.Holds, "<= 20.1%"},
 		{"upper, the tenth is over a limit with digits", rat(20001, 100000), true, limitOf("20.01%"), share.Holds, "<= 20.01%"},
 		{"upper, three digits of the limit", rat(200021, 1000000), true, limitOf("20.003%"), share.Holds, "<= 20.003%"},
+		{"upper, all three digits of the limit, not the first that fits", rat(20049, 100000), true, limitOf("20.051%"), share.Holds, "<= 20.049%"},
 		{"upper, up to 100%", rat(1, 1), true, limitOf("100%"), share.Holds, "<= 100.0%"},
 		{"upper, zero", rat(0, 1), true, nil, share.Undecided, "<= 0.0%"},
 		{"upper, unknown with a limit", rat(2004, 10000), true, limitOf("20%"), share.Undecided, "<= 20.1%"},
