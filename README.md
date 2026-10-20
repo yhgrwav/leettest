@@ -493,6 +493,25 @@ p99 вырос с 21.2 до 31.3 ms, это 47.3% при пределе 20%, к�
 ошибки самого клиента не дают решить, виноват ли сервис. Методы, которых нет в обоих отчётах, не
 сравниваются. Коды выхода те же, что у поисков.
 
+Для скрипта и CI тот же результат — одним JSON-объектом (не выпущено): `-output json` печатает в
+stdout только его, коды выхода и stderr те же, что у текста; при коде `1` stdout пуст.
+
+```sh
+leettest compare -max-p99-rise 20% -output json before.json after.json
+```
+
+В объекте `verdict` — худший вердикт проверок с пределом (`null`, если пределов нет), а в
+`checks` — каждая проверка с числами обоих отчётов; у `unknown` причина в `reason` — значение из
+закрытого списка:
+
+```json
+{"schema_version":1,"mode":"compare","compared_mode":"run","comparable":true,"differences":[],"verdict":"fail","checks":[{"method":"/grpc.health.v1.Health/Check","key":"p99","base_p99":{"us":21381,"lower_bound":false},"new_p99":{"us":31358,"lower_bound":false},"limit_percent":"20%","verdict":"fail","reason":null,"why":null}]}
+```
+
+Показаны не все поля: пустые у этой проверки (`base_capacity` и другие `null`) и описание
+отчётов (`base`, `new`) опущены. Процента роста в объекте нет — скрипт считает его из `us`. Каждое
+поле описано в [справочнике, «JSON сравнения»](docs/ru/reference.md#json-сравнения).
+
 ## Дальше
 
 У нас есть план развития продукта — **[roadmap](docs/ru/roadmap.md)**. Не хватает возможности —
