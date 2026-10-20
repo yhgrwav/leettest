@@ -35,37 +35,60 @@ const noPassportNote = "no passport (report from leettest before v0.3)"
 // differ.
 const notComparable = "reports are not comparable"
 
-// ReadSearchReport reads a breaking-point search report as -json-file writes
-// it. A field this leettest does not know is ignored.
-func ReadSearchReport(path string) (BreakpointReport, error) {
+// ComparedReport is a report read for compare. Mode says which of the two
+// reports is filled: ModeRun Run, ModeBreakpoint Search.
+type ComparedReport struct {
+	Mode   string
+	Run    JSONReport
+	Search BreakpointReport
+}
+
+// ReadReport reads a report as -json-file writes it, a plain run or a
+// breaking-point search. A field this leettest does not know is ignored.
+func ReadReport(path string) (ComparedReport, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return BreakpointReport{}, err
+		return ComparedReport{}, err
 	}
 
 	var head struct {
 		SchemaVersion int    `json:"schema_version"`
 		Mode          string `json:"mode"`
 	}
-	if err := json.Unmarshal(raw, &head); err != nil {
-		return BreakpointReport{}, fmt.Errorf("%s: not a JSON report: %w", path, err)
+	if err = json.Unmarshal(raw, &head); err != nil {
+		return ComparedReport{}, fmt.Errorf("%s: not a JSON report: %w", path, err)
 	}
 
-	switch {
-	case head.SchemaVersion != JSONSchemaVersion:
-		return BreakpointReport{}, fmt.Errorf("%s: schema_version %d, this leettest reads %d", path, head.SchemaVersion, JSONSchemaVersion)
-	case head.Mode == ModeRun:
-		return BreakpointReport{}, fmt.Errorf("%s is a plain run; compare reads two breakpoint search reports for now", path)
-	case head.Mode != ModeBreakpoint:
-		return BreakpointReport{}, fmt.Errorf("%s: mode %q is not a breakpoint search report", path, head.Mode)
+	if head.SchemaVersion != JSONSchemaVersion {
+		return ComparedReport{}, fmt.Errorf("%s: schema_version %d, this leettest reads %d", path, head.SchemaVersion, JSONSchemaVersion)
 	}
 
-	var report BreakpointReport
-	if err := json.Unmarshal(raw, &report); err != nil {
-		return BreakpointReport{}, fmt.Errorf("%s: not a breakpoint search report: %w", path, err)
+	out := ComparedReport{Mode: head.Mode}
+
+	switch head.Mode {
+	case ModeRun:
+		err = json.Unmarshal(raw, &out.Run)
+	case ModeBreakpoint:
+		err = json.Unmarshal(raw, &out.Search)
+	default:
+		return ComparedReport{}, fmt.Errorf("%s: mode %q is neither a plain run nor a breakpoint search report", path, head.Mode)
 	}
 
-	return report, nil
+	if err != nil {
+		return ComparedReport{}, fmt.Errorf("%s: not a %s report: %w", path, KindOf(head.Mode), err)
+	}
+
+	return out, nil
+}
+
+// KindOf words a report's mode for a message: a plain run, a breakpoint
+// search.
+func KindOf(mode string) string {
+	if mode == ModeBreakpoint {
+		return "breakpoint search"
+	}
+
+	return "plain run"
 }
 
 // SearchFile is a search report and the path it was read from.
@@ -74,13 +97,14 @@ type SearchFile struct {
 	Report BreakpointReport
 }
 
-// Comparison is what CompareSearches decided.
+// Comparison is what CompareSearches and CompareRuns decided.
 type Comparison struct {
-	// Comparable: no difference between the reports that would make their
-	// capacities incomparable.
+	// Comparable: no difference between the reports that would make them
+	// incomparable (for runs, also at least one method on both sides).
 	Comparable bool
-	// Judged: a limit was given; Verdict is then the check's answer, Unknown
-	// when the reports are not comparable.
+	// Judged: at least one limit was given; Verdict is then the worst of the
+	// checks asked for (Fail, else Unknown, else Pass), Unknown when the
+	// reports are not comparable.
 	Judged  bool
 	Verdict compare.Verdict
 }
@@ -89,8 +113,8 @@ type Comparison struct {
 // the differences, the capacity of each and, with a limit, the verdict on its
 // fall.
 func CompareSearches(w io.Writer, base, nw SearchFile, limit *shr.Percent) Comparison {
-	printHeader(w, "base:", base)
-	printHeader(w, "new: ", nw)
+	printHeader(w, "base:", base.Path, base.Report.Name, base.Report.StartedAt, base.Report.Passport)
+	printHeader(w, "new: ", nw.Path, nw.Report.Name, nw.Report.StartedAt, nw.Report.Passport)
 
 	diffs := differences(base, nw)
 	for _, d := range diffs {
@@ -134,14 +158,14 @@ func CompareSearches(w io.Writer, base, nw SearchFile, limit *shr.Percent) Compa
 	return Comparison{Comparable: true, Judged: true, Verdict: verdict}
 }
 
-func printHeader(w io.Writer, tag string, f SearchFile) {
-	name := f.Report.Name
+// printHeader is the line naming a report: its file, name, start and labels.
+func printHeader(w io.Writer, tag, path, name, startedAt string, p *jsonPassport) {
 	if name == "" {
 		name = "-"
 	}
 
-	line := fmt.Sprintf("%s %s  %s  %s", tag, f.Path, name, f.Report.StartedAt)
-	if p := f.Report.Passport; p != nil && len(p.Labels) > 0 {
+	line := fmt.Sprintf("%s %s  %s  %s", tag, path, name, startedAt)
+	if p != nil && len(p.Labels) > 0 {
 		pairs := make([]string, 0, len(p.Labels))
 		for _, k := range slices.Sorted(maps.Keys(p.Labels)) {
 			pairs = append(pairs, k+"="+p.Labels[k])
@@ -156,36 +180,50 @@ func printHeader(w io.Writer, tag string, f SearchFile) {
 // differs by design.
 func differences(base, nw SearchFile) []string {
 	var out []string
-	differ := func(field, b, n, note string) {
-		if b != n {
-			out = append(out, "differs: "+field+": "+b+" -> "+n+note)
-		}
+
+	out = differ(out, "target", base.Report.Target, nw.Report.Target, "")
+	out = differ(out, "method", base.Report.Method, nw.Report.Method, "")
+	out = differ(out, "leettest_version", base.Report.LeetTestVersion, nw.Report.LeetTestVersion, "")
+	out = append(out, passportDifferences(base.Path, nw.Path, base.Report.Passport, nw.Report.Passport)...)
+
+	return differ(out, "dataset", datasetHash(base.Report), datasetHash(nw.Report), "")
+}
+
+// differ adds the line naming a field whose two values differ.
+func differ(out []string, field, b, n, note string) []string {
+	if b == n {
+		return out
 	}
 
-	differ("target", base.Report.Target, nw.Report.Target, "")
-	differ("method", base.Report.Method, nw.Report.Method, "")
-	differ("leettest_version", base.Report.LeetTestVersion, nw.Report.LeetTestVersion, "")
+	return append(out, "differs: "+field+": "+b+" -> "+n+note)
+}
 
-	bp, np := base.Report.Passport, nw.Report.Passport
+// passportDifferences are the lines for a missing passport, else for each
+// field of the two that differs, in the order of the passport. The paths name
+// the file without one.
+func passportDifferences(basePath, newPath string, bp, np *jsonPassport) []string {
+	var out []string
+
 	if bp == nil {
-		out = append(out, base.Path+": "+noPassportNote)
+		out = append(out, basePath+": "+noPassportNote)
 	}
+
 	if np == nil {
-		out = append(out, nw.Path+": "+noPassportNote)
-	}
-	if bp != nil && np != nil {
-		differ("passport.config_sha256", bp.ConfigSHA256, np.ConfigSHA256, " (config bytes differ: a comment or line endings count too)")
-		differ("passport.os", bp.OS, np.OS, "")
-		differ("passport.arch", bp.Arch, np.Arch, "")
-		differ("passport.num_cpu", strconv.Itoa(bp.NumCPU), strconv.Itoa(np.NumCPU), "")
-		differ("passport.gomaxprocs", strconv.Itoa(bp.GOMAXPROCS), strconv.Itoa(np.GOMAXPROCS), "")
-		differ("passport.cpu_quota", quotaText(bp.CPUQuota), quotaText(np.CPUQuota), "")
-		differ("passport.go_version", bp.GoVersion, np.GoVersion, "")
+		out = append(out, newPath+": "+noPassportNote)
 	}
 
-	differ("dataset", datasetHash(base.Report), datasetHash(nw.Report), "")
+	if bp == nil || np == nil {
+		return out
+	}
 
-	return out
+	out = differ(out, "passport.config_sha256", bp.ConfigSHA256, np.ConfigSHA256, " (config bytes differ: a comment or line endings count too)")
+	out = differ(out, "passport.os", bp.OS, np.OS, "")
+	out = differ(out, "passport.arch", bp.Arch, np.Arch, "")
+	out = differ(out, "passport.num_cpu", strconv.Itoa(bp.NumCPU), strconv.Itoa(np.NumCPU), "")
+	out = differ(out, "passport.gomaxprocs", strconv.Itoa(bp.GOMAXPROCS), strconv.Itoa(np.GOMAXPROCS), "")
+	out = differ(out, "passport.cpu_quota", quotaText(bp.CPUQuota), quotaText(np.CPUQuota), "")
+
+	return differ(out, "passport.go_version", bp.GoVersion, np.GoVersion, "")
 }
 
 func quotaText(q *float64) string {

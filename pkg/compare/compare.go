@@ -14,7 +14,11 @@
 
 package compare
 
-import "github.com/yhgrwav/leettest/pkg/share"
+import (
+	"math/big"
+
+	"github.com/yhgrwav/leettest/pkg/share"
+)
 
 // Bound says what a capacity's RPS is.
 type Bound int
@@ -98,4 +102,121 @@ func CapacityDrop(base, nw Capacity, limit share.Percent) (verdict Verdict, reas
 	}
 
 	return Pass, ""
+}
+
+// The reasons a check can be unknown, a closed list. The first of
+// NotComparable, Invalid, Incomplete, Generator and Stream that applies wins
+// over the check's own.
+const (
+	ReasonNotComparable   = "not_comparable"
+	ReasonInvalid         = "invalid"
+	ReasonIncomplete      = "incomplete"
+	ReasonGenerator       = "generator"
+	ReasonStream          = "stream"
+	ReasonFewObservations = "few_observations"
+	ReasonBaseZero        = "base_zero"
+	ReasonCensored        = "censored"
+	ReasonNothingSent     = "nothing_sent"
+	ReasonClientErrors    = "client_errors"
+)
+
+// Latency is the p99 of one method of a run report.
+type Latency struct {
+	// US is whole microseconds, as the report writes them.
+	US int64
+	// LowerBound: the tail ran past the timeout, the true value is larger.
+	LowerBound bool
+	// Defined is false when the method has too few observations.
+	Defined bool
+}
+
+// Share is the failed calls of one method of a run report, the parts of
+// `pass: errors`.
+type Share struct {
+	// Bad is every failed call and every call lost to the connection.
+	Bad int
+	// BadClient is the part of Bad that says nothing of the target: rejected
+	// requests, client errors, our bad responses.
+	BadClient int
+	// Total is the calls sent and those lost to the connection.
+	Total int
+}
+
+// P99Rise judges the rise of the p99 from base to new, in percent of base,
+// against limit. A reason is given only for Unknown.
+//
+// The rise is (new − base) / base in whole microseconds. A lower bound says
+// the true p99 is at least that, so a rise past the limit is certain when the
+// base is exact (the new can only be larger) and a rise within it when the
+// new is exact (the base can only be larger).
+func P99Rise(base, nw Latency, limit share.Percent) (verdict Verdict, reason string) {
+	if !base.Defined || !nw.Defined {
+		return Unknown, ReasonFewObservations
+	}
+
+	if base.US <= 0 {
+		return Unknown, ReasonBaseZero
+	}
+
+	over := (nw.US-base.US)*100000 > limit.Thousandths*base.US
+
+	switch {
+	case !base.LowerBound && !nw.LowerBound:
+		if over {
+			return Fail, ""
+		}
+
+		return Pass, ""
+	case !base.LowerBound:
+		if over {
+			return Fail, ""
+		}
+
+		return Unknown, ReasonCensored
+	case !nw.LowerBound:
+		if over {
+			return Unknown, ReasonCensored
+		}
+
+		return Pass, ""
+	}
+
+	return Unknown, ReasonCensored
+}
+
+// ErrorsRise judges the rise of the failed share from base to new, in points
+// of share, against limit. A reason is given only for Unknown.
+//
+// The rise is new.Bad/new.Total − base.Bad/base.Total, as `pass: errors`
+// reads one share: Fail when the target's own failures alone (without
+// BadClient) on the new side exceed the limit over all the base side's
+// failures, Pass when all failures on the new side stay within it over the
+// base side's own, otherwise the client-side errors decide and the verdict is
+// Unknown. Exact fractions in math/big: counts near 10^9 overflow int64.
+func ErrorsRise(base, nw Share, limit share.Percent) (verdict Verdict, reason string) {
+	if base.Total == 0 || nw.Total == 0 {
+		return Unknown, ReasonNothingSent
+	}
+
+	b, d := int64(nw.Total), int64(base.Total)
+	rhs := new(big.Int).Mul(big.NewInt(limit.Thousandths*b), big.NewInt(d))
+
+	if risePast(int64(nw.Bad-nw.BadClient), d, int64(base.Bad), b).Cmp(rhs) > 0 {
+		return Fail, ""
+	}
+
+	if risePast(int64(nw.Bad), d, int64(base.Bad-base.BadClient), b).Cmp(rhs) <= 0 {
+		return Pass, ""
+	}
+
+	return Unknown, ReasonClientErrors
+}
+
+// risePast is (a·d − c·b) · 100000, a/b − c/d scaled by b·d and by a percent
+// in thousandths.
+func risePast(a, d, c, b int64) *big.Int {
+	x := new(big.Int).Mul(big.NewInt(a), big.NewInt(d))
+	x.Sub(x, new(big.Int).Mul(big.NewInt(c), big.NewInt(b)))
+
+	return x.Mul(x, big.NewInt(100000))
 }

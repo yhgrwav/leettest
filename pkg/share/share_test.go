@@ -15,6 +15,7 @@
 package share_test
 
 import (
+	"math/big"
 	"strings"
 	"testing"
 
@@ -118,5 +119,34 @@ func TestFormat_NeverOnTheWrongSideOfTheLimit(t *testing.T) {
 		if got := share.Format(tc.bad, tc.total, tc.limit, tc.verdict); got != tc.want {
 			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
 		}
+	}
+}
+
+// Ground: boundary — a share that is a difference of two fractions with
+// totals near a billion does not fit an int64 product, and is printed by the
+// same rules as Format: a hair past the limit says more than the limit, on
+// the limit says the limit.
+func TestFormatFraction_ExactBeyondInt64(t *testing.T) {
+	half := share.Percent{Thousandths: 50000, Text: "50%"}
+
+	for _, tc := range []struct {
+		name    string
+		rat     *big.Rat
+		verdict share.Verdict
+		want    string
+	}{
+		{"on the limit", big.NewRat(1, 2), share.Holds, "50.0%"},
+		{"a hair past the limit", big.NewRat(1000000001, 2000000000), share.Breaks, "50.1%"},
+		{"a hair under holds", big.NewRat(999999999, 2000000000), share.Holds, "50.0%"},
+		{"a share of billions of calls", big.NewRat(3999999999*1000000000, 4000000000*1000000000), share.Undecided, "100.0%"},
+	} {
+		if got := share.FormatFraction(tc.rat, half, tc.verdict); got != tc.want {
+			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
+		}
+	}
+
+	// The same share through Format, which takes counts.
+	if got, want := share.Format(1, 3, share.Default, share.Undecided), share.FormatFraction(big.NewRat(1, 3), share.Default, share.Undecided); got != want {
+		t.Errorf("Format %q, FormatFraction %q", got, want)
 	}
 }

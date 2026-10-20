@@ -535,8 +535,8 @@ func TestCompare_InputErrorsExit1(t *testing.T) {
 		{"a missing file", []string{good, missing}, "", []string{missing}},
 		{"a file that is not JSON", []string{notJSON, good}, "", []string{notJSON}},
 		{"schema 2", []string{good, badSchema}, "compare: " + badSchema + ": schema_version 2, this leettest reads 1", nil},
-		{"a plain run as base", []string{plain, good}, "compare: " + plain + " is a plain run; compare reads two breakpoint search reports for now", nil},
-		{"a plain run as new", []string{good, plain}, "compare: " + plain + " is a plain run; compare reads two breakpoint search reports for now", nil},
+		{"a plain run as base", []string{plain, good}, "compare: " + plain + " is a plain run, " + good + " a breakpoint search: compare reads two of one kind", nil},
+		{"a plain run as new", []string{good, plain}, "compare: " + good + " is a breakpoint search, " + plain + " a plain run: compare reads two of one kind", nil},
 		{"a percent without a sign", []string{"-max-capacity-drop", "10", good, other}, "", []string{badPercent.Error()}},
 		{"a percent over 100", []string{"-max-capacity-drop", "101%", good, other}, "", []string{"-max-capacity-drop", "over 100%"}},
 		{"an unknown flag", []string{"-max-capacity-fall", "10%", good, other}, "", []string{"max-capacity-fall"}},
@@ -557,6 +557,29 @@ func TestCompare_InputErrorsExit1(t *testing.T) {
 			}
 		}
 	}
+}
+
+// Ground: contract — the search path keeps its exit codes and takes the new
+// texts: not comparable and an undecided capacity are 2 without the word
+// "invalid", a capacity past the limit is 4.
+func TestCompare_SearchPairUsesTheNewStderrTexts(t *testing.T) {
+	other := brokeAt(1000)
+	other.target = "10.0.0.2:50051"
+
+	res, _, _ := compared(t, brokeAt(1000), other)
+
+	wantExit(t, res, 2)
+	wantMessage(t, res, "compare: reports are not comparable: nothing decided")
+
+	res, _, _ = compared(t, brokeAtFirst(), brokeAt(1000), "-max-capacity-drop", "10%")
+
+	wantExit(t, res, 2)
+	wantMessage(t, res, "compare: a limit could not be decided")
+
+	res, _, _ = compared(t, brokeAt(1000), brokeAt(800), "-max-capacity-drop", "10%")
+
+	wantExit(t, res, 4)
+	wantMessage(t, res, "compare: a limit was not met")
 }
 
 // Ground: contract — a field this leettest does not know is ignored, so a

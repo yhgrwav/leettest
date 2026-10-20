@@ -459,7 +459,54 @@ the first step, an upper bound (`below N rps`). The drop is then printed as a bo
 (`drop <= 33.4%`), and the limit is decided only if the bound decides it. Without
 `-max-capacity-drop` nothing is judged. Exit codes: `0` within the limit or no limit, `1` a report
 that could not be read, `2` reports that cannot be compared or a limit that cannot be decided, `4`
-the capacity fell past the limit. Plain-run reports are not read yet.
+the capacity fell past the limit.
+
+### Compare two runs
+
+The same command reads plain-run reports (`-json-file`, not released): `-max-p99-rise` judges the
+rise of each method's p99 in percent of the "before" p99, `-max-errors-rise` the rise of the share of
+failed calls in percentage points. Without a limit the line is printed but not judged. A search
+report and a run report in one command is exit `1`. On the reference stand, from the repository root:
+a run at 20 ms delay, then at 30 ms:
+
+```sh
+go run ./test/stand/cmd/stand -delay 20ms -life 60s
+```
+
+```sh
+leettest -c examples/stand.yaml -json-file before.json
+```
+
+The stand exits by itself after a minute; start it with a 30 ms delay and take the "after" report:
+
+```sh
+go run ./test/stand/cmd/stand -delay 30ms -life 60s
+```
+
+```sh
+leettest -c examples/stand.yaml -json-file after.json
+```
+
+Compare (the stand can be stopped):
+
+```sh
+leettest compare -max-p99-rise 20% before.json after.json
+```
+
+```
+base: before.json  Health  2026-10-20T12:40:09.5222467Z
+new:  after.json  Health  2026-10-20T12:40:42.469917Z
+grpc.health.v1.Health/Check: p99 21.2ms -> 31.3ms, rise 47.3%, limit 20%: FAIL
+grpc.health.v1.Health/Check: errors 0.0% -> 0.0%, no change
+```
+
+The p99 rose from 21.2 to 31.3 ms, 47.3% against a limit of 20%, exit code `4`. Your times and
+delays differ.
+
+A check can be `unknown` (exit `2`) when the reports cannot be compared (as above), a run is invalid
+or incomplete, there are too few observations, a p99 ran into the timeout (so it is larger than
+printed, `>=`), or the client's own errors leave it open whether the service is at fault. Methods
+that are not in both reports are not compared. Exit codes are the same as for searches.
 
 ## Going deeper
 
