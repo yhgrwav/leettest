@@ -573,3 +573,19 @@ func TestBreakpointJSONSchema_MatchesVersion1(t *testing.T) {
 		t.Errorf("the search's JSON types do not match schema v1: a rename, removal or type change needs schema_version 2.\ngot:\n%s\n\nwant:\n%s", g, w)
 	}
 }
+
+// The compare report is a schema of its own, schema_version 1 with mode
+// "compare": a rename, removal or type change of a field needs version 2.
+func TestCompareJSONSchema_MatchesVersion1(t *testing.T) {
+	want, err := os.ReadFile("testdata/schema_compare_v1.txt")
+	if err != nil {
+		t.Fatalf("read golden schema: %v", err)
+	}
+
+	var got []string
+	schemaLines(reflect.TypeFor[CompareReport](), "", &got)
+
+	if g, w := strings.Join(got, "\n"), strings.TrimSpace(string(want)); g != w {
+		t.Errorf("the compare JSON types do not match schema v1: a rename, removal or type change needs schema_version 2.\ngot:\n%s\n\nwant:\n%s", g, w)
+	}
+}

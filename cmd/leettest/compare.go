@@ -19,6 +19,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"runtime/debug"
 
 	"github.com/yhgrwav/leettest/internal/cli"
 	"github.com/yhgrwav/leettest/pkg/compare"
@@ -57,8 +58,21 @@ func runCompare(args []string, stdout, stderr io.Writer) error {
 		flagErrorsRise:   flags.String(flagErrorsRise, "", "plain runs: fail when a method's share of failed calls rose by more than this many points, such as 1%"),
 	}
 
+	output := flags.String("output", "text", "report format: text or json")
+
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+
+	if *output != "text" && *output != "json" {
+		return fmt.Errorf("compare: -output %q: want text or json", *output)
+	}
+
+	// The text is built either way: json mode takes the object from the same
+	// comparison and lets the text go nowhere.
+	textOut := stdout
+	if *output == "json" {
+		textOut = io.Discard
 	}
 
 	if flags.NArg() != 2 {
@@ -106,14 +120,17 @@ func runCompare(args []string, stdout, stderr io.Writer) error {
 			base, cli.KindOf(reports[0].Mode), nw, cli.KindOf(reports[1].Mode))
 	}
 
-	var res cli.Comparison
+	var (
+		res cli.Comparison
+		rep cli.CompareReport
+	)
 
 	if reports[0].Mode == cli.ModeRun {
 		if limits[flagCapacityDrop] != nil {
 			return errors.New("compare: -" + flagCapacityDrop + " applies to breakpoint searches")
 		}
 
-		res = cli.CompareRuns(stdout,
+		res, rep = cli.CompareRunsReport(textOut,
 			cli.RunFile{Path: base, Report: reports[0].Run}, cli.RunFile{Path: nw, Report: reports[1].Run},
 			limits[flagP99Rise], limits[flagErrorsRise])
 	} else {
@@ -123,9 +140,17 @@ func runCompare(args []string, stdout, stderr io.Writer) error {
 			}
 		}
 
-		res = cli.CompareSearches(stdout,
+		res, rep = cli.CompareSearchesReport(textOut,
 			cli.SearchFile{Path: base, Report: reports[0].Search}, cli.SearchFile{Path: nw, Report: reports[1].Search},
 			limits[flagCapacityDrop])
+	}
+
+	if *output == "json" {
+		info, _ := debug.ReadBuildInfo()
+
+		if err := cli.WriteCompareJSON(stdout, cli.NewCompareReport(versionString(version, info), rep)); err != nil {
+			return err
+		}
 	}
 
 	return compareResult(res)

@@ -515,3 +515,89 @@ as in the run above, a plain run's other fields are not at the top level. Every 
 | `breakpoint.runs[].recovered` | bool? | For a `probe`: the target is back within 1.5× of the baseline p99; `null` for a `step` and a `repeat` |
 | `breakpoint.runs[].why` | string? | The run's cause, the same closed list as `breakpoint.why`; `null` — no cause |
 | `breakpoint.runs[].report` | object | This run's full report, the same object as a plain run's JSON (fields above) |
+
+## Comparing reports: `leettest compare`
+
+`leettest compare [flags] before.json after.json` reads two `-json-file` reports of one kind — two
+searches or two runs — and prints what changed. Flags come before the files. The command is not
+released.
+
+| Flag | What it does |
+|---|---|
+| `-max-capacity-drop` | Two searches: the limit of the capacity (`held_rps`) fall, in percent of the "before" capacity, such as `10%`. Without it the capacity is printed but not judged |
+| `-max-p99-rise` | Two runs: the limit of each method's p99 rise, in percent of the "before" p99, such as `20%` |
+| `-max-errors-rise` | Two runs: the limit of the rise of the share of failed calls, in percentage points, such as `1%` |
+| `-output` | Report format on stdout: `text` (the default) or `json` for scripts and CI. Any other value is exit 1, no file is read |
+
+The exit codes are the same for both formats: `0` within the limits or none given, `1` a report that
+could not be read or flags that do not fit, `2` reports that cannot be compared or a limit that
+cannot be decided, `4` a limit missed (also beside a check that cannot be decided).
+
+## Compare JSON
+
+`leettest compare -output json` writes one object and a newline to stdout, nothing else; on exit
+code 1 stdout is empty. Exit codes and stderr are those of text. The object holds the reports' own
+numbers and the verdicts; it has no percentage of change — a script computes it from the values.
+The cause of an `unknown` is a value from a closed list in `checks[].reason`, and `why` is the same
+words the text prints.
+
+Method names are written two ways. In `differences` and in the text a method has no leading `/`
+(`pkg.Svc/Do`). In `checks[].method` the name is as the report has it: a run report with the leading
+`/` (`/pkg.Svc/Do`), a search report without.
+
+A field that a check's key does not use is `null`: a `capacity` check has no `*_p99` and `*_errors`,
+a `p99` check has no others. A verdict exists only when the check has a limit.
+
+| Field | Type | What it means |
+|---|---|---|
+| `schema_version` | int | Schema version, now `1` |
+| `mode` | string | Always `"compare"` |
+| `compared_mode` | string | The kind of the compared reports: `"run"` or `"breakpoint"` |
+| `leettest_version` | string | The version of the LeetTest that compared (not of the reports) |
+| `base`, `new` | object | The "before" report and the "after" report |
+| `base.path`, `new.path` | string | The file path as given on the command line |
+| `base.name`, `new.name` | string | The report's name; empty stays `""` |
+| `base.started_at`, `new.started_at` | string | The start, as the report has it |
+| `base.leettest_version`, `new.leettest_version` | string | The version of the LeetTest that wrote the report |
+| `base.labels`, `new.labels` | map | The passport's labels; `{}` without a passport or labels |
+| `comparable` | bool | `true` — nothing makes the reports incomparable and, for runs, there is a method in common |
+| `differences` | []object | What makes the reports incomparable, in the order compared; `[]` if nothing |
+| `differences[].field` | string | The field's name as in the `differs:` line (`target`, `method`, `leettest_version`, `passport.config_sha256`, `methods`, `dataset <method>`). A missing passport is `passport` |
+| `differences[].base` | string | The "before" value; `none` — no dataset or no passport |
+| `differences[].new` | string | The "after" value; for `passport`, `present` on the side that has one |
+| `verdict` | string? | The worst verdict of the checks that have a limit: `fail`, else `unknown`, else `pass`; `null` — no limit given |
+| `checks` | []object | The checks in the text's order: a search has one (`capacity`), a run has, per method in common in the "before" order, `p99` then `errors`; `[]` if there is nothing to compare |
+| `checks[].method` | string | The check's method; names as above |
+| `checks[].key` | string | `capacity`, `p99` or `errors` |
+| `checks[].base_capacity`, `checks[].new_capacity` | object? | The search's capacity; `null` — not measured, or another kind of check |
+| `checks[].base_capacity.rps`, `checks[].new_capacity.rps` | int | The capacity in rps |
+| `checks[].base_capacity.bound`, `checks[].new_capacity.bound` | string | `exact` — the search broke, `rps` is the highest rate that held; `lower` — it ended before it broke, the capacity is at least `rps`; `upper` — it broke at the first step, the capacity is below `rps` |
+| `checks[].base_outcome`, `checks[].new_outcome` | string? | The search's `breakpoint.outcome`; only for `capacity` |
+| `checks[].base_p99`, `checks[].new_p99` | object? | The method's p99 — the same object as `latency.p99` of the run report; `null` — too few observations, or another kind of check |
+| `checks[].base_p99.us`, `checks[].new_p99.us` | int | The p99 in whole microseconds |
+| `checks[].base_p99.lower_bound`, `checks[].new_p99.lower_bound` | bool | `true` — the tail ran past the timeout, the true p99 is larger |
+| `checks[].base_errors`, `checks[].new_errors` | object? | The method's share of failed calls in parts; `null` — another kind of check |
+| `checks[].base_errors.bad`, `checks[].new_errors.bad` | int | Every failed call and every call lost to the connection |
+| `checks[].base_errors.bad_client`, `checks[].new_errors.bad_client` | int | The part of `bad` that says nothing of the target: rejected requests, client errors, our `bad_response` |
+| `checks[].base_errors.total`, `checks[].new_errors.total` | int | The calls sent and those lost to the connection; `0` stays `0` |
+| `checks[].limit_percent` | string? | The check's limit as the flag has it (`"20%"`); `null` — no limit given |
+| `checks[].verdict` | string? | `pass`, `fail` or `unknown`; `null` — no limit |
+| `checks[].reason` | string? | Only for `unknown`, a value from the list below; otherwise `null` |
+| `checks[].why` | string? | Only for `unknown`: the words the text prints after `unknown, `; do not parse |
+
+The reasons of an `unknown` are a closed list; of the first six the first that applies wins:
+
+- `not_comparable` — the reports are not comparable, the numbers are not put side by side;
+- `method_invalid` — the method of one side is invalid;
+- `invalid` — the run of one side is invalid;
+- `incomplete` — the run of one side did not finish;
+- `generator` — the generator itself held one side back;
+- `stream` — the stream limit held one side back;
+- `few_observations` — too few observations for a p99;
+- `base_zero` — the base is zero (a p99 of 0 us or a capacity of 0 rps), there is no share of it;
+- `censored` — the p99 ran into the timeout and does not decide the limit;
+- `nothing_sent` — one side sent nothing;
+- `client_errors` — the client's own errors decide it;
+- `not_measured` — one side's capacity was not measured;
+- `broke_at_first` — the search broke at its first step, no fall can be seen;
+- `lower_bound` — the search ended before it broke, the capacity is a lower bound.

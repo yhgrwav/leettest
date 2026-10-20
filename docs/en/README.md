@@ -508,6 +508,26 @@ or incomplete, there are too few observations, a p99 ran into the timeout (so it
 printed, `>=`), or the client's own errors leave it open whether the service is at fault. Methods
 that are not in both reports are not compared. Exit codes are the same as for searches.
 
+For a script or CI the same result comes as one JSON object (not released): `-output json` prints
+only it to stdout, the exit codes and stderr are those of the text; on exit code `1` stdout is empty.
+
+```sh
+leettest compare -max-p99-rise 20% -output json before.json after.json
+```
+
+In the object `verdict` is the worst verdict of the checks that have a limit (`null` when there is
+none), and `checks` holds every check with the numbers of both reports; for an `unknown` the cause
+is in `reason`, a value from a closed list:
+
+```json
+{"schema_version":1,"mode":"compare","compared_mode":"run","comparable":true,"differences":[],"verdict":"fail","checks":[{"method":"/grpc.health.v1.Health/Check","key":"p99","base_p99":{"us":21381,"lower_bound":false},"new_p99":{"us":31358,"lower_bound":false},"limit_percent":"20%","verdict":"fail","reason":null,"why":null}]}
+```
+
+Not every field is shown: the ones empty for this check (`base_capacity` and the other `null`s) and
+the description of the reports (`base`, `new`) are left out. The object has no percentage of rise —
+a script computes it from `us`. Every field is described in the
+[reference, «Compare JSON»](reference.md#compare-json).
+
 ## Going deeper
 
 We have a roadmap for the product — **[roadmap](roadmap.md)**. Missing something —

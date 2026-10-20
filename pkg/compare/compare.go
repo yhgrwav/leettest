@@ -55,23 +55,23 @@ const (
 	Fail
 )
 
-// CapacityDrop judges the fall from base to new against limit. A reason is
-// given only for Unknown.
+// CapacityDrop judges the fall from base to new against limit. A reason (one
+// of the Reason constants) and its words are given only for Unknown.
 //
 // The fall is (base − new) / base. A bound narrows it to a range, and the
 // verdict follows the range: Fail only when the smallest possible fall is
 // over the limit, Pass only when the largest possible fall is within it,
 // otherwise Unknown.
-func CapacityDrop(base, nw Capacity, limit share.Percent) (verdict Verdict, reason string) {
+func CapacityDrop(base, nw Capacity, limit share.Percent) (verdict Verdict, reason, words string) {
 	switch {
 	case base.Bound == None:
-		return Unknown, "base not measured (" + base.Outcome + ")"
+		return Unknown, ReasonNotMeasured, "base not measured (" + base.Outcome + ")"
 	case nw.Bound == None:
-		return Unknown, "new not measured (" + nw.Outcome + ")"
+		return Unknown, ReasonNotMeasured, "new not measured (" + nw.Outcome + ")"
 	case base.Bound == Upper:
-		return Unknown, "base broke at the first step: lower the plan to see a drop"
+		return Unknown, ReasonBrokeAtFirst, "base broke at the first step: lower the plan to see a drop"
 	case base.RPS <= 0:
-		return Unknown, "base capacity is 0 rps"
+		return Unknown, ReasonBaseZero, "base capacity is 0 rps"
 	}
 
 	over := share.Decide(max(base.RPS-nw.RPS, 0), 0, base.RPS, limit) == share.Breaks
@@ -79,36 +79,37 @@ func CapacityDrop(base, nw Capacity, limit share.Percent) (verdict Verdict, reas
 	switch {
 	case nw.Bound == Upper:
 		if over {
-			return Fail, ""
+			return Fail, "", ""
 		}
 
-		return Unknown, "new broke at the first step: lower the plan to see the drop"
+		return Unknown, ReasonBrokeAtFirst, "new broke at the first step: lower the plan to see the drop"
 	case base.Bound == Lower && nw.Bound == Lower:
-		return Unknown, "both capacities are lower bounds"
+		return Unknown, ReasonLowerBound, "both capacities are lower bounds"
 	case base.Bound == Lower:
 		if over {
-			return Fail, ""
+			return Fail, "", ""
 		}
 
-		return Unknown, "base capacity is only a lower bound (" + base.Outcome + ")"
+		return Unknown, ReasonLowerBound, "base capacity is only a lower bound (" + base.Outcome + ")"
 	case nw.Bound == Lower:
 		if !over {
-			return Pass, ""
+			return Pass, "", ""
 		}
 
-		return Unknown, "new run ended before its capacity (" + nw.Outcome + ")"
+		return Unknown, ReasonLowerBound, "new run ended before its capacity (" + nw.Outcome + ")"
 	case over:
-		return Fail, ""
+		return Fail, "", ""
 	}
 
-	return Pass, ""
+	return Pass, "", ""
 }
 
 // The reasons a check can be unknown, a closed list. The first of
-// NotComparable, Invalid, Incomplete, Generator and Stream that applies wins
-// over the check's own.
+// NotComparable, MethodInvalid, Invalid, Incomplete, Generator and Stream that
+// applies wins over the check's own.
 const (
 	ReasonNotComparable   = "not_comparable"
+	ReasonMethodInvalid   = "method_invalid"
 	ReasonInvalid         = "invalid"
 	ReasonIncomplete      = "incomplete"
 	ReasonGenerator       = "generator"
@@ -118,6 +119,11 @@ const (
 	ReasonCensored        = "censored"
 	ReasonNothingSent     = "nothing_sent"
 	ReasonClientErrors    = "client_errors"
+	// The reasons of a capacity check: a search that measured nothing, one
+	// that broke at its first step, one that ended before it broke.
+	ReasonNotMeasured  = "not_measured"
+	ReasonBrokeAtFirst = "broke_at_first"
+	ReasonLowerBound   = "lower_bound"
 )
 
 // Latency is the p99 of one method of a run report.

@@ -42,15 +42,26 @@ var sides = [2]string{"base", "new"}
 // the p99 and the share of failed calls of each side, with the verdict of the
 // limit given for each check. A nil limit is a check not asked for.
 func CompareRuns(w io.Writer, base, nw RunFile, p99Limit, errorsLimit *shr.Percent) Comparison {
-	printHeader(w, "base:", base.Path, base.Report.Name, base.Report.StartedAt, base.Report.Passport)
-	printHeader(w, "new: ", nw.Path, nw.Report.Name, nw.Report.StartedAt, nw.Report.Passport)
+	c, _ := CompareRunsReport(w, base, nw, p99Limit, errorsLimit)
 
-	diffs := runDifferences(base, nw)
-	for _, d := range diffs {
-		fmt.Fprintln(w, d)
+	return c
+}
+
+// CompareRunsReport is CompareRuns with the report it printed, for
+// NewCompareReport.
+func CompareRunsReport(w io.Writer, base, nw RunFile, p99Limit, errorsLimit *shr.Percent) (Comparison, CompareReport) {
+	rep := CompareReport{
+		ComparedMode: ModeRun,
+		Base:         compareSide(base.Path, base.Report.Name, base.Report.StartedAt, base.Report.LeetTestVersion, base.Report.Passport),
+		New:          compareSide(nw.Path, nw.Report.Name, nw.Report.StartedAt, nw.Report.LeetTestVersion, nw.Report.Passport),
 	}
+	printHeader(w, "base:", rep.Base)
+	printHeader(w, "new: ", rep.New)
 
-	same := len(diffs) == 0
+	rep.Differences = runDifferences(base, nw)
+	printDifferences(w, rep.Differences)
+
+	same := len(rep.Differences) == 0
 	judged := p99Limit != nil || errorsLimit != nil
 	reports := [2]*JSONReport{&base.Report, &nw.Report}
 	pairs := commonMethods(base.Report, nw.Report)
@@ -59,27 +70,33 @@ func CompareRuns(w io.Writer, base, nw RunFile, p99Limit, errorsLimit *shr.Perce
 	if len(pairs) == 0 {
 		fmt.Fprintln(w, notComparable+": nothing judged")
 
-		return Comparison{Judged: judged}
+		return finish(rep, Comparison{Judged: judged})
 	}
 
 	worst := compare.Pass
 
 	for _, pair := range pairs {
-		words := notComparable
+		held := heldBack{reason: compare.ReasonNotComparable, words: notComparable}
 		if same {
-			words = heldBackWords(reports, pair)
+			held = heldBackWords(reports, pair)
 		}
 
-		for _, line := range []checkLine{
-			p99Line(pair, p99Limit, same, words),
-			errorsLine(pair, errorsLimit, same, words),
-		} {
-			fmt.Fprintln(w, line.text)
+		checks := [2]CompareCheck{
+			p99Check(pair, p99Limit, same, held),
+			errorsCheck(pair, errorsLimit, same, held),
+		}
+
+		for i := range checks {
+			check := &checks[i]
+
+			fmt.Fprintln(w, check.line)
+
+			rep.Checks = append(rep.Checks, *check)
 
 			switch {
-			case line.verdict == compare.Fail:
+			case check.decided == compare.Fail:
 				worst = compare.Fail
-			case line.verdict == compare.Unknown && line.asked && worst != compare.Fail:
+			case check.decided == compare.Unknown && check.asked && worst != compare.Fail:
 				worst = compare.Unknown
 			}
 		}
@@ -87,23 +104,20 @@ func CompareRuns(w io.Writer, base, nw RunFile, p99Limit, errorsLimit *shr.Perce
 
 	switch {
 	case judged:
-		return Comparison{Comparable: same, Judged: true, Verdict: worst}
+		return finish(rep, Comparison{Comparable: same, Judged: true, Verdict: worst})
 	case same:
 		fmt.Fprintln(w, "no limit given: nothing judged (-max-p99-rise, -max-errors-rise)")
 	default:
 		fmt.Fprintln(w, notComparable+": nothing judged")
 	}
 
-	return Comparison{Comparable: same}
+	return finish(rep, Comparison{Comparable: same})
 }
 
-// checkLine is a printed check and what it decided; asked is false for a
-// check no limit was given for.
-type checkLine struct {
-	text    string
-	verdict compare.Verdict
-	asked   bool
-}
+// heldBack is why a method's numbers are not compared though the reports are
+// alike: one of the Reason constants and the words text puts after it. The
+// zero value is nothing held them back.
+type heldBack struct{ reason, words string }
 
 // methodPair is one method as the two reports have it, its name without the
 // leading slash a report writes.
@@ -134,8 +148,8 @@ func trimSlash(method string) string { return strings.TrimPrefix(method, "/") }
 // incomparable, in the order: target, version, passport, the sets of methods,
 // the dataset of each method both have. Labels are never compared: they are
 // what differs by design.
-func runDifferences(base, nw RunFile) []string {
-	var out []string
+func runDifferences(base, nw RunFile) []CompareDiff {
+	var out []CompareDiff
 
 	out = differ(out, "target", base.Report.Target, nw.Report.Target, "")
 	out = differ(out, "leettest_version", base.Report.LeetTestVersion, nw.Report.LeetTestVersion, "")
@@ -175,36 +189,36 @@ func methodDataset(m *jsonMethod) string {
 }
 
 // heldBackWords says why a method's numbers are not compared though the
-// reports are alike, "" when they are: the first of an invalid side, an
-// incomplete side, a side its own generator or stream held back, the base
-// before the new in each. A method that is invalid names itself before the
-// run does.
-func heldBackWords(reports [2]*JSONReport, pair methodPair) string {
+// reports are alike, the zero heldBack when they are: the first of an invalid
+// side, an incomplete side, a side its own generator or stream held back, the
+// base before the new in each. A method that is invalid names itself before
+// the run does.
+func heldBackWords(reports [2]*JSONReport, pair methodPair) heldBack {
 	for i, r := range reports {
 		switch {
 		case pair.side[i].InvalidReason != nil:
-			return sides[i] + " method is invalid (" + *pair.side[i].InvalidReason + ")"
+			return heldBack{compare.ReasonMethodInvalid, sides[i] + " method is invalid (" + *pair.side[i].InvalidReason + ")"}
 		case runInvalid(*r):
-			return sides[i] + " run is invalid"
+			return heldBack{compare.ReasonInvalid, sides[i] + " run is invalid"}
 		}
 	}
 
 	for i, r := range reports {
 		if r.Outcome == OutcomeIncomplete {
-			return sides[i] + " run is incomplete"
+			return heldBack{compare.ReasonIncomplete, sides[i] + " run is incomplete"}
 		}
 	}
 
 	for i, r := range reports {
 		switch heldBackBy(*r, pair.side[i]) {
 		case compare.ReasonGenerator:
-			return sides[i] + ": the generator held calls back"
+			return heldBack{compare.ReasonGenerator, sides[i] + ": the generator held calls back"}
 		case compare.ReasonStream:
-			return sides[i] + ": the stream limit held calls back"
+			return heldBack{compare.ReasonStream, sides[i] + ": the stream limit held calls back"}
 		}
 	}
 
-	return ""
+	return heldBack{}
 }
 
 // runInvalid: the run measured nothing about the target. A run invalid only
@@ -258,20 +272,36 @@ func latencyOf(m *jsonMethod) compare.Latency {
 	return compare.Latency{US: q.US, LowerBound: q.LowerBound, Defined: true}
 }
 
-// p99Line is the line of a method's p99. words is why the numbers are not
-// compared, "" when they are.
-func p99Line(pair methodPair, limit *shr.Percent, same bool, words string) checkLine {
+// quantileCopy is a report's own quantile, a copy of it, nil when it has none.
+func quantileCopy(q *jsonQuantile) *jsonQuantile {
+	if q == nil {
+		return nil
+	}
+
+	c := *q
+
+	return &c
+}
+
+// p99Check is a method's p99: the report's own two values, the line text
+// prints and the verdict. held is why the numbers are not compared, the zero
+// heldBack when they are.
+func p99Check(pair methodPair, limit *shr.Percent, same bool, held heldBack) CompareCheck {
 	b, n := latencyOf(pair.side[0]), latencyOf(pair.side[1])
+	check := CompareCheck{
+		Method: pair.side[0].Method, Key: "p99",
+		BaseP99: quantileCopy(pair.side[0].Latency.P99), NewP99: quantileCopy(pair.side[1].Latency.P99),
+	}
 	text := pair.name + ": p99 " + formatQuantile(quantileOf(pair.side[0].Latency.P99)) + " -> " +
 		formatQuantile(quantileOf(pair.side[1].Latency.P99))
 
 	verdict := compare.Unknown
 
-	if same && words == "" && limit != nil {
+	if same && held.reason == "" && limit != nil {
 		var reason string
 
 		verdict, reason = compare.P99Rise(b, n, *limit)
-		words = p99Words(reason, b, n)
+		held = heldBack{reason, p99Words(reason, b, n)}
 	}
 
 	change := "rise -"
@@ -279,7 +309,7 @@ func p99Line(pair methodPair, limit *shr.Percent, same bool, words string) check
 		change = p99Change(b, n, limit, verdict)
 	}
 
-	return finishLine(text, change, limit, verdict, words)
+	return finishCheck(check, text, change, limit, verdict, held)
 }
 
 func p99Words(reason string, b, n compare.Latency) string {
@@ -302,25 +332,20 @@ func p99Words(reason string, b, n compare.Latency) string {
 	return reason
 }
 
-// finishLine ends a check's line: its change and, with a limit, the verdict.
-func finishLine(text, change string, limit *shr.Percent, verdict compare.Verdict, words string) checkLine {
-	text += ", " + change
+// finishCheck ends a check: its line with the change and, with a limit, the
+// verdict; the reason and words are those of an unknown.
+func finishCheck(check CompareCheck, text, change string, limit *shr.Percent, verdict compare.Verdict, held heldBack) CompareCheck {
+	check.line = text + ", " + change
 	if limit == nil {
-		return checkLine{text: text, verdict: compare.Unknown}
+		check.decide(nil, compare.Unknown, "", "")
+
+		return check
 	}
 
-	text += ", limit " + limit.Text + ": "
+	check.line += limitSuffix(limit, verdict, held.words)
+	check.decide(limit, verdict, held.reason, held.words)
 
-	switch verdict {
-	case compare.Pass:
-		text += "pass"
-	case compare.Fail:
-		text += "FAIL"
-	case compare.Unknown:
-		text += "unknown, " + words
-	}
-
-	return checkLine{text: text, verdict: verdict, asked: true}
+	return check
 }
 
 // p99Change is the change from base to new as the line says it, worded by
@@ -383,28 +408,32 @@ func shareOf(m *jsonMethod) compare.Share {
 	}
 }
 
-// errorsLine is the line of a method's share of failed calls.
-func errorsLine(pair methodPair, limit *shr.Percent, same bool, words string) checkLine {
+func errorsOf(s compare.Share) *CompareErrors {
+	return &CompareErrors{Bad: s.Bad, BadClient: s.BadClient, Total: s.Total}
+}
+
+// errorsCheck is a method's share of failed calls, the way p99Check is its p99.
+func errorsCheck(pair methodPair, limit *shr.Percent, same bool, held heldBack) CompareCheck {
 	b, n := shareOf(pair.side[0]), shareOf(pair.side[1])
+	check := CompareCheck{Method: pair.side[0].Method, Key: "errors", BaseErrors: errorsOf(b), NewErrors: errorsOf(n)}
 	text := pair.name + ": errors " + failedShareText(b) + " -> " + failedShareText(n)
 
 	verdict := compare.Unknown
 
-	if same && words == "" && limit != nil {
+	if same && held.reason == "" && limit != nil {
 		var reason string
 
 		verdict, reason = compare.ErrorsRise(b, n, *limit)
+		held = heldBack{reason: reason, words: reason}
 
 		switch reason {
 		case compare.ReasonNothingSent:
-			words = "base: nothing sent"
+			held.words = "base: nothing sent"
 			if b.Total != 0 {
-				words = "new: nothing sent"
+				held.words = "new: nothing sent"
 			}
 		case compare.ReasonClientErrors:
-			words = "client-side errors decide it"
-		default:
-			words = reason
+			held.words = "client-side errors decide it"
 		}
 	}
 
@@ -413,7 +442,7 @@ func errorsLine(pair methodPair, limit *shr.Percent, same bool, words string) ch
 		change = errorsChange(b, n, limit, verdict)
 	}
 
-	return finishLine(text, change, limit, verdict, words)
+	return finishCheck(check, text, change, limit, verdict, held)
 }
 
 func failedShareText(s compare.Share) string {

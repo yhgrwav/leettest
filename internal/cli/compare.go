@@ -109,77 +109,131 @@ type Comparison struct {
 	Verdict compare.Verdict
 }
 
+// finish puts the comparison's own outcome into its report.
+func finish(rep CompareReport, c Comparison) (Comparison, CompareReport) {
+	rep.Comparable = c.Comparable
+
+	if c.Judged {
+		rep.Verdict = ptrTo(verdictName(c.Verdict))
+	}
+
+	return c, rep
+}
+
 // CompareSearches prints the comparison of two search reports: both headers,
 // the differences, the capacity of each and, with a limit, the verdict on its
 // fall.
 func CompareSearches(w io.Writer, base, nw SearchFile, limit *shr.Percent) Comparison {
-	printHeader(w, "base:", base.Path, base.Report.Name, base.Report.StartedAt, base.Report.Passport)
-	printHeader(w, "new: ", nw.Path, nw.Report.Name, nw.Report.StartedAt, nw.Report.Passport)
+	c, _ := CompareSearchesReport(w, base, nw, limit)
 
-	diffs := differences(base, nw)
-	for _, d := range diffs {
-		fmt.Fprintln(w, d)
+	return c
+}
+
+// CompareSearchesReport is CompareSearches with the report it printed, for
+// NewCompareReport.
+func CompareSearchesReport(w io.Writer, base, nw SearchFile, limit *shr.Percent) (Comparison, CompareReport) {
+	rep := CompareReport{
+		ComparedMode: ModeBreakpoint,
+		Base:         compareSide(base.Path, base.Report.Name, base.Report.StartedAt, base.Report.LeetTestVersion, base.Report.Passport),
+		New:          compareSide(nw.Path, nw.Report.Name, nw.Report.StartedAt, nw.Report.LeetTestVersion, nw.Report.Passport),
 	}
-	same := len(diffs) == 0
+	printHeader(w, "base:", rep.Base)
+	printHeader(w, "new: ", rep.New)
+
+	rep.Differences = differences(base, nw)
+	printDifferences(w, rep.Differences)
+	same := len(rep.Differences) == 0
 
 	b, n := reportCapacity(base.Report), reportCapacity(nw.Report)
+	check := CompareCheck{
+		Method: base.Report.Method, Key: "capacity",
+		BaseCapacity: capacityOf(b), NewCapacity: capacityOf(n),
+		BaseOutcome: ptrTo(b.Outcome), NewOutcome: ptrTo(n.Outcome),
+	}
 	line := "capacity: " + capacityText(b) + " -> " + capacityText(n)
+
+	var (
+		res  Comparison
+		tail string
+	)
 
 	switch {
 	case !same && limit == nil:
-		fmt.Fprintln(w, line+", drop -")
-		fmt.Fprintln(w, notComparable+": nothing judged")
-
-		return Comparison{}
+		check.line, tail = line+", drop -", notComparable+": nothing judged"
+		check.decide(nil, compare.Unknown, "", "")
 	case !same:
-		fmt.Fprintf(w, "%s, drop -, limit %s: unknown, %s\n", line, limit.Text, notComparable)
-
-		return Comparison{Judged: true}
+		check.line = line + ", drop -" + limitSuffix(limit, compare.Unknown, notComparable)
+		check.decide(limit, compare.Unknown, compare.ReasonNotComparable, notComparable)
+		res = Comparison{Judged: true}
 	case limit == nil:
-		fmt.Fprintln(w, line+", "+fallText(b, n, nil, compare.Unknown))
-		fmt.Fprintln(w, "no limit given: nothing judged (-max-capacity-drop)")
-
-		return Comparison{Comparable: true}
+		check.line, tail = line+", "+fallText(b, n, nil, compare.Unknown), "no limit given: nothing judged (-max-capacity-drop)"
+		check.decide(nil, compare.Unknown, "", "")
+		res = Comparison{Comparable: true}
+	default:
+		verdict, reason, words := compare.CapacityDrop(b, n, *limit)
+		check.line = line + ", " + fallText(b, n, limit, verdict) + limitSuffix(limit, verdict, words)
+		check.decide(limit, verdict, reason, words)
+		res = Comparison{Comparable: true, Judged: true, Verdict: verdict}
 	}
 
-	verdict, reason := compare.CapacityDrop(b, n, *limit)
-	line += ", " + fallText(b, n, limit, verdict) + ", limit " + limit.Text + ": "
+	fmt.Fprintln(w, check.line)
 
-	switch verdict {
+	if tail != "" {
+		fmt.Fprintln(w, tail)
+	}
+
+	rep.Checks = []CompareCheck{check}
+
+	return finish(rep, res)
+}
+
+// limitSuffix ends a check's line with its limit and verdict; words are the
+// reason of an unknown.
+func limitSuffix(limit *shr.Percent, v compare.Verdict, words string) string {
+	text := ", limit " + limit.Text + ": "
+
+	switch v {
 	case compare.Pass:
-		line += "pass"
+		return text + "pass"
 	case compare.Fail:
-		line += "FAIL"
+		return text + "FAIL"
 	case compare.Unknown:
-		line += "unknown, " + reason
 	}
-	fmt.Fprintln(w, line)
 
-	return Comparison{Comparable: true, Judged: true, Verdict: verdict}
+	return text + "unknown, " + words
 }
 
 // printHeader is the line naming a report: its file, name, start and labels.
-func printHeader(w io.Writer, tag, path, name, startedAt string, p *jsonPassport) {
+func printHeader(w io.Writer, tag string, s CompareSide) {
+	name := s.Name
 	if name == "" {
 		name = "-"
 	}
 
-	line := fmt.Sprintf("%s %s  %s  %s", tag, path, name, startedAt)
-	if p != nil && len(p.Labels) > 0 {
-		pairs := make([]string, 0, len(p.Labels))
-		for _, k := range slices.Sorted(maps.Keys(p.Labels)) {
-			pairs = append(pairs, k+"="+p.Labels[k])
+	line := fmt.Sprintf("%s %s  %s  %s", tag, s.Path, name, s.StartedAt)
+	if len(s.Labels) > 0 {
+		pairs := make([]string, 0, len(s.Labels))
+		for _, k := range slices.Sorted(maps.Keys(s.Labels)) {
+			pairs = append(pairs, k+"="+s.Labels[k])
 		}
 		line += "  labels: " + strings.Join(pairs, ", ")
 	}
 	fmt.Fprintln(w, line)
 }
 
-// differences are the lines naming what makes two reports incomparable, in
-// the order the fields are compared. Labels are never compared: they are what
-// differs by design.
-func differences(base, nw SearchFile) []string {
-	var out []string
+func printDifferences(w io.Writer, diffs []CompareDiff) {
+	for _, d := range diffs {
+		for _, line := range d.lines {
+			fmt.Fprintln(w, line)
+		}
+	}
+}
+
+// differences name what makes two reports incomparable, in the order the
+// fields are compared. Labels are never compared: they are what differs by
+// design.
+func differences(base, nw SearchFile) []CompareDiff {
+	var out []CompareDiff
 
 	out = differ(out, "target", base.Report.Target, nw.Report.Target, "")
 	out = differ(out, "method", base.Report.Method, nw.Report.Method, "")
@@ -189,31 +243,36 @@ func differences(base, nw SearchFile) []string {
 	return differ(out, "dataset", datasetHash(base.Report), datasetHash(nw.Report), "")
 }
 
-// differ adds the line naming a field whose two values differ.
-func differ(out []string, field, b, n, note string) []string {
+// differ adds the field whose two values differ; the note is only in its text
+// line.
+func differ(out []CompareDiff, field, b, n, note string) []CompareDiff {
 	if b == n {
 		return out
 	}
 
-	return append(out, "differs: "+field+": "+b+" -> "+n+note)
+	return append(out, CompareDiff{Field: field, Base: b, New: n, lines: []string{"differs: " + field + ": " + b + " -> " + n + note}})
 }
 
-// passportDifferences are the lines for a missing passport, else for each
-// field of the two that differs, in the order of the passport. The paths name
-// the file without one.
-func passportDifferences(basePath, newPath string, bp, np *jsonPassport) []string {
-	var out []string
-
-	if bp == nil {
-		out = append(out, basePath+": "+noPassportNote)
-	}
-
-	if np == nil {
-		out = append(out, newPath+": "+noPassportNote)
-	}
+// passportDifferences are the one difference of a missing passport (a text
+// line for each report that lacks it), else one for each field of the two that
+// differs, in the order of the passport. The paths name the file without one.
+func passportDifferences(basePath, newPath string, bp, np *jsonPassport) []CompareDiff {
+	var out []CompareDiff
 
 	if bp == nil || np == nil {
-		return out
+		d := CompareDiff{Field: "passport", Base: "present", New: "present"}
+
+		if bp == nil {
+			d.Base = "none"
+			d.lines = append(d.lines, basePath+": "+noPassportNote)
+		}
+
+		if np == nil {
+			d.New = "none"
+			d.lines = append(d.lines, newPath+": "+noPassportNote)
+		}
+
+		return append(out, d)
 	}
 
 	out = differ(out, "passport.config_sha256", bp.ConfigSHA256, np.ConfigSHA256, " (config bytes differ: a comment or line endings count too)")
@@ -271,6 +330,21 @@ func reportCapacity(r BreakpointReport) compare.Capacity {
 	}
 
 	return c
+}
+
+// capacityOf is the capacity a report carries, nil when none was measured.
+func capacityOf(c compare.Capacity) *CompareCapacity {
+	switch c.Bound {
+	case compare.Exact:
+		return &CompareCapacity{RPS: c.RPS, Bound: "exact"}
+	case compare.Lower:
+		return &CompareCapacity{RPS: c.RPS, Bound: "lower"}
+	case compare.Upper:
+		return &CompareCapacity{RPS: c.RPS, Bound: "upper"}
+	case compare.None:
+	}
+
+	return nil
 }
 
 func capacityText(c compare.Capacity) string {

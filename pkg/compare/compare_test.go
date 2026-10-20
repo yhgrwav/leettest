@@ -72,9 +72,9 @@ func TestCapacity_ExactValuesAreJudgedByTheLimit(t *testing.T) {
 		{"a fraction of a percent", 1000, 999, "0.1%", compare.Pass},
 		{"a fraction of a percent, one more", 1000, 998, "0.1%", compare.Fail},
 	} {
-		got, reason := compare.CapacityDrop(exact(tc.base), exact(tc.nw), limit(tc.limit))
-		if got != tc.want || reason != "" {
-			t.Errorf("%s: %s %q, want %s with no reason", tc.name, verdictNames[got], reason, verdictNames[tc.want])
+		got, code, reason := compare.CapacityDrop(exact(tc.base), exact(tc.nw), limit(tc.limit))
+		if got != tc.want || code != "" || reason != "" {
+			t.Errorf("%s: %s %q %q, want %s with no reason", tc.name, verdictNames[got], code, reason, verdictNames[tc.want])
 		}
 	}
 }
@@ -93,9 +93,9 @@ func TestCapacity_BaseThatBrokeAtTheFirstStepIsUnknown(t *testing.T) {
 		"new a floor":           lower(500, "held_all"),
 		"new also broke at one": upper(100),
 	} {
-		got, why := compare.CapacityDrop(upper(100), nw, limit("10%"))
-		if got != compare.Unknown || why != reason {
-			t.Errorf("%s: %s %q, want unknown %q", name, verdictNames[got], why, reason)
+		got, code, why := compare.CapacityDrop(upper(100), nw, limit("10%"))
+		if got != compare.Unknown || why != reason || code != compare.ReasonBrokeAtFirst {
+			t.Errorf("%s: %s %q %q, want unknown %q %q", name, verdictNames[got], code, why, compare.ReasonBrokeAtFirst, reason)
 		}
 	}
 }
@@ -108,9 +108,9 @@ func TestCapacity_ABaseOfZeroIsUnknown(t *testing.T) {
 		"exact base, new above":    {exact(0), exact(500)},
 		"lower base":               {lower(0, "held_all"), exact(0)},
 	} {
-		got, why := compare.CapacityDrop(tc.base, tc.nw, limit("10%"))
-		if got != compare.Unknown || why != "base capacity is 0 rps" {
-			t.Errorf("%s: %s %q, want unknown, base capacity is 0 rps", name, verdictNames[got], why)
+		got, code, why := compare.CapacityDrop(tc.base, tc.nw, limit("10%"))
+		if got != compare.Unknown || why != "base capacity is 0 rps" || code != compare.ReasonBaseZero {
+			t.Errorf("%s: %s %q %q, want unknown, base_zero, base capacity is 0 rps", name, verdictNames[got], code, why)
 		}
 	}
 }
@@ -129,9 +129,9 @@ func TestCapacity_NotMeasuredIsUnknown(t *testing.T) {
 		{"new has no held rate", exact(1000), notMeasured("run_limit"), "new not measured (run_limit)"},
 		{"new not measured beside a base that broke at the first step", upper(100), notMeasured("invalid"), "new not measured (invalid)"},
 	} {
-		got, why := compare.CapacityDrop(tc.base, tc.nw, limit("10%"))
-		if got != compare.Unknown || why != tc.reason {
-			t.Errorf("%s: %s %q, want unknown %q", tc.name, verdictNames[got], why, tc.reason)
+		got, code, why := compare.CapacityDrop(tc.base, tc.nw, limit("10%"))
+		if got != compare.Unknown || why != tc.reason || code != compare.ReasonNotMeasured {
+			t.Errorf("%s: %s %q %q, want unknown not_measured %q", tc.name, verdictNames[got], code, why, tc.reason)
 		}
 	}
 }
@@ -155,9 +155,9 @@ func TestCapacity_NewLowerBoundNeverFails(t *testing.T) {
 		{"stopped far past the limit", lower(500, "stopped"), compare.Unknown, "new run ended before its capacity (stopped)"},
 		{"run limit far past the limit", lower(500, "run_limit"), compare.Unknown, "new run ended before its capacity (run_limit)"},
 	} {
-		got, why := compare.CapacityDrop(exact(1000), tc.nw, limit("10%"))
-		if got != tc.want || why != tc.reason {
-			t.Errorf("%s: %s %q, want %s %q", tc.name, verdictNames[got], why, verdictNames[tc.want], tc.reason)
+		got, code, why := compare.CapacityDrop(exact(1000), tc.nw, limit("10%"))
+		if got != tc.want || why != tc.reason || (code == "") != (tc.reason == "") || code != "" && code != compare.ReasonLowerBound {
+			t.Errorf("%s: %s %q %q, want %s %q", tc.name, verdictNames[got], code, why, verdictNames[tc.want], tc.reason)
 		}
 	}
 }
@@ -187,9 +187,9 @@ func TestCapacity_NewThatBrokeAtTheFirstStepBoundsTheFall(t *testing.T) {
 		{"base a lower bound, step far below", lower(1000, "held_all"), upper(100), compare.Fail, ""},
 		{"base a lower bound, step close", lower(1000, "held_all"), upper(950), compare.Unknown, reason},
 	} {
-		got, why := compare.CapacityDrop(tc.base, tc.nw, limit("10%"))
-		if got != tc.want || why != tc.reason {
-			t.Errorf("%s: %s %q, want %s %q", tc.name, verdictNames[got], why, verdictNames[tc.want], tc.reason)
+		got, code, why := compare.CapacityDrop(tc.base, tc.nw, limit("10%"))
+		if got != tc.want || why != tc.reason || (code == "") != (tc.reason == "") || code != "" && code != compare.ReasonBrokeAtFirst {
+			t.Errorf("%s: %s %q %q, want %s %q", tc.name, verdictNames[got], code, why, verdictNames[tc.want], tc.reason)
 		}
 	}
 }
@@ -212,9 +212,9 @@ func TestCapacity_BaseLowerBoundNeverPasses(t *testing.T) {
 		{"new within the limit", exact(950), compare.Unknown, "base capacity is only a lower bound (held_all)"},
 		{"new above the base", exact(1200), compare.Unknown, "base capacity is only a lower bound (held_all)"},
 	} {
-		got, why := compare.CapacityDrop(lower(1000, "held_all"), tc.nw, limit("10%"))
-		if got != tc.want || why != tc.reason {
-			t.Errorf("%s: %s %q, want %s %q", tc.name, verdictNames[got], why, verdictNames[tc.want], tc.reason)
+		got, code, why := compare.CapacityDrop(lower(1000, "held_all"), tc.nw, limit("10%"))
+		if got != tc.want || why != tc.reason || (code == "") != (tc.reason == "") || code != "" && code != compare.ReasonLowerBound {
+			t.Errorf("%s: %s %q %q, want %s %q", tc.name, verdictNames[got], code, why, verdictNames[tc.want], tc.reason)
 		}
 	}
 }
@@ -229,9 +229,9 @@ func TestCapacity_TwoLowerBoundsAreUnknown(t *testing.T) {
 		"same":          lower(1000, "held_all"),
 		"new above":     lower(2000, "stopped"),
 	} {
-		got, why := compare.CapacityDrop(lower(1000, "held_all"), nw, limit("10%"))
-		if got != compare.Unknown || why != reason {
-			t.Errorf("%s: %s %q, want unknown %q", name, verdictNames[got], why, reason)
+		got, code, why := compare.CapacityDrop(lower(1000, "held_all"), nw, limit("10%"))
+		if got != compare.Unknown || why != reason || code != compare.ReasonLowerBound {
+			t.Errorf("%s: %s %q %q, want unknown lower_bound %q", name, verdictNames[got], code, why, reason)
 		}
 	}
 }
