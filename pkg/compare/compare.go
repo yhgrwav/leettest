@@ -168,7 +168,7 @@ func P99Rise(base, nw Latency, limit share.Percent) (verdict Verdict, reason str
 	// big: (new − base) × 100000 does not fit int64 for an hour-long p99.
 	rise := new(big.Int).Sub(big.NewInt(nw.NS), big.NewInt(base.NS))
 	rise.Mul(rise, big.NewInt(100000))
-	allowed := new(big.Int).Mul(big.NewInt(int64(limit.Thousandths)), big.NewInt(base.NS))
+	allowed := new(big.Int).Mul(big.NewInt(limit.Thousandths), big.NewInt(base.NS))
 	over := rise.Cmp(allowed) > 0
 
 	switch {
