@@ -26,6 +26,7 @@ import (
 	"github.com/yhgrwav/leettest/pkg/engine"
 	"github.com/yhgrwav/leettest/pkg/metrics"
 	shr "github.com/yhgrwav/leettest/pkg/share"
+	"github.com/yhgrwav/leettest/pkg/threshold"
 )
 
 const (
@@ -61,6 +62,9 @@ type crRun struct {
 	// "" for null.
 	tail    string
 	methods []crMethod
+	// thresholds are the verdicts of the config's pass: limits, as the run
+	// report carries them.
+	thresholds []threshold.Result
 }
 
 func crMillis(n int) time.Duration { return time.Duration(n) * time.Millisecond }
@@ -135,7 +139,7 @@ func (r crRun) file(t *testing.T, path string) RunFile {
 
 	raw, err := json.Marshal(NewJSONReport(JSONRun{
 		Target: r.target, Name: r.name, Version: r.version, Outcome: r.outcome, StartedAt: r.startedAt,
-		Run: RunReport{Report: rep, Passport: r.passport},
+		Run: RunReport{Report: rep, Passport: r.passport, Thresholds: r.thresholds},
 	}))
 	if err != nil {
 		t.Fatalf("marshal %s: %v", path, err)
@@ -318,8 +322,7 @@ func TestCompareRuns_EachDifferenceIsNamed(t *testing.T) {
 		name string
 		edit func(base, nw *crRun)
 		want []string
-		// methodsRow: the method sets differ, which lines follow is not the
-		// spec's to say here.
+		// methodsRow: the method sets differ.
 		methodsRow bool
 	}{
 		{"target", func(_, n *crRun) { n.target = "10.0.0.2:50051" },
@@ -354,7 +357,7 @@ func TestCompareRuns_EachDifferenceIsNamed(t *testing.T) {
 		{"methods, one renamed", func(_, n *crRun) { n.methods[0].name = "pkg.Svc/Other" },
 			[]string{"differs: methods: pkg.Svc/Do -> pkg.Svc/Other"}, true},
 		{"methods, none on the new", func(_, n *crRun) { n.methods = nil },
-			[]string{"differs: methods: pkg.Svc/Do -> "}, true},
+			[]string{"differs: methods: pkg.Svc/Do -> none"}, true},
 		{"dataset", func(b, n *crRun) { b.methods[0].datasetSHA, n.methods[0].datasetSHA = c, d },
 			[]string{"differs: dataset pkg.Svc/Do: " + c + " -> " + d}, false},
 		{"dataset gone on the new", func(b, _ *crRun) { b.methods[0].datasetSHA = c },
@@ -374,13 +377,42 @@ func TestCompareRuns_EachDifferenceIsNamed(t *testing.T) {
 
 			crWantResult(t, got, Comparison{Judged: limits[0] != ""})
 
-			if tc.methodsRow {
+			if has := strings.Contains(out, "differs: methods:"); has != tc.methodsRow {
+				t.Errorf("%s %v: a methods line is %v, want %v", tc.name, limits, has, tc.methodsRow)
+			}
+
+			// Lines are only for a method on both sides. With none, the closing
+			// line is the last one even when limits are given: the output must
+			// not end on a differs: line and stay silent about the checks.
+			common := slices.ContainsFunc(base.methods, func(b crMethod) bool {
+				return slices.ContainsFunc(nw.methods, func(n crMethod) bool { return n.name == b.name })
+			})
+
+			lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+			last := lines[len(lines)-1]
+
+			for _, line := range lines {
+				if strings.HasPrefix(line, "pkg.Svc/Other:") {
+					t.Errorf("%s %v: line %q for a method on one side only", tc.name, limits, line)
+				}
+			}
+
+			if !common {
+				for _, line := range lines {
+					if strings.HasPrefix(line, "pkg.Svc/") {
+						t.Errorf("%s %v: line %q, want none when no method is on both sides", tc.name, limits, line)
+					}
+				}
+
+				if last != "reports are not comparable: nothing judged" {
+					t.Errorf("%s %v: last line %q, want the not comparable closing line", tc.name, limits, last)
+				}
+
 				continue
 			}
 
-			lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
 			if limits[0] == "" {
-				if last := lines[len(lines)-1]; last != "reports are not comparable: nothing judged" {
+				if last != "reports are not comparable: nothing judged" {
 					t.Errorf("%s: last line %q, want the not comparable closing line", tc.name, last)
 				}
 
@@ -393,7 +425,7 @@ func TestCompareRuns_EachDifferenceIsNamed(t *testing.T) {
 				}
 			}
 
-			if last := lines[len(lines)-1]; !strings.HasPrefix(last, "pkg.Svc/Do: errors") {
+			if !strings.HasPrefix(last, "pkg.Svc/Do: errors") {
 				t.Errorf("%s: last line %q, want the last check, nothing after it", tc.name, last)
 			}
 		}
@@ -529,20 +561,36 @@ func TestCompareRuns_RunStateDecidesBeforeTheCheck(t *testing.T) {
 		{"the new run is invalid", func(_, n *crRun) { n.outcome = OutcomeInvalid }, "new run is invalid"},
 		{"the base run is incomplete", func(b, _ *crRun) { b.outcome = OutcomeIncomplete }, "base run is incomplete"},
 		{"the new run is incomplete", func(_, n *crRun) { n.outcome = OutcomeIncomplete }, "new run is incomplete"},
-		{"the new method is request_error", func(_, n *crRun) { n.methods[0] = invalid("request_error") },
-			"new method is invalid (request_error)"},
-		{"the base method is client_error", func(b, _ *crRun) { b.methods[0] = invalid("client_error") },
-			"base method is invalid (client_error)"},
-		{"the new method is bad_response", func(_, n *crRun) { n.methods[0] = invalid("bad_response") },
-			"new method is invalid (bad_response)"},
-		{"the new method is mixed", func(_, n *crRun) { n.methods[0] = invalid("mixed") },
-			"new method is invalid (mixed)"},
+		// A run writes a run with such a method as invalid too, and the method's
+		// words come first.
+		{"the new method is request_error", func(_, n *crRun) {
+			n.outcome, n.methods[0] = OutcomeInvalid, invalid("request_error")
+		}, "new method is invalid (request_error)"},
+		{"the base method is client_error", func(b, _ *crRun) {
+			b.outcome, b.methods[0] = OutcomeInvalid, invalid("client_error")
+		}, "base method is invalid (client_error)"},
+		{"the new method is bad_response", func(_, n *crRun) {
+			n.outcome, n.methods[0] = OutcomeInvalid, invalid("bad_response")
+		}, "new method is invalid (bad_response)"},
+		{"the new method is mixed", func(_, n *crRun) {
+			n.outcome, n.methods[0] = OutcomeInvalid, invalid("mixed")
+		}, "new method is invalid (mixed)"},
+		{"a method invalid on the base beside an invalid new run", func(b, n *crRun) {
+			b.outcome, b.methods[0] = OutcomeInvalid, invalid("request_error")
+			n.outcome = OutcomeInvalid
+		}, "base method is invalid (request_error)"},
+		{"both runs invalid: the base first", func(b, n *crRun) {
+			b.outcome, n.outcome = OutcomeInvalid, OutcomeInvalid
+		}, "base run is invalid"},
+		{"both runs incomplete: the base first", func(b, n *crRun) {
+			b.outcome, n.outcome = OutcomeIncomplete, OutcomeIncomplete
+		}, "base run is incomplete"},
 		{"invalid before incomplete: incomplete base, invalid new", func(b, n *crRun) {
 			b.outcome, n.outcome = OutcomeIncomplete, OutcomeInvalid
 		}, "new run is invalid"},
 		{"invalid before incomplete: incomplete base, invalid new method", func(b, n *crRun) {
 			b.outcome = OutcomeIncomplete
-			n.methods[0] = invalid("request_error")
+			n.outcome, n.methods[0] = OutcomeInvalid, invalid("request_error")
 		}, "new method is invalid (request_error)"},
 		{"invalid before a client-side wait", func(_, n *crRun) {
 			n.outcome, n.tail = OutcomeInvalid, "generator"
@@ -568,6 +616,95 @@ func TestCompareRuns_RunStateDecidesBeforeTheCheck(t *testing.T) {
 
 		if c.Verdict != compare.Unknown || !c.Judged {
 			t.Errorf("%s: comparison %+v, want judged and unknown", tc.name, c)
+		}
+	}
+}
+
+// Ground: contract — the words follow the method: of two methods on a side
+// that is invalid, the one that is invalid itself says why, the other says the
+// run is invalid.
+func TestCompareRuns_AnInvalidMethodNamesItselfBesideAGoodOne(t *testing.T) {
+	rejected := crCall("pkg.Svc/A", crExact(crMillis(100)), 100)
+	rejected.sent, rejected.rejected = 100, 100
+
+	base, nw := crBase(), crNew()
+	base.methods = []crMethod{crCall("pkg.Svc/A", crExact(crMillis(100)), 10), crCall("pkg.Svc/B", crExact(crMillis(100)), 10)}
+	nw.outcome, nw.methods = OutcomeInvalid, []crMethod{rejected, crCall("pkg.Svc/B", crExact(crMillis(100)), 10)}
+
+	out, _ := crCompare(t, base, nw, "20%", "1%")
+
+	for prefix, want := range map[string]string{
+		"pkg.Svc/A: p99":    ", limit 20%: unknown, new method is invalid (request_error)",
+		"pkg.Svc/A: errors": ", limit 1%: unknown, new method is invalid (request_error)",
+		"pkg.Svc/B: p99":    ", limit 20%: unknown, new run is invalid",
+		"pkg.Svc/B: errors": ", limit 1%: unknown, new run is invalid",
+	} {
+		if line := crLine(t, out, prefix); !strings.HasSuffix(line, want) {
+			t.Errorf("line %q, want it to end %q", line, want)
+		}
+	}
+}
+
+// Ground: contract — a run is invalid only for what it measured, not for the
+// limits of its own config: `outcome: invalid` whose only reason is
+// thresholds_undecided (a pass: limit on another method could not be decided)
+// is a complete run to compare, whichever side carries it, and each method is
+// then judged by compare on its own numbers. The inverse is the same reason
+// beside another one (a method that measured nothing): the run stays invalid.
+func TestCompareRuns_ARunInvalidOnlyByItsOwnLimitsIsCompared(t *testing.T) {
+	undecided := []threshold.Result{{
+		Method: "/pkg.Svc/Other", Key: threshold.P99, Verdict: threshold.VerdictUnknown, Reason: threshold.ReasonFewObservations,
+	}}
+	// Other has too few calls for a p99, so pass: p99 on it is undecided.
+	few := crMethod{name: "pkg.Svc/Other", sent: 40, p99: metrics.Quantile{}}
+	rejected := crMethod{name: "pkg.Svc/Other", sent: 40, failed: 40, rejected: 40}
+
+	for _, tc := range []struct {
+		name        string
+		base, nw    bool
+		newOther    crMethod
+		wantReasons []string
+		// want is the end of the lines of Do after the limit.
+		want string
+	}{
+		{"on the base", true, false, few, []string{"thresholds_undecided"}, ": pass"},
+		{"on the new", false, true, few, []string{"thresholds_undecided"}, ": pass"},
+		{"on both", true, true, few, []string{"thresholds_undecided"}, ": pass"},
+		{"beside a method that measured nothing", false, true, rejected,
+			[]string{"nothing_measured", "thresholds_undecided"}, ": unknown, new run is invalid"},
+	} {
+		base, nw := crBase(), crNew()
+		base.methods = append(base.methods, few)
+		nw.methods = append(nw.methods, tc.newOther)
+
+		if tc.base {
+			base.outcome, base.thresholds = OutcomeInvalid, undecided
+		}
+
+		if tc.nw {
+			nw.outcome, nw.thresholds = OutcomeInvalid, undecided
+		}
+
+		for _, side := range []struct {
+			on   bool
+			run  crRun
+			path string
+		}{{tc.base, base, "base.json"}, {tc.nw, nw, "new.json"}} {
+			if !side.on {
+				continue
+			}
+
+			if got := side.run.file(t, side.path).Report.InvalidReasons; !slices.Equal(got, tc.wantReasons) {
+				t.Fatalf("%s %s: fixture invalid_reasons %q, want %q", tc.name, side.path, got, tc.wantReasons)
+			}
+		}
+
+		out, _ := crCompare(t, base, nw, "20%", "1%")
+
+		for prefix, limit := range map[string]string{"pkg.Svc/Do: p99": "20%", "pkg.Svc/Do: errors": "1%"} {
+			if line, want := crLine(t, out, prefix), ", limit "+limit+tc.want; !strings.HasSuffix(line, want) {
+				t.Errorf("%s: line %q, want it to end %q", tc.name, line, want)
+			}
 		}
 	}
 }
@@ -760,6 +897,15 @@ func TestCompareRuns_APrintedRiseNeverArguesWithTheVerdict(t *testing.T) {
 	zeroBase := crBase()
 	zeroBase.methods[0].sent, zeroBase.methods[0].failed = 100000, 0
 
+	// Counts near a billion on both sides, the totals not equal: the rise is
+	// the difference of two fractions, which an int64 product cannot hold.
+	billions := func(sent, failed int) crRun {
+		r := crBase()
+		r.methods[0].sent, r.methods[0].failed = sent, failed
+
+		return r
+	}
+
 	for _, tc := range []struct {
 		name         string
 		base, nw     crRun
@@ -776,6 +922,10 @@ func TestCompareRuns_APrintedRiseNeverArguesWithTheVerdict(t *testing.T) {
 			"errors 1.0% -> 2.0%, rise 1.0%, limit 1%: pass"},
 		{"errors a hair past the limit", zeroBase, failures(1004, 100000), "", "1%", "pkg.Svc/Do: errors",
 			"errors 0.0% -> 1.0%, rise 1.1%, limit 1%: FAIL"},
+		{"errors on the limit, billions", billions(2000000000, 1000000000), billions(1999999999, 1999999999), "", "50%",
+			"pkg.Svc/Do: errors", "errors 50.0% -> 100.0%, rise 50.0%, limit 50%: pass"},
+		{"errors a hair past the limit, billions", billions(2000000000, 999999999), billions(1999999999, 1999999999), "", "50%",
+			"pkg.Svc/Do: errors", "errors 50.0% -> 100.0%, rise 50.1%, limit 50%: FAIL"},
 	} {
 		out, _ := crCompare(t, tc.base, tc.nw, tc.p99Limit, tc.errsLimit)
 
