@@ -156,6 +156,30 @@ type jsonQuantile struct {
 	LowerBound bool  `json:"lower_bound"`
 }
 
+// UnmarshalJSON reads a quantile of a report written before `ns` existed as
+// its microseconds in nanoseconds, never as 0 ns beside a nonzero `us`.
+func (q *jsonQuantile) UnmarshalJSON(data []byte) error {
+	var read struct {
+		US         int64  `json:"us"`
+		NS         *int64 `json:"ns"`
+		LowerBound bool   `json:"lower_bound"`
+	}
+	if err := json.Unmarshal(data, &read); err != nil {
+		return err
+	}
+
+	*q = jsonQuantile{US: read.US, LowerBound: read.LowerBound}
+	if read.NS != nil {
+		q.NS = *read.NS
+
+		return nil
+	}
+
+	q.NS = min(read.US, math.MaxInt64/1000) * 1000
+
+	return nil
+}
+
 type jsonCapHit struct {
 	AtUS         int64 `json:"at_us"`
 	Unsent       int   `json:"unsent"`
@@ -368,7 +392,7 @@ func quantile(q metrics.Quantile) *jsonQuantile {
 		return nil
 	}
 
-	return &jsonQuantile{US: micros(q.Value), LowerBound: !q.Exact}
+	return &jsonQuantile{US: micros(q.Value), NS: q.Value.Nanoseconds(), LowerBound: !q.Exact}
 }
 
 func answers(r engine.RefusalLatency) jsonAnswers {
@@ -422,7 +446,7 @@ func NewJSONReport(run JSONRun) JSONReport {
 	}
 	// The maximum is exact, but there is none without a call.
 	if r.StartLagP99.Defined {
-		out.StartLag.Max = &jsonQuantile{US: micros(r.StartLagMax)}
+		out.StartLag.Max = &jsonQuantile{US: micros(r.StartLagMax), NS: r.StartLagMax.Nanoseconds()}
 	}
 	if c := r.CapHit; c != nil {
 		out.CapHit = &jsonCapHit{AtUS: micros(c.At), Unsent: c.Unsent, OverDeadline: c.OverDeadline}

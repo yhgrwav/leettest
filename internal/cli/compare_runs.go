@@ -260,7 +260,7 @@ func quantileOf(q *jsonQuantile) metrics.Quantile {
 		return metrics.Quantile{}
 	}
 
-	return metrics.Quantile{Value: time.Duration(q.US) * time.Microsecond, Exact: !q.LowerBound, Defined: true}
+	return metrics.Quantile{Value: time.Duration(q.NS), Exact: !q.LowerBound, Defined: true}
 }
 
 func latencyOf(m *jsonMethod) compare.Latency {
@@ -269,7 +269,7 @@ func latencyOf(m *jsonMethod) compare.Latency {
 		return compare.Latency{}
 	}
 
-	return compare.Latency{NS: q.US * 1000, LowerBound: q.LowerBound, Defined: true}
+	return compare.Latency{NS: q.NS, LowerBound: q.LowerBound, Defined: true}
 }
 
 // quantileCopy is a report's own quantile, a copy of it, nil when it has none.
@@ -360,32 +360,35 @@ func p99Change(b, n compare.Latency, limit *shr.Percent, v compare.Verdict) stri
 		return "rise -"
 	}
 
-	bus, nus := int(b.NS/1000), int(n.NS/1000)
-
-	if !b.LowerBound && !n.LowerBound && nus == bus {
+	// "No change" is equal nanoseconds: two values that print alike but
+	// differ are a rise or a fall of 0.0%, so a limit of 0% can fail them.
+	if !b.LowerBound && !n.LowerBound && n.NS == b.NS {
 		return "no change"
 	}
+
+	fall := big.NewRat(b.NS-n.NS, b.NS)
+	rise := big.NewRat(n.NS-b.NS, b.NS)
 
 	// Only a rise is judged by the limit of the rise: a fall carries no limit,
 	// and its bound is a tenth, up or down.
 	switch {
-	case !b.LowerBound && !n.LowerBound && nus < bus:
-		return "fall " + nearestTenth(bus-nus, bus)
+	case !b.LowerBound && !n.LowerBound && n.NS < b.NS:
+		return "fall " + shr.FormatFraction(fall, shr.Percent{Text: "0%"}, shr.Holds)
 	case !b.LowerBound && !n.LowerBound && limit != nil && v != compare.Unknown:
-		return "rise " + shr.Format(nus-bus, bus, *limit, shareVerdict(v))
+		return "rise " + shr.FormatFraction(rise, *limit, shareVerdict(v))
 	case !b.LowerBound && !n.LowerBound:
-		return "rise " + nearestTenth(nus-bus, bus)
-	case n.LowerBound && nus < bus:
-		return "fall " + boundOf(true, bus-nus, bus, nil, v)
+		return "rise " + shr.FormatFraction(rise, shr.Percent{Text: "0%"}, shr.Holds)
+	case n.LowerBound && n.NS < b.NS:
+		return "fall " + shr.FormatBound(fall, true, nil, shareVerdict(v))
 	case n.LowerBound:
-		return "rise " + boundOf(false, nus-bus, bus, limit, v)
-	case nus < bus:
-		return "fall " + boundOf(false, bus-nus, bus, nil, v)
-	case nus > bus:
-		return "rise " + boundOf(true, nus-bus, bus, limit, v)
+		return "rise " + shr.FormatBound(rise, false, limit, shareVerdict(v))
+	case n.NS < b.NS:
+		return "fall " + shr.FormatBound(fall, false, nil, shareVerdict(v))
+	case n.NS > b.NS:
+		return "rise " + shr.FormatBound(rise, true, limit, shareVerdict(v))
 	}
 
-	return "fall " + boundOf(false, 0, bus, nil, v)
+	return "fall " + shr.FormatBound(new(big.Rat), false, nil, shareVerdict(v))
 }
 
 func shareOf(m *jsonMethod) compare.Share {

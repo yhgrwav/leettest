@@ -327,8 +327,10 @@ leettest -c load.yaml -json-file report.json
 
 Единица — в имени поля: `_us` — целые микросекунды, `_s` — целые секунды; частота `rps` —
 единственное дробное число. Значение, которого прогон не дал, — `null`, а не `0`. Перцентиль —
-объект `{"us": 1234, "lower_bound": false}`: при `lower_bound: true` это нижняя граница, а не
-значение. Задержки — значения гистограммы с точностью 3 значащие цифры (погрешность до 0,1%),
+объект `{"us": 1234, "ns": 1234567, "lower_bound": false}`: `ns` — значение гистограммы в целых
+наносекундах, `us` — оно же, обрезанное до микросекунд; `leettest compare` судит по `ns`, а в
+отчёте, записанном до этого поля, берёт `us` × 1000. При `lower_bound: true` это нижняя граница, а
+не значение. Задержки — значения гистограммы с точностью 3 значащие цифры (погрешность до 0,1%),
 счётчики точные. Время отсчитывается от `started_at` (RFC 3339, UTC) — начала расписания, прогрев
 включён; `duration_us` тоже включает прогрев. `in_flight` в секунде — сколько вызовов было в
 полёте на её конце. Коды в `failure_codes` — канонические имена (`UNAVAILABLE`). Сверка: итоги прогона —
@@ -505,7 +507,7 @@ leettest compare -max-p99-rise 20% -output json before.json after.json
 закрытого списка:
 
 ```json
-{"schema_version":1,"mode":"compare","compared_mode":"run","comparable":true,"differences":[],"verdict":"fail","checks":[{"method":"/grpc.health.v1.Health/Check","key":"p99","base_p99":{"us":21381,"lower_bound":false},"new_p99":{"us":31358,"lower_bound":false},"limit_percent":"20%","verdict":"fail","reason":null,"why":null}]}
+{"schema_version":1,"mode":"compare","compared_mode":"run","comparable":true,"differences":[],"verdict":"fail","checks":[{"method":"/grpc.health.v1.Health/Check","key":"p99","base_p99":{"us":21381,"ns":21381472,"lower_bound":false},"new_p99":{"us":31358,"ns":31358109,"lower_bound":false},"limit_percent":"20%","verdict":"fail","reason":null,"why":null}]}
 ```
 
 Показаны не все поля: пустые у этой проверки (`base_capacity` и другие `null`) и описание

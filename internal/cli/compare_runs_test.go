@@ -944,7 +944,7 @@ func TestCompareRuns_APrintedRiseNeverArguesWithTheVerdict(t *testing.T) {
 // down, and more digits are printed only when one decimal would put the bound
 // on the wrong side of the limit (a lower bound beside FAIL at 20.04%, an
 // upper bound beside a pass under a limit of 20.01%). The p99 is in whole
-// microseconds, so the exact rise is known to the digit.
+// nanoseconds, so the exact rise is known to the digit.
 func TestCompareRuns_ABoundBesideAVerdictIsTrue(t *testing.T) {
 	micros := func(us int64) time.Duration { return time.Duration(us) * time.Microsecond }
 

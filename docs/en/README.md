@@ -338,8 +338,10 @@ parse the JSON, not the screen. The rules:
 
 The unit is in the field's name: `_us` is whole microseconds, `_s` whole seconds; the rate `rps` is
 the only fractional number. A value the run did not produce is `null`, not `0`. A percentile is an
-object `{"us": 1234, "lower_bound": false}`: with `lower_bound: true` it is a lower bound, not a
-value. Latencies are the histogram's values at 3 significant figures (an error of up to 0.1%),
+object `{"us": 1234, "ns": 1234567, "lower_bound": false}`: `ns` is the histogram's value in whole
+nanoseconds and `us` the same value truncated to microseconds; `leettest compare` judges by `ns`,
+and for a report written before that field takes `us` × 1000. With `lower_bound: true` it is a
+lower bound, not a value. Latencies are the histogram's values at 3 significant figures (an error of up to 0.1%),
 counts are exact. Times count from `started_at` (RFC 3339, UTC), the start of the schedule, warm-up
 included; `duration_us` includes warm-up too. `in_flight` in a second is how many calls were in
 flight at its end. The codes in `failure_codes` are canonical names (`UNAVAILABLE`). To reconcile: the run's
@@ -520,7 +522,7 @@ none), and `checks` holds every check with the numbers of both reports; for an `
 is in `reason`, a value from a closed list:
 
 ```json
-{"schema_version":1,"mode":"compare","compared_mode":"run","comparable":true,"differences":[],"verdict":"fail","checks":[{"method":"/grpc.health.v1.Health/Check","key":"p99","base_p99":{"us":21381,"lower_bound":false},"new_p99":{"us":31358,"lower_bound":false},"limit_percent":"20%","verdict":"fail","reason":null,"why":null}]}
+{"schema_version":1,"mode":"compare","compared_mode":"run","comparable":true,"differences":[],"verdict":"fail","checks":[{"method":"/grpc.health.v1.Health/Check","key":"p99","base_p99":{"us":21381,"ns":21381472,"lower_bound":false},"new_p99":{"us":31358,"ns":31358109,"lower_bound":false},"limit_percent":"20%","verdict":"fail","reason":null,"why":null}]}
 ```
 
 Not every field is shown: the ones empty for this check (`base_capacity` and the other `null`s) and
