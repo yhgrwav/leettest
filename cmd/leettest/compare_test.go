@@ -337,6 +337,37 @@ func TestCompare_ABoundOfTheFallIsRoundedTowardWhatIsKnown(t *testing.T) {
 	}
 }
 
+// Ground: contract — a fall printed with `<=` or `>=` beside a verdict is a
+// true bound of the exact fall: an upper bound of 1/3 beside a pass is 33.4%,
+// never 33.3%; a lower bound beside FAIL prints the digits that put it over
+// the limit (20.03% of 20.0333%), and when no digit kept is over the limit
+// (20.0001%) it says `> 20%`, the claim the exit code rests on.
+func TestCompare_ABoundBesideAVerdictIsTrue(t *testing.T) {
+	held := func(rps int) reportSpec { return endedAt(breakpoint.HeldThroughout, rps) }
+
+	for _, tc := range []struct {
+		name     string
+		base, nw reportSpec
+		limit    string
+		line     string
+		exit     int
+	}{
+		{"an upper bound of a third beside a pass", brokeAt(3), held(2), "50%",
+			"capacity: 3 rps -> >= 2 rps, drop <= 33.4%, limit 50%: pass", 0},
+		{"a lower bound of 20.03% beside FAIL", held(3000), brokeAt(2399), "20%",
+			"capacity: >= 3000 rps -> 2399 rps, drop >= 20.03%, limit 20%: FAIL", 4},
+		{"a lower bound with no digit over the limit beside FAIL", held(1000000), brokeAt(799999), "20%",
+			"capacity: >= 1000000 rps -> 799999 rps, drop > 20%, limit 20%: FAIL", 4},
+	} {
+		res, _, _ := compared(t, tc.base, tc.nw, "-max-capacity-drop", tc.limit)
+
+		wantExit(t, res, tc.exit)
+		if got := lineStarting(t, res.stdout, "capacity:"); got != tc.line {
+			t.Errorf("%s:\n  got  %q\n  want %q", tc.name, got, tc.line)
+		}
+	}
+}
+
 // Ground: contract — each field that makes two reports incomparable is named
 // on one `differs:` line with both values, and the check is undecidable
 // (exit 2) with a limit or without one: never a fail, though the fall is half,

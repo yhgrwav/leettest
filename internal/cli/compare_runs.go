@@ -352,8 +352,9 @@ func finishCheck(check CompareCheck, text, change string, limit *shr.Percent, ve
 // what is known: the capacity wording with the direction of the p99. A bound
 // carries `<=` or `>=` by what it leaves open, rounded so the number never
 // claims more than is known; two lower bounds, an undefined p99 and a base of
-// 0 say no number. A rise the verdict was drawn on keeps its printed number on
-// the right side of the limit.
+// 0 say no number. A rise bound the verdict was drawn on keeps its printed
+// digits on the right side of the limit (share.FormatBound); a fall is judged
+// by no limit.
 func p99Change(b, n compare.Latency, limit *shr.Percent, v compare.Verdict) string {
 	if !b.Defined || !n.Defined || b.US <= 0 || b.LowerBound && n.LowerBound {
 		return "rise -"
@@ -365,39 +366,26 @@ func p99Change(b, n compare.Latency, limit *shr.Percent, v compare.Verdict) stri
 		return "no change"
 	}
 
-	rise := func(qualifier string, round func(bad, total int) string) string {
-		if limit != nil && v != compare.Unknown {
-			return "rise " + qualifier + shr.Format(nus-bus, bus, *limit, limitSide(v))
-		}
-
-		return "rise " + qualifier + round(nus-bus, bus)
-	}
-
+	// Only a rise is judged by the limit of the rise: a fall carries no limit,
+	// and its bound is a tenth, up or down.
 	switch {
 	case !b.LowerBound && !n.LowerBound && nus < bus:
 		return "fall " + nearestTenth(bus-nus, bus)
+	case !b.LowerBound && !n.LowerBound && limit != nil && v != compare.Unknown:
+		return "rise " + shr.Format(nus-bus, bus, *limit, shareVerdict(v))
 	case !b.LowerBound && !n.LowerBound:
-		return rise("", nearestTenth)
+		return "rise " + nearestTenth(nus-bus, bus)
 	case n.LowerBound && nus < bus:
-		return "fall <= " + tenthUp(bus-nus, bus)
+		return "fall " + boundOf(true, bus-nus, bus, nil, v)
 	case n.LowerBound:
-		return rise(">= ", tenthDown)
+		return "rise " + boundOf(false, nus-bus, bus, limit, v)
 	case nus < bus:
-		return "fall >= " + tenthDown(bus-nus, bus)
+		return "fall " + boundOf(false, bus-nus, bus, nil, v)
 	case nus > bus:
-		return rise("<= ", tenthUp)
+		return "rise " + boundOf(true, nus-bus, bus, limit, v)
 	}
 
-	return "fall >= " + tenthDown(0, bus)
-}
-
-// limitSide is the side of the limit a decided check fell on.
-func limitSide(v compare.Verdict) shr.Verdict {
-	if v == compare.Fail {
-		return shr.Breaks
-	}
-
-	return shr.Holds
+	return "fall " + boundOf(false, 0, bus, nil, v)
 }
 
 func shareOf(m *jsonMethod) compare.Share {
@@ -472,7 +460,7 @@ func errorsChange(b, n compare.Share, limit *shr.Percent, v compare.Verdict) str
 	}
 
 	if limit != nil && v != compare.Unknown {
-		return "rise " + shr.FormatFraction(diff, *limit, limitSide(v))
+		return "rise " + shr.FormatFraction(diff, *limit, shareVerdict(v))
 	}
 
 	return "rise " + shr.FormatFraction(diff, plain, shr.Holds)
