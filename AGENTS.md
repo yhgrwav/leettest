@@ -128,6 +128,14 @@ percent of the base p99) and `-max-errors-rise 1%` (the rise of the failed share
 is invalid or incomplete, a p99 hit the timeout (`>=`) or client-side errors leave it open: tell the
 user the check was not made. A search report and a run report together is `1`.
 
+For a script, `leettest compare -output json …` prints one object (not released; stdout is empty on
+exit `1`; exit codes as above). Read `verdict` first (`pass`, `fail`, `unknown`, `null` when no
+limit was given), then `comparable` and `differences` (a missing passport is one difference), then
+`checks[]`: `method`, `key` (`capacity`, `p99`, `errors`), the two sides' `*_capacity`,
+`*_outcome`, `*_p99`, `*_errors`, `limit_percent`, `verdict`, and for an `unknown` the `reason` (a
+closed list) with `why`. The object has no percentage change: compute it from the values. Never
+report an `unknown` as held.
+
 ### Reading the JSON
 
 Every JSON field is described in the [reference, «JSON fields»](https://github.com/yhgrwav/leettest/blob/main/docs/en/reference.md#json-fields),

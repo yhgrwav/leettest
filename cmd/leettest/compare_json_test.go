@@ -1288,8 +1288,9 @@ func TestCompareJSON_SidesAreTheReportsOwn(t *testing.T) {
 		ran := p.run(t)
 		rep := cjDecode(t, ran.js.stdout)
 
-		if !strings.Contains(ran.js.stdout, `"a&b<c>"`) || strings.Contains(ran.js.stdout, `&`) ||
-			strings.Contains(ran.js.stdout, `<`) || strings.Contains(ran.js.stdout, `>`) {
+		escaped := func(hex string) bool { return strings.Contains(ran.js.stdout, "\\"+"u"+hex) }
+
+		if !strings.Contains(ran.js.stdout, `"a&b<c>"`) || escaped("0026") || escaped("003c") || escaped("003e") {
 			t.Errorf("%s: a label with & < > is not written as is (SetEscapeHTML(false), like -output json of a run)\n%s", p.name, ran.js.stdout)
 		}
 
