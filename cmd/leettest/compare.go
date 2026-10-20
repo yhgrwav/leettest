@@ -25,52 +25,122 @@ import (
 	"github.com/yhgrwav/leettest/pkg/share"
 )
 
+// The flags of leettest compare, each the limit of one check.
+const (
+	flagCapacityDrop = "max-capacity-drop"
+	flagP99Rise      = "max-p99-rise"
+	flagErrorsRise   = "max-errors-rise"
+)
+
+// compareError is an error of leettest compare with a text of its own that
+// still is its kind: errors.Is finds the sentinel the exit code is read from.
+type compareError struct {
+	text string
+	kind error
+}
+
+func (e *compareError) Error() string { return e.text }
+
+func (e *compareError) Unwrap() error { return e.kind }
+
 // runCompare is leettest compare: args are what follows the word compare.
-// Flags come before the two files. The exit codes are those of a search with
-// pass: limits: 0 within the limit or none given, 2 undecidable, 4 past the
-// limit, 1 no comparison.
+// Flags come before the two files, which are two breakpoint searches or two
+// plain runs. The exit codes: 0 within the limits or none given, 1 no
+// comparison, 2 reports that cannot be compared or a limit that cannot be
+// decided, 4 a limit missed (also beside one that cannot be decided).
 func runCompare(args []string, stdout, stderr io.Writer) error {
 	flags := flag.NewFlagSet("leettest compare", flag.ContinueOnError)
 	flags.SetOutput(stderr)
-	maxDrop := flags.String("max-capacity-drop", "", "fail when the capacity fell by more than this share, such as 10%")
+	limitText := map[string]*string{
+		flagCapacityDrop: flags.String(flagCapacityDrop, "", "breakpoint searches: fail when the capacity fell by more than this share, such as 10%"),
+		flagP99Rise:      flags.String(flagP99Rise, "", "plain runs: fail when a method's p99 rose by more than this share, such as 20%"),
+		flagErrorsRise:   flags.String(flagErrorsRise, "", "plain runs: fail when a method's share of failed calls rose by more than this many points, such as 1%"),
+	}
 
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
+
 	if flags.NArg() != 2 {
 		return errors.New("compare: want two report files, base then new")
 	}
 
-	var limit *share.Percent
+	limits := map[string]*share.Percent{}
+
+	var parseErr error
+
 	flags.Visit(func(f *flag.Flag) {
-		if f.Name == "max-capacity-drop" {
-			limit = &share.Percent{}
+		if parseErr != nil || limitText[f.Name] == nil {
+			return
 		}
+
+		p, err := share.Parse(*limitText[f.Name], "-"+f.Name)
+		if err != nil {
+			parseErr = fmt.Errorf("compare: %w", err)
+
+			return
+		}
+
+		limits[f.Name] = &p
 	})
-	if limit != nil {
-		p, err := share.Parse(*maxDrop, "-max-capacity-drop")
-		if err != nil {
-			return fmt.Errorf("compare: %w", err)
-		}
-		*limit = p
+
+	if parseErr != nil {
+		return parseErr
 	}
 
-	var files [2]cli.SearchFile
+	var reports [2]cli.ComparedReport
+
 	for i, path := range flags.Args() {
-		report, err := cli.ReadSearchReport(path)
+		report, err := cli.ReadReport(path)
 		if err != nil {
 			return fmt.Errorf("compare: %w", err)
 		}
-		files[i] = cli.SearchFile{Path: path, Report: report}
+
+		reports[i] = report
 	}
 
-	res := cli.CompareSearches(stdout, files[0], files[1], limit)
+	base, nw := flags.Arg(0), flags.Arg(1)
 
+	if reports[0].Mode != reports[1].Mode {
+		return fmt.Errorf("compare: %s is a %s, %s a %s: compare reads two of one kind",
+			base, cli.KindOf(reports[0].Mode), nw, cli.KindOf(reports[1].Mode))
+	}
+
+	var res cli.Comparison
+
+	if reports[0].Mode == cli.ModeRun {
+		if limits[flagCapacityDrop] != nil {
+			return errors.New("compare: -" + flagCapacityDrop + " applies to breakpoint searches")
+		}
+
+		res = cli.CompareRuns(stdout,
+			cli.RunFile{Path: base, Report: reports[0].Run}, cli.RunFile{Path: nw, Report: reports[1].Run},
+			limits[flagP99Rise], limits[flagErrorsRise])
+	} else {
+		for _, name := range []string{flagP99Rise, flagErrorsRise} {
+			if limits[name] != nil {
+				return errors.New("compare: -" + name + " applies to plain runs")
+			}
+		}
+
+		res = cli.CompareSearches(stdout,
+			cli.SearchFile{Path: base, Report: reports[0].Search}, cli.SearchFile{Path: nw, Report: reports[1].Search},
+			limits[flagCapacityDrop])
+	}
+
+	return compareResult(res)
+}
+
+// compareResult is the error a finished comparison ends with, nil when every
+// limit asked for held.
+func compareResult(res cli.Comparison) error {
 	switch {
-	case !res.Comparable || res.Judged && res.Verdict == compare.Unknown:
-		return fmt.Errorf("compare: nothing decided: %w", ErrInvalidRun)
 	case res.Judged && res.Verdict == compare.Fail:
-		return fmt.Errorf("compare: capacity fell past -max-capacity-drop: %w", ErrThresholdsFailed)
+		return ErrCompareFailed
+	case !res.Comparable:
+		return &compareError{text: "compare: reports are not comparable: nothing decided", kind: ErrCompareUndecided}
+	case res.Judged && res.Verdict == compare.Unknown:
+		return ErrCompareUndecided
 	}
 
 	return nil
