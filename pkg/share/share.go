@@ -104,15 +104,15 @@ func Format(bad, total int, limit Percent, v Verdict) string {
 // 50%), such as the difference of two shares with different totals, whose
 // numerator an int64 cannot hold. r is not negative.
 func FormatFraction(r *big.Rat, limit Percent, v Verdict) string {
-	tenth := at(r, 1, false)
+	tenth := at(r, 1, nearest)
 	over := tenth*100 > limit.Thousandths
 	decimals := max(1, digitsAfterPoint(limit.Text))
 
 	switch {
 	case v == Holds && over:
-		return fixed(at(r, decimals, false), decimals) + "%"
+		return fixed(at(r, decimals, nearest), decimals) + "%"
 	case v == Breaks && !over:
-		return fixed(at(r, decimals, true), decimals) + "%"
+		return fixed(at(r, decimals, ceil), decimals) + "%"
 	}
 
 	return fixed(tenth, 1) + "%"
@@ -124,24 +124,42 @@ func FormatFraction(r *big.Rat, limit Percent, v Verdict) string {
 // limit as written, when no digits kept are over it. limit is nil when there
 // is none; with a limit, Undecided is an unknown verdict. r is not negative.
 //
-// Red-test stub: the text the callers print today, not the rounding the spec
-// asks for.
+// An upper bound is rounded up and a lower bound down, to a tenth of a
+// percent, whatever the verdict. Beside a limit the digits follow the
+// verdict: an upper bound beside Holds that a tenth would put over the limit
+// takes as many digits as the limit has (r is within the limit, so that is
+// not over it); a lower bound beside Breaks that a tenth would leave within
+// the limit takes two, then three digits, and past that prints the limit with
+// ">". limit is the limit r is judged by: Holds means r is within it, Breaks
+// that r is over it.
 func FormatBound(r *big.Rat, upper bool, limit *Percent, v Verdict) string {
-	qualifier := ">= "
+	decided := limit != nil && v != Undecided
+
 	if upper {
-		qualifier = "<= "
+		decimals := 1
+		n := at(r, decimals, ceil)
+
+		if decided && v == Holds && n*unitOf(1) > limit.Thousandths {
+			decimals = max(1, digitsAfterPoint(limit.Text))
+			n = at(r, decimals, ceil)
+		}
+
+		return "<= " + fixed(n, decimals) + "%"
 	}
 
-	if limit != nil && v != Undecided {
-		return qualifier + FormatFraction(r, *limit, v)
+	tenth := at(r, 1, floor)
+
+	if decided && v == Breaks && tenth*unitOf(1) <= limit.Thousandths {
+		for decimals := 2; decimals <= 3; decimals++ {
+			if n := at(r, decimals, floor); n*unitOf(decimals) > limit.Thousandths {
+				return ">= " + fixed(n, decimals) + "%"
+			}
+		}
+
+		return "> " + limit.Text
 	}
 
-	tenths := new(big.Int).Mul(r.Num(), big.NewInt(1000))
-	if upper {
-		tenths.Add(tenths, r.Denom()).Sub(tenths, big.NewInt(1))
-	}
-
-	return qualifier + fixed(tenths.Div(tenths, r.Denom()).Int64(), 1) + "%"
+	return ">= " + fixed(tenth, 1) + "%"
 }
 
 func digitsAfterPoint(written string) int {
@@ -150,26 +168,38 @@ func digitsAfterPoint(written string) int {
 	return len(fraction)
 }
 
-// at is the share bad/total in units of 10^-decimals percent, rounded half
-// up, or up when up is set. Integer arithmetic: a float would round 0.125
-// either way.
-func at(r *big.Rat, decimals int, up bool) int64 {
+type rounding int
+
+const (
+	nearest rounding = iota // half up
+	ceil
+	floor
+)
+
+// unitOf is the thousandths of a percent in one unit of 10^-decimals percent.
+func unitOf(decimals int) int64 {
 	unit := int64(1)
 	for range 3 - decimals {
 		unit *= 10
 	}
 
+	return unit
+}
+
+// at is the share bad/total in units of 10^-decimals percent, rounded as
+// asked. Integer arithmetic: a float would round 0.125 either way.
+func at(r *big.Rat, decimals int, how rounding) int64 {
 	num := new(big.Int).Mul(r.Num(), big.NewInt(scale))
-	den := new(big.Int).Mul(r.Denom(), big.NewInt(unit))
+	den := new(big.Int).Mul(r.Denom(), big.NewInt(unitOf(decimals)))
 
-	if up {
+	switch how {
+	case ceil:
 		num.Add(num, den).Sub(num, big.NewInt(1))
-
-		return num.Div(num, den).Int64()
+	case nearest:
+		num.Lsh(num, 1).Add(num, den)
+		den.Lsh(den, 1)
+	case floor:
 	}
-
-	num.Lsh(num, 1).Add(num, den)
-	den.Lsh(den, 1)
 
 	return num.Div(num, den).Int64()
 }

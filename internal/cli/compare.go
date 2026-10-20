@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"math/big"
 	"os"
 	"slices"
 	"strconv"
@@ -378,40 +379,26 @@ func fallText(base, nw compare.Capacity, limit *shr.Percent, v compare.Verdict) 
 		return "no change"
 	}
 
-	// A fall the verdict was drawn on keeps its printed number on the right
-	// side of the limit; the rest are printed as they are, to a tenth.
-	fall := func(qualifier string, round func(bad, total int) string) string {
-		if limit != nil && v != compare.Unknown {
-			verdict := shr.Holds
-			if v == compare.Fail {
-				verdict = shr.Breaks
-			}
-
-			return "drop " + qualifier + shr.Format(b-n, b, *limit, verdict)
-		}
-
-		return "drop " + qualifier + round(b-n, b)
-	}
-	rise := func(qualifier string, round func(bad, total int) string) string {
-		return "rise " + qualifier + round(n-b, b)
-	}
-
+	// Only a fall is judged by the limit of the fall: a rise carries no limit,
+	// and its bound is a tenth, up or down.
 	switch {
+	case exact && n < b && limit != nil && v != compare.Unknown:
+		return "drop " + shr.Format(b-n, b, *limit, shareVerdict(v))
 	case exact && n < b:
-		return fall("", nearestTenth)
+		return "drop " + nearestTenth(b-n, b)
 	case exact:
-		return rise("", nearestTenth)
+		return "rise " + nearestTenth(n-b, b)
 	case nw.Bound == compare.Lower && n < b:
-		return fall("<= ", tenthUp)
+		return "drop " + boundOf(true, b-n, b, limit, v)
 	case nw.Bound == compare.Lower:
-		return rise(">= ", tenthDown)
+		return "rise " + boundOf(false, n-b, b, nil, v)
 	case n < b:
-		return fall(">= ", tenthDown)
+		return "drop " + boundOf(false, b-n, b, limit, v)
 	case n > b:
-		return rise("<= ", tenthUp)
+		return "rise " + boundOf(true, n-b, b, nil, v)
 	}
 
-	return "drop >= " + tenthDown(0, b)
+	return "drop " + boundOf(false, 0, b, nil, v)
 }
 
 // nearestTenth is the share bad/total to a tenth of a percent, half up, as
@@ -420,16 +407,22 @@ func nearestTenth(bad, total int) string {
 	return shr.Format(bad, total, shr.Percent{Text: "0%"}, shr.Holds)
 }
 
-// tenthUp is the share bad/total to a tenth of a percent, rounded up.
-func tenthUp(bad, total int) string {
-	return tenths((int64(bad)*1000 + int64(total) - 1) / int64(total))
+// boundOf is the change bad/total as a bound, `<= ` (upper) or `>= `, with the
+// qualifier. limit is the limit this change is judged by, nil for a change
+// the verdict says nothing of (a rise beside a limit on the fall).
+func boundOf(upper bool, bad, total int, limit *shr.Percent, v compare.Verdict) string {
+	return shr.FormatBound(big.NewRat(int64(bad), int64(total)), upper, limit, shareVerdict(v))
 }
 
-// tenthDown is the share bad/total to a tenth of a percent, rounded down.
-func tenthDown(bad, total int) string {
-	return tenths(int64(bad) * 1000 / int64(total))
-}
+// shareVerdict is the verdict of a check as pkg/share knows it.
+func shareVerdict(v compare.Verdict) shr.Verdict {
+	switch v {
+	case compare.Pass:
+		return shr.Holds
+	case compare.Fail:
+		return shr.Breaks
+	case compare.Unknown:
+	}
 
-func tenths(t int64) string {
-	return fmt.Sprintf("%d.%d%%", t/10, t%10)
+	return shr.Undecided
 }
