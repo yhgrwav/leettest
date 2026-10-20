@@ -863,19 +863,19 @@ func cjWantBaseOrder(t *testing.T, name string, got cjRan, rep cjReport) {
 
 	var want []string
 
-	for _, m := range baseFile.Run.Methods {
-		for _, n := range newFile.Run.Methods {
-			if n.Method == m.Method {
-				want = append(want, m.Method)
+	for i := range baseFile.Run.Methods {
+		for j := range newFile.Run.Methods {
+			if newFile.Run.Methods[j].Method == baseFile.Run.Methods[i].Method {
+				want = append(want, baseFile.Run.Methods[i].Method)
 			}
 		}
 	}
 
 	var have []string
 
-	for _, c := range rep.Checks {
-		if c.Key == "p99" {
-			have = append(have, c.Method)
+	for i := range rep.Checks {
+		if rep.Checks[i].Key == "p99" {
+			have = append(have, rep.Checks[i].Method)
 		}
 	}
 
