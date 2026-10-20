@@ -34,7 +34,7 @@ jobs:
           git branch -r --points-at "$GITHUB_SHA" > "$RUNNER_TEMP/pointsat.txt"
           go run ./test/stressplan/cmd/stressplan tag "$GITHUB_REF_NAME" "$RUNNER_TEMP/pointsat.txt"
       - run: go test -race ./...
-      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           version: "v2.18.2"
           # --clean empties dist and nothing makes a subdirectory in it:
@@ -55,7 +55,7 @@ jobs:
           notes="docs/release-notes/${GITHUB_REF_NAME%%-*}.md"
           [ -s "$notes" ] || { echo "::error::no $notes: write the release notes first"; exit 1; }
           echo "NOTES=$notes" >> "$GITHUB_ENV"
-      - uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7.2.3
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
         with:
           version: "v2.18.2"
           args: release --clean --release-notes ${{ env.NOTES }}
