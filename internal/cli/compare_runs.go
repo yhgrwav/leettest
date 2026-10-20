@@ -269,7 +269,7 @@ func latencyOf(m *jsonMethod) compare.Latency {
 		return compare.Latency{}
 	}
 
-	return compare.Latency{US: q.US, LowerBound: q.LowerBound, Defined: true}
+	return compare.Latency{NS: q.US * 1000, LowerBound: q.LowerBound, Defined: true}
 }
 
 // quantileCopy is a report's own quantile, a copy of it, nil when it has none.
@@ -356,11 +356,11 @@ func finishCheck(check CompareCheck, text, change string, limit *shr.Percent, ve
 // digits on the right side of the limit (share.FormatBound); a fall is judged
 // by no limit.
 func p99Change(b, n compare.Latency, limit *shr.Percent, v compare.Verdict) string {
-	if !b.Defined || !n.Defined || b.US <= 0 || b.LowerBound && n.LowerBound {
+	if !b.Defined || !n.Defined || b.NS <= 0 || b.LowerBound && n.LowerBound {
 		return "rise -"
 	}
 
-	bus, nus := int(b.US), int(n.US)
+	bus, nus := int(b.NS/1000), int(n.NS/1000)
 
 	if !b.LowerBound && !n.LowerBound && nus == bus {
 		return "no change"

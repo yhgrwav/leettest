@@ -345,6 +345,7 @@ unten den Typ „percentile?" hat.
 | Feld | Typ | Bedeutung |
 |---|---|---|
 | `<percentile>.us` | int | Der Wert, ganze Mikrosekunden |
+| `<percentile>.ns` | int | Derselbe Wert in ganzen Nanosekunden, wie der Lauf ihn ausgegeben hat; `leettest compare` urteilt danach |
 | `<percentile>.lower_bound` | bool | `true` — eine Untergrenze, kein Wert ([README](README.md#den-bericht-lesen)) |
 
 ### Lauf

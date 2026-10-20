@@ -322,6 +322,7 @@ SIGTERM (`docker stop`, Kubernetes, отмена джоба в CI) сразу о
 | Поле | Тип | Что значит |
 |---|---|---|
 | `<перцентиль>.us` | int | Значение, целые микросекунды |
+| `<перцентиль>.ns` | int | То же значение в целых наносекундах, как его напечатал прогон; по нему судит `leettest compare` |
 | `<перцентиль>.lower_bound` | bool | `true` — это нижняя граница, а не значение ([README](../../README.md#как-читать-отчёт)) |
 
 ### Прогон
@@ -561,6 +562,7 @@ SIGTERM (`docker stop`, Kubernetes, отмена джоба в CI) сразу о
 | `checks[].base_outcome`, `checks[].new_outcome` | string? | `breakpoint.outcome` поиска; только у `capacity` |
 | `checks[].base_p99`, `checks[].new_p99` | object? | p99 метода — тот же объект, что `latency.p99` отчёта прогона; `null` — замеров слишком мало или другой вид проверки |
 | `checks[].base_p99.us`, `checks[].new_p99.us` | int | p99 в целых микросекундах |
+| `checks[].base_p99.ns`, `checks[].new_p99.ns` | int | p99 в целых наносекундах; рост считается по нему |
 | `checks[].base_p99.lower_bound`, `checks[].new_p99.lower_bound` | bool | `true` — хвост упёрся в таймаут, настоящий p99 больше |
 | `checks[].base_errors`, `checks[].new_errors` | object? | Доля неудачных вызовов метода по частям; `null` — другой вид проверки |
 | `checks[].base_errors.bad`, `checks[].new_errors.bad` | int | Все неудачные вызовы и потерянные соединением |

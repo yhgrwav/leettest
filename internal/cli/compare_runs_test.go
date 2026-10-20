@@ -17,6 +17,10 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"math"
+	"math/rand/v2"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -1075,6 +1079,175 @@ func TestCompareRuns_OneLimitJudgesOneCheck(t *testing.T) {
 	crWantFrame(t, out, crHeader+
 		"pkg.Svc/Do: p99 100ms -> 100ms, no change\n"+
 		"pkg.Svc/Do: errors 1.0% -> 1.0%, no change, limit 1%: pass\n")
+	crWantResult(t, c, Comparison{Comparable: true, Judged: true, Verdict: compare.Pass})
+}
+
+// Ground: contract — compare prints and judges the p99 the run report
+// printed, not a copy cut to whole microseconds: 50900 ns reads 50.9us, a rise
+// to 61000 ns is 19.8% and passes a limit of 20% (whole microseconds read
+// 50 -> 61, 22.0%, FAIL), and a base below a microsecond is a base, not zero.
+func TestCompareRuns_P99IsComparedAsTheRunPrintedIt(t *testing.T) {
+	ns := func(n int64) metrics.Quantile { return crExact(time.Duration(n) * time.Nanosecond) }
+
+	for _, tc := range []struct {
+		name     string
+		base, nw metrics.Quantile
+		limit    string
+		want     string
+	}{
+		{"a rise the limit allows", ns(50900), ns(61000), "20%", "p99 50.9us -> 61.0us, rise 19.8%, limit 20%: pass"},
+		{"a rise past the limit", ns(50400), ns(63000), "20%", "p99 50.4us -> 63.0us, rise 25.0%, limit 20%: FAIL"},
+		{"no change, no limit", ns(312600), ns(312600), "", "p99 313us -> 313us, no change"},
+		{"a base below a microsecond", ns(800), ns(900), "", "p99 800ns -> 900ns, rise 12.5%"},
+		{"a fall below a microsecond", ns(900), ns(800), "", "p99 900ns -> 800ns, fall 11.1%"},
+	} {
+		base, nw := crBase(), crNew()
+		base.methods[0].p99, nw.methods[0].p99 = tc.base, tc.nw
+
+		out, _ := crCompare(t, base, nw, tc.limit, "")
+
+		if got, want := crLine(t, out, "pkg.Svc/Do: p99"), "pkg.Svc/Do: "+tc.want; got != want {
+			t.Errorf("%s:\n  got  %q\n  want %q", tc.name, got, want)
+		}
+	}
+}
+
+// Ground: contract — whatever the p99 is, from 1 ns to 10 minutes, exact or a
+// lower bound, the text of each side in compare is the text of the same p99
+// in the run report (formatQuantile of the run's own quantile). Seeded.
+func TestCompareRuns_P99TextIsTheRunReportsText(t *testing.T) {
+	rng := rand.New(rand.NewPCG(20261020, 2))
+
+	// The edges of the units first, then values spread over the decades.
+	values := []int64{1, 999, 1000, 1001, 999_999, 1_000_000, 999_999_999, 1_000_000_001, 600_000_000_000}
+	for len(values) < 200 {
+		values = append(values, max(int64(math.Pow(10, rng.Float64()*11.778)), 1))
+	}
+
+	quantile := func(n int64) metrics.Quantile {
+		d := time.Duration(n) * time.Nanosecond
+		if rng.IntN(2) == 0 {
+			return crExact(d)
+		}
+
+		return crLower(d)
+	}
+
+	for i := 0; i+1 < len(values); i += 2 {
+		b, n := quantile(values[i]), quantile(values[i+1])
+		base, nw := crBase(), crNew()
+		base.methods[0].p99, nw.methods[0].p99 = b, n
+
+		out, _ := crCompare(t, base, nw, "", "")
+
+		rest := strings.TrimPrefix(crLine(t, out, "pkg.Svc/Do: p99"), "pkg.Svc/Do: p99 ")
+		texts, _, _ := strings.Cut(rest, ", ")
+		gotBase, gotNew, _ := strings.Cut(texts, " -> ")
+
+		if want := formatQuantile(b); gotBase != want {
+			t.Fatalf("base %d ns (exact %v): compare prints %q, the run report prints %q", values[i], b.Exact, gotBase, want)
+		}
+
+		if want := formatQuantile(n); gotNew != want {
+			t.Fatalf("new %d ns (exact %v): compare prints %q, the run report prints %q", values[i+1], n.Exact, gotNew, want)
+		}
+	}
+}
+
+// crWithoutNS is f as a report written before `ns` existed: its JSON without
+// the `ns` of every quantile, read back as compare reads a file.
+func crWithoutNS(t *testing.T, f RunFile) RunFile {
+	t.Helper()
+
+	raw, err := json.Marshal(f.Report)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var doc any
+	if err = json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	var drop func(v any)
+	drop = func(v any) {
+		switch x := v.(type) {
+		case map[string]any:
+			if _, quantile := x["us"]; quantile {
+				delete(x, "ns")
+			}
+
+			for _, c := range x {
+				drop(c)
+			}
+		case []any:
+			for _, c := range x {
+				drop(c)
+			}
+		}
+	}
+	drop(doc)
+
+	if raw, err = json.Marshal(doc); err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	if bytes.Contains(raw, []byte(`"ns"`)) {
+		t.Fatalf("fixture: an `ns` key is left in %s", raw)
+	}
+
+	path := filepath.Join(t.TempDir(), "old.json")
+	if err = os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	read, err := ReadReport(path)
+	if err != nil || read.Mode != ModeRun {
+		t.Fatalf("read the report without ns: mode %q, %v", read.Mode, err)
+	}
+
+	return RunFile{Path: f.Path, Report: read.Run}
+}
+
+// Ground: contract — a report written before `ns` existed (microseconds
+// only) is read as it was: the p99 is its microseconds, the verdict the one
+// compare gave then (50 -> 61 is 22.0% over a limit of 20%, printed 50.0us
+// and 61.0us: a microsecond count prints its tenth).
+func TestCompareRuns_AReportWithoutNanosecondsIsReadAsBefore(t *testing.T) {
+	base, nw := crBase(), crNew()
+	base.methods[0].p99 = crExact(50900 * time.Nanosecond)
+	nw.methods[0].p99 = crExact(61000 * time.Nanosecond)
+
+	var out bytes.Buffer
+
+	c := CompareRuns(&out, crWithoutNS(t, base.file(t, "base.json")), crWithoutNS(t, nw.file(t, "new.json")),
+		crLimit(t, "-max-p99-rise", "20%"), nil)
+
+	if got, want := crLine(t, out.String(), "pkg.Svc/Do: p99"), "pkg.Svc/Do: p99 50.0us -> 61.0us, rise 22.0%, limit 20%: FAIL"; got != want {
+		t.Errorf("got  %q\nwant %q", got, want)
+	}
+
+	crWantResult(t, c, Comparison{Comparable: true, Judged: true, Verdict: compare.Fail})
+}
+
+// Ground: contract — the fallback is per quantile: a base report written
+// before `ns` (50 us) beside a new report that has it (61400 ns) reads the
+// base as 50000 ns and the new as 61400 ns exactly, not both as whole
+// microseconds.
+func TestCompareRuns_AQuantileWithoutNanosecondsFallsBackAlone(t *testing.T) {
+	base, nw := crBase(), crNew()
+	base.methods[0].p99 = crExact(50900 * time.Nanosecond)
+	nw.methods[0].p99 = crExact(61400 * time.Nanosecond)
+
+	var out bytes.Buffer
+
+	c := CompareRuns(&out, crWithoutNS(t, base.file(t, "base.json")), nw.file(t, "new.json"),
+		crLimit(t, "-max-p99-rise", "23%"), nil)
+
+	if got, want := crLine(t, out.String(), "pkg.Svc/Do: p99"), "pkg.Svc/Do: p99 50.0us -> 61.4us, rise 22.8%, limit 23%: pass"; got != want {
+		t.Errorf("got  %q\nwant %q", got, want)
+	}
+
 	crWantResult(t, c, Comparison{Comparable: true, Judged: true, Verdict: compare.Pass})
 }
 

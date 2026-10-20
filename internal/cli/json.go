@@ -149,7 +149,10 @@ type jsonRequestBytes struct {
 }
 
 type jsonQuantile struct {
-	US         int64 `json:"us"`
+	US int64 `json:"us"`
+	// NS is the value in whole nanoseconds, as the histogram holds it; US is
+	// the same value truncated to microseconds.
+	NS         int64 `json:"ns"`
 	LowerBound bool  `json:"lower_bound"`
 }
 

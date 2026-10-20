@@ -33,9 +33,11 @@ checks[].base_outcome string?
 checks[].new_outcome string?
 checks[].base_p99 object?
 checks[].base_p99.us int
+checks[].base_p99.ns int
 checks[].base_p99.lower_bound bool
 checks[].new_p99 object?
 checks[].new_p99.us int
+checks[].new_p99.ns int
 checks[].new_p99.lower_bound bool
 checks[].base_errors object?
 checks[].base_errors.bad int
