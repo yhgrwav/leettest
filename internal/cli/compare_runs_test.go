@@ -1098,6 +1098,10 @@ func TestCompareRuns_P99IsComparedAsTheRunPrintedIt(t *testing.T) {
 		{"a rise the limit allows", ns(50900), ns(61000), "20%", "p99 50.9us -> 61.0us, rise 19.8%, limit 20%: pass"},
 		{"a rise past the limit", ns(50400), ns(63000), "20%", "p99 50.4us -> 63.0us, rise 25.0%, limit 20%: FAIL"},
 		{"no change, no limit", ns(312600), ns(312600), "", "p99 313us -> 313us, no change"},
+		// "no change" only when the nanoseconds are equal; two values that print
+		// alike but differ are a rise, and a limit of 0% fails it.
+		{"two values that print alike, no limit", ns(312600), ns(312700), "", "p99 313us -> 313us, rise 0.0%"},
+		{"two values that print alike, limit 0%", ns(312600), ns(312700), "0%", "p99 313us -> 313us, rise 0.1%, limit 0%: FAIL"},
 		{"a base below a microsecond", ns(800), ns(900), "", "p99 800ns -> 900ns, rise 12.5%"},
 		{"a fall below a microsecond", ns(900), ns(800), "", "p99 900ns -> 800ns, fall 11.1%"},
 	} {
@@ -1249,6 +1253,41 @@ func TestCompareRuns_AQuantileWithoutNanosecondsFallsBackAlone(t *testing.T) {
 	}
 
 	crWantResult(t, c, Comparison{Comparable: true, Judged: true, Verdict: compare.Pass})
+}
+
+// Ground: contract (reviewer, round 1, amendment 1) — the `ns` of a p99 in the
+// compare JSON is the value the verdict was judged by: the report's own `ns`,
+// and `us` × 1000 for a quantile of a report written before `ns`. Never a 0
+// beside 50 us.
+func TestCompareRuns_TheJSONNanosecondsAreTheOnesJudged(t *testing.T) {
+	base, nw := crBase(), crNew()
+	base.methods[0].p99 = crExact(50900 * time.Nanosecond)
+	nw.methods[0].p99 = crExact(61400 * time.Nanosecond)
+
+	var out bytes.Buffer
+
+	_, rep := CompareRunsReport(&out, crWithoutNS(t, base.file(t, "base.json")), nw.file(t, "new.json"),
+		crLimit(t, "-max-p99-rise", "23%"), nil)
+
+	var p99 *CompareCheck
+
+	for i := range rep.Checks {
+		if rep.Checks[i].Key == "p99" {
+			p99 = &rep.Checks[i]
+		}
+	}
+
+	if p99 == nil || p99.BaseP99 == nil || p99.NewP99 == nil {
+		t.Fatalf("no p99 check with both values in %+v", rep.Checks)
+	}
+
+	if want := (jsonQuantile{US: 50, NS: 50_000}); *p99.BaseP99 != want {
+		t.Errorf("base_p99 = %+v, want %+v (the old report's us × 1000)", *p99.BaseP99, want)
+	}
+
+	if want := (jsonQuantile{US: 61, NS: 61_400}); *p99.NewP99 != want {
+		t.Errorf("new_p99 = %+v, want %+v (the report's own ns)", *p99.NewP99, want)
+	}
 }
 
 // Ground: contract — one result for all the checks: a fail beside an unknown is
