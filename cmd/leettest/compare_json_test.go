@@ -823,6 +823,8 @@ func TestCompareJSON_VerdictsMatchText(t *testing.T) {
 			cjWantNullable(t, what+": limit_percent", c.LimitPercent, want.limit)
 		}
 
+		cjWantBaseOrder(t, p.name, got, rep)
+
 		cjWantNullable(t, p.name+": top verdict", rep.Verdict, cjWorst(texts, p.judged()))
 
 		if wantDiffs := cjTextDiffs(got.text.stdout, got.basePath, got.newPath); !slices.Equal(rep.Differences, wantDiffs) {
@@ -836,6 +838,49 @@ func TestCompareJSON_VerdictsMatchText(t *testing.T) {
 		if exitCode(got.js.err) != exitCode(got.text.err) {
 			t.Errorf("%s: exit code %d in json mode, %d in text mode", p.name, exitCode(got.js.err), exitCode(got.text.err))
 		}
+	}
+}
+
+// cjWantBaseOrder: the methods of a run comparison come in the order of the
+// base report, whatever order the new one has them in. The text cannot say it:
+// it is built from the same checks, so it follows any order the JSON has.
+func cjWantBaseOrder(t *testing.T, name string, got cjRan, rep cjReport) {
+	t.Helper()
+
+	if rep.ComparedMode != "run" {
+		return
+	}
+
+	baseFile, err := cli.ReadReport(got.basePath)
+	if err != nil {
+		t.Fatalf("%s: read the base: %v", name, err)
+	}
+
+	newFile, err := cli.ReadReport(got.newPath)
+	if err != nil {
+		t.Fatalf("%s: read the new: %v", name, err)
+	}
+
+	var want []string
+
+	for _, m := range baseFile.Run.Methods {
+		for _, n := range newFile.Run.Methods {
+			if n.Method == m.Method {
+				want = append(want, m.Method)
+			}
+		}
+	}
+
+	var have []string
+
+	for _, c := range rep.Checks {
+		if c.Key == "p99" {
+			have = append(have, c.Method)
+		}
+	}
+
+	if !slices.Equal(have, want) {
+		t.Errorf("%s: methods in the order %v, the base report has the common ones as %v", name, have, want)
 	}
 }
 
