@@ -99,3 +99,53 @@ func CapacityDrop(base, nw Capacity, limit share.Percent) (verdict Verdict, reas
 
 	return Pass, ""
 }
+
+// The reasons a check can be unknown, a closed list. The first of
+// NotComparable, Invalid, Incomplete, Generator and Stream that applies wins
+// over the check's own.
+const (
+	ReasonNotComparable   = "not_comparable"
+	ReasonInvalid         = "invalid"
+	ReasonIncomplete      = "incomplete"
+	ReasonGenerator       = "generator"
+	ReasonStream          = "stream"
+	ReasonFewObservations = "few_observations"
+	ReasonBaseZero        = "base_zero"
+	ReasonCensored        = "censored"
+	ReasonNothingSent     = "nothing_sent"
+	ReasonClientErrors    = "client_errors"
+)
+
+// Latency is the p99 of one method of a run report.
+type Latency struct {
+	// US is whole microseconds, as the report writes them.
+	US int64
+	// LowerBound: the tail ran past the timeout, the true value is larger.
+	LowerBound bool
+	// Defined is false when the method has too few observations.
+	Defined bool
+}
+
+// Share is the failed calls of one method of a run report, the parts of
+// `pass: errors`.
+type Share struct {
+	// Bad is every failed call and every call lost to the connection.
+	Bad int
+	// BadClient is the part of Bad that says nothing of the target: rejected
+	// requests, client errors, our bad responses.
+	BadClient int
+	// Total is the calls sent and those lost to the connection.
+	Total int
+}
+
+// P99Rise judges the rise of the p99 from base to new, in percent of base,
+// against limit. A reason is given only for Unknown.
+func P99Rise(base, nw Latency, limit share.Percent) (verdict Verdict, reason string) {
+	return Unknown, ""
+}
+
+// ErrorsRise judges the rise of the failed share from base to new, in points
+// of share, against limit. A reason is given only for Unknown.
+func ErrorsRise(base, nw Share, limit share.Percent) (verdict Verdict, reason string) {
+	return Unknown, ""
+}

@@ -61,6 +61,13 @@ var ErrIncomplete = errors.New("the run stopped before its planned end; the repo
 // ErrThresholdsFailed says the run finished and a limit in pass: was not met.
 var ErrThresholdsFailed = errors.New("a pass limit was not met")
 
+// ErrCompareUndecided says leettest compare could not decide: the reports are
+// not comparable or a limit is unknown.
+var ErrCompareUndecided = errors.New("compare: undecided")
+
+// ErrCompareFailed says a limit given to leettest compare was not met.
+var ErrCompareFailed = errors.New("compare: a limit was not met")
+
 // exitNow is the way out that depends on nothing: the third stop, or an abort
 // that has not finished in time.
 var exitNow = func() {

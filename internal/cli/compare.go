@@ -321,3 +321,16 @@ func tenthDown(bad, total int) string {
 func tenths(t int64) string {
 	return fmt.Sprintf("%d.%d%%", t/10, t%10)
 }
+
+// RunFile is a plain-run report and the path it was read from.
+type RunFile struct {
+	Path   string
+	Report JSONReport
+}
+
+// CompareRuns prints the comparison of two plain-run reports: both headers,
+// the differences and, per method, the p99 and the error share of each side
+// with the verdict of the limit given for them.
+func CompareRuns(_ io.Writer, _, _ RunFile, _, _ *shr.Percent) Comparison {
+	return Comparison{}
+}
