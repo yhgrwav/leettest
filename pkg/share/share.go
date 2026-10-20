@@ -16,6 +16,7 @@ package share
 
 import (
 	"fmt"
+	"math/big"
 	"regexp"
 	"strconv"
 	"strings"
@@ -96,15 +97,22 @@ func Format(bad, total int, limit Percent, v Verdict) string {
 		return "-"
 	}
 
-	tenth := at(bad, total, 1, false)
+	return FormatFraction(big.NewRat(int64(bad), int64(total)), limit, v)
+}
+
+// FormatFraction is Format for a share that is an exact fraction r (1/2 is
+// 50%), such as the difference of two shares with different totals, whose
+// numerator an int64 cannot hold. r is not negative.
+func FormatFraction(r *big.Rat, limit Percent, v Verdict) string {
+	tenth := at(r, 1, false)
 	over := tenth*100 > limit.Thousandths
 	decimals := max(1, digitsAfterPoint(limit.Text))
 
 	switch {
 	case v == Holds && over:
-		return fixed(at(bad, total, decimals, false), decimals) + "%"
+		return fixed(at(r, decimals, false), decimals) + "%"
 	case v == Breaks && !over:
-		return fixed(at(bad, total, decimals, true), decimals) + "%"
+		return fixed(at(r, decimals, true), decimals) + "%"
 	}
 
 	return fixed(tenth, 1) + "%"
@@ -119,18 +127,25 @@ func digitsAfterPoint(written string) int {
 // at is the share bad/total in units of 10^-decimals percent, rounded half
 // up, or up when up is set. Integer arithmetic: a float would round 0.125
 // either way.
-func at(bad, total, decimals int, up bool) int64 {
+func at(r *big.Rat, decimals int, up bool) int64 {
 	unit := int64(1)
 	for range 3 - decimals {
 		unit *= 10
 	}
 
-	num, den := int64(bad)*scale, unit*int64(total)
+	num := new(big.Int).Mul(r.Num(), big.NewInt(scale))
+	den := new(big.Int).Mul(r.Denom(), big.NewInt(unit))
+
 	if up {
-		return (num + den - 1) / den
+		num.Add(num, den).Sub(num, big.NewInt(1))
+
+		return num.Div(num, den).Int64()
 	}
 
-	return (2*num + den) / (2 * den)
+	num.Lsh(num, 1).Add(num, den)
+	den.Lsh(den, 1)
+
+	return num.Div(num, den).Int64()
 }
 
 // fixed writes n, holding decimals decimals, as a number: 104 with 1 is 10.4.

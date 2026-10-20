@@ -40,6 +40,10 @@ const (
 	OutcomeIncomplete = "incomplete"
 )
 
+// reasonThresholdsUndecided is the invalid reason of a run whose own pass:
+// limits could not be decided; leettest compare does not count it.
+const reasonThresholdsUndecided = "thresholds_undecided"
+
 // JSONRun is what the JSON report needs beyond the engine's report.
 type JSONRun struct {
 	Target    string
@@ -477,7 +481,7 @@ func NewJSONReport(run JSONRun) JSONReport {
 		out.InvalidReasons = append(out.InvalidReasons, "clock_step")
 	}
 	if thresholdsUndecided(run.Run.Thresholds) {
-		out.InvalidReasons = append(out.InvalidReasons, "thresholds_undecided")
+		out.InvalidReasons = append(out.InvalidReasons, reasonThresholdsUndecided)
 	}
 	for _, u := range run.Run.Unchecked {
 		reason := "reflection_failed"

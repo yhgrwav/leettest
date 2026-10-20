@@ -61,9 +61,9 @@ var ErrIncomplete = errors.New("the run stopped before its planned end; the repo
 // ErrThresholdsFailed says the run finished and a limit in pass: was not met.
 var ErrThresholdsFailed = errors.New("a pass limit was not met")
 
-// ErrCompareUndecided says leettest compare could not decide: the reports are
-// not comparable or a limit is unknown.
-var ErrCompareUndecided = errors.New("compare: undecided")
+// ErrCompareUndecided says leettest compare could not decide: a limit is
+// unknown, or the reports are not comparable (the same code, its own text).
+var ErrCompareUndecided = errors.New("compare: a limit could not be decided")
 
 // ErrCompareFailed says a limit given to leettest compare was not met.
 var ErrCompareFailed = errors.New("compare: a limit was not met")
@@ -166,11 +166,11 @@ func exitCode(err error) int {
 	switch {
 	case err == nil, errors.Is(err, flag.ErrHelp):
 		return 0
-	case errors.Is(err, ErrInvalidRun):
+	case errors.Is(err, ErrInvalidRun), errors.Is(err, ErrCompareUndecided):
 		return 2
 	case errors.Is(err, ErrIncomplete):
 		return 3
-	case errors.Is(err, ErrThresholdsFailed):
+	case errors.Is(err, ErrThresholdsFailed), errors.Is(err, ErrCompareFailed):
 		return 4
 	default:
 		return 1

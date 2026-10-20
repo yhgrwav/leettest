@@ -420,7 +420,7 @@ func TestCompareRuns_EachDifferenceIsNamed(t *testing.T) {
 			}
 
 			for _, prefix := range []string{"pkg.Svc/Do: p99", "pkg.Svc/Do: errors"} {
-				if line := crLine(t, out, prefix); !strings.HasSuffix(line, ", unknown, reports are not comparable") {
+				if line := crLine(t, out, prefix); !strings.HasSuffix(line, ": unknown, reports are not comparable") {
 					t.Errorf("%s: line %q, want it unknown, reports are not comparable", tc.name, line)
 				}
 			}

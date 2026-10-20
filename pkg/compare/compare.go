@@ -14,7 +14,11 @@
 
 package compare
 
-import "github.com/yhgrwav/leettest/pkg/share"
+import (
+	"math/big"
+
+	"github.com/yhgrwav/leettest/pkg/share"
+)
 
 // Bound says what a capacity's RPS is.
 type Bound int
@@ -140,12 +144,79 @@ type Share struct {
 
 // P99Rise judges the rise of the p99 from base to new, in percent of base,
 // against limit. A reason is given only for Unknown.
+//
+// The rise is (new − base) / base in whole microseconds. A lower bound
+// narrows a p99 to a range: new as a lower bound can only be larger, base as
+// a lower bound can only be larger, so a rise past the limit is certain only
+// for an exact base, and a rise within it only for an exact new.
 func P99Rise(base, nw Latency, limit share.Percent) (verdict Verdict, reason string) {
-	return Unknown, ""
+	if !base.Defined || !nw.Defined {
+		return Unknown, ReasonFewObservations
+	}
+
+	if base.US <= 0 {
+		return Unknown, ReasonBaseZero
+	}
+
+	over := (nw.US-base.US)*100000 > limit.Thousandths*base.US
+
+	switch {
+	case !base.LowerBound && !nw.LowerBound:
+		if over {
+			return Fail, ""
+		}
+
+		return Pass, ""
+	case !base.LowerBound:
+		if over {
+			return Fail, ""
+		}
+
+		return Unknown, ReasonCensored
+	case !nw.LowerBound:
+		if over {
+			return Unknown, ReasonCensored
+		}
+
+		return Pass, ""
+	}
+
+	return Unknown, ReasonCensored
 }
 
 // ErrorsRise judges the rise of the failed share from base to new, in points
 // of share, against limit. A reason is given only for Unknown.
+//
+// The rise is new.Bad/new.Total − base.Bad/base.Total, as `pass: errors`
+// reads one share: Fail when the target's own failures alone (without
+// BadClient) on the new side exceed the limit over all the base side's
+// failures, Pass when all failures on the new side stay within it over the
+// base side's own, otherwise the client-side errors decide and the verdict is
+// Unknown. Exact fractions in math/big: counts near 10^9 overflow int64.
 func ErrorsRise(base, nw Share, limit share.Percent) (verdict Verdict, reason string) {
-	return Unknown, ""
+	if base.Total == 0 || nw.Total == 0 {
+		return Unknown, ReasonNothingSent
+	}
+
+	b, d := int64(nw.Total), int64(base.Total)
+	rhs := new(big.Int).Mul(big.NewInt(limit.Thousandths*b), big.NewInt(d))
+
+	if risePast(int64(nw.Bad-nw.BadClient), d, int64(base.Bad), b).Cmp(rhs) > 0 {
+		return Fail, ""
+	}
+
+	if risePast(int64(nw.Bad), d, int64(base.Bad-base.BadClient), b).Cmp(rhs) <= 0 {
+		return Pass, ""
+	}
+
+	return Unknown, ReasonClientErrors
+}
+
+// risePast is (a·d − c·b) · 100000, a/b − c/d scaled by b·d and by a percent
+// in thousandths.
+func risePast(a, d, c, b int64) *big.Int {
+	x := new(big.Int).Mul(big.NewInt(a), big.NewInt(d))
+	x.Sub(x, new(big.Int).Mul(big.NewInt(c), big.NewInt(b)))
+
+	return x.Mul(x, big.NewInt(100000))
 }
