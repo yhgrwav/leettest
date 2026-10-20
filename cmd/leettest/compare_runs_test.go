@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/yhgrwav/leettest/internal/cli"
+	"github.com/yhgrwav/leettest/pkg/compare"
 	"github.com/yhgrwav/leettest/pkg/engine"
 	"github.com/yhgrwav/leettest/pkg/metrics"
 	"github.com/yhgrwav/leettest/pkg/share"
@@ -190,6 +191,29 @@ func TestExitCode_CompareSentinels(t *testing.T) {
 	} {
 		if got := exitCode(tc.err); got != tc.want {
 			t.Errorf("exitCode(%v) = %d, want %d", tc.err, got, tc.want)
+		}
+	}
+}
+
+// Ground: contract — a met-or-not answer outranks "could not decide": a
+// failed limit is 4 whatever else is open, and an undecided one is 2 whether
+// the reports differ or a check could not tell; nothing asked and held is nil.
+func TestCompareResult_FailOutranksUndecided(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		res  cli.Comparison
+		want error
+	}{
+		{"fail, reports differ", cli.Comparison{Comparable: false, Judged: true, Verdict: compare.Fail}, ErrCompareFailed},
+		{"fail, reports alike", cli.Comparison{Comparable: true, Judged: true, Verdict: compare.Fail}, ErrCompareFailed},
+		{"unknown", cli.Comparison{Comparable: true, Judged: true, Verdict: compare.Unknown}, ErrCompareUndecided},
+		{"reports differ, nothing judged", cli.Comparison{Comparable: false}, ErrCompareUndecided},
+		{"pass", cli.Comparison{Comparable: true, Judged: true, Verdict: compare.Pass}, nil},
+		{"no limit", cli.Comparison{Comparable: true}, nil},
+	} {
+		got := compareResult(tc.res)
+		if (tc.want == nil) != (got == nil) || (tc.want != nil && !errors.Is(got, tc.want)) {
+			t.Errorf("%s: %v, want %v", tc.name, got, tc.want)
 		}
 	}
 }
