@@ -145,10 +145,10 @@ type Share struct {
 // P99Rise judges the rise of the p99 from base to new, in percent of base,
 // against limit. A reason is given only for Unknown.
 //
-// The rise is (new − base) / base in whole microseconds. A lower bound
-// narrows a p99 to a range: new as a lower bound can only be larger, base as
-// a lower bound can only be larger, so a rise past the limit is certain only
-// for an exact base, and a rise within it only for an exact new.
+// The rise is (new − base) / base in whole microseconds. A lower bound says
+// the true p99 is at least that, so a rise past the limit is certain when the
+// base is exact (the new can only be larger) and a rise within it when the
+// new is exact (the base can only be larger).
 func P99Rise(base, nw Latency, limit share.Percent) (verdict Verdict, reason string) {
 	if !base.Defined || !nw.Defined {
 		return Unknown, ReasonFewObservations
