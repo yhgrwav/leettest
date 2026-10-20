@@ -935,6 +935,39 @@ func TestCompareRuns_APrintedRiseNeverArguesWithTheVerdict(t *testing.T) {
 	}
 }
 
+// Ground: contract — a rise printed with `<=` or `>=` beside a verdict is a
+// true bound of the exact rise: an upper bound rounds up, a lower bound rounds
+// down, and more digits are printed only when one decimal would put the bound
+// on the wrong side of the limit (a lower bound beside FAIL at 20.04%, an
+// upper bound beside a pass under a limit of 20.01%). The p99 is in whole
+// microseconds, so the exact rise is known to the digit.
+func TestCompareRuns_ABoundBesideAVerdictIsTrue(t *testing.T) {
+	micros := func(us int64) time.Duration { return time.Duration(us) * time.Microsecond }
+
+	for _, tc := range []struct {
+		name     string
+		base, nw metrics.Quantile
+		limit    string
+		want     string
+	}{
+		{"a lower bound of 20.04% beside FAIL at 20%", crExact(crMillis(100)), crLower(micros(120040)), "20%",
+			"p99 100ms -> >120ms, rise >= 20.04%, limit 20%: FAIL"},
+		{"an upper bound of 20.04% beside a pass at 21%", crLower(crMillis(100)), crExact(micros(120040)), "21%",
+			"p99 >100ms -> 120ms, rise <= 20.1%, limit 21%: pass"},
+		{"an upper bound of 20.001% beside a pass at 20.01%", crLower(crMillis(100)), crExact(micros(120001)), "20.01%",
+			"p99 >100ms -> 120ms, rise <= 20.01%, limit 20.01%: pass"},
+	} {
+		base, nw := crBase(), crNew()
+		base.methods[0].p99, nw.methods[0].p99 = tc.base, tc.nw
+
+		out, _ := crCompare(t, base, nw, tc.limit, "")
+
+		if got, want := crLine(t, out, "pkg.Svc/Do: p99"), "pkg.Svc/Do: "+tc.want; got != want {
+			t.Errorf("%s:\n  got  %q\n  want %q", tc.name, got, want)
+		}
+	}
+}
+
 // Ground: contract — the share of failed calls counts what the run report
 // counts: the calls sent and those lost to the connection are the total; the
 // failed and those lost to the connection are the bad ones. Failed calls the
