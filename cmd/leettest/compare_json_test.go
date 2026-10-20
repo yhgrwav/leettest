@@ -320,6 +320,8 @@ var (
 
 func cjOtherTarget(r *jrRun) { r.target = "10.0.0.2:50051" }
 
+func inOrder(methods ...jrMethod) []jrMethod { return methods }
+
 // The pairs the text tests build, and the ones the reasons need.
 
 func cjFixedPairs() []cjPair {
@@ -352,6 +354,12 @@ func cjFixedPairs() []cjPair {
 		cjRuns("runs, a method only on one side", jrBase(), jrNew().with(func(r *jrRun) {
 			r.methods = append(r.methods, jrCall("/pkg.Svc/Other", jrExact(50), 5))
 		}), cjBothLimits...),
+		cjRuns("runs, two common methods in another order", jrBase().with(func(r *jrRun) {
+			r.methods = inOrder(jrCall("/pkg.Svc/A", jrExact(100), 10), jrCall("/pkg.Svc/B", jrExact(200), 10))
+		}),
+			jrNew().with(func(r *jrRun) {
+				r.methods = inOrder(jrCall("/pkg.Svc/B", jrExact(210), 12), jrCall("/pkg.Svc/A", jrExact(300), 20))
+			}), cjBothLimits...),
 		cjSearches("searches, within the limit", brokeAt(1000), brokeAt(950), cjCapLimit...),
 		cjSearches("searches, past the limit", brokeAt(1000), brokeAt(800), cjCapLimit...),
 		cjSearches("searches, undecided", brokeAtFirst(), brokeAt(1000), cjCapLimit...),
@@ -897,18 +905,23 @@ func TestCompareJSON_ValuesAreTheReportsOwn(t *testing.T) {
 		notSent: 11, notSentConnection: 11, p99: metrics.Quantile{Value: 123456789 * time.Nanosecond, Exact: true, Defined: true},
 	}
 	other := jrMethod{name: "/pkg.Svc/Other"}
-	base := jrBase().with(func(r *jrRun) { r.methods = []jrMethod{do, other} })
+	// Second is Do the other way round: the base p99 a lower bound, the new
+	// one exact, so a lower_bound forced to false on the base or to true on
+	// the new side is seen on a side Do does not cover.
+	second := jrMethod{name: "/pkg.Svc/Second", sent: 1000, failed: 10, p99: jrLower(500)}
+	base := jrBase().with(func(r *jrRun) { r.methods = []jrMethod{do, other, second} })
 	nw := jrNew().with(func(r *jrRun) {
 		do.p99, do.failed, do.rejected, do.clientError, do.badResponse = metrics.Quantile{Value: 987654321 * time.Nanosecond, Defined: true}, 80, 0, 2, 0
 		do.notSent, do.notSentConnection = 0, 0
-		r.methods = []jrMethod{do, other}
+		second.p99, second.failed = jrExact(250), 20
+		r.methods = []jrMethod{do, other, second}
 	})
 
 	got := cjRuns("values", base, nw).run(t)
 	rep := cjDecode(t, got.js.stdout)
 
-	if rep.ComparedMode != "run" || len(rep.Checks) != 4 {
-		t.Fatalf("compared_mode %q with %d checks, want run with 4 (p99 and errors of two methods)\n%s", rep.ComparedMode, len(rep.Checks), got.js.stdout)
+	if rep.ComparedMode != "run" || len(rep.Checks) != 6 {
+		t.Fatalf("compared_mode %q with %d checks, want run with 6 (p99 and errors of three methods)\n%s", rep.ComparedMode, len(rep.Checks), got.js.stdout)
 	}
 
 	baseFile, err := cli.ReadReport(got.basePath)
@@ -939,12 +952,25 @@ func TestCompareJSON_ValuesAreTheReportsOwn(t *testing.T) {
 		t.Fatalf("fixture: the new p99 reads %v", n)
 	}
 
-	wantP99 := [][2]*cjP99{{fromReport(baseFile, 0), fromReport(newFile, 0)}, {nil, nil}}
+	if b := fromReport(baseFile, 2); b == nil || !b.LowerBound || b.US < 500000 {
+		t.Fatalf("fixture: the base p99 of Second reads %v, want a lower bound", b)
+	}
+
+	if n := fromReport(newFile, 2); n == nil || n.LowerBound || n.US < 250000 {
+		t.Fatalf("fixture: the new p99 of Second reads %v, want an exact value", n)
+	}
+
+	wantP99 := [][2]*cjP99{
+		{fromReport(baseFile, 0), fromReport(newFile, 0)},
+		{nil, nil},
+		{fromReport(baseFile, 2), fromReport(newFile, 2)},
+	}
 	wantErrors := [][2]*cjErrors{
 		{{Bad: 51, BadClient: 15, Total: 1011}, {Bad: 80, BadClient: 2, Total: 1000}},
 		{{}, {}},
+		{{Bad: 10, Total: 1000}, {Bad: 20, Total: 1000}},
 	}
-	methods := []string{"/" + cmpMethod, "/pkg.Svc/Other"}
+	methods := []string{"/" + cmpMethod, "/pkg.Svc/Other", "/pkg.Svc/Second"}
 
 	for i, c := range rep.Checks {
 		m, kind := i/2, []string{"p99", "errors"}[i%2]
@@ -1247,17 +1273,25 @@ func TestCompareJSON_SidesAreTheReportsOwn(t *testing.T) {
 	info, _ := debug.ReadBuildInfo()
 	running := versionString(version, info)
 
+	// One label value holds the characters encoding/json escapes by default.
+	labels := map[string]string{"region": "a&b<c>", "env": "prod"}
+
 	base, nw := brokeAt(1000), brokeAt(950)
-	base.passport.Labels = map[string]string{"region": "eu", "env": "prod"}
+	base.passport.Labels = labels
 	nw.name, nw.passport, nw.version = "", nil, "v0.3.1"
 	nw.startedAt = time.Date(2026, 10, 2, 10, 0, 0, 0, time.UTC)
 
-	runBase := jrBase().with(func(r *jrRun) { r.passport.Labels = map[string]string{"region": "eu", "env": "prod"} })
+	runBase := jrBase().with(func(r *jrRun) { r.passport.Labels = labels })
 	runNew := jrNew().with(func(r *jrRun) { r.passport, r.version = nil, "v0.3.1" })
 
 	for _, p := range []cjPair{cjSearches("searches", base, nw), cjRuns("runs", runBase, runNew)} {
 		ran := p.run(t)
 		rep := cjDecode(t, ran.js.stdout)
+
+		if !strings.Contains(ran.js.stdout, `"a&b<c>"`) || strings.Contains(ran.js.stdout, `&`) ||
+			strings.Contains(ran.js.stdout, `<`) || strings.Contains(ran.js.stdout, `>`) {
+			t.Errorf("%s: a label with & < > is not written as is (SetEscapeHTML(false), like -output json of a run)\n%s", p.name, ran.js.stdout)
+		}
 
 		if rep.LeetTestVersion != running || running == cmpVersion {
 			t.Errorf("%s: leettest_version %q, want the running leettest's %q", p.name, rep.LeetTestVersion, running)
@@ -1265,7 +1299,7 @@ func TestCompareJSON_SidesAreTheReportsOwn(t *testing.T) {
 
 		wantBase := cjSide{
 			Path: ran.basePath, Name: "svc", StartedAt: "2026-10-01T10:00:00Z", LeetTestVersion: cmpVersion,
-			Labels: map[string]string{"region": "eu", "env": "prod"},
+			Labels: labels,
 		}
 		if rep.Base.Path != wantBase.Path || rep.Base.Name != wantBase.Name || rep.Base.StartedAt != wantBase.StartedAt ||
 			rep.Base.LeetTestVersion != wantBase.LeetTestVersion || !maps.Equal(rep.Base.Labels, wantBase.Labels) {
