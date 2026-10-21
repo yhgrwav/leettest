@@ -883,7 +883,7 @@ func TestCompareRuns_P99UnknownSaysWhy(t *testing.T) {
 
 // Ground: boundary — a printed rise never argues with the verdict: exactly on
 // the limit it prints the limit, a hair past it prints more than the limit
-// (rounded up to the digits it takes), and a limit with digits shows them when
+// (rounded to the nearest, with the digits it takes), and a limit with digits shows them when
 // the tenth would pass them. The same for the error share, in points.
 func TestCompareRuns_APrintedRiseNeverArguesWithTheVerdict(t *testing.T) {
 	p99 := func(us int64) crRun {
@@ -919,17 +919,66 @@ func TestCompareRuns_APrintedRiseNeverArguesWithTheVerdict(t *testing.T) {
 	}{
 		{"p99 on the limit", crBase(), p99(120000), "20%", "", "pkg.Svc/Do: p99", "p99 100ms -> 120ms, rise 20.0%, limit 20%: pass"},
 		{"p99 a microsecond-hair past the limit", crBase(), p99(120040), "20%", "", "pkg.Svc/Do: p99",
-			"p99 100ms -> 120ms, rise 20.1%, limit 20%: FAIL"},
+			"p99 100ms -> 120ms, rise 20.04%, limit 20%: FAIL"},
 		{"p99 on a limit with digits", crBase(), p99(120060), "20.06%", "", "pkg.Svc/Do: p99",
 			"p99 100ms -> 120ms, rise 20.06%, limit 20.06%: pass"},
 		{"errors on the limit", crBase(), failures(20, 1000), "", "1%", "pkg.Svc/Do: errors",
 			"errors 1.0% -> 2.0%, rise 1.0%, limit 1%: pass"},
 		{"errors a hair past the limit", zeroBase, failures(1004, 100000), "", "1%", "pkg.Svc/Do: errors",
-			"errors 0.0% -> 1.0%, rise 1.1%, limit 1%: FAIL"},
+			"errors 0.000% -> 1.004%, rise 1.004%, limit 1%: FAIL"},
 		{"errors on the limit, billions", billions(2000000000, 1000000000), billions(1999999999, 1999999999), "", "50%",
 			"pkg.Svc/Do: errors", "errors 50.0% -> 100.0%, rise 50.0%, limit 50%: pass"},
 		{"errors a hair past the limit, billions", billions(2000000000, 999999999), billions(1999999999, 1999999999), "", "50%",
-			"pkg.Svc/Do: errors", "errors 50.0% -> 100.0%, rise 50.1%, limit 50%: FAIL"},
+			"pkg.Svc/Do: errors", "errors 50.000% -> 100.000%, rise > 50%, limit 50%: FAIL"},
+	} {
+		out, _ := crCompare(t, tc.base, tc.nw, tc.p99Limit, tc.errsLimit)
+
+		if got, want := crLine(t, out, tc.prefix), "pkg.Svc/Do: "+tc.want; got != want {
+			t.Errorf("%s:\n  got  %q\n  want %q", tc.name, got, want)
+		}
+	}
+}
+
+// Ground: contract — an exact rise printed beside a FAIL is the exact value
+// rounded to the nearest, with as many digits as it takes to sit over the limit
+// (1.004% against 1%), and "> L" with the limit as written when three
+// decimals are not enough; never rounded up to a number the run did not
+// measure. The error shares on the two sides of the line are printed with the
+// digits of the rise (3 for the "> L" form), a pass included, and with one
+// decimal where the rise needs no more.
+func TestCompareRuns_AFailShareIsNotOverstated(t *testing.T) {
+	p99 := func(ns int64) crRun {
+		r := crNew()
+		r.methods[0].p99 = crExact(time.Duration(ns))
+
+		return r
+	}
+	// calls is a run of one method: sent calls, bad of them failed.
+	calls := func(r crRun, sent, bad int) crRun {
+		r.methods[0].sent, r.methods[0].failed = sent, bad
+
+		return r
+	}
+
+	for _, tc := range []struct {
+		name         string
+		base, nw     crRun
+		p99Limit     string
+		errsLimit    string
+		prefix, want string
+	}{
+		{"1.004% over 1%: three decimals", calls(crBase(), 100000, 0), calls(crNew(), 100000, 1004), "", "1%", "pkg.Svc/Do: errors",
+			"errors 0.000% -> 1.004%, rise 1.004%, limit 1%: FAIL"},
+		{"1.0004% over 1%: no decimal kept is over, the limit", calls(crBase(), 1000000, 0), calls(crNew(), 1000000, 10004), "", "1%", "pkg.Svc/Do: errors",
+			"errors 0.000% -> 1.000%, rise > 1%, limit 1%: FAIL"},
+		{"on a limit of two digits, a pass takes the two", calls(crBase(), 10000, 0), calls(crNew(), 10000, 55), "", "0.55%", "pkg.Svc/Do: errors",
+			"errors 0.00% -> 0.55%, rise 0.55%, limit 0.55%: pass"},
+		{"3.0% over 1%: a decimal is enough, the sides keep it", calls(crBase(), 1000, 0), calls(crNew(), 1000, 30), "", "1%", "pkg.Svc/Do: errors",
+			"errors 0.0% -> 3.0%, rise 3.0%, limit 1%: FAIL"},
+		{"a fall keeps one decimal on the sides", calls(crBase(), 100000, 3003), calls(crNew(), 100000, 1001), "", "1%", "pkg.Svc/Do: errors",
+			"errors 3.0% -> 1.0%, fall 2.0%, limit 1%: pass"},
+		{"p99 20.004% over 20%: three decimals", crBase(), p99(120004000), "20%", "", "pkg.Svc/Do: p99",
+			"p99 100ms -> 120ms, rise 20.004%, limit 20%: FAIL"},
 	} {
 		out, _ := crCompare(t, tc.base, tc.nw, tc.p99Limit, tc.errsLimit)
 
@@ -1101,7 +1150,7 @@ func TestCompareRuns_P99IsComparedAsTheRunPrintedIt(t *testing.T) {
 		// "no change" only when the nanoseconds are equal; two values that print
 		// alike but differ are a rise, and a limit of 0% fails it.
 		{"two values that print alike, no limit", ns(312600), ns(312700), "", "p99 313us -> 313us, rise 0.0%"},
-		{"two values that print alike, limit 0%", ns(312600), ns(312700), "0%", "p99 313us -> 313us, rise 0.1%, limit 0%: FAIL"},
+		{"two values that print alike, limit 0%", ns(312600), ns(312700), "0%", "p99 313us -> 313us, rise 0.03%, limit 0%: FAIL"},
 		{"a base below a microsecond", ns(800), ns(900), "", "p99 800ns -> 900ns, rise 12.5%"},
 		{"a fall below a microsecond", ns(900), ns(800), "", "p99 900ns -> 800ns, fall 11.1%"},
 	} {

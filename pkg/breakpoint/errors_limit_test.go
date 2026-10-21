@@ -116,7 +116,7 @@ func TestSearch_TheReasonNeverPrintsTheShareOnTheWrongSide(t *testing.T) {
 		wantShare, wantLimit string
 		wantCounts           string
 	}{
-		{"default limit", share.Percent{}, 100000, 1001, "(1.1%", "over errors_limit 1%", "failed 1001 of 100000 calls"},
+		{"default limit", share.Percent{}, 100000, 1001, "(1.001%", "over errors_limit 1%", "failed 1001 of 100000 calls"},
 		{"a limit of two digits", percent("0.12%", 120), 10000, 13, "(0.13%", "over errors_limit 0.12%", "failed 13 of 10000 calls"},
 	} {
 		p := Plan{From: 100, To: 125, Settle: plan.Settle, Hold: plan.Hold, ErrorsLimit: tc.limit}

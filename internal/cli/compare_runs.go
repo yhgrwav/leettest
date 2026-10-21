@@ -407,8 +407,6 @@ func errorsOf(s compare.Share) *CompareErrors {
 func errorsCheck(pair methodPair, limit *shr.Percent, same bool, held heldBack) CompareCheck {
 	b, n := shareOf(pair.side[0]), shareOf(pair.side[1])
 	check := CompareCheck{Method: pair.side[0].Method, Key: "errors", BaseErrors: errorsOf(b), NewErrors: errorsOf(n)}
-	text := pair.name + ": errors " + failedShareText(b) + " -> " + failedShareText(n)
-
 	verdict := compare.Unknown
 
 	if same && held.reason == "" && limit != nil {
@@ -428,28 +426,31 @@ func errorsCheck(pair methodPair, limit *shr.Percent, same bool, held heldBack) 
 		}
 	}
 
-	change := "rise -"
+	change, digits := "rise -", 1
 	if same {
-		change = errorsChange(b, n, limit, verdict)
+		change, digits = errorsChange(b, n, limit, verdict)
 	}
+
+	text := pair.name + ": errors " + failedShareText(b, digits) + " -> " + failedShareText(n, digits)
 
 	return finishCheck(check, text, change, limit, verdict, held)
 }
 
-func failedShareText(s compare.Share) string {
+func failedShareText(s compare.Share, digits int) string {
 	if s.Total == 0 {
 		return "-"
 	}
 
-	return nearestTenth(s.Bad, s.Total)
+	return shr.FormatAt(s.Bad, s.Total, digits)
 }
 
 // errorsChange is the change in the share of failed calls in points, from the
 // exact difference of the two fractions: counts near 10^9 on both sides do not
-// fit an int64 product.
-func errorsChange(b, n compare.Share, limit *shr.Percent, v compare.Verdict) string {
+// fit an int64 product. The second result is the digits after the point the
+// change was printed with.
+func errorsChange(b, n compare.Share, limit *shr.Percent, v compare.Verdict) (change string, digits int) {
 	if b.Total == 0 || n.Total == 0 {
-		return "rise -"
+		return "rise -", 1
 	}
 
 	diff := new(big.Rat).Sub(big.NewRat(int64(n.Bad), int64(n.Total)), big.NewRat(int64(b.Bad), int64(b.Total)))
@@ -457,14 +458,16 @@ func errorsChange(b, n compare.Share, limit *shr.Percent, v compare.Verdict) str
 
 	switch diff.Sign() {
 	case 0:
-		return "no change"
+		return "no change", 1
 	case -1:
-		return "fall " + shr.FormatFraction(diff.Neg(diff), plain, shr.Holds)
+		return "fall " + shr.FormatFraction(diff.Neg(diff), plain, shr.Holds), 1
 	}
 
 	if limit != nil && v != compare.Unknown {
-		return "rise " + shr.FormatFraction(diff, *limit, shareVerdict(v))
+		text, digits := shr.FormatFractionDigits(diff, *limit, shareVerdict(v))
+
+		return "rise " + text, digits
 	}
 
-	return "rise " + shr.FormatFraction(diff, plain, shr.Holds)
+	return "rise " + shr.FormatFraction(diff, plain, shr.Holds), 1
 }
