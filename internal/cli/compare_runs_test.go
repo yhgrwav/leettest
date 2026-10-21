@@ -1150,7 +1150,7 @@ func TestCompareRuns_P99IsComparedAsTheRunPrintedIt(t *testing.T) {
 		// "no change" only when the nanoseconds are equal; two values that print
 		// alike but differ are a rise, and a limit of 0% fails it.
 		{"two values that print alike, no limit", ns(312600), ns(312700), "", "p99 313us -> 313us, rise 0.0%"},
-		{"two values that print alike, limit 0%", ns(312600), ns(312700), "0%", "p99 313us -> 313us, rise 0.1%, limit 0%: FAIL"},
+		{"two values that print alike, limit 0%", ns(312600), ns(312700), "0%", "p99 313us -> 313us, rise 0.03%, limit 0%: FAIL"},
 		{"a base below a microsecond", ns(800), ns(900), "", "p99 800ns -> 900ns, rise 12.5%"},
 		{"a fall below a microsecond", ns(900), ns(800), "", "p99 900ns -> 800ns, fall 11.1%"},
 	} {
