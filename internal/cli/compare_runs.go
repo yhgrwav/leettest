@@ -448,7 +448,7 @@ func failedShareText(s compare.Share) string {
 // exact difference of the two fractions: counts near 10^9 on both sides do not
 // fit an int64 product. The second result is the digits after the point the
 // change was printed with.
-func errorsChange(b, n compare.Share, limit *shr.Percent, v compare.Verdict) (string, int) {
+func errorsChange(b, n compare.Share, limit *shr.Percent, v compare.Verdict) (change string, digits int) {
 	if b.Total == 0 || n.Total == 0 {
 		return "rise -", 1
 	}

@@ -429,7 +429,7 @@ func failNearestAt(p *big.Rat, k int) *big.Rat {
 // written once more from the spec: x rounded to the nearest at the first of 1,
 // 2, 3 decimals whose printed value is over the limit, else "> " and the limit
 // as written. x, a fraction (1/2 is 50%), is over the limit.
-func failReference(x *big.Rat, limit share.Percent) (string, int) {
+func failReference(x *big.Rat, limit share.Percent) (text string, digits int) {
 	p := new(big.Rat).Mul(x, big.NewRat(100, 1))
 	over := big.NewRat(limit.Thousandths, 1000)
 

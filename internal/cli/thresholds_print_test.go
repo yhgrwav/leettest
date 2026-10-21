@@ -115,15 +115,16 @@ func TestThresholdsText_ARowDoesNotContradictItsVerdict(t *testing.T) {
 
 		var over bool
 
-		if tc.key == "errors" && strings.HasPrefix(value, "> ") {
+		switch {
+		case tc.key == "errors" && strings.HasPrefix(value, "> "):
 			// "> L" says over the limit, and says it with the limit as written.
 			if value != "> "+limit {
 				t.Errorf("%s: value printed %q, want \"> \" and the limit %q (row %q)", tc.name, value, limit, row)
 			}
 			over = true
-		} else if tc.key == "errors" {
+		case tc.key == "errors":
 			over = thousandths(t, value) > thousandths(t, limit)
-		} else {
+		default:
 			lim, _ := parseLatencyToken(t, limit)
 			val, _ := parseLatencyToken(t, value)
 			over = val > lim

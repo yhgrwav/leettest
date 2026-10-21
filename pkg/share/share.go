@@ -111,7 +111,7 @@ func FormatFraction(r *big.Rat, limit Percent, v Verdict) string {
 
 // FormatFractionDigits is FormatFraction with the digits after the point the
 // printed number holds, 3 for the "> L" form.
-func FormatFractionDigits(r *big.Rat, limit Percent, v Verdict) (string, int) {
+func FormatFractionDigits(r *big.Rat, limit Percent, v Verdict) (text string, digits int) {
 	tenth := at(r, 1, nearest)
 	over := tenth*100 > limit.Thousandths
 	decimals := max(1, digitsAfterPoint(limit.Text))
