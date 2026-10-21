@@ -333,6 +333,7 @@ measured calls only. The first column is the field's full path.
 | Field | Type | Meaning |
 |---|---|---|
 | `<percentile>.us` | int | The value, whole microseconds |
+| `<percentile>.ns` | int | The histogram's value in whole nanoseconds, which the text report prints at three significant figures; `us` is the same value truncated to microseconds; `leettest compare` judges by `ns` |
 | `<percentile>.lower_bound` | bool | `true` — a lower bound, not a value ([README](README.md#reading-the-report)) |
 
 ### Run
@@ -575,6 +576,7 @@ a `p99` check has no others. A verdict exists only when the check has a limit.
 | `checks[].base_outcome`, `checks[].new_outcome` | string? | The search's `breakpoint.outcome`; only for `capacity` |
 | `checks[].base_p99`, `checks[].new_p99` | object? | The method's p99 — the same object as `latency.p99` of the run report; `null` — too few observations, or another kind of check |
 | `checks[].base_p99.us`, `checks[].new_p99.us` | int | The p99 in whole microseconds |
+| `checks[].base_p99.ns`, `checks[].new_p99.ns` | int | The p99 in whole nanoseconds; the rise is computed from it. For a report written without `ns`: `us` × 1000 |
 | `checks[].base_p99.lower_bound`, `checks[].new_p99.lower_bound` | bool | `true` — the tail ran past the timeout, the true p99 is larger |
 | `checks[].base_errors`, `checks[].new_errors` | object? | The method's share of failed calls in parts; `null` — another kind of check |
 | `checks[].base_errors.bad`, `checks[].new_errors.bad` | int | Every failed call and every call lost to the connection |

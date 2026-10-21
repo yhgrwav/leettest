@@ -28,6 +28,7 @@ import (
 
 	"github.com/yhgrwav/leettest/pkg/engine"
 	"github.com/yhgrwav/leettest/pkg/metrics"
+	"github.com/yhgrwav/leettest/pkg/threshold"
 )
 
 // schemaLines walks the JSON types, not a run's output: a pointer is the only
@@ -202,6 +203,66 @@ func TestJSON_PercentileIsMicrosecondsWithItsBound(t *testing.T) {
 	}
 	if us, bound := field(t, method, "latency", "p99", "us"), field(t, method, "latency", "p99", "lower_bound"); us != 5e6 || bound != true {
 		t.Errorf("p99 = {us: %v, lower_bound: %v}, want {5000000, true}: a tail past the timeout is known only from below", us, bound)
+	}
+}
+
+// Ground: contract — every quantile object carries the value in whole
+// nanoseconds beside the microseconds truncated from it, so a later reader
+// (leettest compare) has the value the run printed; the same for each user of
+// quantile(): latency, a category block, p99 without client waits, start lag,
+// one connection's p99 and a limit's value.
+func TestJSON_AQuantileCarriesItsNanoseconds(t *testing.T) {
+	exact := func(d time.Duration) metrics.Quantile { return metrics.Quantile{Value: d, Exact: true, Defined: true} }
+
+	run := jsonRun(engine.Report{
+		Methods: []engine.MethodReport{{
+			Method: "/pkg.S/M",
+			Min:    exact(1 * time.Nanosecond),
+			P99:    exact(50900 * time.Nanosecond),
+			P999:   metrics.Quantile{Value: 987654321 * time.Nanosecond, Defined: true},
+			Max:    exact(time.Hour + time.Nanosecond),
+
+			P99WithoutClientWaits: exact(49999 * time.Nanosecond),
+			Overload:              engine.RefusalLatency{Count: 1, P99: exact(12345 * time.Nanosecond)},
+		}},
+		StartLagP99: exact(1500 * time.Nanosecond),
+		StartLagMax: 1234567 * time.Nanosecond,
+		Connections: several(nil,
+			engine.LinkReport{Address: "10.0.0.1:50051", Calls: 1, P99: exact(2999 * time.Nanosecond)},
+			engine.LinkReport{Address: "10.0.0.2:50051", Calls: 1, P99: exact(3001 * time.Nanosecond)}),
+	})
+	run.Run.Thresholds = []threshold.Result{{
+		Method: "/pkg.S/M", Key: threshold.P99, Verdict: threshold.VerdictPass,
+		Limit: 200 * time.Millisecond, Value: exact(180000123 * time.Nanosecond),
+	}}
+
+	out := writeJSON(t, run)
+	method := field(t, out, "methods").([]any)[0]
+
+	for _, tc := range []struct {
+		name  string
+		got   any
+		us    float64
+		ns    float64
+		lower bool
+	}{
+		{"latency.min", field(t, method, "latency", "min"), 0, 1, false},
+		{"latency.p99", field(t, method, "latency", "p99"), 50, 50900, false},
+		{"latency.p999", field(t, method, "latency", "p999"), 987654, 987654321, true},
+		{"latency.max", field(t, method, "latency", "max"), 3600000000, 3600000000001, false},
+		{"p99_without_client_waits", field(t, method, "p99_without_client_waits"), 49, 49999, false},
+		{"overload.p99", field(t, method, "overload", "p99"), 12, 12345, false},
+		{"start_lag.p99", field(t, out, "start_lag", "p99"), 1, 1500, false},
+		{"start_lag.max", field(t, out, "start_lag", "max"), 1234, 1234567, false},
+		{"per_connection[0].p99", field(t, field(t, out, "connections", "per_connection").([]any)[0], "p99"), 2, 2999, false},
+		{"per_connection[1].p99", field(t, field(t, out, "connections", "per_connection").([]any)[1], "p99"), 3, 3001, false},
+		{"thresholds[0].value", field(t, field(t, out, "thresholds").([]any)[0], "value"), 180000, 180000123, false},
+	} {
+		// JSON numbers decode as float64, exact for these magnitudes.
+		us, ns, lower := field(t, tc.got, "us"), field(t, tc.got, "ns"), field(t, tc.got, "lower_bound")
+		if us != tc.us || ns != tc.ns || lower != tc.lower {
+			t.Errorf("%s = {us: %v, ns: %v, lower_bound: %v}, want {%v, %v, %v}", tc.name, us, ns, lower, tc.us, tc.ns, tc.lower)
+		}
 	}
 }
 

@@ -293,6 +293,7 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | 字段 | 类型 | 含义 |
 |---|---|---|
 | `<percentile>.us` | int | 数值，整数微秒 |
+| `<percentile>.ns` | int | 直方图的数值，整数纳秒，文本报告按三位有效数字打印；`us` 是同一数值截断到微秒；`leettest compare` 按 `ns` 判定 |
 | `<percentile>.lower_bound` | bool | `true`——下界，而不是数值（[README](README.md#阅读报告)） |
 
 ### 运行

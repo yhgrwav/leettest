@@ -15,18 +15,21 @@
 package compare_test
 
 import (
+	"math"
 	"math/big"
+	"math/rand/v2"
 	"testing"
 
 	"github.com/yhgrwav/leettest/pkg/compare"
+	"github.com/yhgrwav/leettest/pkg/share"
 )
 
 func exactUS(us int64) compare.Latency {
-	return compare.Latency{US: us, Defined: true}
+	return compare.Latency{NS: us * 1000, Defined: true}
 }
 
 func lowerUS(us int64) compare.Latency {
-	return compare.Latency{US: us, LowerBound: true, Defined: true}
+	return compare.Latency{NS: us * 1000, LowerBound: true, Defined: true}
 }
 
 // Ground: boundary — the p99 rise is (new − base) / base in percent of the
@@ -90,7 +93,7 @@ func TestP99Rise_Table(t *testing.T) {
 		{"base not defined", compare.Latency{}, exactUS(100000), "20%", compare.Unknown, few},
 		{"new not defined", exactUS(100000), compare.Latency{}, "20%", compare.Unknown, few},
 		{"neither defined", compare.Latency{}, compare.Latency{}, "20%", compare.Unknown, few},
-		{"base not defined beside a zero", compare.Latency{US: 0}, exactUS(100000), "20%", compare.Unknown, few},
+		{"base not defined beside a zero", compare.Latency{NS: 0}, exactUS(100000), "20%", compare.Unknown, few},
 		{"new not defined beside a zero base", exactUS(0), compare.Latency{}, "20%", compare.Unknown, few},
 
 		// A base with nothing to take a share of.
@@ -137,6 +140,102 @@ func TestP99Rise_ReasonOnlyForUnknown(t *testing.T) {
 
 	if passes == 0 {
 		t.Error("no pass among the rows")
+	}
+}
+
+// Ground: boundary — a p99 is whole nanoseconds, up to math.MaxInt64, and the
+// rise is scaled by 100000 (thousandths of a percent) on both sides of the
+// comparison: plain int64 arithmetic wraps. share.Parse accepts at most 100%,
+// so the limits here are 100% and 99.999%.
+func TestP99Rise_NoOverflow(t *testing.T) {
+	const (
+		hour = int64(3600e9)
+		big4 = int64(4e18)
+	)
+
+	ns := func(n int64) compare.Latency { return compare.Latency{NS: n, Defined: true} }
+
+	for _, tc := range []struct {
+		name     string
+		base, nw int64
+		limit    string
+		want     compare.Verdict
+	}{
+		{"an hour doubled, on a limit of 100%", hour, 2 * hour, "100%", compare.Pass},
+		{"an hour doubled and a nanosecond, past 100%", hour, 2*hour + 1, "100%", compare.Fail},
+		{"4e18 ns doubled, on a limit of 100%", big4, 2 * big4, "100%", compare.Pass},
+		{"4e18 ns doubled and a nanosecond, past 100%", big4, 2*big4 + 1, "100%", compare.Fail},
+		{"1e18 ns, on a limit of 99.999%", 1e18, 1999990000000000000, "99.999%", compare.Pass},
+		{"1e18 ns, a nanosecond past 99.999%", 1e18, 1999990000000000001, "99.999%", compare.Fail},
+		{"half of int64 to int64, past 99.999%", math.MaxInt64 / 2, math.MaxInt64, "99.999%", compare.Fail},
+		{"half of int64 to int64, past 100%", math.MaxInt64 / 2, math.MaxInt64, "100%", compare.Fail},
+		{"one nanosecond to int64, past 100%", 1, math.MaxInt64, "100%", compare.Fail},
+		{"int64 to int64, no change", math.MaxInt64, math.MaxInt64, "0%", compare.Pass},
+		{"int64 to one nanosecond, a fall", math.MaxInt64, 1, "0%", compare.Pass},
+	} {
+		got, reason := compare.P99Rise(ns(tc.base), ns(tc.nw), limit(tc.limit))
+		if got != tc.want || reason != "" {
+			t.Errorf("%s: %s %q, want %s", tc.name, verdictNames[got], reason, verdictNames[tc.want])
+		}
+	}
+}
+
+// Ground: boundary — for any pair of non-negative int64 nanoseconds and any
+// limit in thousandths of a percent that share.Parse accepts, the verdict of
+// two exact p99s is that of the exact fractions, as a math/big reference
+// computes it. Seeded: a failure names the pair.
+func TestP99Rise_AgreesWithExactArithmetic(t *testing.T) {
+	rng := rand.New(rand.NewPCG(20261020, 1))
+
+	// A value of a random magnitude, from a nanosecond to int64.
+	value := func(least int64) int64 {
+		v := rng.Int64N(math.MaxInt64) >> rng.UintN(63)
+
+		return max(v, least)
+	}
+
+	var fails, passes int
+
+	for range 20000 {
+		base, nw := value(1), value(0)
+		limitThousandths := rng.Int64N(100001)
+
+		// Half of the pairs sit within a nanosecond of the limit itself.
+		if rng.IntN(2) == 0 {
+			edge := new(big.Int).Mul(big.NewInt(base), big.NewInt(limitThousandths))
+			edge.Quo(edge, big.NewInt(100000))
+			edge.Add(edge, big.NewInt(base))
+
+			if edge.IsInt64() {
+				nw = max(edge.Int64()+rng.Int64N(3)-1, 0)
+			}
+		}
+
+		over := new(big.Int).Mul(big.NewInt(nw-base), big.NewInt(100000)).
+			Cmp(new(big.Int).Mul(big.NewInt(limitThousandths), big.NewInt(base))) > 0
+
+		want := compare.Pass
+		if over {
+			want = compare.Fail
+		}
+
+		got, reason := compare.P99Rise(
+			compare.Latency{NS: base, Defined: true}, compare.Latency{NS: nw, Defined: true},
+			share.Percent{Thousandths: limitThousandths})
+		if got != want || reason != "" {
+			t.Fatalf("base %d ns, new %d ns, limit %d thousandths: %s %q, want %s", base, nw, limitThousandths, verdictNames[got], reason, verdictNames[want])
+		}
+
+		if over {
+			fails++
+		} else {
+			passes++
+		}
+	}
+
+	// A reference that never failed, or never passed, would prove half.
+	if fails < 1000 || passes < 1000 {
+		t.Errorf("the pairs gave %d fails and %d passes, want both sides well covered", fails, passes)
 	}
 }
 
