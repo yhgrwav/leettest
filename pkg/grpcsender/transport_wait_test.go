@@ -228,3 +228,22 @@ func TestHandleRPC_WritesWhileTheCallReadsWhatItRecorded(t *testing.T) {
 		t.Errorf("the target's trailer was handled, and the call is not marked answered")
 	}
 }
+
+// Ground: boundary — the 90% and deadline thresholds in
+// TestCancelled_ACancelFromTheTargetJustBeforeOurDeadlineIsAFailure and
+// TestHeard_ATrailersOnlyDeadlineExceededAtTheEndIsNotHeard are placed by hand
+// (trailerNearOurDeadline overwrites answeredAt), so no test of theirs sees the
+// handler record the moment of the trailer. This one does: a handler that
+// leaves answeredAt zero would pass for a copy of our deadline from a frozen
+// target as heard, and an echo after the deadline as the target's failure.
+func TestHandleRPC_RecordsTheMomentOfTheTrailer(t *testing.T) {
+	call := &callStats{}
+	ctx := context.WithValue(t.Context(), callKey{}, call)
+	at := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+
+	handler{clock: func() time.Time { return at }}.HandleRPC(ctx, &stats.InTrailer{Client: true})
+
+	if got := call.read().answeredAt; !got.Equal(at) {
+		t.Errorf("answeredAt = %v, want %v: the moment the trailer was handled", got, at)
+	}
+}

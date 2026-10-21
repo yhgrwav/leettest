@@ -77,6 +77,28 @@ func echoAfterOurDeadline() grpc.DialOption {
 	})
 }
 
+// trailerNearOurDeadline puts the moment the client saw the trailer, 5% of the
+// call's budget before its deadline. The status itself is the stand's, read off
+// the wire by the real stats handler and passed through the real Send; only the
+// timestamp is replaced once the call returns. A stand cannot place a reply
+// 50 ms before a deadline on a loaded machine: a late timer pushed it past the
+// deadline and the call became a timeout, rightly (issue #293).
+func trailerNearOurDeadline() grpc.DialOption {
+	return grpc.WithUnaryInterceptor(func(ctx context.Context, method string, req, reply any,
+		cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
+	) error {
+		err := invoker(ctx, method, req, reply, cc, opts...)
+
+		deadline, _ := ctx.Deadline()
+		call, _ := ctx.Value(callKey{}).(*callStats)
+		call.mu.Lock()
+		call.times.answeredAt = deadline.Add(-deadline.Sub(call.times.sentAt) / 20)
+		call.mu.Unlock()
+
+		return err
+	})
+}
+
 // Ground: concurrency — the target's CANCELLED in answer to our own deadline
 // is our timeout echoed back, not the target failing: counted as failure it
 // would move timeouts into the target's faults, and its code into "sent by
@@ -138,18 +160,19 @@ func TestCancelled_AnEarlyCancelFromTheTargetIsAFailure(t *testing.T) {
 }
 
 // Ground: boundary — a cancel of the target's own at 95% of our deadline is
-// still before our cancel: a 90% threshold would take it for an echo.
+// still before our cancel: a 90% threshold would take it for an echo. The
+// stand answers at once and the trailer is placed at 95% (see
+// trailerNearOurDeadline).
 func TestCancelled_ACancelFromTheTargetJustBeforeOurDeadlineIsAFailure(t *testing.T) {
-	checkTargetCancel(t, func(ctx context.Context) time.Duration {
-		deadline, _ := ctx.Deadline()
-		return time.Until(deadline) * 95 / 100
-	})
+	checkTargetCancel(t, func(context.Context) time.Duration { return time.Millisecond }, trailerNearOurDeadline())
 }
 
-func checkTargetCancel(t *testing.T, wait func(context.Context) time.Duration) {
+func checkTargetCancel(t *testing.T, wait func(context.Context) time.Duration, dial ...grpc.DialOption) {
 	t.Helper()
 
-	sender := connected(t, listen(t, &seeingTarget{}, grpc.ForceServerCodec(rawCodec{}), cancelling(wait)))
+	opts := listen(t, &seeingTarget{}, grpc.ForceServerCodec(rawCodec{}), cancelling(wait))
+	opts.DialOptions = append(opts.DialOptions, dial...)
+	sender := connected(t, opts)
 
 	out, err := sender.Send(context.Background(), cancelRequest(time.Second))
 	if err != nil {
