@@ -15,7 +15,7 @@
 
 ---
 
-> 译自 [README.md](../../README.md)，对应 5c75feb，2026-10-14。如有出入，以俄文版为准。
+> 译自 [README.md](../../README.md)，对应 d7d1c85，2026-10-21。如有出入，以俄文版为准。
 > 另附中文文档目录，俄文原文中没有。
 > **可能滞后：** 中文版在每次发布前同步，最新内容请看[英文版](../en/README.md)。
 
@@ -175,6 +175,31 @@ p99 尾部最常见的原因，并输出去掉等待后的 p99——即调用在
 `clock step 502us on this host: every latency and wait is +/- 502us`。在 Linux 上步长为几十纳秒，
 不会有这一行。
 
+### 运行护照
+
+报告上方有一份护照：这次运行是在哪台机器上、用什么配置做的，这样两份报告可以直接比较，不必猜测
+它们差在哪里。运行和崩溃点搜索都有护照。
+
+```text
+machine: linux/amd64, 8 CPU, GOMAXPROCS 8, quota 4, go1.27.1; config sha256:3f9a1c0d2b7e
+labels: commit=abc123, env=staging
+```
+
+- `quota` 是容器的 CPU 上限（cgroup），按设置值显示；没有上限时没有这一部分。
+- 哈希是配置文件在磁盘上原样的 SHA-256，`sha256sum load.yaml` 也能得到同样的值；文本中显示前 12 位，
+  JSON 中是全部。文件的任何改动，哪怕只是注释，都会改变哈希。哈希在替换 `${ENV}` 之前计算：
+  `metadata` 中的密钥请通过 `${ENV}` 写，不要把值写在文件里。
+- 标签（未发布）是配置中的 `labels:` 和命令行的 `-label key=value`（可重复；命令行参数覆盖配置中的
+  同名键）：
+
+```sh
+leettest -c load.yaml -label env=staging -label commit=abc123
+```
+
+键由拉丁字母、数字和 `_.-` 组成，最多 64 个字符；值是不超过 256 字节的字符串，YAML 中的数字请加引号
+（`build: "1.10"`）。违反规则时在开始前退出码为 `1`。在 JSON 中护照是字段 `passport`（未发布），
+`dataset` 的 `file` 旁边有 `sha256`；所有字段见[参考手册](reference.md#json-字段)。
+
 ## 运行何时无效
 
 有报告，但其中的数字与目标所受的负载无关（退出码 2），如果：
@@ -185,29 +210,76 @@ p99 尾部最常见的原因，并输出去掉等待后的 p99——即调用在
   指出方法、原因和应对办法。
 - **主机时钟比某个方法 p50 的四分之一还粗**，或运行期间步长增长到 1 µs 及以上（`clock_step`）。
   请从 Linux 上测量。
+- **某个 `pass` 限值无法判定**（`thresholds_undecided`）：观测太少、压测机来晚了、调用在等空闲的
+  stream、尾部是没有应答的调用。`Thresholds:` 块会指出限值和原因。
+
+## 限值：把运行当作检查
+
+没有 `pass` 时，运行到结束就返回 `0`，无论目标如何应答。要让运行自己说出“扛得住 / 扛不住”，在
+调用下设置限值：
+
+```yaml
+app:
+  target:
+    ip: localhost
+    port: 50051
+  tls: false
+
+load:
+  warmup: 5s
+  calls:
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 800
+      duration: 1m
+      pass:
+        p99: 200ms
+        errors: 1%
+```
+
+```sh
+leettest -c pass.yaml
+echo $?
+```
+
+报告末尾会出现一个块：最差的结论和每个限值一行。对于健康的服务：
+
+```
+Thresholds: passed
+  wallet.v1.WalletService/GetBalance  p99     <= 200ms  pass  21.2ms
+  wallet.v1.WalletService/GetBalance  errors  <= 1%     pass  0.0% (0 of 44000)
+```
+
+键有 `p50`、`p90`、`p95`、`p99`、`p999` 和 `errors`；延迟限值旁边必须有 `errors`，而
+`errors: 100%` 会关掉失败检查——这时延迟限值也就毫无价值。崩溃点搜索的限值是
+`breakpoint.pass.held_rps`。未达标的限值给出退出码 `4`，无法判定的限值（观测太少、压测机来晚了、
+尾部是没有应答的调用）给出 `2`。所有键、结论和原因见[参考手册](reference.md#pass-限值)；包含全部键的示例是
+[`examples/pass.yaml`](../../examples/pass.yaml)。
 
 ## 退出码
 
-目前还没有“扛得住 / 扛不住”的阈值，因此运行到结束就返回 `0`，无论目标如何应答：**`0` 并不表示
-“服务健康”**。退出码有优先级：无效运行（`2`）高于未完成运行（`3`）；输出了报告的停止总是 `3`。
+没有 `pass` 时，运行到结束就返回 `0`，无论目标如何应答：**`0` 并不表示“服务健康”**。有 `pass`
+时，`0` 表示每个限值都已检查并且达标。退出码有优先级：无效运行（`2`）高于未完成运行（`3`）；输出了
+报告的停止总是 `3`；已结束但未达标的运行是 `4`，限值不会把无效或被停止的运行变成 `4`。
 
 | 代码 | 发生了什么 |
 |---|---|
-| `0` | 计划执行完毕，报告完整 |
+| `0` | 计划执行完毕，报告完整；有 `pass` 时所有限值都达标 |
 | `1` | 没有得到所要求的报告：运行没有发生（命令行参数、配置、连接），或报告无法写入 `-json-file`（未发布）。原因见 stderr |
-| `2` | 运行无效（见上文）。有报告，但数字与负载无关 |
+| `2` | 运行无效（见上文），或某个 `pass` 限值无法判定。有报告，但数字与负载无关，或回答不了限值提出的问题 |
 | `3` | 运行在计划结束前停止。有报告，只涵盖已完成的部分 |
+| `4` | 已结束的运行没达到某个 `pass` 限值。有报告，JSON 中的 `outcome` 是 `complete` |
 | `130` | Ctrl+C 后中止，没有报告 |
 | `143` | SIGTERM 后中止，没有报告 |
 
-代码 `4` 预留给阈值。停止如何工作见[参考手册](reference.md#停止)。
+停止如何工作见[参考手册](reference.md#停止)。
 
 ## 供脚本和 CI 使用的 JSON
 
 使用 `-output json` 时，stdout 只输出一个 JSON 对象和一个换行；其他内容都输出到 stderr，因此
-stdout 可以直接交给 `jq`。只有运行确实发生时（代码 `0`、`2`、`3`）才输出该对象；代码 `1`、`130`
-和 `143` 时 stdout 为空。字段 `outcome`（`complete`、`invalid` 或 `incomplete`）始终与退出码一致，只有一种例外：报告无法写入文件（未发布）时，退出码为 `1`，
-stdout 中仍是该次运行的对象。
+stdout 可以直接交给 `jq`。只有运行确实发生时（代码 `0`、`2`、`3`、`4`）才输出该对象；代码 `1`、
+`130` 和 `143` 时 stdout 为空。字段 `outcome`（`complete`、`invalid` 或 `incomplete`）与退出码
+`0`、`2`、`3` 一致；代码 `4` 是 `complete`，哪个限值未达标由字段 `thresholds`（未发布）说明。唯一的
+例外：报告无法写入文件（未发布）时，退出码为 `1`，stdout 中仍是该次运行的对象。
 
 要在日志中保留文本、同时为下一步保留 JSON，可用 `-json-file`（未发布）：
 
@@ -228,8 +300,9 @@ stdout 按 `-output` 的设定输出（默认文本），`report.json` 中是 `-
 - 使用方必须跳过未知字段，并在遇到未知枚举值时不出错。
 
 单位写在字段名里：`_us` 是整数微秒，`_s` 是整数秒；速率 `rps` 是唯一的小数。运行未产生的值是
-`null`，不是 `0`。百分位是一个对象 `{"us": 1234, "lower_bound": false}`：`lower_bound: true`
-时它是下界，而不是数值。延迟是直方图在 3 位有效数字下的取值（误差不超过 0.1%），计数是精确的。
+`null`，不是 `0`。百分位是一个对象 `{"us": 1234, "ns": 1234567, "lower_bound": false}`：`ns` 是直方图的数值，
+整数纳秒，`us` 是同一数值截断到微秒；`pass:` 和 `leettest compare` 按 `ns` 判定，对于在这个字段出现
+之前写下的报告则取 `us` × 1000。`lower_bound: true` 时它是下界，而不是数值。延迟是直方图在 3 位有效数字下的取值（误差不超过 0.1%），计数是精确的。
 时间从 `started_at`（RFC 3339，UTC）即计划开始时刻算起，包括预热；`duration_us` 也包括预热。
 某一秒的 `in_flight` 是该秒结束时在途的调用数。`failure_codes` 中的代码是规范名称
 （`UNAVAILABLE`）。核对方式：运行的总数是各方法之和，一个方法各秒的 `Σ begun` 加上
@@ -266,9 +339,13 @@ load:
     settle: 5s        # 一级的开头部分，不计入判定；小于 hold 的一半
     hold: 30s         # 每级的时长
     p99_limit: 200ms  # 可选；不设时，p99 超过最好的已撑住台阶的 3 倍即判该级崩溃
+    errors_limit: 1%  # 可选；失败调用的占比超过它时该级崩溃
 ```
 
-一级在至少 1% 的调用失败或 p99 越过界线时判为崩溃。崩溃的台阶会在停顿后重复，并且除第一级外，
+一级在失败调用多于 `errors_limit`（默认 1%；恰好这么多仍算撑住，`100%` 表示错误不会使一级崩溃）或
+p99 越过界线时判为崩溃。因没有连接而未发出的调用，在任何 `errors_limit` 下都使该级崩溃。客户端一侧的
+错误（`request_error`、`client_error`、`bad_response`）并不能证明目标崩了：如果只有算上它们才超过
+上限，搜索会以 `run_limit` 停止，原因为 `client_errors`，而不是宣布一个崩溃点；`held_rps` 保留。崩溃的台阶会在停顿后重复，并且除第一级外，
 还会先在第一级上做探测：目标必须回到原来的 p99。一级只有在压测机发出了计划的调用时才算撑住——
 至少是测量窗口内调用数的 99.9%。否则这是本次运行的上限，而不是目标的上限。在第一级之前，stderr
 会有一行 `breakpoint: up to N steps, at most T`：共有多少级，以及搜索最坏情况下要多久。整个搜索
@@ -278,14 +355,124 @@ load:
 崩溃——请从更低处开始）、`held_all`（一直撑到 `to`）、`run_limit`（压测机、某条连接的上限或
 `-max-in-flight` 用尽：更高负载下目标的情况未知）、`stopped`（Ctrl+C）、`invalid`（某一级是无效
 运行）。原因（`why`）也是封闭列表：`errors`、`p99_limit`、`p99_vs_base`、`connection`、
-`no_recovery`、`generator`、`in_flight_cap`、`stream_limit`、`stream_wait`、`clock_step`、
-`request_errors` 或 `null`。没有对应值时，`held_rps` 和 `broke_rps` 为 `null`。在搜索模式下 JSON
+`no_recovery`、`generator`、`in_flight_cap`、`stream_limit`、`stream_wait`、`client_errors`、
+`clock_step`、`request_errors` 或 `null`。错误上限是字符串 `breakpoint.errors_limit`（未发布）。
+没有对应值时，`held_rps` 和 `broke_rps` 为 `null`。在搜索模式下 JSON
 是另一种对象：`mode: "breakpoint"`，普通运行的字段都不在顶层，每次运行连同其完整报告放在
 `breakpoint.runs` 中（`kind`：`step`、`repeat`、`probe`；`planned_rps` 和 `sent_rps`）。
 普通运行写 `mode: "run"`。
 
 退出码：`broke`、`broke_at_first`、`held_all`、`run_limit` 为 `0`——它们是发现；`invalid` 为 `2`；
-单次 Ctrl+C 停止为 `3`。
+单次 Ctrl+C 停止为 `3`；搜索守住的低于 `breakpoint.pass.held_rps` 为 `4`。
+
+### 比较两次搜索
+
+用 `-json-file` 写下的两份搜索报告（未发布）——改动之前和之后。`leettest compare`（未发布）会说出
+容量（`held_rps`）下降了多少，并在给出 `-max-capacity-drop` 时据此判定。在参考测试台上，从仓库根目录
+运行：先对容量 270 rps 的测试台做一次搜索（在测试台的终端里），然后在另一个终端里搜索并保存“之前”的
+报告：
+
+```sh
+go run ./test/stand/cmd/stand -capacity 270 -delay 20ms
+```
+
+```sh
+leettest -c examples/breakpoint-step.yaml -json-file before.json
+```
+
+停掉测试台（Ctrl+C），以容量 200 rps 重新启动，并保存“之后”的报告：
+
+```sh
+go run ./test/stand/cmd/stand -capacity 200 -delay 20ms
+```
+
+```sh
+leettest -c examples/breakpoint-step.yaml -json-file after.json
+```
+
+比较（测试台可以停掉）：
+
+```sh
+leettest compare -max-capacity-drop 10% before.json after.json
+```
+
+```
+base: before.json  Health  2026-10-19T19:25:28.941479Z
+new:  after.json  Health  2026-10-19T19:26:46.1806268Z
+capacity: 250 rps -> 200 rps, drop 20.0%, limit 10%: FAIL
+```
+
+容量从 250 降到 200 rps，即 20%，限值为 10%，退出码 `4`。你的时间和测试台会不同，数字取决于测试台的
+容量。
+
+两份报告只有在目标、方法、LeetTest 版本、运行护照（标签除外）和数据集都一致时才可比较；否则
+`differs:` 行会指出字段，结论是 `unknown`。如果搜索在崩溃之前就结束了，容量是下界（`>= N rps`）；
+如果目标在第一级就崩溃了，则是上界（`below N rps`）。这时下降幅度以界限形式输出
+（`drop <= 33.4%`），只有当这个界限能够决定时，限值才会被判定。没有 `-max-capacity-drop` 时
+什么都不判定。退出码：`0`——在限值内或没有限值，`1`——报告无法读取，`2`——报告不可比较或限值无法
+判定，`4`——容量下降超过限值。
+
+### 比较两次运行
+
+同样的命令也能读取普通运行的报告（`-json-file`，未发布）：`-max-p99-rise` 判定每个方法 p99 相对于
+“之前”p99 的增长百分比，`-max-errors-rise` 判定失败调用占比的增长（以百分点计）。没有限值时该行
+会输出，但不判定。一次命令里同时给搜索报告和运行报告——退出码 `1`。在参考测试台上，从仓库根目录运行：
+先在 20 ms 延迟下运行，再在 30 ms 下运行：
+
+```sh
+go run ./test/stand/cmd/stand -delay 20ms -life 60s
+```
+
+```sh
+leettest -c examples/stand.yaml -json-file before.json
+```
+
+测试台一分钟后会自行退出；以 30 ms 延迟重新启动它，并保存“之后”的报告：
+
+```sh
+go run ./test/stand/cmd/stand -delay 30ms -life 60s
+```
+
+```sh
+leettest -c examples/stand.yaml -json-file after.json
+```
+
+比较（测试台可以停掉）：
+
+```sh
+leettest compare -max-p99-rise 20% before.json after.json
+```
+
+```
+base: before.json  Health  2026-10-20T12:40:09.5222467Z
+new:  after.json  Health  2026-10-20T12:40:42.469917Z
+grpc.health.v1.Health/Check: p99 21.2ms -> 31.3ms, rise 47.3%, limit 20%: FAIL
+grpc.health.v1.Health/Check: errors 0.0% -> 0.0%, no change
+```
+
+p99 从 21.2 升到 31.3 ms，即 47.3%，限值为 20%，退出码 `4`。你的时间和延迟会不同。
+
+检查结果可能是 `unknown`（退出码 `2`），当报告不可比较（如上）、运行无效或未完成、测量太少、p99
+撞上了超时（因此它比输出的更大，`>=`），或客户端自身的错误使人无法判断服务是否有责任时。不在两份
+报告中同时出现的方法不参与比较。退出码与搜索相同。
+
+供脚本和 CI 使用时，同样的结果也可以作为一个 JSON 对象输出（未发布）：`-output json` 只把它输出到
+stdout，退出码和 stderr 与文本相同；退出码为 `1` 时 stdout 为空。
+
+```sh
+leettest compare -max-p99-rise 20% -output json before.json after.json
+```
+
+对象中的 `verdict` 是有限值的检查中最差的结论（没有限值时为 `null`），`checks` 则包含每项检查及两份
+报告的数字；`unknown` 的原因在 `reason` 中，取自封闭列表：
+
+```json
+{"schema_version":1,"mode":"compare","compared_mode":"run","comparable":true,"differences":[],"verdict":"fail","checks":[{"method":"/grpc.health.v1.Health/Check","key":"p99","base_p99":{"us":21381,"ns":21381472,"lower_bound":false},"new_p99":{"us":31358,"ns":31358109,"lower_bound":false},"limit_percent":"20%","verdict":"fail","reason":null,"why":null}]}
+```
+
+没有显示全部字段：这项检查为空的字段（`base_capacity` 和其他 `null`）以及报告的描述（`base`、
+`new`）被省略了。对象中没有增长百分比——脚本自己根据 `us` 计算。每个字段都在
+[参考手册，“对比 JSON”](reference.md#对比-json)中说明。
 
 ## 深入了解
 

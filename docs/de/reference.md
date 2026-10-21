@@ -3,7 +3,7 @@
 [Русский](../ru/reference.md) · [English](../en/reference.md) · [Deutsch](reference.md) · [简体中文](../zh-CN/reference.md)
 [← Startseite](README.md)
 
-> Übersetzt aus [docs/ru/reference.md](../ru/reference.md) bei 7b1db80, 2026-10-19. Bei
+> Übersetzt aus [docs/ru/reference.md](../ru/reference.md) bei d7d1c85, 2026-10-21. Bei
 > Abweichungen gilt die russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/reference.md).
@@ -58,6 +58,7 @@ load:
 | `load.calls[].dataset_reuse` | `true` (weggelassen) oder `false`: bei `false` geht kein Datensatz im ganzen Prozess zweimal raus. Braucht `dataset` — nicht veröffentlicht |
 | `load.calls[].pass` | Die Grenzen, die ein Lauf einhalten muss, um zu bestehen: `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, siehe [unten](#grenzen-pass). Weggelassen — keine Grenzen — nicht veröffentlicht |
 | `load.breakpoint.pass` | Die Grenze einer Bruchpunkt-Suche: `held_rps`, siehe [unten](#grenzen-pass). Weggelassen — keine Grenze — nicht veröffentlicht |
+| `load.breakpoint.errors_limit` | Ein Prozentwert wie `1%` oder `0.5%`, bis zu drei Stellen nach dem Punkt, höchstens `100%`. Eine Stufe der Suche bricht, wenn mehr als dieser Anteil der Aufrufe fehlschlug; genau so viel wird gehalten. Weggelassen — `1%` — nicht veröffentlicht |
 
 Die Konfiguration wird streng gelesen: Ein Tippfehler in einem Feldnamen ist ein Fehler mit der
 Zeilennummer, ein falscher Wert ein Fehler mit Nummer und Methode des Aufrufs, kein Lauf mit leerer
@@ -124,14 +125,22 @@ Ziels), `nothing_sent` (kein einziger Aufruf wurde gesendet), `censored` (am End
 stehen Aufrufe ohne Antwort innerhalb des Timeouts: Der Wert ist nur eine Untergrenze, nicht über
 der Grenze).
 
-- Die Latenz wird in ganzen Mikrosekunden verglichen, wie der Bericht sie ausgibt. Eine Untergrenze
-  über der Grenze ist ein `fail`: Der wahre Wert ist noch größer.
+- Die Latenz wird in Nanosekunden verglichen, wie das JSON sie trägt (`value.ns`): Ein Wert, der eine
+  Nanosekunde über der Grenze liegt, ist ein `fail`, obwohl `value.us` (auf Mikrosekunden
+  abgeschnitten) gleich `limit_us` sein kann. Eine Untergrenze über der Grenze ist ein `fail`: Der
+  wahre Wert ist noch größer.
 - Der Anteil zählt jeden fehlgeschlagenen Aufruf und jeden Aufruf, der mangels Verbindung nicht
   gesendet wurde, an allen gezählten. Für ein `fail` zählen nur die Fehler, die das Ziel
   entschieden hat: Vom Client abgelehnte Anfragen, Client-Fehler und fehlerhafte Antworten sagen
   nichts über das Ziel.
 - Die Zeile einer Grenze widerspricht nie ihrem Urteil: Läge der auf drei signifikante Stellen
   gerundete Wert auf der falschen Seite der ausgegebenen Grenze, wird der genaue Wert ausgegeben.
+  Neben einem FAIL ist es der erste der drei, der über der Grenze liegt: drei signifikante Stellen,
+  der Wert in ganzen Mikrosekunden (zum nächsten; eine Untergrenze nach unten), der Wert auf die
+  Nanosekunde (`100.4us` bei einer Grenze von `100us`). Der Anteil neben einem FAIL wird zum
+  nächsten gerundet, nicht nach oben: Genommen wird die erste von 1, 2, 3 Stellen nach dem Punkt, bei
+  der die Zahl über der Grenze liegt (`1.004%` bei einer Grenze von `1%`); reichen auch drei nicht,
+  wird `> ` und die Grenze, wie sie geschrieben steht, ausgegeben (`> 1%`).
 
 ## Zugang zum Dienst
 
@@ -345,7 +354,7 @@ unten den Typ „percentile?" hat.
 | Feld | Typ | Bedeutung |
 |---|---|---|
 | `<percentile>.us` | int | Der Wert, ganze Mikrosekunden |
-| `<percentile>.ns` | int | Der Wert des Histogramms in ganzen Nanosekunden, den der Textbericht mit drei signifikanten Stellen ausgibt; `us` ist derselbe Wert, auf Mikrosekunden abgeschnitten; `leettest compare` urteilt nach `ns` |
+| `<percentile>.ns` | int | Der Wert des Histogramms in ganzen Nanosekunden, den der Textbericht mit drei signifikanten Stellen ausgibt; `us` ist derselbe Wert, auf Mikrosekunden abgeschnitten; `pass:` und `leettest compare` urteilen nach `ns`: neben einem `fail` kann `us` gleich `limit_us` sein |
 | `<percentile>.lower_bound` | bool | `true` — eine Untergrenze, kein Wert ([README](README.md#den-bericht-lesen)) |
 
 ### Lauf
@@ -517,7 +526,7 @@ obersten Ebene. Jeder Lauf liegt mit seinem vollständigen Bericht in `breakpoin
 | `breakpoint.held_rps` | int? | Die höchste Rate, die das Ziel gehalten hat; `null` — keine gehalten |
 | `breakpoint.broke_rps` | int? | Die niedrigste Rate, bei der das Ziel brach oder ein Lauflimit die Suche stoppte; `null` — es brach nicht |
 | `breakpoint.errors_limit` | string | Die Fehlergrenze der Suche als Prozent: standardmäßig `"1%"`. Eine Stufe brach darüber; `100%` — Fehler brechen keine Stufe — nicht veröffentlicht |
-| `breakpoint.why` | string? | Ursache des Laufs, der die Suche beendet hat, aus einer geschlossenen Liste: `errors`, `p99_limit`, `p99_vs_base`, `connection`, `no_recovery`, `generator`, `in_flight_cap`, `stream_limit`, `stream_wait`, `client_errors`, `clock_step`, `request_errors`; `null` — keine Ursache |
+| `breakpoint.why` | string? | Ursache des Laufs, der die Suche beendet hat, aus einer geschlossenen Liste: `errors`, `p99_limit`, `p99_vs_base`, `connection`, `no_recovery`, `generator`, `in_flight_cap`, `stream_limit`, `stream_wait`, `client_errors`, `clock_step`, `request_errors`; `null` — keine Ursache. `client_errors`: die Grenze wurde nur durch Fehler auf der Seite des Clients überschritten, die eigenen Fehler des Ziels liegen innerhalb davon; das Ergebnis ist `run_limit` |
 | `breakpoint.stop_reason` | string? | Wer die Suche beendet hat: `dataset_exhausted` (eine Datei mit `dataset_reuse: false` war aufgebraucht), `requested` (vom Nutzer gestoppt); `null` — die Suche endete von selbst — nicht veröffentlicht |
 | `breakpoint.notes` | []string | Hinweise der Suche, Text für Menschen in ASCII; nicht auswerten |
 | `breakpoint.runs` | []object | Alle Läufe der Reihe nach |
@@ -528,3 +537,92 @@ obersten Ebene. Jeder Lauf liegt mit seinem vollständigen Bericht in `breakpoin
 | `breakpoint.runs[].recovered` | bool? | Bei einem `probe`: das Ziel ist innerhalb des 1,5-Fachen des p99 der Basis zurück; bei `step` und `repeat` `null` |
 | `breakpoint.runs[].why` | string? | Ursache des Laufs, dieselbe geschlossene Liste wie bei `breakpoint.why`; `null` — keine Ursache |
 | `breakpoint.runs[].report` | object | Vollständiger Bericht dieses Laufs, dasselbe Objekt wie das JSON eines gewöhnlichen Laufs (Felder oben) |
+
+## Berichte vergleichen: `leettest compare`
+
+`leettest compare [Flags] vorher.json nachher.json` liest zwei `-json-file`-Berichte derselben Art —
+zwei Suchen oder zwei Läufe — und gibt aus, was sich geändert hat. Die Flags stehen vor den Dateien.
+Der Befehl ist nicht veröffentlicht.
+
+| Flag | Was es tut |
+|---|---|
+| `-max-capacity-drop` | Zwei Suchen: die Grenze für den Rückgang der Kapazität (`held_rps`) in Prozent der Kapazität „vorher“, zum Beispiel `10%`. Ohne sie wird die Kapazität ausgegeben, aber nicht beurteilt |
+| `-max-p99-rise` | Zwei Läufe: die Grenze für den Anstieg des p99 jeder Methode in Prozent des p99 „vorher“, zum Beispiel `20%` |
+| `-max-errors-rise` | Zwei Läufe: die Grenze für den Anstieg des Anteils fehlgeschlagener Aufrufe in Prozentpunkten, zum Beispiel `1%` |
+| `-output` | Format des Berichts auf stdout: `text` (weggelassen) oder `json` für Skripte und CI. Jeder andere Wert — Code 1, die Dateien werden nicht gelesen |
+
+Die Exit-Codes sind für beide Formate dieselben: `0` — innerhalb der Grenze oder keine Grenzen, `1` —
+ein Bericht ließ sich nicht lesen oder die Flags passen nicht zusammen, `2` — die Berichte sind nicht
+vergleichbar oder eine Grenze lässt sich nicht entscheiden, `4` — eine Grenze ist verletzt (auch wenn
+daneben eine Prüfung steht, die sich nicht entscheiden lässt).
+
+## JSON des Vergleichs
+
+`leettest compare -output json` schreibt auf stdout ein Objekt und einen Zeilenumbruch, sonst nichts;
+bei Exit-Code 1 ist stdout leer. Exit-Codes und stderr sind dieselben wie beim Text. Im Objekt stehen
+die eigenen Zahlen der Berichte und die Urteile; einen Änderungsprozentsatz enthält es nicht — das
+Skript rechnet ihn selbst aus den Werten. Der Grund eines `unknown` ist ein Wert aus einer
+geschlossenen Liste in `checks[].reason`, und `why` sind dieselben Worte, die der Text ausgibt.
+
+Methodennamen sind auf zwei Arten geschrieben. In `differences` und im Text steht die Methode ohne
+führendes `/` (`pkg.Svc/Do`). In `checks[].method` steht der Name wie im Bericht: bei einem Lauf mit
+führendem `/` (`/pkg.Svc/Do`), bei einer Suche ohne.
+
+Ein Feld, das es für die Art der Prüfung nicht gibt, ist `null`: bei `capacity` sind `*_p99` und
+`*_errors` leer, bei `p99` die übrigen. Ein Urteil gibt es nur, wenn die Prüfung eine Grenze hat.
+
+| Feld | Typ | Bedeutung |
+|---|---|---|
+| `schema_version` | int | Version des Schemas, derzeit `1` |
+| `mode` | string | Immer `"compare"` |
+| `compared_mode` | string | Art der verglichenen Berichte: `"run"` oder `"breakpoint"` |
+| `leettest_version` | string | Version von LeetTest, das verglichen hat (nicht die der Berichte) |
+| `base`, `new` | object | Der Bericht „vorher“ und der Bericht „nachher“ |
+| `base.path`, `new.path` | string | Pfad zur Datei, wie auf der Kommandozeile angegeben |
+| `base.name`, `new.name` | string | Name des Berichts; ein leerer bleibt `""` |
+| `base.started_at`, `new.started_at` | string | Beginn, wie im Bericht |
+| `base.leettest_version`, `new.leettest_version` | string | Version von LeetTest, das den Bericht geschrieben hat |
+| `base.labels`, `new.labels` | map | Labels des Passes; `{}` ohne Pass oder ohne Labels |
+| `comparable` | bool | `true` — die Berichte unterscheiden sich in nichts, was sie unvergleichbar macht, und die Läufe haben eine gemeinsame Methode |
+| `differences` | []object | Was die Berichte unvergleichbar macht, in der Reihenfolge des Vergleichs; `[]`, wenn nichts |
+| `differences[].field` | string | Name des Feldes wie in der Zeile `differs:` (`target`, `method`, `leettest_version`, `passport.config_sha256`, `methods`, `dataset <Methode>`). Fehlt der Pass — `passport` |
+| `differences[].base` | string | Wert „vorher“; `none` — kein `dataset` oder kein Pass |
+| `differences[].new` | string | Wert „nachher“; bei `passport` — `present` dort, wo ein Pass da ist |
+| `verdict` | string? | Das schlechteste Urteil der Prüfungen mit Grenze: `fail`, sonst `unknown`, sonst `pass`; `null` — keine Grenze gesetzt |
+| `checks` | []object | Prüfungen in der Reihenfolge des Textes: bei einer Suche eine (`capacity`), bei einem Lauf für jede gemeinsame Methode in der Reihenfolge „vorher“ erst `p99`, dann `errors`; `[]`, wenn es nichts zu vergleichen gibt |
+| `checks[].method` | string | Methode der Prüfung, die Namen siehe oben |
+| `checks[].key` | string | `capacity`, `p99` oder `errors` |
+| `checks[].base_capacity`, `checks[].new_capacity` | object? | Kapazität der Suche; `null` — nicht gemessen oder eine andere Art der Prüfung |
+| `checks[].base_capacity.rps`, `checks[].new_capacity.rps` | int | Kapazität in rps |
+| `checks[].base_capacity.bound`, `checks[].new_capacity.bound` | string | `exact` — die Suche brach, `rps` ist die höchste gehaltene Rate; `lower` — endete vor dem Bruch, die Kapazität ist mindestens `rps`; `upper` — brach auf der ersten Stufe, die Kapazität liegt unter `rps` |
+| `checks[].base_outcome`, `checks[].new_outcome` | string? | `breakpoint.outcome` der Suche; nur bei `capacity` |
+| `checks[].base_p99`, `checks[].new_p99` | object? | p99 der Methode — dasselbe Objekt wie `latency.p99` des Laufberichts; `null` — zu wenige Messungen oder eine andere Art der Prüfung |
+| `checks[].base_p99.us`, `checks[].new_p99.us` | int | p99 in ganzen Mikrosekunden |
+| `checks[].base_p99.ns`, `checks[].new_p99.ns` | int | p99 in ganzen Nanosekunden; der Anstieg wird danach berechnet. Bei einem Bericht ohne `ns` — `us` × 1000 |
+| `checks[].base_p99.lower_bound`, `checks[].new_p99.lower_bound` | bool | `true` — das Ende der Verteilung stieß ans Timeout, der wahre p99 ist größer |
+| `checks[].base_errors`, `checks[].new_errors` | object? | Anteil fehlgeschlagener Aufrufe der Methode in Teilen; `null` — eine andere Art der Prüfung |
+| `checks[].base_errors.bad`, `checks[].new_errors.bad` | int | Alle fehlgeschlagenen Aufrufe und die von der Verbindung verlorenen |
+| `checks[].base_errors.bad_client`, `checks[].new_errors.bad_client` | int | Der Teil von `bad`, der nichts über das Ziel sagt: abgelehnte Anfragen, Client-Fehler, unsere `bad_response` |
+| `checks[].base_errors.total`, `checks[].new_errors.total` | int | Gesendete und von der Verbindung verlorene Aufrufe; `0` bleibt `0` |
+| `checks[].limit_percent` | string? | Grenze der Prüfung, wie im Flag geschrieben (`"20%"`); `null` — keine Grenze gesetzt |
+| `checks[].verdict` | string? | `pass`, `fail` oder `unknown`; `null` — keine Grenze |
+| `checks[].reason` | string? | Nur bei `unknown`, ein Wert aus der Liste unten; sonst `null` |
+| `checks[].why` | string? | Nur bei `unknown`: dieselben Worte, die der Text nach `unknown, ` ausgibt; nicht auswerten |
+
+Die Gründe für `unknown` sind eine geschlossene Liste; von den ersten sechs gewinnt der erste, der
+passt:
+
+- `not_comparable` — die Berichte sind nicht vergleichbar, die Zahlen werden nicht gegenübergestellt;
+- `method_invalid` — die Methode einer Seite ist ungültig;
+- `invalid` — der Lauf einer Seite ist ungültig;
+- `incomplete` — der Lauf einer Seite ist nicht zu Ende gekommen;
+- `generator` — eine Seite wurde vom Generator selbst gebremst;
+- `stream` — eine Seite wurde von der Stream-Grenze gebremst;
+- `few_observations` — zu wenige Messungen für den p99;
+- `base_zero` — die Basis ist null (p99 0 µs oder Kapazität 0 rps), einen Anteil davon gibt es nicht;
+- `censored` — der p99 stieß ans Timeout und entscheidet die Grenze nicht;
+- `nothing_sent` — auf einer Seite wurde nichts gesendet;
+- `client_errors` — die Fehler des Clients selbst entscheiden;
+- `not_measured` — die Kapazität einer Seite ist nicht gemessen;
+- `broke_at_first` — die Suche brach auf der ersten Stufe, ein Rückgang ist nicht zu sehen;
+- `lower_bound` — die Suche endete vor dem Bruch, die Kapazität ist eine Untergrenze.

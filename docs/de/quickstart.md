@@ -1,4 +1,4 @@
-> Übersetzt aus [docs/ru/quickstart.md](../ru/quickstart.md) bei 5c75feb, 2026-10-14. Bei
+> Übersetzt aus [docs/ru/quickstart.md](../ru/quickstart.md) bei d7d1c85, 2026-10-21. Bei
 > Abweichungen gilt die russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/quickstart.md).
@@ -312,7 +312,7 @@ Exit-Codes:
 | `130`, `143` | Durch Ctrl+C oder SIGTERM beendet, kein Bericht |
 
 Für ein Pass/Fail-Gate in CI setzen Sie `pass`-Grenzen unter den Aufruf
-([`examples/pass.yaml`](../../examples/pass.yaml), [Referenz, «Grenzen: pass»](reference.md#grenzen-pass))
+([`examples/pass.yaml`](../../examples/pass.yaml), [README, „Grenzen"](README.md#grenzen-ein-lauf-als-prüfung))
 und lassen den Build bei einem Exit-Code ungleich null fehlschlagen; das JSON-Feld `thresholds` (nicht veröffentlicht)
 sagt, welche Grenze verfehlt wurde oder sich nicht entscheiden ließ.
 

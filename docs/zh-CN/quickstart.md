@@ -1,4 +1,4 @@
-> 译自 [docs/ru/quickstart.md](../ru/quickstart.md)，对应 5c75feb，2026-10-14。如有出入，以俄文版为准。
+> 译自 [docs/ru/quickstart.md](../ru/quickstart.md)，对应 d7d1c85，2026-10-21。如有出入，以俄文版为准。
 > **可能滞后：** 中文版在每次发布前同步，最新内容请看[英文版](../en/quickstart.md)。
 
 # 快速上手
@@ -274,7 +274,7 @@ JSON 是版本化的（`schema_version`）；结论以字段而不是文本给�
 | `130`、`143` | 被 Ctrl+C 或 SIGTERM 终止，没有报告 |
 
 要在 CI 中做通过/失败判定，在调用下设置 `pass` 限值
-（[`examples/pass.yaml`](../../examples/pass.yaml)，[参考，“Pass 限值”](reference.md#pass-限值)），
+（[`examples/pass.yaml`](../../examples/pass.yaml)，[README，“限值”](README.md#限值把运行当作检查)），
 并在退出码非零时让构建失败；JSON 字段 `thresholds`（未发布）会指出哪个限值未达标或无法判定。
 
 ## 8. 完全没有服务

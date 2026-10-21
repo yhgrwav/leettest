@@ -3,7 +3,7 @@
 [Русский](../ru/reference.md) · [English](../en/reference.md) · [Deutsch](../de/reference.md) · [简体中文](reference.md)
 [← 首页](README.md)
 
-> 译自 [docs/ru/reference.md](../ru/reference.md)，对应 7b1db80，2026-10-19。如有出入，以俄文版为准。
+> 译自 [docs/ru/reference.md](../ru/reference.md)，对应 d7d1c85，2026-10-21。如有出入，以俄文版为准。
 > **可能滞后：** 中文版在每次发布前同步，最新内容请看[英文版](../en/reference.md)。
 
 每个配置字段、每个命令行参数，以及工具在启动前检查什么。如何阅读报告见
@@ -56,6 +56,7 @@ load:
 | `load.calls[].dataset_reuse` | `true`（省略时）或 `false`：为 `false` 时，整个进程中没有任何一条记录会发出两次。需要 `dataset`——未发布 |
 | `load.calls[].pass` | 运行要通过必须满足的限值：`p50`、`p90`、`p95`、`p99`、`p999`、`errors`，见[下文](#pass-限值)。省略时没有限值——未发布 |
 | `load.breakpoint.pass` | 崩溃点搜索的限值：`held_rps`，见[下文](#pass-限值)。省略时没有限值——未发布 |
+| `load.breakpoint.errors_limit` | 形如 `1%` 或 `0.5%` 的百分数，小数点后最多三位，不超过 `100%`。失败调用占比超过它时，搜索的这一级就崩溃；恰好等于它则算撑住。省略时为 `1%`——未发布 |
 
 配置严格解析：字段名拼写错误会报错并给出行号，取值错误会报错并给出调用的序号和方法，而不是以空负载
 运行。`rps` 是整数：`10.5` 会被拒绝，而不是悄悄取整为十。`warmup` 必须短于每个调用，否则该调用
@@ -111,10 +112,15 @@ load:
 客户端自己的失败，而不是目标的）、`nothing_sent`（一个调用也没发出）、`censored`（尾部有在超时内没有
 应答的调用：该值只是下界，且不高于限值）。
 
-- 延迟按整数微秒比较，与报告输出一致。高于限值的下界算 `fail`：真实值还要更大。
+- 延迟按纳秒比较，与 JSON 中的一致（`value.ns`）：比限值高一纳秒的值就是 `fail`，尽管 `value.us`
+  （截断到微秒）可能等于 `limit_us`。高于限值的下界算 `fail`：真实值还要更大。
 - 占比统计所有失败的调用，以及因没有连接而未发出的调用，除以所有被统计的调用。对 `fail` 只计由目标
   决定的失败：被客户端拒绝的请求、客户端错误和错误的响应都说明不了目标。
 - 限值那一行绝不与其结论矛盾：如果四舍五入到三位有效数字的值会落在所输出限值的错误一侧，就输出精确值。
+  在 FAIL 旁边，取下面三者中第一个高于限值的：三位有效数字；整数微秒的值（四舍五入到最近；下界向下取）；
+  精确到纳秒的值（限值为 `100us` 时为 `100.4us`）。FAIL 旁边的占比四舍五入到最近，不向上取：在小数点后
+  1、2、3 位中取第一个使数字高于限值的（限值为 `1%` 时为 `1.004%`）；三位也不够时，输出 `> ` 加上按原样
+  书写的限值（`> 1%`）。
 
 ## 访问服务
 
@@ -293,7 +299,7 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | 字段 | 类型 | 含义 |
 |---|---|---|
 | `<percentile>.us` | int | 数值，整数微秒 |
-| `<percentile>.ns` | int | 直方图的数值，整数纳秒，文本报告按三位有效数字打印；`us` 是同一数值截断到微秒；`leettest compare` 按 `ns` 判定 |
+| `<percentile>.ns` | int | 直方图的数值，整数纳秒，文本报告按三位有效数字打印；`us` 是同一数值截断到微秒；`pass:` 和 `leettest compare` 按 `ns` 判定：`fail` 旁边的 `us` 可能等于 `limit_us` |
 | `<percentile>.lower_bound` | bool | `true`——下界，而不是数值（[README](README.md#阅读报告)） |
 
 ### 运行
@@ -462,7 +468,7 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `breakpoint.held_rps` | int? | 目标撑住的最高速率；`null` — 没有撑住的 |
 | `breakpoint.broke_rps` | int? | 目标崩溃或运行上限使搜索停下的最低速率；`null` — 未崩溃 |
 | `breakpoint.errors_limit` | string | 搜索使用的错误上限，百分数：默认 `"1%"`。某一级超过它即崩溃；`100%` — 错误不会使某一级崩溃 — 未发布 |
-| `breakpoint.why` | string? | 结束搜索的那次运行的原因，来自封闭列表：`errors`、`p99_limit`、`p99_vs_base`、`connection`、`no_recovery`、`generator`、`in_flight_cap`、`stream_limit`、`stream_wait`、`client_errors`、`clock_step`、`request_errors`；`null` — 没有原因 |
+| `breakpoint.why` | string? | 结束搜索的那次运行的原因，来自封闭列表：`errors`、`p99_limit`、`p99_vs_base`、`connection`、`no_recovery`、`generator`、`in_flight_cap`、`stream_limit`、`stream_wait`、`client_errors`、`clock_step`、`request_errors`；`null` — 没有原因。`client_errors`：上限只被客户端一侧的错误突破，目标自己的错误在上限之内；结果为 `run_limit` |
 | `breakpoint.stop_reason` | string? | 谁结束了搜索：`dataset_exhausted`（`dataset_reuse: false` 的文件用完了）、`requested`（用户停止）；`null`——搜索自行结束——未发布 |
 | `breakpoint.notes` | []string | 搜索的说明，面向人的 ASCII 文本；不要解析 |
 | `breakpoint.runs` | []object | 按顺序列出所有运行 |
@@ -473,3 +479,85 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `breakpoint.runs[].recovered` | bool? | 对 `probe`：目标回到基线 p99 的 1.5 倍以内；`step` 和 `repeat` 为 `null` |
 | `breakpoint.runs[].why` | string? | 该次运行的原因，与 `breakpoint.why` 相同的封闭列表；`null` — 没有原因 |
 | `breakpoint.runs[].report` | object | 这次运行的完整报告，与普通运行的 JSON 是同一种对象（字段见上） |
+
+## 比较报告：`leettest compare`
+
+`leettest compare [参数] before.json after.json` 读取两份同类的 `-json-file` 报告——两次搜索或两次
+运行——并输出发生了什么变化。参数写在文件之前。该命令未发布。
+
+| 参数 | 作用 |
+|---|---|
+| `-max-capacity-drop` | 两次搜索：容量（`held_rps`）下降的限值，按“之前”容量的百分比，例如 `10%`。不给时输出容量，但不判定 |
+| `-max-p99-rise` | 两次运行：每个方法 p99 增长的限值，按“之前”p99 的百分比，例如 `20%` |
+| `-max-errors-rise` | 两次运行：失败调用占比增长的限值，以百分点计，例如 `1%` |
+| `-output` | stdout 中报告的格式：`text`（省略时）或 `json`，供脚本和 CI 使用。其他任何值——退出码 1，不读取文件 |
+
+两种格式的退出码相同：`0` — 在限值内或没有限值，`1` — 报告无法读取或参数不匹配，`2` — 报告不可比较
+或限值无法判定，`4` — 限值被突破（即使旁边还有一项无法判定的检查）。
+
+## 对比 JSON
+
+`leettest compare -output json` 向 stdout 写出一个对象和一个换行，别无其他；退出码为 1 时 stdout 为空。
+退出码和 stderr 与文本相同。对象中是报告自己的数字和结论；其中没有变化的百分比——脚本根据数值自己
+计算。`unknown` 的原因是 `checks[].reason` 中封闭列表里的一个值，而 `why` 是文本打印的同样的话。
+
+方法名有两种写法。在 `differences` 和文本中，方法没有开头的 `/`（`pkg.Svc/Do`）。在 `checks[].method`
+中，名称与报告中一致：运行带开头的 `/`（`/pkg.Svc/Do`），搜索不带。
+
+按检查的类型不存在的字段是 `null`：`capacity` 的 `*_p99` 和 `*_errors` 为空，`p99` 的其余字段为空。
+只有检查有限值时才有结论。
+
+| 字段 | 类型 | 含义 |
+|---|---|---|
+| `schema_version` | int | 模式版本，现为 `1` |
+| `mode` | string | 始终为 `"compare"` |
+| `compared_mode` | string | 被比较报告的类型：`"run"` 或 `"breakpoint"` |
+| `leettest_version` | string | 执行比较的 LeetTest 版本（不是报告的版本） |
+| `base`、`new` | object | “之前”的报告和“之后”的报告 |
+| `base.path`、`new.path` | string | 文件路径，与命令行中给出的一致 |
+| `base.name`、`new.name` | string | 报告名称；空的保持 `""` |
+| `base.started_at`、`new.started_at` | string | 开始时间，与报告中一致 |
+| `base.leettest_version`、`new.leettest_version` | string | 写下该报告的 LeetTest 版本 |
+| `base.labels`、`new.labels` | map | 护照的标签；没有护照或没有标签时为 `{}` |
+| `comparable` | bool | `true` — 两份报告没有任何使其不可比较的差异，并且运行有共同的方法 |
+| `differences` | []object | 使报告不可比较的差异，按比较顺序；没有则为 `[]` |
+| `differences[].field` | string | 字段名，与 `differs:` 行中一致（`target`、`method`、`leettest_version`、`passport.config_sha256`、`methods`、`dataset <方法>`）。没有护照——`passport` |
+| `differences[].base` | string | “之前”的值；`none` — 没有 `dataset` 或护照 |
+| `differences[].new` | string | “之后”的值；对 `passport` — 有护照的一侧为 `present` |
+| `verdict` | string? | 有限值的检查中最差的结论：`fail`，否则 `unknown`，否则 `pass`；`null` — 没有设限值 |
+| `checks` | []object | 检查，按文本顺序：搜索一项（`capacity`），运行对每个共同方法按“之前”的顺序先 `p99` 后 `errors`；没有可比较的则为 `[]` |
+| `checks[].method` | string | 检查的方法，名称见上 |
+| `checks[].key` | string | `capacity`、`p99` 或 `errors` |
+| `checks[].base_capacity`、`checks[].new_capacity` | object? | 搜索的容量；`null` — 未测量或是另一类检查 |
+| `checks[].base_capacity.rps`、`checks[].new_capacity.rps` | int | 容量，rps |
+| `checks[].base_capacity.bound`、`checks[].new_capacity.bound` | string | `exact` — 搜索崩溃了，`rps` 是撑住的最高速率；`lower` — 在崩溃前就结束了，容量不小于 `rps`；`upper` — 在第一级就崩溃了，容量小于 `rps` |
+| `checks[].base_outcome`、`checks[].new_outcome` | string? | 搜索的 `breakpoint.outcome`；仅 `capacity` 有 |
+| `checks[].base_p99`、`checks[].new_p99` | object? | 方法的 p99——与运行报告的 `latency.p99` 是同一种对象；`null` — 测量太少或是另一类检查 |
+| `checks[].base_p99.us`、`checks[].new_p99.us` | int | p99，整数微秒 |
+| `checks[].base_p99.ns`、`checks[].new_p99.ns` | int | p99，整数纳秒；增长按它计算。报告没有 `ns` 时——`us` × 1000 |
+| `checks[].base_p99.lower_bound`、`checks[].new_p99.lower_bound` | bool | `true` — 尾部撞上了超时，真实的 p99 更大 |
+| `checks[].base_errors`、`checks[].new_errors` | object? | 方法失败调用占比的各部分；`null` — 是另一类检查 |
+| `checks[].base_errors.bad`、`checks[].new_errors.bad` | int | 所有失败的调用，以及被连接丢失的调用 |
+| `checks[].base_errors.bad_client`、`checks[].new_errors.bad_client` | int | `bad` 中说明不了目标的部分：被拒绝的请求、客户端错误、我们自己的 `bad_response` |
+| `checks[].base_errors.total`、`checks[].new_errors.total` | int | 已发出的调用和被连接丢失的调用；`0` 仍为 `0` |
+| `checks[].limit_percent` | string? | 检查的限值，与参数中写的一致（`"20%"`）；`null` — 没有设限值 |
+| `checks[].verdict` | string? | `pass`、`fail` 或 `unknown`；`null` — 没有限值 |
+| `checks[].reason` | string? | 仅 `unknown` 有，取自下面的列表；否则为 `null` |
+| `checks[].why` | string? | 仅 `unknown` 有：文本在 `unknown, ` 之后打印的同样的话；不要解析 |
+
+`unknown` 的原因是封闭列表；前六项中第一个适用的胜出：
+
+- `not_comparable` — 报告不可比较，数字不做对照；
+- `method_invalid` — 一侧的方法无效；
+- `invalid` — 一侧的运行无效；
+- `incomplete` — 一侧的运行没有跑完；
+- `generator` — 一侧被压测机自身拖住；
+- `stream` — 一侧被 stream 上限拖住；
+- `few_observations` — 测量太少，不足以得出 p99；
+- `base_zero` — 基准为零（p99 为 0 µs 或容量为 0 rps），没有占比可言；
+- `censored` — p99 撞上了超时，决定不了限值；
+- `nothing_sent` — 一侧什么也没发出；
+- `client_errors` — 起决定作用的是客户端自己的错误；
+- `not_measured` — 一侧的容量未测量；
+- `broke_at_first` — 搜索在第一级就崩溃了，看不到下降；
+- `lower_bound` — 搜索在崩溃前就结束了，容量是下界。
