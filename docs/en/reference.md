@@ -125,7 +125,10 @@ limit).
   counted. For a `fail` only the failures the target decided count: requests the client rejected,
   client errors and bad responses say nothing of the target.
 - A limit's row never contradicts its verdict: if the value rounded to three significant figures
-  would land on the wrong side of the printed limit, the exact one is printed.
+  would land on the wrong side of the printed limit, the exact one is printed. A share beside a
+  FAIL is rounded to the nearest, never up: the first of 1, 2, 3 digits after the point that is
+  over the limit (`1.004%` against `1%`); if three are not enough, `> ` and the limit as written
+  is printed (`> 1%`).
 
 ## Access to the service
 

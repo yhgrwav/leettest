@@ -653,7 +653,20 @@ func TestCompare_PrintedDropNeverArguesWithTheVerdict(t *testing.T) {
 	res, _, _ = compared(t, brokeAt(100000), brokeAt(89999), "-max-capacity-drop", "10%")
 
 	wantExit(t, res, 4)
-	if got, want := lineStarting(t, res.stdout, "capacity:"), "capacity: 100000 rps -> 89999 rps, drop 10.1%, limit 10%: FAIL"; got != want {
+	if got, want := lineStarting(t, res.stdout, "capacity:"), "capacity: 100000 rps -> 89999 rps, drop 10.001%, limit 10%: FAIL"; got != want {
+		t.Errorf("capacity line %q, want %q", got, want)
+	}
+}
+
+// Ground: contract — a fall printed beside a FAIL is the exact fall rounded
+// to the nearest, with the digits it takes, and "> L" with the limit as
+// written when three decimals are not enough: 799999 of 1000000 rps is a drop
+// of 20.0001%, which is over 20% and has no digit kept over it.
+func TestCompare_AFailDropIsNotOverstated(t *testing.T) {
+	res, _, _ := compared(t, brokeAt(1000000), brokeAt(799999), "-max-capacity-drop", "20%")
+
+	wantExit(t, res, 4)
+	if got, want := lineStarting(t, res.stdout, "capacity:"), "capacity: 1000000 rps -> 799999 rps, drop > 20%, limit 20%: FAIL"; got != want {
 		t.Errorf("capacity line %q, want %q", got, want)
 	}
 }
