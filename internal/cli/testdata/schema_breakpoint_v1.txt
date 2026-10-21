@@ -44,6 +44,7 @@ thresholds[].reason string?
 thresholds[].limit_us int?
 thresholds[].value object?
 thresholds[].value.us int
+thresholds[].value.ns int
 thresholds[].value.lower_bound bool
 thresholds[].limit_percent string?
 thresholds[].bad int?

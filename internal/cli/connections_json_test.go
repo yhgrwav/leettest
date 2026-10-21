@@ -127,11 +127,11 @@ func TestJSON_ConnectionsOfSeveral(t *testing.T) {
 	for i, want := range []map[string]any{
 		{
 			"address": addr1, "calls": 400.0, "failed": 0.0, "stream_waited": 0.0, "not_sent_stream": 0.0,
-			"p99": map[string]any{"us": 3200.0, "lower_bound": false}, "first_limit": 4.0, "last_limit": 4.0, "limit_changes": 0.0,
+			"p99": map[string]any{"us": 3200.0, "ns": 3200000.0, "lower_bound": false}, "first_limit": 4.0, "last_limit": 4.0, "limit_changes": 0.0,
 		},
 		{
 			"address": addr2, "calls": 400.0, "failed": 50.0, "stream_waited": 30.0, "not_sent_stream": 7.0,
-			"p99": map[string]any{"us": 1e6, "lower_bound": true}, "first_limit": 4.0, "last_limit": 1.0, "limit_changes": 3.0,
+			"p99": map[string]any{"us": 1e6, "ns": 1e9, "lower_bound": true}, "first_limit": 4.0, "last_limit": 1.0, "limit_changes": 3.0,
 		},
 		{
 			"address": addr1, "calls": 0.0, "failed": 0.0, "stream_waited": 0.0, "not_sent_stream": 0.0,

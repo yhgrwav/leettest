@@ -51,6 +51,7 @@ type cjCapacity struct {
 
 type cjP99 struct {
 	US         int64 `json:"us"`
+	NS         int64 `json:"ns"`
 	LowerBound bool  `json:"lower_bound"`
 }
 
@@ -985,23 +986,24 @@ func TestCompareJSON_ValuesAreTheReportsOwn(t *testing.T) {
 			return nil
 		}
 
-		return &cjP99{US: q.US, LowerBound: q.LowerBound}
+		return &cjP99{US: q.US, NS: q.NS, LowerBound: q.LowerBound}
 	}
 
-	// The p99 the report holds, whatever microseconds the nanoseconds became.
-	if b := fromReport(baseFile, 0); b == nil || b.LowerBound || b.US < 123000 {
+	// The p99 the report holds: the nanoseconds the fixture gave, and the
+	// microseconds cut from them.
+	if b := fromReport(baseFile, 0); b == nil || b.LowerBound || b.US != 123456 || b.NS != 123456789 {
 		t.Fatalf("fixture: the base p99 reads %v", b)
 	}
 
-	if n := fromReport(newFile, 0); n == nil || !n.LowerBound || n.US < 987000 {
+	if n := fromReport(newFile, 0); n == nil || !n.LowerBound || n.US != 987654 || n.NS != 987654321 {
 		t.Fatalf("fixture: the new p99 reads %v", n)
 	}
 
-	if b := fromReport(baseFile, 2); b == nil || !b.LowerBound || b.US < 500000 {
+	if b := fromReport(baseFile, 2); b == nil || !b.LowerBound || b.US != 500000 || b.NS != 500000000 {
 		t.Fatalf("fixture: the base p99 of Second reads %v, want a lower bound", b)
 	}
 
-	if n := fromReport(newFile, 2); n == nil || n.LowerBound || n.US < 250000 {
+	if n := fromReport(newFile, 2); n == nil || n.LowerBound || n.US != 250000 || n.NS != 250000000 {
 		t.Fatalf("fixture: the new p99 of Second reads %v, want an exact value", n)
 	}
 
@@ -1551,8 +1553,8 @@ func TestCompareJSON_KeysAreSchemaV1(t *testing.T) {
 		"checks[]":               "method,key,base_capacity,new_capacity,base_outcome,new_outcome,base_p99,new_p99,base_errors,new_errors,limit_percent,verdict,reason,why",
 		"checks[].base_capacity": "rps,bound",
 		"checks[].new_capacity":  "rps,bound",
-		"checks[].base_p99":      "us,lower_bound",
-		"checks[].new_p99":       "us,lower_bound",
+		"checks[].base_p99":      "us,ns,lower_bound",
+		"checks[].new_p99":       "us,ns,lower_bound",
 		"checks[].base_errors":   "bad,bad_client,total",
 		"checks[].new_errors":    "bad,bad_client,total",
 	}

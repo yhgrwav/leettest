@@ -128,8 +128,9 @@ const (
 
 // Latency is the p99 of one method of a run report.
 type Latency struct {
-	// US is whole microseconds, as the report writes them.
-	US int64
+	// NS is whole nanoseconds: the quantile's `ns` in the report, or its
+	// `us` × 1000 when the report was written before `ns` existed.
+	NS int64
 	// LowerBound: the tail ran past the timeout, the true value is larger.
 	LowerBound bool
 	// Defined is false when the method has too few observations.
@@ -151,7 +152,7 @@ type Share struct {
 // P99Rise judges the rise of the p99 from base to new, in percent of base,
 // against limit. A reason is given only for Unknown.
 //
-// The rise is (new − base) / base in whole microseconds. A lower bound says
+// The rise is (new − base) / base in whole nanoseconds. A lower bound says
 // the true p99 is at least that, so a rise past the limit is certain when the
 // base is exact (the new can only be larger) and a rise within it when the
 // new is exact (the base can only be larger).
@@ -160,11 +161,15 @@ func P99Rise(base, nw Latency, limit share.Percent) (verdict Verdict, reason str
 		return Unknown, ReasonFewObservations
 	}
 
-	if base.US <= 0 {
+	if base.NS <= 0 {
 		return Unknown, ReasonBaseZero
 	}
 
-	over := (nw.US-base.US)*100000 > limit.Thousandths*base.US
+	// big: (new − base) × 100000 does not fit int64 for an hour-long p99.
+	rise := new(big.Int).Sub(big.NewInt(nw.NS), big.NewInt(base.NS))
+	rise.Mul(rise, big.NewInt(100000))
+	allowed := new(big.Int).Mul(big.NewInt(limit.Thousandths), big.NewInt(base.NS))
+	over := rise.Cmp(allowed) > 0
 
 	switch {
 	case !base.LowerBound && !nw.LowerBound:

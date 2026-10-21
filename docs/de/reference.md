@@ -345,6 +345,7 @@ unten den Typ „percentile?" hat.
 | Feld | Typ | Bedeutung |
 |---|---|---|
 | `<percentile>.us` | int | Der Wert, ganze Mikrosekunden |
+| `<percentile>.ns` | int | Der Wert des Histogramms in ganzen Nanosekunden, den der Textbericht mit drei signifikanten Stellen ausgibt; `us` ist derselbe Wert, auf Mikrosekunden abgeschnitten; `leettest compare` urteilt nach `ns` |
 | `<percentile>.lower_bound` | bool | `true` — eine Untergrenze, kein Wert ([README](README.md#den-bericht-lesen)) |
 
 ### Lauf
