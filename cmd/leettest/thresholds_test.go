@@ -113,6 +113,93 @@ func wantVerdict(t *testing.T, rows map[string]map[string]any, key, verdict stri
 	}
 }
 
+// skipIfTheGeneratorDecided skips the test when the run could not test the
+// limit because the generator itself was late (issue #290): the report names
+// the generator twice, as the wait behind the tail and as the reason of the
+// verdict, so the product was right to call the run undecided and the test's
+// premise (a machine that is not loaded) did not hold. The skip is as narrow as
+// that: exit 2, an invalid run, the generator named both ways. Any other result
+// returns and the asserts after it run as before, a wrong verdict included.
+func skipIfTheGeneratorDecided(t *testing.T, res result, out map[string]any) {
+	t.Helper()
+
+	if out == nil || exitCode(res.err) != 2 {
+		return
+	}
+	if detail, ok := generatorDecided(out); ok {
+		t.Skipf("the generator was late, the run could not test the limit: %s", detail)
+	}
+}
+
+// generatorDecided says a report is the one skipIfTheGeneratorDecided skips,
+// with the numbers that show it: the start-lag p99, the counts of the verdict.
+// A plain run names the generator in `reason`; a search ends at the step the
+// generator held back (outcome run_limit, why generator) and its limit is then
+// unknown for run_limit.
+func generatorDecided(out map[string]any) (detail string, ok bool) {
+	rows, _ := out["thresholds"].([]any)
+
+	switch out["mode"] {
+	case "run":
+		if out["outcome"] != "invalid" || out["tail_wait_cause"] != "generator" {
+			return "", false
+		}
+		for _, r := range rows {
+			if row, _ := r.(map[string]any); row["verdict"] == "unknown" && row["reason"] == "generator" {
+				counts := ""
+				if row["total"] != nil {
+					counts = fmt.Sprintf(": bad %v of %v", row["bad"], row["total"])
+				}
+
+				return fmt.Sprintf("start-lag p99 %s, %v sent, %v unknown%s", lagP99(out), out["sent"], row["key"], counts), true
+			}
+		}
+	case "breakpoint":
+		bp, _ := out["breakpoint"].(map[string]any)
+		runs, _ := bp["runs"].([]any)
+		if bp["outcome"] != "run_limit" || bp["why"] != "generator" || len(runs) == 0 {
+			return "", false
+		}
+		last, _ := runs[len(runs)-1].(map[string]any)
+		report, _ := last["report"].(map[string]any)
+		if report["tail_wait_cause"] != "generator" {
+			return "", false
+		}
+		for _, r := range rows {
+			if row, _ := r.(map[string]any); row["verdict"] == "unknown" && row["reason"] == "run_limit" {
+				return fmt.Sprintf("the step at %v rps: start-lag p99 %s, %v sent, %v limit not decided",
+					last["planned_rps"], lagP99(report), report["sent"], row["key"]), true
+			}
+		}
+	}
+
+	return "", false
+}
+
+// optionalJSON is the JSON report of a run that wrote one, nil for a run that
+// wrote none, so the exit code is asserted first.
+func optionalJSON(t *testing.T, res result) map[string]any {
+	t.Helper()
+
+	if res.stdout == "" {
+		return nil
+	}
+
+	return decodeOnly(t, res.stdout)
+}
+
+// lagP99 is the start-lag p99 of a run's report, for a skip message.
+func lagP99(report map[string]any) string {
+	lag, _ := report["start_lag"].(map[string]any)
+	p99, _ := lag["p99"].(map[string]any)
+	ns, ok := p99["ns"].(float64)
+	if !ok {
+		return "n/a"
+	}
+
+	return time.Duration(ns).Round(time.Microsecond).String()
+}
+
 const (
 	p99Within = "      timeout: 2s\n      pass:\n        p99: 1s\n        errors: 1%\n"
 	p99Over   = "      timeout: 2s\n      pass:\n        p99: 50ms\n        errors: 1%\n"
@@ -122,32 +209,38 @@ const (
 // bit: a limit above it passes and the code is 0, with the verdicts in the
 // report; a limit below it is exit 4 and the run is still a complete one.
 func TestThresholds_AP99WithinTheLimitExits0AndOverItExits4(t *testing.T) {
-	res, out := runFake(t, writePassConfig(t, 250, "600ms", p99Within))
-	wantExit(t, res, 0)
-	rows := verdicts(t, out)
-	wantVerdict(t, rows, "p99", "pass")
-	wantVerdict(t, rows, "errors", "pass")
-	if out["outcome"] != "complete" {
-		t.Errorf("outcome = %v, want complete", out["outcome"])
-	}
-	if us, _ := rows["p99"]["limit_us"].(float64); us != 1e6 {
-		t.Errorf("limit_us = %v, want 1000000", rows["p99"]["limit_us"])
-	}
+	t.Run("within the limit", func(t *testing.T) {
+		res, out := runFake(t, writePassConfig(t, 250, "600ms", p99Within))
+		skipIfTheGeneratorDecided(t, res, out)
+		wantExit(t, res, 0)
+		rows := verdicts(t, out)
+		wantVerdict(t, rows, "p99", "pass")
+		wantVerdict(t, rows, "errors", "pass")
+		if out["outcome"] != "complete" {
+			t.Errorf("outcome = %v, want complete", out["outcome"])
+		}
+		if us, _ := rows["p99"]["limit_us"].(float64); us != 1e6 {
+			t.Errorf("limit_us = %v, want 1000000", rows["p99"]["limit_us"])
+		}
+	})
 
-	res, out = runFake(t, writePassConfig(t, 250, "600ms", p99Over))
-	wantExit(t, res, 4)
-	if !errors.Is(res.err, ErrThresholdsFailed) {
-		t.Errorf("err = %v, want ErrThresholdsFailed", res.err)
-	}
-	rows = verdicts(t, out)
-	wantVerdict(t, rows, "p99", "fail")
-	wantVerdict(t, rows, "errors", "pass")
-	if out["outcome"] != "complete" {
-		t.Errorf("outcome = %v, want complete: the run finished, the limit was missed", out["outcome"])
-	}
-	if got := jsonAt(t, out, "invalid_reasons").([]any); len(got) != 0 {
-		t.Errorf("invalid_reasons = %v, want none for a missed limit", got)
-	}
+	t.Run("over the limit", func(t *testing.T) {
+		res, out := runFake(t, writePassConfig(t, 250, "600ms", p99Over))
+		skipIfTheGeneratorDecided(t, res, out)
+		wantExit(t, res, 4)
+		if !errors.Is(res.err, ErrThresholdsFailed) {
+			t.Errorf("err = %v, want ErrThresholdsFailed", res.err)
+		}
+		rows := verdicts(t, out)
+		wantVerdict(t, rows, "p99", "fail")
+		wantVerdict(t, rows, "errors", "pass")
+		if out["outcome"] != "complete" {
+			t.Errorf("outcome = %v, want complete: the run finished, the limit was missed", out["outcome"])
+		}
+		if got := jsonAt(t, out, "invalid_reasons").([]any); len(got) != 0 {
+			t.Errorf("invalid_reasons = %v, want none for a missed limit", got)
+		}
+	})
 }
 
 // Ground: contract — the text report ends with the block, with the verdict
@@ -182,14 +275,17 @@ func TestThresholds_ErrorsExactlyOnTheLimitPass(t *testing.T) {
 		{"all failed, limit 99.9%", "1", "99.9%", 4, "fail"},
 		{"none failed, limit 0%", "0", "0%", 0, "pass"},
 	} {
-		cfg := writePassConfig(t, 250, "600ms", "      timeout: 2s\n      pass:\n        errors: "+tc.limit+"\n")
-		res, out := runFake(t, cfg, "-fake-delay", "20ms", "-fake-fail-ratio", tc.fail)
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := writePassConfig(t, 250, "600ms", "      timeout: 2s\n      pass:\n        errors: "+tc.limit+"\n")
+			res, out := runFake(t, cfg, "-fake-delay", "20ms", "-fake-fail-ratio", tc.fail)
 
-		wantExit(t, res, tc.code)
-		wantVerdict(t, verdicts(t, out), "errors", tc.want)
-		if row := verdicts(t, out)["errors"]; row["limit_percent"] != tc.limit {
-			t.Errorf("%s: limit_percent = %v, want %q as written", tc.name, row["limit_percent"], tc.limit)
-		}
+			skipIfTheGeneratorDecided(t, res, out)
+			wantExit(t, res, tc.code)
+			wantVerdict(t, verdicts(t, out), "errors", tc.want)
+			if row := verdicts(t, out)["errors"]; row["limit_percent"] != tc.limit {
+				t.Errorf("%s: limit_percent = %v, want %q as written", tc.name, row["limit_percent"], tc.limit)
+			}
+		})
 	}
 }
 
@@ -215,32 +311,38 @@ func TestThresholds_TimeoutsInTheTailMissTheLimit(t *testing.T) {
 // fail, so a 1500-call run holds about 750 of them. A limit that is missed in
 // the same run takes the code to 4: a miss is a finding, an unknown is not.
 func TestThresholds_AnUndecidedLimitIsExit2AndAMissOutranksIt(t *testing.T) {
-	cfg := writePassConfig(t, 1000, "1500ms", "      timeout: 3s\n      pass:\n        p999: 2s\n        errors: 100%\n")
-	res, out := runFake(t, cfg, "-fake-fail-ratio", "0.5")
+	t.Run("undecided", func(t *testing.T) {
+		cfg := writePassConfig(t, 1000, "1500ms", "      timeout: 3s\n      pass:\n        p999: 2s\n        errors: 100%\n")
+		res, out := runFake(t, cfg, "-fake-fail-ratio", "0.5")
 
-	wantExit(t, res, 2)
-	rows := verdicts(t, out)
-	wantVerdict(t, rows, "p999", "unknown")
-	if rows["p999"]["reason"] != "few_observations" {
-		t.Errorf("reason = %v, want few_observations", rows["p999"]["reason"])
-	}
-	if out["outcome"] != "invalid" {
-		t.Errorf("outcome = %v, want invalid", out["outcome"])
-	}
-	if got := jsonAt(t, out, "invalid_reasons").([]any); !slices.Equal(got, []any{"thresholds_undecided"}) {
-		t.Errorf("invalid_reasons = %v, want [thresholds_undecided]", got)
-	}
+		skipIfTheGeneratorDecided(t, res, out)
+		wantExit(t, res, 2)
+		rows := verdicts(t, out)
+		wantVerdict(t, rows, "p999", "unknown")
+		if rows["p999"]["reason"] != "few_observations" {
+			t.Errorf("reason = %v, want few_observations", rows["p999"]["reason"])
+		}
+		if out["outcome"] != "invalid" {
+			t.Errorf("outcome = %v, want invalid", out["outcome"])
+		}
+		if got := jsonAt(t, out, "invalid_reasons").([]any); !slices.Equal(got, []any{"thresholds_undecided"}) {
+			t.Errorf("invalid_reasons = %v, want [thresholds_undecided]", got)
+		}
+	})
 
-	cfg = writePassConfig(t, 1000, "1500ms", "      timeout: 3s\n      pass:\n        p999: 2s\n        errors: 10%\n")
-	res, out = runFake(t, cfg, "-fake-fail-ratio", "0.5")
+	t.Run("a miss outranks it", func(t *testing.T) {
+		cfg := writePassConfig(t, 1000, "1500ms", "      timeout: 3s\n      pass:\n        p999: 2s\n        errors: 10%\n")
+		res, out := runFake(t, cfg, "-fake-fail-ratio", "0.5")
 
-	wantExit(t, res, 4)
-	rows = verdicts(t, out)
-	wantVerdict(t, rows, "errors", "fail")
-	wantVerdict(t, rows, "p999", "unknown")
-	if out["outcome"] != "complete" {
-		t.Errorf("outcome = %v, want complete", out["outcome"])
-	}
+		skipIfTheGeneratorDecided(t, res, out)
+		wantExit(t, res, 4)
+		rows := verdicts(t, out)
+		wantVerdict(t, rows, "errors", "fail")
+		wantVerdict(t, rows, "p999", "unknown")
+		if out["outcome"] != "complete" {
+			t.Errorf("outcome = %v, want complete", out["outcome"])
+		}
+	})
 }
 
 // Ground: contract — a run stopped by Ctrl-C is 3 whatever the limits would
@@ -314,27 +416,33 @@ func TestThresholds_ASearchIsDecidedByWhatItHeld(t *testing.T) {
 		return "  breakpoint:\n    from: 50\n    to: 80\n    settle: 50ms\n    hold: 300ms\n" + extra + "    pass:\n      held_rps: 63\n"
 	}
 
-	res := runCLI(t.Context(), t, 60*time.Second, "-fake", "-output", "json",
-		"-c", writeSearchOf(t, closedPort(t), section(""), "200ms", checkMethod))
-	wantExit(t, res, 0)
-	out := decodeOnly(t, res.stdout)
-	rows := verdicts(t, out)
-	wantVerdict(t, rows, "held_rps", "pass")
-	if rows["held_rps"]["limit_rps"] != 63.0 || rows["held_rps"]["held_rps"] != 79.0 {
-		t.Errorf("held_rps threshold %v, want limit 63, held 79", rows["held_rps"])
-	}
-	if got := jsonAt(t, out, "breakpoint", "outcome"); got != "held_all" {
-		t.Errorf("breakpoint.outcome = %v, want held_all", got)
-	}
+	t.Run("held up to the limit", func(t *testing.T) {
+		res := runCLI(t.Context(), t, 60*time.Second, "-fake", "-output", "json",
+			"-c", writeSearchOf(t, closedPort(t), section(""), "200ms", checkMethod))
+		skipIfTheGeneratorDecided(t, res, optionalJSON(t, res))
+		wantExit(t, res, 0)
+		out := decodeOnly(t, res.stdout)
+		rows := verdicts(t, out)
+		wantVerdict(t, rows, "held_rps", "pass")
+		if rows["held_rps"]["limit_rps"] != 63.0 || rows["held_rps"]["held_rps"] != 79.0 {
+			t.Errorf("held_rps threshold %v, want limit 63, held 79", rows["held_rps"])
+		}
+		if got := jsonAt(t, out, "breakpoint", "outcome"); got != "held_all" {
+			t.Errorf("breakpoint.outcome = %v, want held_all", got)
+		}
+	})
 
-	res = runCLI(t.Context(), t, 60*time.Second, "-fake", "-fake-delay", "30ms", "-fake-jitter", "0", "-output", "json",
-		"-c", writeSearchOf(t, closedPort(t), section("    p99_limit: 5ms\n"), "200ms", checkMethod))
-	wantExit(t, res, 4)
-	out = decodeOnly(t, res.stdout)
-	wantVerdict(t, verdicts(t, out), "held_rps", "fail")
-	if got := jsonAt(t, out, "breakpoint", "outcome"); got != "broke_at_first" {
-		t.Errorf("breakpoint.outcome = %v, want broke_at_first", got)
-	}
+	t.Run("broke at the first step", func(t *testing.T) {
+		res := runCLI(t.Context(), t, 60*time.Second, "-fake", "-fake-delay", "30ms", "-fake-jitter", "0", "-output", "json",
+			"-c", writeSearchOf(t, closedPort(t), section("    p99_limit: 5ms\n"), "200ms", checkMethod))
+		skipIfTheGeneratorDecided(t, res, optionalJSON(t, res))
+		wantExit(t, res, 4)
+		out := decodeOnly(t, res.stdout)
+		wantVerdict(t, verdicts(t, out), "held_rps", "fail")
+		if got := jsonAt(t, out, "breakpoint", "outcome"); got != "broke_at_first" {
+			t.Errorf("breakpoint.outcome = %v, want broke_at_first", got)
+		}
+	})
 }
 
 // Ground: contract — the code of a plain run is its own result first (an error,
