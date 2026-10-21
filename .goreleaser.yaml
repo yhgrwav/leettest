@@ -32,9 +32,9 @@ checksum:
 
 # A tag with a suffix (v0.1.0-rc.1) is a pre-release; the default would ship
 # it as the latest release.
+#
+# The page body is the hand-written docs/release-notes/vX.Y.Z.md that
+# release.yml passes with --release-notes. Do not set changelog.disable: the
+# pipe that reads that file is the changelog pipe, so the body comes out empty.
 release:
   prerelease: auto
-
-# The notes are written by hand (docs/release-notes/), passed by release.yml.
-changelog:
-  disable: true
