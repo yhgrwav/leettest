@@ -216,14 +216,14 @@ func runSideOf(report engine.Report, m *engine.MethodReport) (bool, Reason) {
 	}
 }
 
-// latency compares the whole microseconds the report prints with the limit.
-// A value that is only a lower bound fails once the bound is over the limit
-// and decides nothing otherwise.
+// latency compares the value in nanoseconds, as the run JSON carries it
+// (value.ns), with the limit. A value that is only a lower bound fails once
+// the bound is over the limit and decides nothing otherwise.
 func latency(limit time.Duration, q metrics.Quantile) (Verdict, Reason) {
 	switch {
 	case !q.Defined:
 		return VerdictUnknown, ReasonFewObservations
-	case q.Value.Microseconds() > limit.Microseconds():
+	case q.Value > limit:
 		return VerdictFail, ""
 	case !q.Exact:
 		return VerdictUnknown, ReasonCensored

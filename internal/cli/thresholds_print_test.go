@@ -208,9 +208,9 @@ func TestThresholdsText_AFailLatencyShowsWhatMakesItOver(t *testing.T) {
 }
 
 // refSignificant is the table's text of n nanoseconds (n >= 1000, under 10s):
-// three significant figures, rounded to the nearest, or down when roundUp is
+// three significant figures, rounded to the nearest, or down when nearest is
 // false (a lower bound). It also returns the nanoseconds the text stands for.
-func refSignificant(t *testing.T, n int64, roundUp bool) (text string, ns int64) {
+func refSignificant(t *testing.T, n int64, nearest bool) (text string, ns int64) {
 	t.Helper()
 
 	for _, u := range []struct {
@@ -219,7 +219,7 @@ func refSignificant(t *testing.T, n int64, roundUp bool) (text string, ns int64)
 	}{{1e3, "us"}, {1e6, "ms"}, {1e9, "s"}} {
 		for dec, k := 2, int64(100); dec >= 0; dec, k = dec-1, k/10 {
 			v := n * k / u.size
-			if roundUp {
+			if nearest {
 				v = (n*k + u.size/2) / u.size
 			}
 			if v >= 1000 {

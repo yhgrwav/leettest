@@ -263,6 +263,7 @@ func TestSearch_AP99LimitReasonShowsWhatMakesItOver(t *testing.T) {
 	}{
 		{"whole microseconds", 200*ms + 400*time.Microsecond, "p99 200.4ms over p99_limit 200ms"},
 		{"nanoseconds", 200*ms + 400*time.Nanosecond, "p99 200.0004ms over p99_limit 200ms"},
+		{"whole microseconds, nearest", 200*ms + 600*time.Nanosecond, "p99 200.001ms over p99_limit 200ms"},
 		{"three figures are enough", 312 * ms, "p99 312ms over p99_limit 200ms"},
 	} {
 		p := Plan{From: 100, To: 125, Settle: 10 * ms, Hold: 50 * ms, P99Limit: 200 * ms}

@@ -539,7 +539,7 @@ func (s *search) broken(r engine.Report, kind Kind) (broken bool, cause Cause, w
 	got := p99(r)
 	if s.plan.P99Limit > 0 {
 		if got > s.plan.P99Limit {
-			return true, CauseP99Limit, fmt.Sprintf("p99 %v over p99_limit %v", short(got), s.plan.P99Limit)
+			return true, CauseP99Limit, fmt.Sprintf("p99 %v over p99_limit %v", overLimit(got, s.plan.P99Limit), s.plan.P99Limit)
 		}
 
 		return false, NoCause, ""
@@ -599,6 +599,22 @@ func (s *search) probe(ctx context.Context) (bool, error) {
 	}
 
 	return false, nil
+}
+
+// overLimit is the p99 as the reason prints it: the first of three digits,
+// whole microseconds (nearest) and the full nanoseconds that is over the
+// limit, so that "p99 200ms over p99_limit 200ms" is never written. got is
+// over limit.
+func overLimit(got, limit time.Duration) time.Duration {
+	if s := short(got); s > limit {
+		return s
+	}
+
+	if s := got.Round(time.Microsecond); s > limit {
+		return s
+	}
+
+	return got
 }
 
 // short rounds d to 3 significant digits for the text.
