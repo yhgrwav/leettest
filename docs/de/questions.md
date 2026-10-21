@@ -19,7 +19,7 @@ Die Fragen, die der Bericht schon jetzt beantwortet.
 | Sind alle Backends hinter dem Balancer belastet? | `app.connections: N`: eine Zeile je Verbindung — Adresse, Aufrufe, Anteil der Fehlschläge, p99 | [Den Bericht lesen](README.md#den-bericht-lesen) |
 | Lügt die Messung selbst? | Ein Urteil über Wartezeiten auf der Client-Seite und das p99 ohne sie; ein ungültiger Lauf (Exit-Code 2), wenn die Zahlen nicht das Ziel beschreiben | [Wann ein Lauf ungültig ist](README.md#wann-ein-lauf-ungültig-ist) |
 | Wie verhält sich der Dienst bei unterschiedlichen Daten? | `dataset`: eine eigene Anfrage für jeden Aufruf, ein JSON je Zeile der Datei | [Referenz](reference.md#bei-jedem-aufruf-eine-andere-anfrage-dataset) |
-| Lässt es sich in CI ausführen? | Ein JSON-Objekt mit stabilem Schema und Exit-Codes; Schwellen „hält / hält nicht“ gibt es noch nicht — sie stehen in der [Roadmap](roadmap.md) | [JSON für Skripte und CI](README.md#json-für-skripte-und-ci) |
+| Lässt es sich in CI ausführen? | Ein JSON-Objekt mit stabilem Schema und Exit-Codes; `pass`-Grenzen entscheiden „hält / hält nicht“ mit Exit-Code `4` | [JSON für Skripte und CI](README.md#json-für-skripte-und-ci) |
 
 LeetTest sieht nur die Client-Seite: Wie viele Ressourcen das Ziel hat, weiß es nicht und errät es
 nicht. Was als Nächstes kommt, steht in der [Roadmap](roadmap.md).
