@@ -225,9 +225,44 @@ func exactUnits(us, unit int64, digits int) string {
 	return strings.TrimRight(fmt.Sprintf("%d.%0*d", whole, digits, frac), "0")
 }
 
+// exactNanos prints d to the nanosecond, in the unit its size picks and
+// without trailing zeros: 100.4us, 200.0006ms, 1.000000001s.
+func exactNanos(d time.Duration) string {
+	n := d.Nanoseconds()
+
+	switch {
+	case n >= 1e9:
+		return exactUnits(n, 1e9, 9) + "s"
+	case n >= 1e6:
+		return exactUnits(n, 1e6, 6) + "ms"
+	case n >= 1e3:
+		return exactUnits(n, 1e3, 3) + "us"
+	}
+
+	return strconv.FormatInt(n, 10) + "ns"
+}
+
+// failLatency is the value beside a FAIL when the table's three figures are
+// not over the limit: the value at whole microseconds (the nearest for a
+// measured value, down for a lower bound) if that is over it, else to the
+// nanosecond, which always is.
+func failLatency(value time.Duration, exact bool, limit time.Duration) string {
+	micros, prefix := value.Round(time.Microsecond), ""
+	if !exact {
+		micros, prefix = value.Truncate(time.Microsecond), ">"
+	}
+
+	if micros > limit {
+		return prefix + exactLatency(micros)
+	}
+
+	return prefix + exactNanos(value)
+}
+
 // latencyText is the measured percentile as the report prints it. The row
-// must not contradict its verdict: a value rounded onto the wrong side of the
-// printed limit is written as the whole microseconds the verdict was made on.
+// must not contradict its verdict: beside a pass a value rounded over the
+// printed limit is written as the whole microseconds cut off it; beside a
+// fail one that is not over it is written with the digits that make it so.
 func latencyText(r *threshold.Result) string {
 	q := r.Value
 	if !q.Defined {
@@ -242,7 +277,11 @@ func latencyText(r *threshold.Result) string {
 	}
 
 	over := printed > r.Limit
-	if (r.Verdict == threshold.VerdictPass && over) || (r.Verdict == threshold.VerdictFail && !over) {
+
+	switch {
+	case r.Verdict == threshold.VerdictFail && !over:
+		return failLatency(q.Value, q.Exact, r.Limit)
+	case r.Verdict == threshold.VerdictPass && over:
 		text = exactLatency(q.Value)
 		if !q.Exact {
 			text = ">" + text

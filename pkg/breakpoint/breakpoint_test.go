@@ -248,6 +248,52 @@ func TestSearch_TheRunsOwnLimitIsNotTheTargets(t *testing.T) {
 	}
 }
 
+// Ground: contract — the reason of a p99_limit break never reads "p99 200ms
+// over p99_limit 200ms": the p99 is printed as the first of three texts that
+// is over the limit (three figures, whole microseconds, the nanosecond
+// Duration). The fixture's p99 is set directly, so sub-millisecond overshoots
+// are exact.
+func TestSearch_AP99LimitReasonShowsWhatMakesItOver(t *testing.T) {
+	const ms = time.Millisecond
+
+	for _, tc := range []struct {
+		name string
+		p99  time.Duration
+		want string
+	}{
+		{"whole microseconds", 200*ms + 400*time.Microsecond, "p99 200.4ms over p99_limit 200ms"},
+		{"nanoseconds", 200*ms + 400*time.Nanosecond, "p99 200.0004ms over p99_limit 200ms"},
+		{"whole microseconds, nearest", 200*ms + 600*time.Nanosecond, "p99 200.001ms over p99_limit 200ms"},
+		{"three figures are enough", 312 * ms, "p99 312ms over p99_limit 200ms"},
+	} {
+		p := Plan{From: 100, To: 125, Settle: 10 * ms, Hold: 50 * ms, P99Limit: 200 * ms}
+		target := func(rps int) engine.Report {
+			if rps == 100 {
+				return report(1000, 0, 20*ms, 20*ms)
+			}
+
+			return report(1000, 0, tc.p99, tc.p99)
+		}
+
+		var asked []int
+		res, _ := Search(t.Context(), p, fake(target, &asked))
+
+		broken := 0
+		for _, s := range res.Steps {
+			if s.RPS != 125 || !s.Broken {
+				continue
+			}
+			broken++
+			if !strings.Contains(s.Why, tc.want) {
+				t.Errorf("%s: why %q, want it to say %q", tc.name, s.Why, tc.want)
+			}
+		}
+		if broken == 0 {
+			t.Errorf("%s: no broken step at 125 in %+v (%v), want one over the limit", tc.name, res.Steps, res.Outcome)
+		}
+	}
+}
+
 // The knee is measured from the lowest p99 of the steps that held, not the
 // first step's: a slow first step (warm-up of the target) does not raise it.
 // The report names the criterion with its numbers.
