@@ -31,7 +31,7 @@ load:
 | Field | What it does |
 |---|---|
 | `name` | Optional. What to call the run in the header. Left out — the service name if every method belongs to one service, otherwise the config file name |
-| `labels` | Optional. Pairs `key: "value"` the report's passport prints, for telling runs apart (`env: staging`, `commit: abc123`). A key is 1 to 64 characters of `A-Za-z0-9_.-`; a value is a YAML string of up to 256 bytes, so quote a number (`"1.10"`). `-label` adds a pair or replaces the config's — not released |
+| `labels` | Optional. Pairs `key: "value"` the report's passport prints, for telling runs apart (`env: staging`, `commit: abc123`). A key is 1 to 64 characters of `A-Za-z0-9_.-`; a value is a YAML string of up to 256 bytes, so quote a number (`"1.10"`). `-label` adds a pair or replaces the config's |
 | `app.target` | The service address: `ip` and `port` |
 | `app.tls` | TLS. Left out — on. `false` — an unencrypted connection |
 | `app.ca` | A PEM file of certificates to verify the service with instead of the system ones. Needs TLS |
@@ -40,10 +40,10 @@ load:
 | `app.metadata` | Headers of every call: `authorization`, `x-api-key` and so on. `${NAME}` is taken from an environment variable |
 | `app.max_response_size` | The largest reply a call accepts: `16MiB`, `512KB`. The unit is required (`MB` = 10⁶ bytes, `MiB` = 2²⁰), below 2 GiB. Left out — 4 MiB, as in gRPC. A larger reply is a `bad response`. A call in flight may buffer up to twice the limit: by default up to 8 MiB each |
 | `app.connections` | How many connections to open to the target, a whole number from 1 to 256. Left out — 1. Calls take the connections in turn, and the report prints a `Connections:` block, a row per connection |
-| `app.compression` | Compress request bodies: `gzip`. Left out — none. The report prints `bytes: <raw> -> <wire> per call` under the method — not released |
-| `app.proto.files` | The `.proto` files whose services to load, for a service without reflection. Paths are relative to the config file's directory. Each file must lie under one of `import_paths` — not released |
-| `app.proto.import_paths` | Where to look for the files and their imports, as `protoc -I`. Paths are relative to the config file's directory. Left out — that directory. The well-known types (`google/protobuf/…`) need no path — not released |
-| `app.protoset` | A descriptor set file instead of `.proto` files, built with `protoc --include_imports --descriptor_set_out=FILE`. The path is relative to the config file's directory. Not together with `app.proto`; neither of them — methods come from reflection — not released |
+| `app.compression` | Compress request bodies: `gzip`. Left out — none. The report prints `bytes: <raw> -> <wire> per call` under the method |
+| `app.proto.files` | The `.proto` files whose services to load, for a service without reflection. Paths are relative to the config file's directory. Each file must lie under one of `import_paths` |
+| `app.proto.import_paths` | Where to look for the files and their imports, as `protoc -I`. Paths are relative to the config file's directory. Left out — that directory. The well-known types (`google/protobuf/…`) need no path |
+| `app.protoset` | A descriptor set file instead of `.proto` files, built with `protoc --include_imports --descriptor_set_out=FILE`. The path is relative to the config file's directory. Not together with `app.proto`; neither of them — methods come from reflection |
 | `load.warmup` | The first N seconds stay out of the percentiles and of `sent`: cold caches spoil them. Warm-up calls do reach the target; the report prints them on a line `warm-up N sent (M failed), excluded from stats` — `sent` plus that line is every call the generator attempted. The target got all of them except those counted as unreachable or client error; `cut off` and timed-out ones may not have fully reached it: a target that does not open its HTTP/2 window (flow control) gets the headers only, and its counters may not see the call. Counts toward `duration`, shorter than any call |
 | `load.calls[].method` | The full method name: `package.Service/Method` |
 | `load.calls[].rps` | Requests per second for this method |
@@ -51,12 +51,12 @@ load:
 | `load.calls[].timeout` | How long to wait for a reply. Left out — `2s`. Zero does not turn it off, it is an error |
 | `load.calls[].data` | The request body, see [below](#request-body). Left out — an empty message |
 | `load.calls[].dataset` | A file of request bodies instead of `data`, see [below](#a-different-request-each-call-a-dataset). Not together with `data` |
-| `load.calls[].dataset_order` | `file` (left out) or `random`: the order of the dataset's requests. Needs `dataset` — not released |
-| `load.calls[].dataset_seed` | A whole number from 0 to 9007199254740991 that fixes a random order. Needs `dataset_order: random`. Left out — one is drawn and the report prints it — not released |
-| `load.calls[].dataset_reuse` | `true` (left out) or `false`: with `false` no record goes out twice, in the whole process. Needs `dataset` — not released |
-| `load.calls[].pass` | The limits a run must meet to pass: `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, see [below](#pass-limits). Left out — no limits — not released |
-| `load.breakpoint.pass` | A breaking-point search's limit: `held_rps`, see [below](#pass-limits). Left out — no limit — not released |
-| `load.breakpoint.errors_limit` | A percent such as `1%` or `0.5%`, up to three digits after the point, at most `100%`. A search step breaks when more than this share of its calls failed; exactly that much holds. Left out — `1%` — not released |
+| `load.calls[].dataset_order` | `file` (left out) or `random`: the order of the dataset's requests. Needs `dataset` |
+| `load.calls[].dataset_seed` | A whole number from 0 to 9007199254740991 that fixes a random order. Needs `dataset_order: random`. Left out — one is drawn and the report prints it |
+| `load.calls[].dataset_reuse` | `true` (left out) or `false`: with `false` no record goes out twice, in the whole process. Needs `dataset` |
+| `load.calls[].pass` | The limits a run must meet to pass: `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, see [below](#pass-limits). Left out — no limits |
+| `load.breakpoint.pass` | A breaking-point search's limit: `held_rps`, see [below](#pass-limits). Left out — no limit |
+| `load.breakpoint.errors_limit` | A percent such as `1%` or `0.5%`, up to three digits after the point, at most `100%`. A search step breaks when more than this share of its calls failed; exactly that much holds. Left out — `1%` |
 
 The config is read strictly: a typo in a field name is an error with the line number, a wrong
 value is an error with the call's number and method, not a run with an empty load. `rps` is a
@@ -285,8 +285,8 @@ not split between machines, and a stop leaves records unsent.
 |---|---|
 | `-c` | Path to the config |
 | `-output` | Report format on stdout: `text` (the default) or `json` for scripts and CI |
-| `-json-file` | Path of a new file: the JSON report (the same object `-output json` prints) is written to it, and stdout stays as `-output` says. An existing file or a missing directory is exit 1 before the start. A run with no report leaves no file. A failed write is exit 1 — not released |
-| `-label` | A `key=value` label for the report's passport; repeat it for several. Wins over the same key in the config's `labels`. A key given twice, or one that breaks the key and value rules, is exit 1 before the start — not released |
+| `-json-file` | Path of a new file: the JSON report (the same object `-output json` prints) is written to it, and stdout stays as `-output` says. An existing file or a missing directory is exit 1 before the start. A run with no report leaves no file. A failed write is exit 1 |
+| `-label` | A `key=value` label for the report's passport; repeat it for several. Wins over the same key in the config's `labels`. A key given twice, or one that breaks the key and value rules, is exit 1 before the start |
 | `-connect-timeout` | How long to wait for a service that accepted the connection but stays silent. Default `10s`. A refused connection and a wrong address are not waited for |
 | `-max-in-flight` | Cap on requests waiting for a reply. Default `5000` |
 | `-plain` | No live screen: a progress line once a second on stderr, as without a terminal, and no first-run dialog. The report and exit codes are the same |
@@ -351,8 +351,8 @@ measured calls only. The first column is the field's full path.
 | `mode` | string | `run` for a plain run, `breakpoint` for a breaking-point search |
 | `leettest_version` | string | The tool's version; a build from source gives the commit |
 | `target` | string | The target address from the config, `fake target` with `-fake` |
-| `name` | string | The run's name: the config's `name`, else the service name, else the config file name; always a string — not released |
-| `methods_source` | string? | Where the methods came from: `reflection`, `proto` (the `app.proto` files) or `protoset`; `null` with `-fake` — not released |
+| `name` | string | The run's name: the config's `name`, else the service name, else the config file name; always a string |
+| `methods_source` | string? | Where the methods came from: `reflection`, `proto` (the `app.proto` files) or `protoset`; `null` with `-fake` |
 | `outcome` | string | `complete`, `invalid`, `incomplete` — matches exit code `0`, `2`, `3`; a finished run that missed a `pass` limit is `complete` with code `4`; with `-json-file` and a failed write the code is `1` and `outcome` stays the run's |
 | `invalid_reasons` | []string | Why the run is invalid: `in_flight_cap`, `nothing_measured`, `clock_step`, `thresholds_undecided` (a `pass` limit cannot be decided, and not because the run was stopped or already invalid). Empty — valid |
 | `tail_wait_cause` | string? | The client-side wait that set the tail: `generator`, `stream`, `connection`; `null` — no verdict |
@@ -361,19 +361,19 @@ measured calls only. The first column is the field's full path.
 | `duration_us` | int | How long the run went, warm-up included |
 | `planned_us` | int | How long it was meant to go |
 | `warmup_us` | int | Warm-up length |
-| `settings` | object | What the run was started with, as configured, not as measured — not released |
-| `settings.max_in_flight` | int; search: `int?` | The in-flight cap: the `-max-in-flight` value, else the default. A search: `null` without the flag (each run takes the smallest cap it can run with); in its runs, that run's cap — not released |
-| `settings.connections` | int | `app.connections` as configured, 1 by default; `connections.open` is what opened — not released |
-| `settings.warmup_us` | int | The warm-up as configured. A search: the settle — not released |
-| `settings.compression` | string? | `app.compression` as configured: `"gzip"`, `null` — left out — not released |
-| `passport` | object? | The machine and the config the run was made with, for telling runs apart. A search has it once at the top level, its runs in `breakpoint.runs` do not — not released |
-| `passport.config_sha256` | string | SHA-256 of the config file's bytes as read, 64 hex digits — not released |
-| `passport.os`, `passport.arch` | string | `GOOS` and `GOARCH` of the generator, such as `linux` and `amd64` — not released |
-| `passport.num_cpu` | int | Logical CPUs the generator's process sees — not released |
-| `passport.gomaxprocs` | int | `GOMAXPROCS` at the start — not released |
-| `passport.cpu_quota` | float? | The cgroup CPU quota in CPUs as set (`4`, `0.5`), not capped by `gomaxprocs`; `null` — no quota, or not Linux — not released |
-| `passport.go_version` | string | The Go version the binary was built with — not released |
-| `passport.labels` | object | The labels, key to string; `{}` without any — not released |
+| `settings` | object | What the run was started with, as configured, not as measured |
+| `settings.max_in_flight` | int; search: `int?` | The in-flight cap: the `-max-in-flight` value, else the default. A search: `null` without the flag (each run takes the smallest cap it can run with); in its runs, that run's cap |
+| `settings.connections` | int | `app.connections` as configured, 1 by default; `connections.open` is what opened |
+| `settings.warmup_us` | int | The warm-up as configured. A search: the settle |
+| `settings.compression` | string? | `app.compression` as configured: `"gzip"`, `null` — left out |
+| `passport` | object? | The machine and the config the run was made with, for telling runs apart. A search has it once at the top level, its runs in `breakpoint.runs` do not |
+| `passport.config_sha256` | string | SHA-256 of the config file's bytes as read, 64 hex digits |
+| `passport.os`, `passport.arch` | string | `GOOS` and `GOARCH` of the generator, such as `linux` and `amd64` |
+| `passport.num_cpu` | int | Logical CPUs the generator's process sees |
+| `passport.gomaxprocs` | int | `GOMAXPROCS` at the start |
+| `passport.cpu_quota` | float? | The cgroup CPU quota in CPUs as set (`4`, `0.5`), not capped by `gomaxprocs`; `null` — no quota, or not Linux |
+| `passport.go_version` | string | The Go version the binary was built with |
+| `passport.labels` | object | The labels, key to string; `{}` without any |
 | `sent` | int | Measured calls, except `not_sent`. `unreachable` and `aborted` are in it |
 | `failed` | int | Of `sent` — every call that did not succeed, except `aborted` |
 | `aborted` | int | Cut off by our own stop |
@@ -405,27 +405,27 @@ measured calls only. The first column is the field's full path.
 | `client_waits` | object | Calls that waited on the client side over the floor, by cause ([README](README.md#reading-the-report)) |
 | `client_waits.generator_calls`, `client_waits.stream_calls`, `client_waits.connection_calls` | int | All such calls, sent or not. A sent call can count for several causes |
 | `client_waits.generator_tail_calls`, `client_waits.stream_tail_calls`, `client_waits.connection_tail_calls` | int | Only among the p99 tail and the unsent: these pick `tail_wait_cause` |
-| `generator_cpu` | object? | How much of the CPU available to LeetTest itself the run used, second by second; `null` when the process's CPU time could not be read. The report prints a line when some second is busy — not released |
-| `generator_cpu.available_cores` | float | The CPU the process may use: `GOMAXPROCS`, or the cgroup quota when that is smaller — not released |
-| `generator_cpu.share` | float | CPU time over wall time and `available_cores`, rounded to 2 decimals, over the planned seconds after the warm-up. Can pass 1: time in system calls runs outside the Ps — not released |
-| `generator_cpu.busy_seconds` | int | How many of those seconds have a `share` of 0.90 or more (compared as rounded). `0` when they total under a second — not released |
-| `generator_cpu.first_busy_s` | int? | The first such second, counted from the start of the run, warm-up included; `null` without one — not released |
-| `generator_cpu.seconds` | []float | The share of each second from the start of the run, warm-up and the timeout tail included: as many entries as the longest `methods[].seconds`. `null` for a second no reading covers, and for a last second under half a second that is counted with the one before — not released |
+| `generator_cpu` | object? | How much of the CPU available to LeetTest itself the run used, second by second; `null` when the process's CPU time could not be read. The report prints a line when some second is busy |
+| `generator_cpu.available_cores` | float | The CPU the process may use: `GOMAXPROCS`, or the cgroup quota when that is smaller |
+| `generator_cpu.share` | float | CPU time over wall time and `available_cores`, rounded to 2 decimals, over the planned seconds after the warm-up. Can pass 1: time in system calls runs outside the Ps |
+| `generator_cpu.busy_seconds` | int | How many of those seconds have a `share` of 0.90 or more (compared as rounded). `0` when they total under a second |
+| `generator_cpu.first_busy_s` | int? | The first such second, counted from the start of the run, warm-up included; `null` without one |
+| `generator_cpu.seconds` | []float | The share of each second from the start of the run, warm-up and the timeout tail included: as many entries as the longest `methods[].seconds`. `null` for a second no reading covers, and for a last second under half a second that is counted with the one before |
 | `methods` | []object | Methods, see below |
 | `unchecked` | []object | Methods that could not be checked through reflection |
 | `unchecked[].method` | string | The method |
 | `unchecked[].reason` | string | `reflection_off` or `reflection_failed` |
 | `unchecked[].error` | string | Text for people, changes with grpc-go |
-| `thresholds` | []object? | Verdicts on the `pass` limits, an object per limit, all with the same keys; the ones that do not belong to a limit are `null`. `null` — no limits set (not an empty list, which would read as "all passed"). A search writes it at the top level — not released |
-| `thresholds[].method` | string? | The method with its leading slash, as the report names it; `null` — a search's limit — not released |
-| `thresholds[].key` | string | `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, `held_rps` — not released |
-| `thresholds[].verdict` | string | `pass`, `fail`, `unknown` — not released |
-| `thresholds[].reason` | string? | Why `unknown`, from the list: `incomplete`, `invalid`, `few_observations`, `run_limit`, `generator`, `stream`, `client_errors`, `nothing_sent`, `censored`; `null` for `pass` and `fail` — not released |
-| `thresholds[].limit_us` | int? | A latency limit, whole microseconds; `null` for the other keys — not released |
-| `thresholds[].value` | percentile? | The measured percentile it was compared with; `null` — not measured, or the key is not about latency — not released |
-| `thresholds[].limit_percent` | string? | An `errors` limit as written in the config, such as `"0.5%"`; `null` for the other keys — not released |
-| `thresholds[].bad`, `thresholds[].bad_client`, `thresholds[].total` | int? | The `errors` share: failed calls (with those not sent for lack of a connection), of them the ones the target did not decide, all counted. `null` for the other keys and when not a single call was counted — not released |
-| `thresholds[].limit_rps`, `thresholds[].held_rps` | int? | A search's limit and what it held; `null` for the other keys — not released |
+| `thresholds` | []object? | Verdicts on the `pass` limits, an object per limit, all with the same keys; the ones that do not belong to a limit are `null`. `null` — no limits set (not an empty list, which would read as "all passed"). A search writes it at the top level |
+| `thresholds[].method` | string? | The method with its leading slash, as the report names it; `null` — a search's limit |
+| `thresholds[].key` | string | `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, `held_rps` |
+| `thresholds[].verdict` | string | `pass`, `fail`, `unknown` |
+| `thresholds[].reason` | string? | Why `unknown`, from the list: `incomplete`, `invalid`, `few_observations`, `run_limit`, `generator`, `stream`, `client_errors`, `nothing_sent`, `censored`; `null` for `pass` and `fail` |
+| `thresholds[].limit_us` | int? | A latency limit, whole microseconds; `null` for the other keys |
+| `thresholds[].value` | percentile? | The measured percentile it was compared with; `null` — not measured, or the key is not about latency |
+| `thresholds[].limit_percent` | string? | An `errors` limit as written in the config, such as `"0.5%"`; `null` for the other keys |
+| `thresholds[].bad`, `thresholds[].bad_client`, `thresholds[].total` | int? | The `errors` share: failed calls (with those not sent for lack of a connection), of them the ones the target did not decide, all counted. `null` for the other keys and when not a single call was counted |
+| `thresholds[].limit_rps`, `thresholds[].held_rps` | int? | A search's limit and what it held; `null` for the other keys |
 | `notes` | []string | The report's notes, text for people in ASCII; do not parse |
 
 ### Method: `methods[]`
@@ -442,12 +442,12 @@ The rest are plain counters.
 | `methods[].rps` | float? | `sent/s`: calls sent divided by the sending time; `null` — no calls |
 | `methods[].timeout_us` | int | The method's timeout |
 | `methods[].planned_rps_low`, `methods[].planned_rps_high` | int | Lowest and highest planned rate of the whole plan |
-| `methods[].planned_duration_us` | int | How long the method was meant to go, as configured — not released |
-| `methods[].request_bytes` | object? | The request body, mean over the measured calls that went out; `null` without compression — not released |
-| `methods[].request_bytes.raw`, `methods[].request_bytes.wire` | float | Bytes before compression and on the wire (without the 5-byte frame) — not released |
+| `methods[].planned_duration_us` | int | How long the method was meant to go, as configured |
+| `methods[].request_bytes` | object? | The request body, mean over the measured calls that went out; `null` without compression |
+| `methods[].request_bytes.raw`, `methods[].request_bytes.wire` | float | Bytes before compression and on the wire (without the 5-byte frame) |
 | `methods[].latency` | object | Latency of successful calls, with timeouts and aborted calls as lower bounds |
 | `methods[].latency.min`, `methods[].latency.p50`, `methods[].latency.p90`, `methods[].latency.p95`, `methods[].latency.p99`, `methods[].latency.max` | percentile? | Minimum, percentiles, maximum |
-| `methods[].latency.p999` | percentile? | p99.9 by the same rule; null while the method has fewer than 1000 observations (`observations`), where p99.9 would be the max — not released |
+| `methods[].latency.p999` | percentile? | p99.9 by the same rule; null while the method has fewer than 1000 observations (`observations`), where p99.9 would be the max |
 | `methods[].p99_without_client_waits` | percentile? | p99 of the same calls without client-side waits; may come out slightly low |
 | `methods[].observations` | int | Observations behind the `latency` percentiles |
 | `methods[].censored` | int | Of them, only a lower bound is known |
@@ -472,13 +472,13 @@ The rest are plain counters.
 | `methods[].last_answer_at_us` | int? | When the last call the target answered went out; `null` — it never answered |
 | `methods[].dataset` | object? | The call's dataset file; `null` — it has none |
 | `methods[].dataset.file` | string | The path as the config wrote it |
-| `methods[].dataset.sha256` | string | SHA-256 of the file as it lies on disk, a byte-order mark included, 64 hex digits — not released |
+| `methods[].dataset.sha256` | string | SHA-256 of the file as it lies on disk, a byte-order mark included, 64 hex digits |
 | `methods[].dataset.records` | int | Requests in the file |
 | `methods[].dataset.used` | int | How many of them were handed to the sender at least once |
 | `methods[].dataset.used_max` | int | How many times the most used one was handed to the sender; in a search, counted from its first step to the end of this run |
-| `methods[].dataset.order` | string | `file` or `random`: the order the requests went out in — not released |
-| `methods[].dataset.seed` | int? | The seed of a random order, 0 to 9007199254740991; `null` for file order — not released |
-| `methods[].dataset.reuse` | bool | `false` — the call sends each record at most once (`dataset_reuse: false`); otherwise `true` — not released |
+| `methods[].dataset.order` | string | `file` or `random`: the order the requests went out in |
+| `methods[].dataset.seed` | int? | The seed of a random order, 0 to 9007199254740991; `null` for file order |
+| `methods[].dataset.reuse` | bool | `false` — the call sends each record at most once (`dataset_reuse: false`); otherwise `true` |
 | `methods[].seconds` | []object | The per-second timeline, see below |
 
 ### Second: `methods[].seconds[]`
@@ -511,9 +511,9 @@ as in the run above, a plain run's other fields are not at the top level. Every 
 | `breakpoint.outcome` | string | Closed list: `broke`, `broke_at_first`, `held_all`, `run_limit`, `stopped`, `invalid` |
 | `breakpoint.held_rps` | int? | The highest rate the target held; `null` — none held |
 | `breakpoint.broke_rps` | int? | The lowest rate the target broke at or a run limit stopped the search at; `null` — it did not break |
-| `breakpoint.errors_limit` | string | The error limit the search used, as a percent: `"1%"` by default. A step broke over it; `100%` means errors do not break a step — not released |
+| `breakpoint.errors_limit` | string | The error limit the search used, as a percent: `"1%"` by default. A step broke over it; `100%` means errors do not break a step |
 | `breakpoint.why` | string? | The cause of the run that ended the search, from a closed list: `errors`, `p99_limit`, `p99_vs_base`, `connection`, `no_recovery`, `generator`, `in_flight_cap`, `stream_limit`, `stream_wait`, `client_errors`, `clock_step`, `request_errors`; `null` — no cause. `client_errors`: the limit is crossed only with failures on the client's side, the target's own are within it; the outcome is `run_limit` |
-| `breakpoint.stop_reason` | string? | Who ended the search: `dataset_exhausted` (a `dataset_reuse: false` file ran out), `requested` (stopped by the user); `null` — the search ended itself — not released |
+| `breakpoint.stop_reason` | string? | Who ended the search: `dataset_exhausted` (a `dataset_reuse: false` file ran out), `requested` (stopped by the user); `null` — the search ended itself |
 | `breakpoint.notes` | []string | The search's notes, text for people in ASCII; do not parse |
 | `breakpoint.runs` | []object | Every run in order |
 | `breakpoint.runs[].kind` | string | `step`, `repeat` or `probe` |
@@ -527,8 +527,7 @@ as in the run above, a plain run's other fields are not at the top level. Every 
 ## Comparing reports: `leettest compare`
 
 `leettest compare [flags] before.json after.json` reads two `-json-file` reports of one kind — two
-searches or two runs — and prints what changed. Flags come before the files. The command is not
-released.
+searches or two runs — and prints what changed. Flags come before the files.
 
 | Flag | What it does |
 |---|---|

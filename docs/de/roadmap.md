@@ -14,15 +14,9 @@
 
 Das sind Pläne, keine zugesagten Termine. Was heute funktioniert, steht im [README](README.md).
 
-## Nächste Version (v0.3)
-
-- **`.proto` und Protoset** für Dienste ohne Server Reflection.
-
 ## Später
 
 - **Hochfahren** von null auf die Ziel-RPS.
-- **Pass/Fail-Schwellen für CI**: Der Lauf schlägt fehl, wenn p99 oder der Fehleranteil über einer
-  Grenze liegt.
 - **[Verkettung von Aufrufen](chaining.md)**: ein Feld aus der Antwort einer Methode in die Anfrage
   einer anderen.
 - **Token-Erneuerung** während eines langen Laufs.

@@ -119,7 +119,7 @@ load:
       dataset_seed: 42
 ```
 
-- **`name`** — der Name des Laufs in der Kopfzeile und im JSON-Bericht (`name`, nicht veröffentlicht).
+- **`name`** — der Name des Laufs in der Kopfzeile und im JSON-Bericht (`name`).
 - **`tls: false`** — der Stand hat keine Verschlüsselung. TLS ist standardmäßig an; `ca`, `cert`,
   `key`, `server_name` stehen in [`examples/tour-tls.yaml`](../../examples/tour-tls.yaml) (unten,
   „TLS").
@@ -226,7 +226,7 @@ Worauf es ankommt:
 
 - **Welcher Lauf das ist.** `name:` und `settings:` wiederholen den Namen des Laufs und womit er
   gestartet wurde, `plan:` unter einer Methode ihre konfigurierte Rate und Dauer: ein in ein Ticket
-  eingefügter Bericht lässt sich mit einem anderen vergleichen (nicht veröffentlicht).
+  eingefügter Bericht lässt sich mit einem anderen vergleichen.
 - **Bei welcher Last der Dienst nicht mehr mithielt.** „at 300 rps … nothing after the call sent at
   25.0s" — das Ziel verstummte in Sekunde 25, genau wann es dem Stand befohlen war. Der Zeitpunkt
   ist, wann der Aufruf rausging, nicht wann er fällig war: Ein nachhinkender Generator wird nicht
@@ -305,15 +305,15 @@ Exit-Codes:
 | Code | Bedeutung |
 |---|---|
 | `0` | Der Plan lief durch, der Bericht ist vollständig |
-| `1` | Der gewünschte Bericht wurde nicht erzeugt: der Lauf fand nicht statt (Flags, Konfiguration, Verbindung) oder der Bericht konnte nicht in `-json-file` geschrieben werden (nicht veröffentlicht). stderr nennt den Grund |
+| `1` | Der gewünschte Bericht wurde nicht erzeugt: der Lauf fand nicht statt (Flags, Konfiguration, Verbindung) oder der Bericht konnte nicht in `-json-file` geschrieben werden. stderr nennt den Grund |
 | `2` | Ungültiger Lauf: die In-Flight-Grenze, jeder Aufruf einer Methode ein Anfragefehler oder eine Host-Uhr gröber als ein Viertel des p50. Es gibt einen Bericht; seine Zahlen handeln nicht von der Last |
 | `3` | Vor dem Ende des Plans angehalten. Der Bericht deckt ab, was lief |
-| `4` | Ein beendeter Lauf hat eine `pass`-Grenze verfehlt. Es gibt einen Bericht; `thresholds` (nicht veröffentlicht) sagt, welche |
+| `4` | Ein beendeter Lauf hat eine `pass`-Grenze verfehlt. Es gibt einen Bericht; `thresholds` sagt, welche |
 | `130`, `143` | Durch Ctrl+C oder SIGTERM beendet, kein Bericht |
 
 Für ein Pass/Fail-Gate in CI setzen Sie `pass`-Grenzen unter den Aufruf
 ([`examples/pass.yaml`](../../examples/pass.yaml), [README, „Grenzen"](README.md#grenzen-ein-lauf-als-prüfung))
-und lassen den Build bei einem Exit-Code ungleich null fehlschlagen; das JSON-Feld `thresholds` (nicht veröffentlicht)
+und lassen den Build bei einem Exit-Code ungleich null fehlschlagen; das JSON-Feld `thresholds`
 sagt, welche Grenze verfehlt wurde oder sich nicht entscheiden ließ.
 
 ## 8. Ganz ohne Dienst

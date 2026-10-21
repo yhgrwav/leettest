@@ -90,7 +90,7 @@ leettest -c leettest.yaml
 The method name is the full one, `package.Service/Method`. The tool takes the method's schema from
 the service through gRPC server reflection, so no `.proto` is needed. A service without reflection
 (since v0.3): the schema comes from `.proto` files or a protoset —
-[`examples/proto.yaml`](../../examples/proto.yaml), the `app.proto` / `app.protoset` field (not released) in the
+[`examples/proto.yaml`](../../examples/proto.yaml), the `app.proto` / `app.protoset` field in the
 [reference](reference.md). The config, the address, the
 methods and the request body are checked before the start: any error means exit 1 and not a single
 call to the target. The first `warmup` seconds stay out of the stats. Every call of a method goes
@@ -216,7 +216,7 @@ labels: commit=abc123, env=staging
   the text shows the first 12 digits, the JSON all of them. Any edit of the file, a comment
   included, changes it. It is taken before `${ENV}` is substituted: put secrets in `metadata`
   through `${ENV}`, not as values in the file.
-- Labels (not released) are `labels:` in the config and `-label key=value` on the command line (repeatable; the
+- Labels are `labels:` in the config and `-label key=value` on the command line (repeatable; the
   flag wins over the same key in the config):
 
 ```sh
@@ -225,7 +225,7 @@ leettest -c load.yaml -label env=staging -label commit=abc123
 
 A key is Latin letters, digits and `_.-`, up to 64 characters; a value is a string of up to 256
 bytes, and in YAML a number goes in quotes (`build: "1.10"`). A violation is exit `1` before the
-start. In the JSON the passport is the `passport` field (not released), and a dataset has `sha256` next to `file`;
+start. In the JSON the passport is the `passport` field, and a dataset has `sha256` next to `file`;
 every field is in the [reference](reference.md#json-fields).
 
 ## When a run is invalid
@@ -297,7 +297,7 @@ stopped run into `4`.
 | Code | What happened |
 |---|---|
 | `0` | The plan ran, the report is complete; with `pass`, every limit held |
-| `1` | The report you asked for was not produced: the run did not happen (flags, config, connection) or the report could not be written to `-json-file` (not released). stderr says why |
+| `1` | The report you asked for was not produced: the run did not happen (flags, config, connection) or the report could not be written to `-json-file`. stderr says why |
 | `2` | The run is invalid (see above), or a `pass` limit cannot be decided. There is a report, but its numbers are not about the load or do not answer the limit's question |
 | `3` | The run stopped before its plan. There is a report, and it covers only what got through |
 | `4` | A finished run missed a `pass` limit. There is a report, and `outcome` in the JSON is `complete` |
@@ -312,10 +312,10 @@ With `-output json`, stdout gets exactly one JSON object and a newline; everythi
 stderr, so stdout can go straight into `jq`. The object is printed only for a run that happened
 (codes `0`, `2`, `3`, `4`); on `1`, `130` and `143` stdout is empty. The `outcome` field
 (`complete`, `invalid` or `incomplete`) matches exit code `0`, `2`, `3`; code `4` is `complete`, and
-the `thresholds` field (not released) says which limit was missed. The one exception: if the report could not be
-written to the file (not released), the code is `1` and stdout still holds the run's object.
+the `thresholds` field says which limit was missed. The one exception: if the report could not be
+written to the file, the code is `1` and stdout still holds the run's object.
 
-For the text in the log and the JSON for the next step from one run, use `-json-file` (not released):
+For the text in the log and the JSON for the next step from one run, use `-json-file`:
 
 ```sh
 leettest -c load.yaml -json-file report.json
@@ -404,7 +404,7 @@ generator, a connection's limit or `-max-in-flight` ran out: nothing is known ab
 above), `stopped` (Ctrl+C), `invalid` (a step was an invalid run). The cause (`why`) is a closed
 list too: `errors`, `p99_limit`, `p99_vs_base`, `connection`, `no_recovery`, `generator`,
 `in_flight_cap`, `stream_limit`, `stream_wait`, `client_errors`, `clock_step`, `request_errors` or
-`null`. The error limit in force is in `breakpoint.errors_limit`, a string (`"1%"`) — not released.
+`null`. The error limit in force is in `breakpoint.errors_limit`, a string (`"1%"`).
 `held_rps` and `broke_rps` are `null` where there is none. In search mode the JSON is another
 object: `mode: "breakpoint"`, none of a plain run's top-level fields, each run with its full report
 in `breakpoint.runs` (`kind`: `step`, `repeat`, `probe`; `planned_rps` and `sent_rps`). A plain run
@@ -415,8 +415,8 @@ Exit codes: `0` for `broke`, `broke_at_first`, `held_all`, `run_limit` — they 
 
 ### Compare two searches
 
-Two search reports written with `-json-file` (not released), from before a change and after it.
-`leettest compare` (not released) says how far the capacity (`held_rps`) fell and, with
+Two search reports written with `-json-file`, from before a change and after it.
+`leettest compare` says how far the capacity (`held_rps`) fell and, with
 `-max-capacity-drop`, judges it. On the reference stand, from the repository root: a search against a
 stand of 270 rps capacity (in the stand's terminal), then, in another terminal, the search and the
 "before" report:
@@ -465,7 +465,7 @@ the capacity fell past the limit.
 
 ### Compare two runs
 
-The same command reads plain-run reports (`-json-file`, not released): `-max-p99-rise` judges the
+The same command reads plain-run reports (`-json-file`): `-max-p99-rise` judges the
 rise of each method's p99 in percent of the "before" p99, `-max-errors-rise` the rise of the share of
 failed calls in percentage points. Without a limit the line is printed but not judged. A search
 report and a run report in one command is exit `1`. On the reference stand, from the repository root:
@@ -510,7 +510,7 @@ or incomplete, there are too few observations, a p99 ran into the timeout (so it
 printed, `>=`), or the client's own errors leave it open whether the service is at fault. Methods
 that are not in both reports are not compared. Exit codes are the same as for searches.
 
-For a script or CI the same result comes as one JSON object (not released): `-output json` prints
+For a script or CI the same result comes as one JSON object: `-output json` prints
 only it to stdout, the exit codes and stderr are those of the text; on exit code `1` stdout is empty.
 
 ```sh
