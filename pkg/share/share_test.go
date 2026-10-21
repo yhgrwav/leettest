@@ -99,7 +99,8 @@ func TestDecide_FailuresOfTheClientDecideNothing(t *testing.T) {
 
 // Ground: contract — the printed share never lands on the wrong side of the
 // printed limit: a tenth of a percent when that is enough, more digits when
-// it is not, rounded up for Breaks.
+// it is not, rounded to the nearest (a FAIL share has its own test,
+// TestFormatFraction_AFailIsNotOverstated).
 func TestFormat_NeverOnTheWrongSideOfTheLimit(t *testing.T) {
 	limit := func(text string, thousandths int64) share.Percent {
 		return share.Percent{Thousandths: thousandths, Text: text}
@@ -113,7 +114,7 @@ func TestFormat_NeverOnTheWrongSideOfTheLimit(t *testing.T) {
 	}{
 		{"plain", 11, 1000, share.Default, share.Breaks, "1.1%"},
 		{"at the limit", 10, 1000, share.Default, share.Holds, "1.0%"},
-		{"1.001% breaks, a tenth would say 1.0%", 1001, 100000, share.Default, share.Breaks, "1.1%"},
+		{"1.001% breaks, a tenth would say 1.0%", 1001, 100000, share.Default, share.Breaks, "1.001%"},
 		{"0.13% breaks 0.12%, a tenth would say 0.1%", 13, 10000, limit("0.12%", 120), share.Breaks, "0.13%"},
 		{"0.15% holds 0.15%, a tenth would round up to 0.2%", 15, 10000, limit("0.15%", 150), share.Holds, "0.15%"},
 		{"undecided is a tenth", 20, 1000, share.Default, share.Undecided, "2.0%"},
@@ -127,8 +128,8 @@ func TestFormat_NeverOnTheWrongSideOfTheLimit(t *testing.T) {
 
 // Ground: boundary — a share that is a difference of two fractions with
 // totals near a billion does not fit an int64 product, and is printed by the
-// same rules as Format: a hair past the limit says more than the limit, on
-// the limit says the limit.
+// same rules as Format: a hair past the limit says more than the limit
+// without a digit that is not true, on the limit says the limit.
 func TestFormatFraction_ExactBeyondInt64(t *testing.T) {
 	half := share.Percent{Thousandths: 50000, Text: "50%"}
 
@@ -139,7 +140,7 @@ func TestFormatFraction_ExactBeyondInt64(t *testing.T) {
 		want    string
 	}{
 		{"on the limit", big.NewRat(1, 2), share.Holds, "50.0%"},
-		{"a hair past the limit", big.NewRat(1000000001, 2000000000), share.Breaks, "50.1%"},
+		{"a hair past the limit", big.NewRat(1000000001, 2000000000), share.Breaks, "> 50%"},
 		{"a hair under holds", big.NewRat(999999999, 2000000000), share.Holds, "50.0%"},
 		{"a share of billions of calls", big.NewRat(3999999999*1000000000, 4000000000*1000000000), share.Undecided, "100.0%"},
 	} {
@@ -409,6 +410,229 @@ func TestFormatBound_IsATrueBoundOnTheVerdictsSide(t *testing.T) {
 				t.Errorf("x %s, upper %v, limit %s, verdict %v: %q, reference %q, problem %q",
 					x.String(), upper, shown, tc.verdict, got, want, problem)
 			}
+		}
+	}
+}
+
+// failNearestAt is the percent p to k decimals, half up: exact, with big.Rat,
+// apart from the code under test. p is not negative.
+func failNearestAt(p *big.Rat, k int) *big.Rat {
+	scale := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(k)), nil)
+	num := new(big.Int).Mul(p.Num(), scale)
+	num.Lsh(num, 1).Add(num, p.Denom())
+	den := new(big.Int).Lsh(p.Denom(), 1)
+
+	return new(big.Rat).SetFrac(num.Div(num, den), scale)
+}
+
+// failReference is the text and the digits the spec asks for beside a FAIL,
+// written once more from the spec: x rounded to the nearest at the first of 1,
+// 2, 3 decimals whose printed value is over the limit, else "> " and the limit
+// as written. x, a fraction (1/2 is 50%), is over the limit.
+func failReference(x *big.Rat, limit share.Percent) (string, int) {
+	p := new(big.Rat).Mul(x, big.NewRat(100, 1))
+	over := big.NewRat(limit.Thousandths, 1000)
+
+	for k := 1; k <= 3; k++ {
+		if s := failNearestAt(p, k); s.Cmp(over) > 0 {
+			return s.FloatString(k) + "%", k
+		}
+	}
+
+	return "> " + limit.Text, 3
+}
+
+// failNumber is a printed share that is a number.
+var failNumber = regexp.MustCompile(`^(\d+)\.(\d+)%$`)
+
+// failProblem is what is wrong with the share got, printed beside a FAIL for
+// the exact x over the limit, "" when nothing: it is parsed back to a number
+// and compared with x and the limit, never with the code's own arithmetic.
+func failProblem(x *big.Rat, limit share.Percent, got string, digits int) string {
+	p := new(big.Rat).Mul(x, big.NewRat(100, 1))
+	over := big.NewRat(limit.Thousandths, 1000)
+
+	if strings.HasPrefix(got, ">") {
+		switch {
+		case got != "> "+limit.Text:
+			return "> without the limit as written"
+		case digits != 3:
+			return "the > form reports digits other than 3"
+		case failNearestAt(p, 3).Cmp(over) > 0:
+			return "> though x at three decimals is over the limit"
+		}
+
+		return ""
+	}
+
+	m := failNumber.FindStringSubmatch(got)
+	if m == nil {
+		return "neither a number nor the > form"
+	}
+
+	k := len(m[2])
+	printed, _ := new(big.Rat).SetString(m[1] + "." + m[2])
+
+	switch {
+	case k > 3:
+		return "more than 3 decimals"
+	case digits != k:
+		return "digits reported differ from the digits printed"
+	case printed.Cmp(over) <= 0:
+		return "beside a FAIL, not over the limit"
+	case printed.Cmp(failNearestAt(p, k)) != 0:
+		return "not the exact share rounded to the nearest at its digits"
+	}
+
+	for j := 1; j < k; j++ {
+		if failNearestAt(p, j).Cmp(over) > 0 {
+			return fmt.Sprintf("%d decimals would already be over the limit", j)
+		}
+	}
+
+	return ""
+}
+
+// Ground: contract — a share printed beside a FAIL is the exact share rounded
+// to the nearest, with as many digits (1 to 3) as it takes to sit over the
+// limit, never rounded up: 1.004% against 1% prints 1.004%, and a share whose
+// nearest three decimals are not over the limit prints "> " and the limit as
+// written. The table pins the cases by hand; the sweep draws shares and limits
+// (totals up to 10^7, just over the limit, near a tenth, near a hundredth, near
+// a thousandth) and checks every answer against the exact value and a big.Rat
+// reference.
+func TestFormatFraction_AFailIsNotOverstated(t *testing.T) {
+	limitOf := func(text string) share.Percent {
+		p, err := share.Parse(text, "limit")
+		if err != nil {
+			t.Fatalf("test bug: limit %q: %v", text, err)
+		}
+
+		return p
+	}
+	rat := big.NewRat
+
+	for _, tc := range []struct {
+		name   string
+		x      *big.Rat
+		limit  string
+		want   string
+		digits int
+	}{
+		{"plain, one decimal is enough", rat(11, 1000), "1%", "1.1%", 1},
+		{"far over", rat(3, 100), "1%", "3.0%", 1},
+		{"the tenth nearest is over: 1.05% is 1.1%", rat(105, 10000), "1%", "1.1%", 1},
+		{"a hair under that, the tenth is not over: 1.0499%", rat(10499, 1000000), "1%", "1.05%", 2},
+		{"1.004%, three decimals", rat(1004, 100000), "1%", "1.004%", 3},
+		{"1.001%, not rounded up to 1.1%", rat(1001, 100000), "1%", "1.001%", 3},
+		{"1.0046%, nearest says 1.005%, not the 1.004% of a floor", rat(10046, 1000000), "1%", "1.005%", 3},
+		{"1.0045%, half goes up", rat(10045, 1000000), "1%", "1.005%", 3},
+		{"1.0044%, not up", rat(10044, 1000000), "1%", "1.004%", 3},
+		{"1.0004%, no decimal kept is over: the limit", rat(10004, 1000000), "1%", "> 1%", 3},
+		{"1.000049%, nearest three decimals 1.000%", rat(1000049, 100000000), "1%", "> 1%", 3},
+		{"1.0005%, half up is 1.001%", rat(10005, 1000000), "1%", "1.001%", 3},
+		{"a limit of two digits, 0.13% over 0.12%", rat(13, 10000), "0.12%", "0.13%", 2},
+		{"a limit of two digits, 0.124%", rat(124, 100000), "0.12%", "0.124%", 3},
+		{"a limit of two digits, 0.1204%", rat(1204, 1000000), "0.12%", "> 0.12%", 3},
+		{"a limit of three digits, 0.1212% is not over 0.121%", rat(1212, 1000000), "0.121%", "> 0.121%", 3},
+		{"a limit of three digits, 0.1226% over 0.122%", rat(1226, 1000000), "0.122%", "0.123%", 3},
+		{"a limit of three digits, 0.1251% over 0.125%: the hundredth is enough", rat(1251, 1000000), "0.125%", "0.13%", 2},
+		{"a zero limit, 0.04%", rat(4, 10000), "0%", "0.04%", 2},
+		{"a zero limit, 0.05% goes to 0.1%", rat(5, 10000), "0%", "0.1%", 1},
+		{"a zero limit, 0.0006%", rat(6, 1000000), "0%", "0.001%", 3},
+		{"a zero limit, 0.0004%", rat(4, 1000000), "0%", "> 0%", 3},
+		{"billions of calls, a hair past 50%", rat(1000000001, 2000000000), "50%", "> 50%", 3},
+		{"past 100%", rat(3, 2), "100%", "150.0%", 1},
+		{"a hair past 100%", rat(100001, 100000), "100%", "100.001%", 3},
+	} {
+		limit := limitOf(tc.limit)
+		got, digits := share.FormatFractionDigits(tc.x, limit, share.Breaks)
+
+		if want, wantDigits := failReference(tc.x, limit); want != tc.want || wantDigits != tc.digits {
+			t.Fatalf("test bug, %s: the table says %q (%d), the reference %q (%d)", tc.name, tc.want, tc.digits, want, wantDigits)
+		}
+		if got != tc.want || digits != tc.digits {
+			t.Errorf("%s: %q (%d digits), want %q (%d)", tc.name, got, digits, tc.want, tc.digits)
+		}
+		if text := share.FormatFraction(tc.x, limit, share.Breaks); text != got {
+			t.Errorf("%s: FormatFraction %q, FormatFractionDigits %q", tc.name, text, got)
+		}
+		if problem := failProblem(tc.x, limit, got, digits); problem != "" {
+			t.Errorf("%s: %q: %s", tc.name, got, problem)
+		}
+	}
+
+	// The same share through Format, which takes counts.
+	if got, want := share.Format(1004, 100000, share.Default, share.Breaks), "1.004%"; got != want {
+		t.Errorf("Format 1004 of 100000: %q, want %q", got, want)
+	}
+
+	rng := rand.New(rand.NewPCG(20261021, 1))
+	seen := map[string]int{}
+	failures := 0
+
+	for range 8000 {
+		// A limit with 0-3 digits after the point.
+		digits := rng.IntN(4)
+		step := int64(1000)
+		for range digits {
+			step /= 10
+		}
+		thousandths := rng.Int64N(100000/step+1) * step
+		text := fmt.Sprintf("%d%%", thousandths/1000)
+		if digits > 0 {
+			text = fmt.Sprintf("%d.%0*d%%", thousandths/1000, digits, thousandths%1000/step)
+		}
+		limit := limitOf(text)
+		if limit.Thousandths != thousandths {
+			t.Fatalf("test bug: limit %q is %d thousandths, drawn %d", text, limit.Thousandths, thousandths)
+		}
+
+		// The share is a fraction with a total up to 10^7, or up to 0.002% past
+		// the limit, or near a tenth or a hundredth.
+		var x *big.Rat
+		switch rng.IntN(4) {
+		case 0:
+			total := 1 + rng.Int64N(10000000)
+			x = rat(rng.Int64N(2*total+1), total)
+		case 1:
+			x = rat(thousandths*100+1+rng.Int64N(200), 10000000)
+		case 2:
+			x = rat(max(0, rng.Int64N(3001)*10000+rng.Int64N(601)-300), 10000000)
+		default:
+			x = rat(max(0, rng.Int64N(100001)*100+rng.Int64N(601)-300), 10000000)
+		}
+
+		if x.Cmp(rat(thousandths, 100000)) <= 0 {
+			continue
+		}
+
+		got, gotDigits := share.FormatFractionDigits(x, limit, share.Breaks)
+		want, wantDigits := failReference(x, limit)
+		problem := failProblem(x, limit, got, gotDigits)
+
+		if strings.HasPrefix(got, ">") {
+			seen[">"]++
+		} else {
+			seen[fmt.Sprint(gotDigits)]++
+		}
+
+		if got == want && gotDigits == wantDigits && problem == "" {
+			continue
+		}
+
+		failures++
+		if failures > 10 {
+			t.Fatalf("more than 10 wrong answers, stopped")
+		}
+
+		t.Errorf("x %s, limit %s: %q (%d digits), reference %q (%d), problem %q",
+			x.String(), text, got, gotDigits, want, wantDigits, problem)
+	}
+
+	for _, form := range []string{"1", "2", "3", ">"} {
+		if seen[form] < 20 {
+			t.Fatalf("test bug: the sweep reached the form %q %d times, want at least 20 (%v)", form, seen[form], seen)
 		}
 	}
 }

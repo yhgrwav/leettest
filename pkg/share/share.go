@@ -104,18 +104,26 @@ func Format(bad, total int, limit Percent, v Verdict) string {
 // 50%), such as the difference of two shares with different totals, whose
 // numerator an int64 cannot hold. r is not negative.
 func FormatFraction(r *big.Rat, limit Percent, v Verdict) string {
+	text, _ := FormatFractionDigits(r, limit, v)
+
+	return text
+}
+
+// FormatFractionDigits is FormatFraction with the digits after the point the
+// printed number holds, 3 for the "> L" form.
+func FormatFractionDigits(r *big.Rat, limit Percent, v Verdict) (string, int) {
 	tenth := at(r, 1, nearest)
 	over := tenth*100 > limit.Thousandths
 	decimals := max(1, digitsAfterPoint(limit.Text))
 
 	switch {
 	case v == Holds && over:
-		return fixed(at(r, decimals, nearest), decimals) + "%"
+		return fixed(at(r, decimals, nearest), decimals) + "%", decimals
 	case v == Breaks && !over:
-		return fixed(at(r, decimals, ceil), decimals) + "%"
+		return fixed(at(r, decimals, ceil), decimals) + "%", decimals
 	}
 
-	return fixed(tenth, 1) + "%"
+	return fixed(tenth, 1) + "%", 1
 }
 
 // FormatBound is the change r, a fraction (1/2 is 50%), printed as a bound

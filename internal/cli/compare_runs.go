@@ -430,7 +430,7 @@ func errorsCheck(pair methodPair, limit *shr.Percent, same bool, held heldBack) 
 
 	change := "rise -"
 	if same {
-		change = errorsChange(b, n, limit, verdict)
+		change, _ = errorsChange(b, n, limit, verdict)
 	}
 
 	return finishCheck(check, text, change, limit, verdict, held)
@@ -446,10 +446,11 @@ func failedShareText(s compare.Share) string {
 
 // errorsChange is the change in the share of failed calls in points, from the
 // exact difference of the two fractions: counts near 10^9 on both sides do not
-// fit an int64 product.
-func errorsChange(b, n compare.Share, limit *shr.Percent, v compare.Verdict) string {
+// fit an int64 product. The second result is the digits after the point the
+// change was printed with.
+func errorsChange(b, n compare.Share, limit *shr.Percent, v compare.Verdict) (string, int) {
 	if b.Total == 0 || n.Total == 0 {
-		return "rise -"
+		return "rise -", 1
 	}
 
 	diff := new(big.Rat).Sub(big.NewRat(int64(n.Bad), int64(n.Total)), big.NewRat(int64(b.Bad), int64(b.Total)))
@@ -457,14 +458,16 @@ func errorsChange(b, n compare.Share, limit *shr.Percent, v compare.Verdict) str
 
 	switch diff.Sign() {
 	case 0:
-		return "no change"
+		return "no change", 1
 	case -1:
-		return "fall " + shr.FormatFraction(diff.Neg(diff), plain, shr.Holds)
+		return "fall " + shr.FormatFraction(diff.Neg(diff), plain, shr.Holds), 1
 	}
 
 	if limit != nil && v != compare.Unknown {
-		return "rise " + shr.FormatFraction(diff, *limit, shareVerdict(v))
+		text, digits := shr.FormatFractionDigits(diff, *limit, shareVerdict(v))
+
+		return "rise " + text, digits
 	}
 
-	return "rise " + shr.FormatFraction(diff, plain, shr.Holds)
+	return "rise " + shr.FormatFraction(diff, plain, shr.Holds), 1
 }

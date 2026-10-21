@@ -34,6 +34,11 @@ func rowTokens(t *testing.T, row string) (limit, verdict, value string) {
 	fields := strings.Fields(row)
 	for i, f := range fields {
 		if f == "<=" && i+3 < len(fields) {
+			if fields[i+3] == ">" && i+4 < len(fields) {
+				// The "> L" form of a share over a limit that no digit kept is over.
+				return fields[i+1], fields[i+2], "> " + fields[i+4]
+			}
+
 			return fields[i+1], fields[i+2], fields[i+3]
 		}
 	}
@@ -92,7 +97,8 @@ func TestThresholdsText_ARowDoesNotContradictItsVerdict(t *testing.T) {
 		{"b: 199.9496ms under 199950us rounds to 200ms", latency(199950*time.Microsecond, 199949600*time.Nanosecond, true, threshold.VerdictPass), "p99", "199.95ms"},
 		{"a lower bound over the limit rounds down onto it", latency(200*time.Millisecond, 200400*time.Microsecond, false, threshold.VerdictFail), "p99", "200ms"},
 		{"c: 0.13% over 0.125% prints as 0.1%", share("0.125%", 13, 10000, threshold.VerdictFail), "errors", "0.125%"},
-		{"g: 1.001% over 1% prints as 1.0%", share("1%", 1001, 100000, threshold.VerdictFail), "errors", "1%"},
+		{"g: 1.001% over 1% prints as 1.001%", share("1%", 1001, 100000, threshold.VerdictFail), "errors", "1%"},
+		{"h: 1.000001% over 1% prints as > 1%", share("1%", 1000001, 100000000, threshold.VerdictFail), "errors", "1%"},
 		{"d: 0.96% under 0.99% prints as 1.0%", share("0.99%", 96, 10000, threshold.VerdictPass), "errors", "0.99%"},
 		{"the plain cases stay plain: 312ms over 200ms", latency(200*time.Millisecond, 312*time.Millisecond, true, threshold.VerdictFail), "p99", "200ms"},
 		{"the plain cases stay plain: 10.3% over 1%", share("1%", 3100, 30000, threshold.VerdictFail), "errors", "1%"},
@@ -109,7 +115,13 @@ func TestThresholdsText_ARowDoesNotContradictItsVerdict(t *testing.T) {
 
 		var over bool
 
-		if tc.key == "errors" {
+		if tc.key == "errors" && strings.HasPrefix(value, "> ") {
+			// "> L" says over the limit, and says it with the limit as written.
+			if value != "> "+limit {
+				t.Errorf("%s: value printed %q, want \"> \" and the limit %q (row %q)", tc.name, value, limit, row)
+			}
+			over = true
+		} else if tc.key == "errors" {
 			over = thousandths(t, value) > thousandths(t, limit)
 		} else {
 			lim, _ := parseLatencyToken(t, limit)
@@ -122,6 +134,28 @@ func TestThresholdsText_ARowDoesNotContradictItsVerdict(t *testing.T) {
 			t.Errorf("%s: a pass whose printed value %q is over the printed limit %q (row %q)", tc.name, value, limit, row)
 		case tc.result.Verdict == threshold.VerdictFail && !over:
 			t.Errorf("%s: a fail whose printed value %q is not over the printed limit %q (row %q)", tc.name, value, limit, row)
+		}
+	}
+}
+
+// Ground: contract — the share beside a FAIL in a row is the exact share
+// rounded to the nearest with the digits it takes (1.001% against 1%), and
+// "> 1%" when no digit kept is over the limit; a tenth is printed as before.
+func TestThresholdsText_AFailShareIsNotOverstated(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		bad, total int
+		want       string
+	}{
+		{"1.001% over 1%", 1001, 100000, "1.001%"},
+		{"1.000001% over 1%", 1000001, 100000000, "> 1%"},
+		{"a tenth is enough: 10.3%", 3100, 30000, "10.3%"},
+	} {
+		r := threshold.Result{Method: thresholdMethod, Key: threshold.Errors, Verdict: threshold.VerdictFail, LimitPercent: "1%", Bad: tc.bad, Total: tc.total}
+
+		row := rowOf(t, printedWithLimits(thresholdRun(r)), "errors")
+		if _, _, value := rowTokens(t, row); value != tc.want {
+			t.Errorf("%s: value printed %q, want %q (row %q)", tc.name, value, tc.want, row)
 		}
 	}
 }
