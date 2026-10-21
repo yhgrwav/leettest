@@ -118,22 +118,21 @@ func TestHeard_AnEarlyDeadlineExceededFromTheTargetIsHeard(t *testing.T) {
 // Ground: signal grpc-go v1.84.0 — the target's copy of our deadline runs
 // out first and it answers trailers-only DEADLINE_EXCEEDED before our own
 // timer fires, the order a loaded client sees. The trailers-only answer must
-// not pass for headers: it says the target did not answer in time.
+// not pass for headers: it says the target did not answer in time. The stand
+// answers at once, off the wire as trailers-only, and the trailer is placed
+// at 95% of the budget (see trailerNearOurDeadline).
 func TestHeard_ATrailersOnlyDeadlineExceededAtTheEndIsNotHeard(t *testing.T) {
 	answer := grpc.UnknownServiceHandler(func(_ any, stream grpc.ServerStream) error {
 		var in []byte
 		if err := stream.RecvMsg(&in); err != nil {
 			return err
 		}
-		deadline, ok := stream.Context().Deadline()
-		if !ok {
-			return status.Error(codes.InvalidArgument, "no grpc-timeout")
-		}
-		<-time.After(time.Until(deadline) * 95 / 100)
 
 		return status.Error(codes.DeadlineExceeded, "the copy of the caller's deadline ran out")
 	})
-	sender := connected(t, listen(t, &seeingTarget{}, grpc.ForceServerCodec(rawCodec{}), answer))
+	opts := listen(t, &seeingTarget{}, grpc.ForceServerCodec(rawCodec{}), answer)
+	opts.DialOptions = append(opts.DialOptions, trailerNearOurDeadline())
+	sender := connected(t, opts)
 
 	req := request(time.Now())
 	req.Method = "/leettest.test.Frozen/Get"
