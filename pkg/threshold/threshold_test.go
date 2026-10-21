@@ -136,12 +136,12 @@ func TestEvaluate_EachKeyReadsItsPercentile(t *testing.T) {
 	}
 }
 
-// Ground: boundary — the limit is compared with the number the report prints,
-// whole microseconds (a histogram bucket's top, cut at the microsecond): a
-// value of 200.015871ms prints 200015us, so a 200015us limit passes and a
-// 200014us one fails, and the JSON never says value.us > limit_us for a pass.
-// Synthetic: through a fake target a bucket's top cannot be predicted.
-func TestLatency_ComparesTheWholeMicrosecondsTheReportPrints(t *testing.T) {
+// Ground: boundary — the limit is compared with the value in nanoseconds, the
+// one the run JSON carries as value.ns, not with whole microseconds cut off it:
+// a value of 200.015871ms is over a 200015us limit (fail) and under a 200016us
+// one (pass). Synthetic: through a fake target a bucket's top cannot be
+// predicted.
+func TestLatency_ComparesTheValueInNanoseconds(t *testing.T) {
 	m := served(shop, 1000, 0)
 	m.P99 = exact(200*time.Millisecond + 15871*time.Nanosecond)
 
@@ -149,7 +149,7 @@ func TestLatency_ComparesTheWholeMicrosecondsTheReportPrints(t *testing.T) {
 		limit time.Duration
 		want  threshold.Verdict
 	}{
-		{200015 * time.Microsecond, threshold.VerdictPass},
+		{200015 * time.Microsecond, threshold.VerdictFail},
 		{200016 * time.Microsecond, threshold.VerdictPass},
 		{200014 * time.Microsecond, threshold.VerdictFail},
 		{200 * time.Millisecond, threshold.VerdictFail},
@@ -181,6 +181,42 @@ func TestLatency_ALowerBoundDecidesOnlyWhenOverTheLimit(t *testing.T) {
 	// A bound equal to the limit is still not above it.
 	m.P99 = lowerBound(200 * time.Millisecond)
 	verdictIs(t, find(t, evaluate(runOf(m), limits), shop, threshold.P99), threshold.VerdictUnknown, threshold.ReasonCensored)
+}
+
+// Ground: boundary — a latency under a 100us limit by less than a microsecond
+// still fails, exact or a lower bound: under a millisecond one microsecond is
+// up to 1% of the value, and the JSON's value.ns says what the row must not
+// contradict. A value equal to the limit is not over it (exact: pass, bound:
+// unknown), one nanosecond above it is. Synthetic: a histogram bucket's top
+// cannot be set through a fake target.
+func TestLatency_ASubMicrosecondOvershootFails(t *testing.T) {
+	const limit = 100 * time.Microsecond
+
+	limits := threshold.MethodLimits{Name: shop, Limits: p99Errors(limit, "1%", 1000)}
+
+	for _, tc := range []struct {
+		name   string
+		value  metrics.Quantile
+		want   threshold.Verdict
+		reason threshold.Reason
+	}{
+		{"exact 100.4us", exact(100400 * time.Nanosecond), threshold.VerdictFail, ""},
+		{"exact 100us + 1ns", exact(limit + 1), threshold.VerdictFail, ""},
+		{"exact 100us", exact(limit), threshold.VerdictPass, ""},
+		{"exact 100us - 1ns", exact(limit - 1), threshold.VerdictPass, ""},
+		{"bound 100.4us", lowerBound(100400 * time.Nanosecond), threshold.VerdictFail, ""},
+		{"bound 100us + 1ns", lowerBound(limit + 1), threshold.VerdictFail, ""},
+		{"bound 100us", lowerBound(limit), threshold.VerdictUnknown, threshold.ReasonCensored},
+		{"bound 100us - 1ns", lowerBound(limit - 1), threshold.VerdictUnknown, threshold.ReasonCensored},
+	} {
+		m := served(shop, 1000, 0)
+		m.P99 = tc.value
+
+		r := find(t, evaluate(runOf(m), limits), shop, threshold.P99)
+		if r.Verdict != tc.want || r.Reason != tc.reason {
+			t.Errorf("%s against %v: %q (reason %q), want %q (reason %q)", tc.name, limit, r.Verdict, r.Reason, tc.want, tc.reason)
+		}
+	}
 }
 
 // Ground: boundary — a p99.9 with fewer than 1000 observations is not

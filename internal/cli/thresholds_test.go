@@ -189,6 +189,40 @@ func TestThresholdsJSON_AnUnknownCarriesItsReason(t *testing.T) {
 	}
 }
 
+// Ground: contract — `pass:` judges the value in nanoseconds, so a value 400ns
+// over a 100us limit is a fail whose value.us (cut at the microsecond) equals
+// limit_us, and value.ns is what shows it is over. The verdict is the real
+// judge's, not a hand-made result.
+func TestThresholdsJSON_AFailOverTheLimitByLessThanAMicrosecond(t *testing.T) {
+	const limit = 100 * time.Microsecond
+
+	report := thresholdRun().Report
+	report.Methods[0].P99 = exactQ(limit + 400*time.Nanosecond)
+
+	run := jsonRun(report)
+	run.Run.Thresholds = threshold.Evaluate(report, threshold.Complete, []threshold.MethodLimits{
+		{Name: thresholdMethod, Limits: threshold.Limits{P99: limit}},
+	})
+
+	rows, _ := field(t, writeJSON(t, run), "thresholds").([]any)
+	if len(rows) != 1 {
+		t.Fatalf("thresholds = %v, want the one p99 row", rows)
+	}
+
+	row, _ := rows[0].(map[string]any)
+	value, _ := row["value"].(map[string]any)
+
+	if row["verdict"] != "fail" || row["reason"] != nil {
+		t.Errorf("verdict %v reason %v, want fail without a reason: 100.4us is over 100us", row["verdict"], row["reason"])
+	}
+	if row["limit_us"] != 100.0 || value["us"] != 100.0 {
+		t.Errorf("limit_us %v value.us %v, want both 100 (the value cut at the microsecond)", row["limit_us"], value["us"])
+	}
+	if value["ns"] != 100400.0 || value["lower_bound"] != false {
+		t.Errorf("value %v, want ns 100400 and no lower bound", value)
+	}
+}
+
 // Ground: contract — a run without limits writes null, the same word as the
 // other things the run did not produce; never an empty array that reads as
 // "all limits pass".

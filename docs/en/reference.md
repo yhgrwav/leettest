@@ -119,13 +119,17 @@ failures decide it, not the target's), `nothing_sent` (not a single call was sen
 tail holds calls with no answer within the timeout: the value is only a lower bound, not above the
 limit).
 
-- Latency is compared in whole microseconds, as the report prints it. A lower bound over the limit
-  is a `fail`: the real value is larger still.
+- Latency is compared in nanoseconds, as the JSON carries it (`value.ns`): a value one nanosecond
+  over the limit is a `fail`, though `value.us` (cut at the microsecond) may equal `limit_us`. A
+  lower bound over the limit is a `fail`: the real value is larger still.
 - The share counts every failed call and every call not sent for lack of a connection, over all
   counted. For a `fail` only the failures the target decided count: requests the client rejected,
   client errors and bad responses say nothing of the target.
 - A limit's row never contradicts its verdict: if the value rounded to three significant figures
-  would land on the wrong side of the printed limit, the exact one is printed. A share beside a
+  would land on the wrong side of the printed limit, the exact one is printed. Beside a FAIL it
+  is the first of three that is over the limit: the three figures, the value at whole microseconds
+  (the nearest; a lower bound rounded down), the value to the nanosecond (`100.4us` against
+  `100us`). A share beside a
   FAIL is rounded to the nearest, never up: the first of 1, 2, 3 digits after the point that is
   over the limit (`1.004%` against `1%`); if three are not enough, `> ` and the limit as written
   is printed (`> 1%`).
@@ -336,7 +340,7 @@ measured calls only. The first column is the field's full path.
 | Field | Type | Meaning |
 |---|---|---|
 | `<percentile>.us` | int | The value, whole microseconds |
-| `<percentile>.ns` | int | The histogram's value in whole nanoseconds, which the text report prints at three significant figures; `us` is the same value truncated to microseconds; `leettest compare` judges by `ns` |
+| `<percentile>.ns` | int | The histogram's value in whole nanoseconds, which the text report prints at three significant figures; `us` is the same value truncated to microseconds; `pass:` and `leettest compare` judge by `ns`, so beside a `fail` `us` can equal `limit_us` |
 | `<percentile>.lower_bound` | bool | `true` — a lower bound, not a value ([README](README.md#reading-the-report)) |
 
 ### Run
