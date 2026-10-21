@@ -31,7 +31,7 @@ load:
 | 字段 | 作用 |
 |---|---|
 | `name` | 可选。运行在标题中的名称。省略时——如果所有方法属于同一个服务，则为服务名，否则为配置文件名 |
-| `labels` | 可选。报告“护照”打印的 `key: "value"` 键值对，用于区分不同的运行（`env: staging`、`commit: abc123`）。键为 1 到 64 个 `A-Za-z0-9_.-` 字符；值是不超过 256 字节的 YAML 字符串，数字请加引号（`"1.10"`）。`-label` 可添加键值对，或替换配置中的同名键值对——未发布 |
+| `labels` | 可选。报告“护照”打印的 `key: "value"` 键值对，用于区分不同的运行（`env: staging`、`commit: abc123`）。键为 1 到 64 个 `A-Za-z0-9_.-` 字符；值是不超过 256 字节的 YAML 字符串，数字请加引号（`"1.10"`）。`-label` 可添加键值对，或替换配置中的同名键值对 |
 | `app.target` | 服务地址：`ip` 和 `port` |
 | `app.tls` | TLS。省略时开启。`false`——不加密的连接 |
 | `app.ca` | 用于校验服务的 PEM 证书文件，替代系统证书。需要 TLS |
@@ -40,10 +40,10 @@ load:
 | `app.metadata` | 每次调用的请求头：`authorization`、`x-api-key` 等。`${NAME}` 取自环境变量 |
 | `app.max_response_size` | 一次调用接受的最大应答：`16MiB`、`512KB`。单位必填（`MB` = 10⁶ 字节，`MiB` = 2²⁰），小于 2 GiB。省略时为 4 MiB，与 gRPC 相同。更大的应答算作 `bad response`。在途的调用最多可能缓冲上限的两倍：默认每个最多 8 MiB |
 | `app.connections` | 向目标打开多少条连接，1 到 256 的整数。省略时为 1。调用在这些连接间轮流进行，报告打印一个 `Connections:` 块，每条连接一行 |
-| `app.compression` | 压缩请求体：`gzip`。省略时不压缩。报告在方法下打印 `bytes: <raw> -> <wire> per call`——未发布 |
-| `app.proto.files` | 提供服务定义的 `.proto` 文件，用于没有 reflection 的服务。路径从配置文件所在目录算起。每个文件必须位于某个 `import_paths` 之内——未发布 |
-| `app.proto.import_paths` | 在哪里查找这些文件及其 import，与 `protoc -I` 相同。路径从配置文件所在目录算起。省略时为该目录。标准类型（`google/protobuf/…`）不需要路径——未发布 |
-| `app.protoset` | 用描述符集文件代替 `.proto` 文件，由 `protoc --include_imports --descriptor_set_out=FILE` 生成。路径从配置文件所在目录算起。不能与 `app.proto` 同时使用；两者都没有时，方法通过 reflection 获取——未发布 |
+| `app.compression` | 压缩请求体：`gzip`。省略时不压缩。报告在方法下打印 `bytes: <raw> -> <wire> per call` |
+| `app.proto.files` | 提供服务定义的 `.proto` 文件，用于没有 reflection 的服务。路径从配置文件所在目录算起。每个文件必须位于某个 `import_paths` 之内 |
+| `app.proto.import_paths` | 在哪里查找这些文件及其 import，与 `protoc -I` 相同。路径从配置文件所在目录算起。省略时为该目录。标准类型（`google/protobuf/…`）不需要路径 |
+| `app.protoset` | 用描述符集文件代替 `.proto` 文件，由 `protoc --include_imports --descriptor_set_out=FILE` 生成。路径从配置文件所在目录算起。不能与 `app.proto` 同时使用；两者都没有时，方法通过 reflection 获取 |
 | `load.warmup` | 前 N 秒不计入百分位和 `sent`：冷缓存会扭曲它们。预热调用确实会到达目标；报告用一行 `warm-up N sent (M failed), excluded from stats` 输出它们——`sent` 加上这一行就是压测机尝试过的全部调用。除计为 unreachable 或 client error 的调用外，目标都收到了；`cut off` 和超时的调用可能没有完整到达：不打开 HTTP/2 窗口（流量控制）的目标只会收到请求头，它的计数器可能看不到这次调用。计入 `duration`，必须短于每个调用 |
 | `load.calls[].method` | 方法全名：`package.Service/Method` |
 | `load.calls[].rps` | 该方法每秒的请求数 |
@@ -51,12 +51,12 @@ load:
 | `load.calls[].timeout` | 等待应答的时长。省略时为 `2s`。零不会关闭超时，而是错误 |
 | `load.calls[].data` | 请求体，见[下文](#请求体)。省略时为空消息 |
 | `load.calls[].dataset` | 用请求体文件代替 `data`，见[下文](#每次调用不同的请求dataset)。不能与 `data` 同时使用 |
-| `load.calls[].dataset_order` | `file`（省略时）或 `random`：文件中请求的顺序。需要 `dataset`——未发布 |
-| `load.calls[].dataset_seed` | 0 到 9007199254740991 的整数，固定随机顺序。需要 `dataset_order: random`。省略时自行选取并在报告中输出——未发布 |
-| `load.calls[].dataset_reuse` | `true`（省略时）或 `false`：为 `false` 时，整个进程中没有任何一条记录会发出两次。需要 `dataset`——未发布 |
-| `load.calls[].pass` | 运行要通过必须满足的限值：`p50`、`p90`、`p95`、`p99`、`p999`、`errors`，见[下文](#pass-限值)。省略时没有限值——未发布 |
-| `load.breakpoint.pass` | 崩溃点搜索的限值：`held_rps`，见[下文](#pass-限值)。省略时没有限值——未发布 |
-| `load.breakpoint.errors_limit` | 形如 `1%` 或 `0.5%` 的百分数，小数点后最多三位，不超过 `100%`。失败调用占比超过它时，搜索的这一级就崩溃；恰好等于它则算撑住。省略时为 `1%`——未发布 |
+| `load.calls[].dataset_order` | `file`（省略时）或 `random`：文件中请求的顺序。需要 `dataset` |
+| `load.calls[].dataset_seed` | 0 到 9007199254740991 的整数，固定随机顺序。需要 `dataset_order: random`。省略时自行选取并在报告中输出 |
+| `load.calls[].dataset_reuse` | `true`（省略时）或 `false`：为 `false` 时，整个进程中没有任何一条记录会发出两次。需要 `dataset` |
+| `load.calls[].pass` | 运行要通过必须满足的限值：`p50`、`p90`、`p95`、`p99`、`p999`、`errors`，见[下文](#pass-限值)。省略时没有限值 |
+| `load.breakpoint.pass` | 崩溃点搜索的限值：`held_rps`，见[下文](#pass-限值)。省略时没有限值 |
+| `load.breakpoint.errors_limit` | 形如 `1%` 或 `0.5%` 的百分数，小数点后最多三位，不超过 `100%`。失败调用占比超过它时，搜索的这一级就崩溃；恰好等于它则算撑住。省略时为 `1%` |
 
 配置严格解析：字段名拼写错误会报错并给出行号，取值错误会报错并给出调用的序号和方法，而不是以空负载
 运行。`rps` 是整数：`10.5` 会被拒绝，而不是悄悄取整为十。`warmup` 必须短于每个调用，否则该调用
@@ -251,8 +251,8 @@ seed 在启动时选取，每个调用各有一个。
 |---|---|
 | `-c` | 配置文件路径 |
 | `-output` | stdout 上的报告格式：`text`（默认）或供脚本和 CI 使用的 `json` |
-| `-json-file` | 新文件的路径：JSON 报告（与 `-output json` 输出的对象相同）写入该文件，stdout 仍按 `-output` 的设定。文件已存在或目录不存在，则在开始前退出码 1。没有报告的运行不留下文件。写入失败为退出码 1——未发布 |
-| `-label` | 给报告“护照”的 `key=value` 标签；可重复使用。与配置 `labels` 中的同名键冲突时以它为准。同一个键给两次，或违反键、值规则，都在开始前退出码 1——未发布 |
+| `-json-file` | 新文件的路径：JSON 报告（与 `-output json` 输出的对象相同）写入该文件，stdout 仍按 `-output` 的设定。文件已存在或目录不存在，则在开始前退出码 1。没有报告的运行不留下文件。写入失败为退出码 1 |
+| `-label` | 给报告“护照”的 `key=value` 标签；可重复使用。与配置 `labels` 中的同名键冲突时以它为准。同一个键给两次，或违反键、值规则，都在开始前退出码 1 |
 | `-connect-timeout` | 服务接受了连接却不应答时等待多久。默认 `10s`。连接被拒绝和地址错误不会等待 |
 | `-max-in-flight` | 等待应答的请求数上限。默认 `5000` |
 | `-plain` | 不用实时屏幕：每秒一行进度输出到 stderr，与没有终端时相同，并且没有首次运行的对话。报告和退出码不变 |
@@ -310,8 +310,8 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `mode` | string | 普通运行为 `run`，崩溃点搜索为 `breakpoint` |
 | `leettest_version` | string | 工具版本；从源码构建时为提交哈希 |
 | `target` | string | 配置中的目标地址，使用 `-fake` 时为 `fake target` |
-| `name` | string | 运行的名称：配置中的 `name`，否则为服务名，否则为配置文件名；始终是字符串——未发布 |
-| `methods_source` | string? | 方法的来源：`reflection`、`proto`（`app.proto` 的文件）或 `protoset`；使用 `-fake` 时为 `null`——未发布 |
+| `name` | string | 运行的名称：配置中的 `name`，否则为服务名，否则为配置文件名；始终是字符串 |
+| `methods_source` | string? | 方法的来源：`reflection`、`proto`（`app.proto` 的文件）或 `protoset`；使用 `-fake` 时为 `null` |
 | `outcome` | string | `complete`、`invalid`、`incomplete`——对应退出码 `0`、`2`、`3`；已结束但没达到 `pass` 限值的运行是 `complete`，退出码 `4`；使用 `-json-file` 且写入失败时退出码为 `1`，`outcome` 仍是该次运行的 |
 | `invalid_reasons` | []string | 运行无效的原因：`in_flight_cap`、`nothing_measured`、`clock_step`、`thresholds_undecided`（某个 `pass` 限值无法判定，且原因不是运行被停止或已经无效）。为空——有效 |
 | `tail_wait_cause` | string? | 决定尾部的客户端侧等待：`generator`、`stream`、`connection`；`null`——没有结论 |
@@ -320,19 +320,19 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `duration_us` | int | 运行实际持续时间，包括预热 |
 | `planned_us` | int | 计划持续时间 |
 | `warmup_us` | int | 预热时长 |
-| `settings` | object | 运行启动时的设置，按配置而非测量值——未发布 |
-| `settings.max_in_flight` | int；搜索：`int?` | 在途请求上限：`-max-in-flight` 的值，否则为默认值。搜索：未设该参数时为 `null`（每次运行取其能运行的最小上限）；在其各次运行中为该次运行的上限——未发布 |
-| `settings.connections` | int | 按配置的 `app.connections`，默认 1；`connections.open` 是实际打开的数量——未发布 |
-| `settings.warmup_us` | int | 按配置的预热。搜索：`settle` 时长——未发布 |
-| `settings.compression` | string? | 按配置的 `app.compression`：`"gzip"`，`null` 表示省略——未发布 |
-| `passport` | object? | 这次运行所用的机器和配置，用于区分不同的运行。搜索只在顶层有一个，`breakpoint.runs` 中的各次运行没有——未发布 |
-| `passport.config_sha256` | string | 配置文件读入时字节的 SHA-256，64 位十六进制——未发布 |
-| `passport.os`、`passport.arch` | string | 生成器的 `GOOS` 和 `GOARCH`，如 `linux` 和 `amd64`——未发布 |
-| `passport.num_cpu` | int | 生成器进程看到的逻辑 CPU 数——未发布 |
-| `passport.gomaxprocs` | int | 启动时的 `GOMAXPROCS`——未发布 |
-| `passport.cpu_quota` | float? | cgroup 的 CPU 配额（按 CPU 数，如 `4`、`0.5`），不受 `gomaxprocs` 限制；`null`——没有配额或不是 Linux——未发布 |
-| `passport.go_version` | string | 构建该二进制所用的 Go 版本——未发布 |
-| `passport.labels` | object | 标签，键到字符串；没有时为 `{}`——未发布 |
+| `settings` | object | 运行启动时的设置，按配置而非测量值 |
+| `settings.max_in_flight` | int；搜索：`int?` | 在途请求上限：`-max-in-flight` 的值，否则为默认值。搜索：未设该参数时为 `null`（每次运行取其能运行的最小上限）；在其各次运行中为该次运行的上限 |
+| `settings.connections` | int | 按配置的 `app.connections`，默认 1；`connections.open` 是实际打开的数量 |
+| `settings.warmup_us` | int | 按配置的预热。搜索：`settle` 时长 |
+| `settings.compression` | string? | 按配置的 `app.compression`：`"gzip"`，`null` 表示省略 |
+| `passport` | object? | 这次运行所用的机器和配置，用于区分不同的运行。搜索只在顶层有一个，`breakpoint.runs` 中的各次运行没有 |
+| `passport.config_sha256` | string | 配置文件读入时字节的 SHA-256，64 位十六进制 |
+| `passport.os`、`passport.arch` | string | 生成器的 `GOOS` 和 `GOARCH`，如 `linux` 和 `amd64` |
+| `passport.num_cpu` | int | 生成器进程看到的逻辑 CPU 数 |
+| `passport.gomaxprocs` | int | 启动时的 `GOMAXPROCS` |
+| `passport.cpu_quota` | float? | cgroup 的 CPU 配额（按 CPU 数，如 `4`、`0.5`），不受 `gomaxprocs` 限制；`null`——没有配额或不是 Linux |
+| `passport.go_version` | string | 构建该二进制所用的 Go 版本 |
+| `passport.labels` | object | 标签，键到字符串；没有时为 `{}` |
 | `sent` | int | 被测量的调用，不含 `not_sent`。包括 `unreachable` 和 `aborted` |
 | `failed` | int | `sent` 中所有未成功的调用，不含 `aborted` |
 | `aborted` | int | 被我们自己的停止截断 |
@@ -364,27 +364,27 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `client_waits` | object | 在客户端侧等待超过阈值的调用，按原因（[README](README.md#阅读报告)） |
 | `client_waits.generator_calls`、`client_waits.stream_calls`、`client_waits.connection_calls` | int | 所有此类调用，无论是否发出。一个已发出的调用可能同时计入多个原因 |
 | `client_waits.generator_tail_calls`、`client_waits.stream_tail_calls`、`client_waits.connection_tail_calls` | int | 只统计 p99 尾部和未发出的调用：由它们决定 `tail_wait_cause` |
-| `generator_cpu` | object? | 运行占用了 LeetTest 自身可用 CPU 的多少，按秒给出；无法读取进程的 CPU 时间时为 `null`。有繁忙的秒时，报告会打印一行 — 未发布 |
-| `generator_cpu.available_cores` | float | 进程可使用的 CPU：`GOMAXPROCS`，或 cgroup 配额（若更小） — 未发布 |
-| `generator_cpu.share` | float | CPU 时间除以墙钟时间和 `available_cores`，四舍五入到 2 位小数，范围是预热之后的计划秒数。可能超过 1：系统调用中的时间发生在 P 之外 — 未发布 |
-| `generator_cpu.busy_seconds` | int | 其中 `share` 不低于 0.90 的秒数（按四舍五入后的值比较）。这些秒加起来不足一秒时为 `0` — 未发布 |
-| `generator_cpu.first_busy_s` | int? | 第一个这样的秒，从运行开始算起，预热计入；没有则为 `null` — 未发布 |
-| `generator_cpu.seconds` | []float | 从运行开始算起每一秒的占比，预热和超时尾部都包含：条目数与最长的 `methods[].seconds` 相同。没有任何读数覆盖的秒为 `null`，与前一秒合并计算的不足半秒的最后一秒也为 `null` — 未发布 |
+| `generator_cpu` | object? | 运行占用了 LeetTest 自身可用 CPU 的多少，按秒给出；无法读取进程的 CPU 时间时为 `null`。有繁忙的秒时，报告会打印一行 |
+| `generator_cpu.available_cores` | float | 进程可使用的 CPU：`GOMAXPROCS`，或 cgroup 配额（若更小） |
+| `generator_cpu.share` | float | CPU 时间除以墙钟时间和 `available_cores`，四舍五入到 2 位小数，范围是预热之后的计划秒数。可能超过 1：系统调用中的时间发生在 P 之外 |
+| `generator_cpu.busy_seconds` | int | 其中 `share` 不低于 0.90 的秒数（按四舍五入后的值比较）。这些秒加起来不足一秒时为 `0` |
+| `generator_cpu.first_busy_s` | int? | 第一个这样的秒，从运行开始算起，预热计入；没有则为 `null` |
+| `generator_cpu.seconds` | []float | 从运行开始算起每一秒的占比，预热和超时尾部都包含：条目数与最长的 `methods[].seconds` 相同。没有任何读数覆盖的秒为 `null`，与前一秒合并计算的不足半秒的最后一秒也为 `null` |
 | `methods` | []object | 方法，见下文 |
 | `unchecked` | []object | 无法通过 reflection 检查的方法 |
 | `unchecked[].method` | string | 方法 |
 | `unchecked[].reason` | string | `reflection_off` 或 `reflection_failed` |
 | `unchecked[].error` | string | 给人看的文本，随 grpc-go 变化 |
-| `thresholds` | []object? | `pass` 限值的结论，每个限值一个对象，键都相同；不属于该限值的键为 `null`。`null`——没有设置限值（不是空列表，空列表会被读成“全部通过”）。搜索把它写在顶层——未发布 |
-| `thresholds[].method` | string? | 带前导斜杠的方法，与报告中的写法一致；`null`——搜索的限值——未发布 |
-| `thresholds[].key` | string | `p50`、`p90`、`p95`、`p99`、`p999`、`errors`、`held_rps`——未发布 |
-| `thresholds[].verdict` | string | `pass`、`fail`、`unknown`——未发布 |
-| `thresholds[].reason` | string? | 为什么是 `unknown`，取自列表：`incomplete`、`invalid`、`few_observations`、`run_limit`、`generator`、`stream`、`client_errors`、`nothing_sent`、`censored`；`pass` 和 `fail` 时为 `null`——未发布 |
-| `thresholds[].limit_us` | int? | 延迟限值，整数微秒；其他键为 `null`——未发布 |
-| `thresholds[].value` | percentile? | 用来比较的被测百分位；`null`——未被测量，或该键与延迟无关——未发布 |
-| `thresholds[].limit_percent` | string? | `errors` 限值，按配置中的写法，如 `"0.5%"`；其他键为 `null`——未发布 |
-| `thresholds[].bad`、`thresholds[].bad_client`、`thresholds[].total` | int? | `errors` 的占比：失败的调用（含因没有连接而未发出的）、其中不由目标决定的、所有被统计的调用。其他键以及一个调用也没被统计时为 `null`——未发布 |
-| `thresholds[].limit_rps`、`thresholds[].held_rps` | int? | 搜索的限值和它守住的值；其他键为 `null`——未发布 |
+| `thresholds` | []object? | `pass` 限值的结论，每个限值一个对象，键都相同；不属于该限值的键为 `null`。`null`——没有设置限值（不是空列表，空列表会被读成“全部通过”）。搜索把它写在顶层 |
+| `thresholds[].method` | string? | 带前导斜杠的方法，与报告中的写法一致；`null`——搜索的限值 |
+| `thresholds[].key` | string | `p50`、`p90`、`p95`、`p99`、`p999`、`errors`、`held_rps` |
+| `thresholds[].verdict` | string | `pass`、`fail`、`unknown` |
+| `thresholds[].reason` | string? | 为什么是 `unknown`，取自列表：`incomplete`、`invalid`、`few_observations`、`run_limit`、`generator`、`stream`、`client_errors`、`nothing_sent`、`censored`；`pass` 和 `fail` 时为 `null` |
+| `thresholds[].limit_us` | int? | 延迟限值，整数微秒；其他键为 `null` |
+| `thresholds[].value` | percentile? | 用来比较的被测百分位；`null`——未被测量，或该键与延迟无关 |
+| `thresholds[].limit_percent` | string? | `errors` 限值，按配置中的写法，如 `"0.5%"`；其他键为 `null` |
+| `thresholds[].bad`、`thresholds[].bad_client`、`thresholds[].total` | int? | `errors` 的占比：失败的调用（含因没有连接而未发出的）、其中不由目标决定的、所有被统计的调用。其他键以及一个调用也没被统计时为 `null` |
+| `thresholds[].limit_rps`、`thresholds[].held_rps` | int? | 搜索的限值和它守住的值；其他键为 `null` |
 | `notes` | []string | 报告中的提示，给人看的 ASCII 文本；不要解析 |
 
 ### 方法：`methods[]`
@@ -400,12 +400,12 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `methods[].rps` | float? | `sent/s`：已发送调用数除以发送时间；`null`——没有调用 |
 | `methods[].timeout_us` | int | 该方法的超时 |
 | `methods[].planned_rps_low`、`methods[].planned_rps_high` | int | 整个计划中最低和最高的计划速率 |
-| `methods[].planned_duration_us` | int | 该方法计划运行多久，按配置——未发布 |
-| `methods[].request_bytes` | object? | 已发出的被测调用的请求体平均大小；无压缩时为 `null`——未发布 |
-| `methods[].request_bytes.raw`, `methods[].request_bytes.wire` | float | 压缩前与线上的字节数（不含 5 字节帧头）——未发布 |
+| `methods[].planned_duration_us` | int | 该方法计划运行多久，按配置 |
+| `methods[].request_bytes` | object? | 已发出的被测调用的请求体平均大小；无压缩时为 `null` |
+| `methods[].request_bytes.raw`, `methods[].request_bytes.wire` | float | 压缩前与线上的字节数（不含 5 字节帧头） |
 | `methods[].latency` | object | 成功调用的延迟，超时和被截断的调用作为下界 |
 | `methods[].latency.min`、`methods[].latency.p50`、`methods[].latency.p90`、`methods[].latency.p95`、`methods[].latency.p99`、`methods[].latency.max` | percentile? | 最小值、百分位、最大值 |
-| `methods[].latency.p999` | percentile? | 按同一规则得出的 p99.9；方法的观测数（`observations`）少于 1000 时为 null，此时 p99.9 只会是最大值——未发布 |
+| `methods[].latency.p999` | percentile? | 按同一规则得出的 p99.9；方法的观测数（`observations`）少于 1000 时为 null，此时 p99.9 只会是最大值 |
 | `methods[].p99_without_client_waits` | percentile? | 同一批调用去掉客户端侧等待后的 p99；可能略微偏低 |
 | `methods[].observations` | int | `latency` 百分位背后的观测数 |
 | `methods[].censored` | int | 其中只知道下界的数量 |
@@ -430,13 +430,13 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `methods[].last_answer_at_us` | int? | 目标应答过的最后一个调用的发出时刻；`null`——从未应答 |
 | `methods[].dataset` | object? | 该调用的请求文件；`null`——没有 |
 | `methods[].dataset.file` | string | 配置里写的路径 |
-| `methods[].dataset.sha256` | string | 文件在磁盘上原样的 SHA-256（含字节序标记），64 位十六进制——未发布 |
+| `methods[].dataset.sha256` | string | 文件在磁盘上原样的 SHA-256（含字节序标记），64 位十六进制 |
 | `methods[].dataset.records` | int | 文件中的请求数 |
 | `methods[].dataset.used` | int | 其中至少发出过一次的数量 |
 | `methods[].dataset.used_max` | int | 被用得最多的那条发出了几次；在搜索中——从第一步算到本次运行结束 |
-| `methods[].dataset.order` | string | `file` 或 `random`：请求发出的顺序——未发布 |
-| `methods[].dataset.seed` | int? | 随机顺序的 seed，0 到 9007199254740991；文件顺序为 `null`——未发布 |
-| `methods[].dataset.reuse` | bool | `false`——该调用每条记录最多发送一次（`dataset_reuse: false`）；否则为 `true`——未发布 |
+| `methods[].dataset.order` | string | `file` 或 `random`：请求发出的顺序 |
+| `methods[].dataset.seed` | int? | 随机顺序的 seed，0 到 9007199254740991；文件顺序为 `null` |
+| `methods[].dataset.reuse` | bool | `false`——该调用每条记录最多发送一次（`dataset_reuse: false`）；否则为 `true` |
 | `methods[].seconds` | []object | 按秒的时间线，见下文 |
 
 ### 秒：`methods[].seconds[]`
@@ -467,9 +467,9 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `breakpoint.outcome` | string | 封闭列表：`broke`、`broke_at_first`、`held_all`、`run_limit`、`stopped`、`invalid` |
 | `breakpoint.held_rps` | int? | 目标撑住的最高速率；`null` — 没有撑住的 |
 | `breakpoint.broke_rps` | int? | 目标崩溃或运行上限使搜索停下的最低速率；`null` — 未崩溃 |
-| `breakpoint.errors_limit` | string | 搜索使用的错误上限，百分数：默认 `"1%"`。某一级超过它即崩溃；`100%` — 错误不会使某一级崩溃 — 未发布 |
+| `breakpoint.errors_limit` | string | 搜索使用的错误上限，百分数：默认 `"1%"`。某一级超过它即崩溃；`100%` — 错误不会使某一级崩溃 |
 | `breakpoint.why` | string? | 结束搜索的那次运行的原因，来自封闭列表：`errors`、`p99_limit`、`p99_vs_base`、`connection`、`no_recovery`、`generator`、`in_flight_cap`、`stream_limit`、`stream_wait`、`client_errors`、`clock_step`、`request_errors`；`null` — 没有原因。`client_errors`：上限只被客户端一侧的错误突破，目标自己的错误在上限之内；结果为 `run_limit` |
-| `breakpoint.stop_reason` | string? | 谁结束了搜索：`dataset_exhausted`（`dataset_reuse: false` 的文件用完了）、`requested`（用户停止）；`null`——搜索自行结束——未发布 |
+| `breakpoint.stop_reason` | string? | 谁结束了搜索：`dataset_exhausted`（`dataset_reuse: false` 的文件用完了）、`requested`（用户停止）；`null`——搜索自行结束 |
 | `breakpoint.notes` | []string | 搜索的说明，面向人的 ASCII 文本；不要解析 |
 | `breakpoint.runs` | []object | 按顺序列出所有运行 |
 | `breakpoint.runs[].kind` | string | `step`、`repeat` 或 `probe` |
@@ -483,7 +483,7 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 ## 比较报告：`leettest compare`
 
 `leettest compare [参数] before.json after.json` 读取两份同类的 `-json-file` 报告——两次搜索或两次
-运行——并输出发生了什么变化。参数写在文件之前。该命令未发布。
+运行——并输出发生了什么变化。参数写在文件之前。
 
 | 参数 | 作用 |
 |---|---|

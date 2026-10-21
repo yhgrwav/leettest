@@ -116,7 +116,7 @@ Source of truth: [README, «Exit codes»](https://github.com/yhgrwav/leettest/bl
 `thresholds[].reason` says why): tell the user the limit was not checked, never that it held.
 `0` with `pass` set means every limit held.
 
-To compare two search reports (`-json-file` of a search, before and after a change; not released):
+To compare two search reports (`-json-file` of a search, before and after a change):
 `leettest compare -max-capacity-drop 10% before.json after.json`. The exit codes mean the same: `4`
 the capacity fell past the limit, `2` the reports differ in a field the printed `differs:` line
 names, or the limit cannot be decided from a bound (`>=` or `below`): tell the user it was not
@@ -128,7 +128,7 @@ percent of the base p99) and `-max-errors-rise 1%` (the rise of the failed share
 is invalid or incomplete, a p99 hit the timeout (`>=`) or client-side errors leave it open: tell the
 user the check was not made. A search report and a run report together is `1`.
 
-For a script, `leettest compare -output json …` prints one object (not released; stdout is empty on
+For a script, `leettest compare -output json …` prints one object (stdout is empty on
 exit `1`; exit codes as above). Read `verdict` first (`pass`, `fail`, `unknown`, `null` when no
 limit was given), then `comparable` and `differences` (a missing passport is one difference), then
 `checks[]`: `method`, `key` (`capacity`, `p99`, `errors`), the two sides' `*_capacity`,

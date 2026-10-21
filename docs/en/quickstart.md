@@ -113,7 +113,7 @@ load:
       dataset_seed: 42
 ```
 
-- **`name`** — the run's name in the header and in the JSON report (`name`, not released).
+- **`name`** — the run's name in the header and in the JSON report (`name`).
 - **`tls: false`** — the stand has no encryption. TLS is on by default; `ca`, `cert`, `key`,
   `server_name` are in [`examples/tour-tls.yaml`](../../examples/tour-tls.yaml) (below, "TLS").
 - **`metadata`** — headers on every call. `${LEETTEST_TOKEN}` comes from the environment: the
@@ -215,7 +215,7 @@ What matters here:
 
 - **Which run it is.** `name:` and `settings:` repeat the run's name and what it was started with,
   and `plan:` under a method its configured rate and duration, so a report pasted into a ticket
-  can be compared with another (not released).
+  can be compared with another.
 - **At what load the service stopped coping.** "at 300 rps … nothing after the call sent at
   25.0s" — the target went silent at second 25, exactly when the stand was told to. The moment is
   when the call went out, not when it was due: a lagging generator is not passed off as the
@@ -292,15 +292,15 @@ Exit codes:
 | Code | Meaning |
 |---|---|
 | `0` | The plan ran, the report is complete |
-| `1` | The report you asked for was not produced: the run did not happen (flags, config, connection) or the report could not be written to `-json-file` (not released). stderr says why |
+| `1` | The report you asked for was not produced: the run did not happen (flags, config, connection) or the report could not be written to `-json-file`. stderr says why |
 | `2` | Invalid run: the in-flight cap, every call of a method a request error, or the host clock coarser than a quarter of the p50. A report exists; its numbers are not about the load |
 | `3` | Stopped before the plan ended. The report covers what ran |
-| `4` | A finished run missed a `pass` limit. The report exists; `thresholds` (not released) says which |
+| `4` | A finished run missed a `pass` limit. The report exists; `thresholds` says which |
 | `130`, `143` | Killed by Ctrl+C or SIGTERM, no report |
 
 For a pass/fail gate in CI set `pass` limits under the call
 ([`examples/pass.yaml`](../../examples/pass.yaml), [README, «Pass limits»](README.md#pass-limits-a-run-as-a-check))
-and fail the build on a non-zero exit code; the `thresholds` JSON field (not released) says which
+and fail the build on a non-zero exit code; the `thresholds` JSON field says which
 limit was missed or could not be decided.
 
 ## 8. No service at all
