@@ -407,8 +407,6 @@ func errorsOf(s compare.Share) *CompareErrors {
 func errorsCheck(pair methodPair, limit *shr.Percent, same bool, held heldBack) CompareCheck {
 	b, n := shareOf(pair.side[0]), shareOf(pair.side[1])
 	check := CompareCheck{Method: pair.side[0].Method, Key: "errors", BaseErrors: errorsOf(b), NewErrors: errorsOf(n)}
-	text := pair.name + ": errors " + failedShareText(b) + " -> " + failedShareText(n)
-
 	verdict := compare.Unknown
 
 	if same && held.reason == "" && limit != nil {
@@ -428,20 +426,22 @@ func errorsCheck(pair methodPair, limit *shr.Percent, same bool, held heldBack) 
 		}
 	}
 
-	change := "rise -"
+	change, digits := "rise -", 1
 	if same {
-		change, _ = errorsChange(b, n, limit, verdict)
+		change, digits = errorsChange(b, n, limit, verdict)
 	}
+
+	text := pair.name + ": errors " + failedShareText(b, digits) + " -> " + failedShareText(n, digits)
 
 	return finishCheck(check, text, change, limit, verdict, held)
 }
 
-func failedShareText(s compare.Share) string {
+func failedShareText(s compare.Share, digits int) string {
 	if s.Total == 0 {
 		return "-"
 	}
 
-	return nearestTenth(s.Bad, s.Total)
+	return shr.FormatAt(s.Bad, s.Total, digits)
 }
 
 // errorsChange is the change in the share of failed calls in points, from the

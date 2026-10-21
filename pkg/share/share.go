@@ -89,15 +89,23 @@ func Decide(bad, badClient, total int, limit Percent) Verdict {
 	}
 }
 
-// Format is the share bad/total as a percent to print beside limit: to a
-// tenth of a percent, or, when that lands on the wrong side of the printed
-// limit, to as many digits as the limit has, rounded up for Breaks.
+// Format is the share bad/total as a percent to print beside limit, rounded
+// to the nearest: to a tenth of a percent, or, when that lands on the wrong
+// side of the printed limit, for Holds to as many digits as the limit has, for
+// Breaks to the first of two and three digits that is over it, or "> " and the
+// limit as written when neither is. A share beside a FAIL is never rounded up.
 func Format(bad, total int, limit Percent, v Verdict) string {
 	if total <= 0 {
 		return "-"
 	}
 
 	return FormatFraction(big.NewRat(int64(bad), int64(total)), limit, v)
+}
+
+// FormatAt is the share bad/total to the nearest 10^-decimals percent, 3
+// decimals at most. total is positive.
+func FormatAt(bad, total, decimals int) string {
+	return fixed(at(big.NewRat(int64(bad), int64(total)), decimals, nearest), decimals) + "%"
 }
 
 // FormatFraction is Format for a share that is an exact fraction r (1/2 is
@@ -120,7 +128,13 @@ func FormatFractionDigits(r *big.Rat, limit Percent, v Verdict) (text string, di
 	case v == Holds && over:
 		return fixed(at(r, decimals, nearest), decimals) + "%", decimals
 	case v == Breaks && !over:
-		return fixed(at(r, decimals, ceil), decimals) + "%", decimals
+		for d := 2; d <= 3; d++ {
+			if n := at(r, d, nearest); n*unitOf(d) > limit.Thousandths {
+				return fixed(n, d) + "%", d
+			}
+		}
+
+		return "> " + limit.Text, 3
 	}
 
 	return fixed(tenth, 1) + "%", 1

@@ -498,8 +498,8 @@ func failProblem(x *big.Rat, limit share.Percent, got string, digits int) string
 // limit, never rounded up: 1.004% against 1% prints 1.004%, and a share whose
 // nearest three decimals are not over the limit prints "> " and the limit as
 // written. The table pins the cases by hand; the sweep draws shares and limits
-// (totals up to 10^7, just over the limit, near a tenth, near a hundredth, near
-// a thousandth) and checks every answer against the exact value and a big.Rat
+// (totals up to 10^7, just over the limit, near a tenth, near a thousandth of
+// a percent) and checks every answer against the exact value and a big.Rat
 // reference.
 func TestFormatFraction_AFailIsNotOverstated(t *testing.T) {
 	limitOf := func(text string) share.Percent {
@@ -589,7 +589,7 @@ func TestFormatFraction_AFailIsNotOverstated(t *testing.T) {
 		}
 
 		// The share is a fraction with a total up to 10^7, or up to 0.002% past
-		// the limit, or near a tenth or a hundredth.
+		// the limit, or near a tenth or a thousandth of a percent.
 		var x *big.Rat
 		switch rng.IntN(4) {
 		case 0:
@@ -611,10 +611,12 @@ func TestFormatFraction_AFailIsNotOverstated(t *testing.T) {
 		want, wantDigits := failReference(x, limit)
 		problem := failProblem(x, limit, got, gotDigits)
 
-		if strings.HasPrefix(got, ">") {
+		// Coverage is of the reference's answers: code that never prints "> L"
+		// must fail on the comparison below, not on this guard.
+		if strings.HasPrefix(want, ">") {
 			seen[">"]++
 		} else {
-			seen[fmt.Sprint(gotDigits)]++
+			seen[fmt.Sprint(wantDigits)]++
 		}
 
 		if got == want && gotDigits == wantDigits && problem == "" {
