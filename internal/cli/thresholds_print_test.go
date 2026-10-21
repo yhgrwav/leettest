@@ -15,6 +15,7 @@
 package cli
 
 import (
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -172,5 +173,199 @@ func TestThresholdsText_ACorrectionOnlyWhereTheRowWouldLie(t *testing.T) {
 
 	if _, _, value := rowTokens(t, rowOf(t, printedWithLimits(thresholdRun(r)), "p99")); value != "312ms" {
 		t.Errorf("value printed %q, want 312ms as in the table", value)
+	}
+}
+
+// Ground: contract — beside a FAIL the row shows the first of three texts that
+// is over the limit: the table's three figures, the value at whole
+// microseconds (nearest for a measured value, down for a lower bound), the
+// value to the nanosecond. A lower bound keeps its ">". The row never says a
+// value "100us" is over a limit "100us".
+func TestThresholdsText_AFailLatencyShowsWhatMakesItOver(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		limit time.Duration
+		value time.Duration
+		exact bool
+		want  string
+	}{
+		{"to the nanosecond: 100.4us over 100us", 100 * time.Microsecond, 100400 * time.Nanosecond, true, "100.4us"},
+		{"whole microseconds: 200.4003ms over 200ms", 200 * time.Millisecond, 200400300 * time.Nanosecond, true, "200.4ms"},
+		{"whole microseconds, nearest: 1.0005ms over 1ms", time.Millisecond, 1000500 * time.Nanosecond, true, "1.001ms"},
+		{"a lower bound to the nanosecond: 200.0006ms over 200ms", 200 * time.Millisecond, 200000600 * time.Nanosecond, false, ">200.0006ms"},
+		{"the table's figures are enough: 312ms over 200ms", 200 * time.Millisecond, 312 * time.Millisecond, true, "312ms"},
+	} {
+		r := threshold.Result{
+			Method: thresholdMethod, Key: threshold.P99, Verdict: threshold.VerdictFail, Limit: tc.limit,
+			Value: metrics.Quantile{Value: tc.value, Exact: tc.exact, Defined: true},
+		}
+
+		row := rowOf(t, printedWithLimits(thresholdRun(r)), "p99")
+		if _, verdict, value := rowTokens(t, row); verdict != "fail" || value != tc.want {
+			t.Errorf("%s: verdict %q value %q, want fail and %q (row %q)", tc.name, verdict, value, tc.want, row)
+		}
+	}
+}
+
+// refSignificant is the table's text of n nanoseconds (n >= 1000, under 10s):
+// three significant figures, rounded to the nearest, or down when roundUp is
+// false (a lower bound). It also returns the nanoseconds the text stands for.
+func refSignificant(t *testing.T, n int64, roundUp bool) (text string, ns int64) {
+	t.Helper()
+
+	for _, u := range []struct {
+		size int64
+		name string
+	}{{1e3, "us"}, {1e6, "ms"}, {1e9, "s"}} {
+		for dec, k := 2, int64(100); dec >= 0; dec, k = dec-1, k/10 {
+			v := n * k / u.size
+			if roundUp {
+				v = (n*k + u.size/2) / u.size
+			}
+			if v >= 1000 {
+				continue
+			}
+
+			figures := strconv.FormatInt(v, 10)
+			if dec > 0 {
+				figures = fmt.Sprintf("%d.%0*d", v/k, dec, v%k)
+			}
+
+			return figures + u.name, v * u.size / k
+		}
+	}
+	t.Fatalf("the reference prints values from 1us to under 10s, got %dns", n)
+
+	return "", 0
+}
+
+// refTrimmed is n nanoseconds in the unit its size picks (us, ms, s) with every
+// digit of n and no trailing zero: 100400 is "100.4us", 1000000001 is
+// "1.000000001s".
+func refTrimmed(n int64) string {
+	size, name := int64(1e9), "s"
+
+	switch {
+	case n < 1e3:
+		return strconv.FormatInt(n, 10) + "ns"
+	case n < 1e6:
+		size, name = 1e3, "us"
+	case n < 1e9:
+		size, name = 1e6, "ms"
+	}
+
+	whole, frac := n/size, n%size
+	if frac == 0 {
+		return strconv.FormatInt(whole, 10) + name
+	}
+
+	width := len(strconv.FormatInt(size, 10)) - 1
+
+	return fmt.Sprintf("%d.%s%s", whole, strings.TrimRight(fmt.Sprintf("%0*d", width, frac), "0"), name)
+}
+
+// Ground: contract — beside a FAIL the row is never understated and never says
+// more than it takes, beside a pass never over the limit, whatever the value
+// within 2us of the limit. The expected text is made here from integer
+// nanoseconds, as the chain 3 figures -> whole microseconds -> nanoseconds
+// (the first one over the limit); the sweep reaches every link for a measured
+// value and for a lower bound.
+func TestThresholdsText_AFailLatencyIsNotOverstated(t *testing.T) {
+	const (
+		stageFigures = iota
+		stageMicroseconds
+		stageNanoseconds
+	)
+
+	var reached [2][3]int // [exact?][stage] over the fails
+
+	bad := 0
+
+	for _, limit := range []time.Duration{
+		100 * time.Microsecond, time.Millisecond, 200 * time.Millisecond, time.Second, 199950 * time.Microsecond,
+	} {
+		for _, exact := range []bool{true, false} {
+			for v := limit.Nanoseconds() - 2000; v <= limit.Nanoseconds()+2000; v++ {
+				var (
+					want    string
+					verdict = threshold.VerdictFail
+					reason  threshold.Reason
+				)
+
+				figures, figuresNs := refSignificant(t, v, exact)
+				prefix := ""
+				if !exact {
+					prefix = ">"
+				}
+
+				switch {
+				case v > limit.Nanoseconds():
+					micros := v / 1000
+					if exact {
+						micros = (v + 500) / 1000
+					}
+
+					stage, text := stageNanoseconds, refTrimmed(v)
+
+					switch {
+					case figuresNs > limit.Nanoseconds():
+						stage, text = stageFigures, figures
+					case micros*1000 > limit.Nanoseconds():
+						stage, text = stageMicroseconds, refTrimmed(micros*1000)
+					}
+
+					want = prefix + text
+					if exact {
+						reached[1][stage]++
+					} else {
+						reached[0][stage]++
+					}
+				case exact:
+					// A pass: the figures, or the microseconds cut off the value
+					// when the figures would round up over the limit.
+					verdict, want = threshold.VerdictPass, figures
+					if figuresNs > limit.Nanoseconds() {
+						want = refTrimmed(v / 1000 * 1000)
+					}
+				default:
+					// A bound not over the limit decides nothing; its figures,
+					// rounded down, are never over it.
+					verdict, reason, want = threshold.VerdictUnknown, threshold.ReasonCensored, prefix+figures
+				}
+
+				r := threshold.Result{
+					Method: thresholdMethod, Key: threshold.P99, Verdict: verdict, Reason: reason, Limit: limit,
+					Value: metrics.Quantile{Value: time.Duration(v), Exact: exact, Defined: true},
+				}
+
+				got := latencyText(&r)
+
+				printed, err := time.ParseDuration(strings.TrimPrefix(got, ">"))
+				over := printed > limit
+
+				switch {
+				case err != nil, strings.HasPrefix(got, ">") == exact,
+					verdict == threshold.VerdictFail && !over, verdict == threshold.VerdictPass && over,
+					got != want:
+					bad++
+					if bad <= 10 {
+						t.Errorf("limit %v, %dns exact=%v, %s: printed %q, want %q (parses: %v, over the limit: %v)",
+							limit, v, exact, verdict, got, want, err, over)
+					}
+				}
+			}
+		}
+	}
+
+	if bad > 10 {
+		t.Errorf("%d rows in all printed wrong", bad)
+	}
+
+	for i, kind := range []string{"a lower bound", "a measured value"} {
+		for stage, name := range []string{"three figures", "whole microseconds", "nanoseconds"} {
+			if reached[i][stage] == 0 {
+				t.Errorf("the sweep never reaches %s for %s beside a fail: the check does not cover that link", name, kind)
+			}
+		}
 	}
 }
