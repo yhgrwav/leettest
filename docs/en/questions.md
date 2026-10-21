@@ -17,7 +17,7 @@ The questions the report answers today.
 | Are all the backends behind a balancer loaded? | `app.connections: N`: a line per connection — address, calls, share of failures, p99 | [Reading the report](README.md#reading-the-report) |
 | Is the measurement itself lying? | A verdict on client-side waits and the p99 without them; an invalid run (exit 2) when the numbers are not about the target | [When a run is invalid](README.md#when-a-run-is-invalid) |
 | How does the service behave on different data? | `dataset`: its own request for every call, one JSON per file line | [Reference](reference.md#a-different-request-each-call-a-dataset) |
-| Can it run in CI? | One JSON object with a stable schema and exit codes; "holds / does not hold" thresholds are not there yet — they are in the [roadmap](roadmap.md) | [JSON for scripts and CI](README.md#json-for-scripts-and-ci) |
+| Can it run in CI? | One JSON object with a stable schema and exit codes; `pass` limits decide "holds / does not hold" with exit code `4` | [JSON for scripts and CI](README.md#json-for-scripts-and-ci) |
 
 LeetTest sees only the client side: it does not know the target's resources and does not guess
 them. What comes next is in the [roadmap](roadmap.md).
