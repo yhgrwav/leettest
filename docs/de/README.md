@@ -15,7 +15,7 @@
 
 ---
 
-> Übersetzt aus [README.md](../../README.md) bei 5c75feb, 2026-10-14. Bei Abweichungen gilt die
+> Übersetzt aus [README.md](../../README.md) bei d7d1c85, 2026-10-21. Bei Abweichungen gilt die
 > russische Fassung. Dazu ein Verzeichnis der deutschen Dokumentation, das im Original fehlt.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/README.md).
@@ -211,6 +211,35 @@ Verschiebung unbekannt und es gibt keinen Hinweis.
 Schritt gibt eine Zeile aus: `clock step 502us on this host: every latency and wait is +/- 502us`.
 Unter Linux beträgt der Schritt einige zehn Nanosekunden, und es gibt keine Zeile.
 
+### Der Pass des Laufs
+
+Über dem Bericht steht ein Pass: auf welcher Maschine und mit welcher Konfiguration der Lauf gemacht
+wurde, damit sich zwei Berichte vergleichen lassen, ohne zu raten, worin sie sich unterscheiden. Ihn
+haben der Lauf und die Suche nach dem Bruchpunkt.
+
+```text
+machine: linux/amd64, 8 CPU, GOMAXPROCS 8, quota 4, go1.27.1; config sha256:3f9a1c0d2b7e
+labels: commit=abc123, env=staging
+```
+
+- `quota` ist das CPU-Limit des Containers (cgroup), wie gesetzt; ohne Limit fehlt dieser Teil.
+- Der Hash ist das SHA-256 der Konfigurationsdatei, wie sie auf der Platte liegt; ihn zeigt auch
+  `sha256sum load.yaml`; im Text stehen die ersten 12 Ziffern, im JSON alle. Jede Änderung der Datei,
+  auch an einem Kommentar, ändert den Hash. Er wird vor dem Einsetzen von `${ENV}` gebildet:
+  Geheimnisse in `metadata` schreiben Sie über `${ENV}`, nicht als Wert in die Datei.
+- Labels (nicht veröffentlicht) sind `labels:` in der Konfiguration und `-label key=value` in der
+  Kommandozeile (wiederholbar; das Flag überschreibt denselben Schlüssel aus der Konfiguration):
+
+```sh
+leettest -c load.yaml -label env=staging -label commit=abc123
+```
+
+Ein Schlüssel besteht aus lateinischen Buchstaben, Ziffern und `_.-`, bis zu 64 Zeichen; ein Wert ist
+ein String bis zu 256 Bytes, in YAML setzen Sie eine Zahl in Anführungszeichen (`build: "1.10"`). Eine
+Verletzung ist Exit-Code `1` vor dem Start. Im JSON ist der Pass das Feld `passport` (nicht veröffentlicht),
+und bei einem `dataset` steht neben `file` ein `sha256`; alle Felder stehen in der
+[Referenz](reference.md#json-felder).
+
 ## Wann ein Lauf ungültig ist
 
 Es gibt einen Bericht, aber seine Zahlen handeln nicht von der Last auf das Ziel (Exit 2), wenn:
@@ -221,34 +250,85 @@ Es gibt einen Bericht, aber seine Zahlen handeln nicht von der Last auf das Ziel
   `bad response` ist.** Der Hinweis nennt Methode, Ursache und was zu tun ist.
 - **die Uhr des Hosts gröber ist als ein Viertel des p50** einer Methode, oder der Schritt während
   des Laufs auf 1 µs oder mehr wuchs (`clock_step`). Messen Sie von Linux aus.
+- **sich eine `pass`-Grenze nicht entscheiden lässt** (`thresholds_undecided`): zu wenige
+  Beobachtungen, der Generator war zu spät, Aufrufe warteten auf einen freien Stream, am Ende der
+  Verteilung stehen Aufrufe ohne Antwort. Der Block `Thresholds:` nennt die Grenze und den Grund.
+
+## Grenzen: ein Lauf als Prüfung
+
+Ohne `pass` gibt ein Lauf, der sein Ende erreicht, `0` zurück, egal wie das Ziel antwortete. Damit
+der Lauf selbst „hält / hält nicht" sagt, setzen Sie Grenzen unter den Aufruf:
+
+```yaml
+app:
+  target:
+    ip: localhost
+    port: 50051
+  tls: false
+
+load:
+  warmup: 5s
+  calls:
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 800
+      duration: 1m
+      pass:
+        p99: 200ms
+        errors: 1%
+```
+
+```sh
+leettest -c pass.yaml
+echo $?
+```
+
+Am Ende des Berichts steht ein Block: das schlechteste Urteil und eine Zeile je Grenze. Für einen
+gesunden Dienst:
+
+```
+Thresholds: passed
+  wallet.v1.WalletService/GetBalance  p99     <= 200ms  pass  21.2ms
+  wallet.v1.WalletService/GetBalance  errors  <= 1%     pass  0.0% (0 of 44000)
+```
+
+Die Schlüssel: `p50`, `p90`, `p95`, `p99`, `p999` und `errors`; eine Latenzgrenze braucht `errors`
+daneben, und `errors: 100%` schaltet die Fehlerprüfung ab — dann sind auch die Latenzgrenzen nichts
+wert. Die Grenze der Suche nach dem Bruchpunkt ist `breakpoint.pass.held_rps`. Eine verfehlte Grenze
+gibt Code `4`, eine Grenze, die sich nicht entscheiden lässt (zu wenige Beobachtungen, ein
+verspäteter Generator, am Ende der Verteilung Aufrufe ohne Antwort), Code `2`. Alle Schlüssel,
+Urteile und Gründe stehen in der [Referenz](reference.md#grenzen-pass); ein Beispiel mit allen
+Schlüsseln ist [`examples/pass.yaml`](../../examples/pass.yaml).
 
 ## Exit-Codes
 
-Schwellen „hält / hält nicht" gibt es noch nicht, deshalb gibt ein Lauf, der sein Ende erreicht,
-`0` zurück, egal wie das Ziel antwortete: **`0` heißt nicht „der Dienst ist gesund"**. Die Codes
-haben einen Rang: Ein ungültiger Lauf (`2`) steht über einem unvollständigen (`3`); ein Anhalten,
-das einen Bericht ausgab, ist immer `3`.
+Ohne `pass` gibt ein Lauf, der sein Ende erreicht, `0` zurück, egal wie das Ziel antwortete:
+**`0` heißt nicht „der Dienst ist gesund"**. Mit `pass` heißt `0`, dass jede Grenze geprüft und
+eingehalten wurde. Die Codes haben einen Rang: Ein ungültiger Lauf (`2`) steht über einem
+unvollständigen (`3`); ein Anhalten, das einen Bericht ausgab, ist immer `3`; ein beendeter Lauf, der
+eine Grenze verfehlt hat, ist `4`, und Grenzen machen aus einem ungültigen oder angehaltenen Lauf kein
+`4`.
 
 | Code | Was passiert ist |
 |---|---|
-| `0` | Der Plan lief durch, der Bericht ist vollständig |
+| `0` | Der Plan lief durch, der Bericht ist vollständig; mit `pass` sind alle Grenzen eingehalten |
 | `1` | Der gewünschte Bericht wurde nicht erzeugt: der Lauf fand nicht statt (Flags, Konfiguration, Verbindung) oder der Bericht konnte nicht in `-json-file` geschrieben werden (nicht veröffentlicht). stderr nennt den Grund |
-| `2` | Der Lauf ist ungültig (siehe oben). Es gibt einen Bericht, aber seine Zahlen handeln nicht von der Last |
+| `2` | Der Lauf ist ungültig (siehe oben) oder eine `pass`-Grenze lässt sich nicht entscheiden. Es gibt einen Bericht, aber seine Zahlen handeln nicht von der Last oder beantworten die Frage der Grenze nicht |
 | `3` | Der Lauf hielt vor seinem Plan an. Es gibt einen Bericht, und er deckt nur ab, was durchging |
+| `4` | Ein beendeter Lauf hat eine `pass`-Grenze verfehlt. Es gibt einen Bericht, `outcome` im JSON ist `complete` |
 | `130` | Ohne Bericht abgebrochen nach Ctrl+C |
 | `143` | Ohne Bericht abgebrochen nach SIGTERM |
 
-Code `4` ist für Schwellen reserviert. Wie das Anhalten funktioniert, steht in der
-[Referenz](reference.md#anhalten).
+Wie das Anhalten funktioniert, steht in der [Referenz](reference.md#anhalten).
 
 ## JSON für Skripte und CI
 
 Mit `-output json` bekommt stdout genau ein JSON-Objekt und einen Zeilenumbruch; alles andere geht
 nach stderr, sodass stdout direkt in `jq` gehen kann. Das Objekt wird nur für einen Lauf ausgegeben,
-der stattfand (Codes `0`, `2`, `3`); bei `1`, `130` und `143` ist stdout leer. Das Feld `outcome`
-(`complete`, `invalid` oder `incomplete`) passt immer zum Exit-Code, außer in einem Fall: Konnte der
-Bericht nicht in die Datei geschrieben werden (nicht veröffentlicht), ist der Code `1`, und auf
-stdout steht weiter das Objekt des Laufs.
+der stattfand (Codes `0`, `2`, `3`, `4`); bei `1`, `130` und `143` ist stdout leer. Das Feld
+`outcome` (`complete`, `invalid` oder `incomplete`) passt zum Exit-Code `0`, `2`, `3`; Code `4` ist
+`complete`, und welche Grenze verfehlt wurde, sagt das Feld `thresholds` (nicht veröffentlicht). Die
+einzige Abweichung: Konnte der Bericht nicht in die Datei geschrieben werden (nicht veröffentlicht),
+ist der Code `1`, und auf stdout steht weiter das Objekt des Laufs.
 
 Den Text im Log und das JSON für den nächsten Schritt aus einem Lauf liefert
 `-json-file` (nicht veröffentlicht):
@@ -275,9 +355,12 @@ Bildschirmtext ist es nicht: Werten Sie das JSON aus, nicht den Bildschirm. Die 
 
 Die Einheit steht im Feldnamen: `_us` sind ganze Mikrosekunden, `_s` ganze Sekunden; die Rate `rps`
 ist die einzige gebrochene Zahl. Ein Wert, den der Lauf nicht hervorgebracht hat, ist `null`, nicht
-`0`. Ein Perzentil ist ein Objekt `{"us": 1234, "lower_bound": false}`: Mit `lower_bound: true` ist
-es eine Untergrenze, kein Wert. Latenzen sind die Werte des Histogramms auf 3 signifikante Stellen
-(ein Fehler bis 0,1 %), Zählungen sind exakt. Zeiten zählen ab `started_at` (RFC 3339, UTC), dem
+`0`. Ein Perzentil ist ein Objekt `{"us": 1234, "ns": 1234567, "lower_bound": false}`: `ns` ist der
+Wert des Histogramms in ganzen Nanosekunden, `us` derselbe Wert auf Mikrosekunden abgeschnitten;
+`pass:` und `leettest compare` urteilen nach `ns`, bei einem Bericht, der vor diesem Feld geschrieben
+wurde, nehmen sie `us` × 1000. Mit `lower_bound: true` ist es eine Untergrenze, kein Wert. Latenzen
+sind die Werte des Histogramms auf 3 signifikante Stellen (ein Fehler bis 0,1 %), Zählungen sind
+exakt. Zeiten zählen ab `started_at` (RFC 3339, UTC), dem
 Beginn des Plans, Aufwärmen eingeschlossen; auch `duration_us` schließt das Aufwärmen ein.
 `in_flight` einer Sekunde ist, wie viele Aufrufe an ihrem Ende unterwegs waren. Die Codes in
 `failure_codes` sind kanonische Namen (`UNAVAILABLE`). Zum Abgleich: Die Summen des Laufs sind die
@@ -318,10 +401,15 @@ load:
     settle: 5s        # Beginn einer Stufe, geht nicht ins Urteil ein; unter der Hälfte von hold
     hold: 30s         # Länge einer Stufe
     p99_limit: 200ms  # optional; ohne ihn bricht eine Stufe bei p99 über dem Dreifachen der besten gehaltenen
+    errors_limit: 1%  # optional; eine Stufe bricht, wenn mehr als dieser Anteil der Aufrufe fehlschlug
 ```
 
-Eine Stufe bricht, wenn mindestens 1 % ihrer Aufrufe fehlschlugen oder ihr p99 die Grenze überschritt.
-Eine gebrochene Stufe wird nach einer Pause wiederholt und, außer der ersten, nach Proben auf der
+Eine Stufe bricht, wenn mehr als `errors_limit` ihrer Aufrufe fehlschlugen (standardmäßig 1 %; genau
+so viel wird noch gehalten, `100%` — Fehler brechen nicht) oder ihr p99 die Grenze überschritt. Ein
+Aufruf, der wegen der Verbindung nicht gesendet wurde, bricht die Stufe bei jedem `errors_limit`.
+Fehler auf der Client-Seite (`request_error`, `client_error`, `bad_response`) beweisen nicht, dass das
+Ziel brach: Wird das Limit nur mit ihnen überschritten, hält die Suche als `run_limit` mit der
+Ursache `client_errors` an, statt einen Bruchpunkt zu nennen; `held_rps` bleibt. Eine gebrochene Stufe wird nach einer Pause wiederholt und, außer der ersten, nach Proben auf der
 ersten Stufe: Das Ziel muss zu seinem früheren p99 zurückkehren. Eine Stufe gilt nur dann als
 gehalten, wenn der Generator das Geplante gesendet hat — mindestens 99,9 % der Aufrufe des
 Messfensters. Sonst ist es die Grenze des Laufs, nicht des Ziels. Vor der ersten Stufe steht in
@@ -335,14 +423,138 @@ bis `to`), `run_limit` (der Generator, das Limit einer Verbindung oder `-max-in-
 über das Ziel oberhalb ist nichts bekannt), `stopped` (Ctrl+C), `invalid` (eine Stufe war ein
 ungültiger Lauf). Die Ursache (`why`) ist ebenfalls eine geschlossene Liste: `errors`, `p99_limit`,
 `p99_vs_base`, `connection`, `no_recovery`, `generator`, `in_flight_cap`, `stream_limit`,
-`stream_wait`, `clock_step`, `request_errors` oder `null`. `held_rps` und `broke_rps` sind `null`,
-wo es keinen gibt. Im Suchmodus ist das JSON ein anderes Objekt: `mode: "breakpoint"`, keines der
+`stream_wait`, `client_errors`, `clock_step`, `request_errors` oder `null`. Das Fehlerlimit steht
+als String in `breakpoint.errors_limit` (nicht veröffentlicht). `held_rps` und `broke_rps` sind
+`null`, wo es keinen gibt. Im Suchmodus ist das JSON ein anderes Objekt: `mode: "breakpoint"`, keines der
 Felder eines gewöhnlichen Laufs auf der obersten Ebene, jeder Lauf mit seinem vollständigen Bericht
 in `breakpoint.runs` (`kind`: `step`, `repeat`, `probe`; `planned_rps` und
 `sent_rps`). Ein gewöhnlicher Lauf schreibt `mode: "run"`.
 
 Exit-Codes: `0` für `broke`, `broke_at_first`, `held_all`, `run_limit` — das sind Befunde; `2` für
-`invalid`; `3` für das Anhalten mit einem einzelnen Ctrl+C.
+`invalid`; `3` für das Anhalten mit einem einzelnen Ctrl+C; `4` — die Suche hielt weniger als
+`breakpoint.pass.held_rps`.
+
+### Zwei Suchen vergleichen
+
+Zwei Berichte der Suche, mit `-json-file` geschrieben (nicht veröffentlicht): vor einer Änderung und
+danach. `leettest compare` (nicht veröffentlicht) sagt, um wie viel die Kapazität (`held_rps`)
+gesunken ist, und urteilt mit `-max-capacity-drop` darüber. Am Referenz-Stand, aus dem Repository-Root:
+eine Suche bei einer Kapazität von 270 rps (im Terminal des Stands), dann in einem anderen Terminal
+die Suche und der Bericht „vorher":
+
+```sh
+go run ./test/stand/cmd/stand -capacity 270 -delay 20ms
+```
+
+```sh
+leettest -c examples/breakpoint-step.yaml -json-file before.json
+```
+
+Halten Sie den Stand an (Ctrl+C), starten Sie ihn mit einer Kapazität von 200 rps und nehmen Sie den
+Bericht „nachher" auf:
+
+```sh
+go run ./test/stand/cmd/stand -capacity 200 -delay 20ms
+```
+
+```sh
+leettest -c examples/breakpoint-step.yaml -json-file after.json
+```
+
+Vergleichen (der Stand darf aus sein):
+
+```sh
+leettest compare -max-capacity-drop 10% before.json after.json
+```
+
+```
+base: before.json  Health  2026-10-19T19:25:28.941479Z
+new:  after.json  Health  2026-10-19T19:26:46.1806268Z
+capacity: 250 rps -> 200 rps, drop 20.0%, limit 10%: FAIL
+```
+
+Die Kapazität fiel von 250 auf 200 rps, das sind 20 % bei einer Grenze von 10 %, Exit-Code `4`.
+Zeiten und Stand sind bei Ihnen andere, die Zahlen folgen der Kapazität des Stands.
+
+Die Berichte sind nur vergleichbar, wenn Ziel, Methode, LeetTest-Version, Pass des Laufs (außer den
+Labels) und Dataset übereinstimmen; sonst nennen die Zeilen `differs:` das Feld, und das Urteil ist
+`unknown`. Endete die Suche vor dem Bruch, ist die Kapazität eine Untergrenze (`>= N rps`); brach das
+Ziel schon auf der ersten Stufe, eine Obergrenze (`below N rps`). Der Rückgang wird dann als Schranke
+ausgegeben (`drop <= 33.4%`), und die Grenze wird nur entschieden, wenn die Schranke sie entscheidet.
+Ohne `-max-capacity-drop` wird nichts beurteilt. Exit-Codes: `0` — innerhalb der Grenze oder keine
+Grenze, `1` — ein Bericht nicht gelesen, `2` — die Berichte sind nicht vergleichbar oder eine Grenze
+lässt sich nicht entscheiden, `4` — die Kapazität fiel über die Grenze.
+
+### Zwei Läufe vergleichen
+
+Dieselben Befehle lesen auch Berichte eines gewöhnlichen Laufs (`-json-file`, nicht veröffentlicht):
+`-max-p99-rise` beurteilt den Anstieg des p99 jeder Methode in Prozent des p99 „vorher",
+`-max-errors-rise` den Anstieg des Anteils fehlgeschlagener Aufrufe in Prozentpunkten. Ohne Grenze
+wird die Zeile ausgegeben, aber nicht beurteilt. Ein Bericht der Suche und ein Bericht eines Laufs in
+einem Befehl — Code `1`. Am Referenz-Stand, aus dem Repository-Root: ein Lauf bei 20 ms Verzögerung,
+dann bei 30 ms:
+
+```sh
+go run ./test/stand/cmd/stand -delay 20ms -life 60s
+```
+
+```sh
+leettest -c examples/stand.yaml -json-file before.json
+```
+
+Der Stand beendet sich nach einer Minute selbst; starten Sie ihn mit 30 ms Verzögerung und nehmen Sie
+den Bericht „nachher" auf:
+
+```sh
+go run ./test/stand/cmd/stand -delay 30ms -life 60s
+```
+
+```sh
+leettest -c examples/stand.yaml -json-file after.json
+```
+
+Vergleichen (der Stand darf aus sein):
+
+```sh
+leettest compare -max-p99-rise 20% before.json after.json
+```
+
+```
+base: before.json  Health  2026-10-20T12:40:09.5222467Z
+new:  after.json  Health  2026-10-20T12:40:42.469917Z
+grpc.health.v1.Health/Check: p99 21.2ms -> 31.3ms, rise 47.3%, limit 20%: FAIL
+grpc.health.v1.Health/Check: errors 0.0% -> 0.0%, no change
+```
+
+Der p99 stieg von 21.2 auf 31.3 ms, das sind 47.3 % bei einer Grenze von 20 %, Exit-Code `4`. Zeiten
+und Verzögerungen sind bei Ihnen andere.
+
+Eine Prüfung kann `unknown` sein (Code `2`), wenn die Berichte nicht vergleichbar sind (wie oben), ein
+Lauf ungültig oder unvollständig ist, zu wenige Messungen vorliegen, der p99 am Timeout hängt (dann
+ist er größer als ausgegeben, `>=`) oder die eigenen Fehler des Clients offenlassen, ob der Dienst
+schuld ist. Methoden, die nicht in beiden Berichten stehen, werden nicht verglichen. Die Exit-Codes
+sind dieselben wie bei den Suchen.
+
+Für ein Skript und CI kommt dasselbe Ergebnis als ein JSON-Objekt (nicht veröffentlicht): `-output json`
+gibt nur es auf stdout aus, Exit-Codes und stderr sind die des Textes; bei Code `1` ist stdout
+leer.
+
+```sh
+leettest compare -max-p99-rise 20% -output json before.json after.json
+```
+
+Im Objekt ist `verdict` das schlechteste Urteil der Prüfungen mit einer Grenze (`null`, wenn es keine
+gibt), und `checks` enthält jede Prüfung mit den Zahlen beider Berichte; bei einem `unknown` steht der
+Grund in `reason`, ein Wert aus einer geschlossenen Liste:
+
+```json
+{"schema_version":1,"mode":"compare","compared_mode":"run","comparable":true,"differences":[],"verdict":"fail","checks":[{"method":"/grpc.health.v1.Health/Check","key":"p99","base_p99":{"us":21381,"ns":21381472,"lower_bound":false},"new_p99":{"us":31358,"ns":31358109,"lower_bound":false},"limit_percent":"20%","verdict":"fail","reason":null,"why":null}]}
+```
+
+Nicht alle Felder sind gezeigt: Die bei dieser Prüfung leeren (`base_capacity` und die anderen
+`null`) und die Beschreibung der Berichte (`base`, `new`) sind weggelassen. Einen Anstieg in Prozent
+gibt es im Objekt nicht — ein Skript rechnet ihn aus `us`. Jedes Feld steht in der
+[Referenz, „JSON des Vergleichs"](reference.md#json-des-vergleichs).
 
 ## Mehr erfahren
 
