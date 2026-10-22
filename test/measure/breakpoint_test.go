@@ -70,15 +70,15 @@ func stepsOn(t *testing.T, s *stand.Stand, timeout time.Duration) breakpoint.Run
 // backlog. 200 rps for 1s against 100 queues (1/100 − 1/200) × 200 = 1s; the
 // run returns once its last call times out, 500ms later, leaving ~0.5s, and
 // 50 rps right after waits it out (p99 far over 20ms). After a further
-// cooldown of max(timeout, settle) = 500ms nothing is left: p99 stays near
-// 20ms. Rates a -race build still sends on time (#144); the premise holds
+// cooldown of max(timeout, settle) = 500ms nothing is left: the probe stays
+// near 20ms. Rates a -race build still sends on time (#144); the premise holds
 // only if they were sent, so a short run fails the test with its numbers.
 func TestBreakpoint_ATargetsQueueOutlivesTheStep(t *testing.T) {
 	target := stand.Start(stand.Capacity(100, 20*time.Millisecond))
 	t.Cleanup(target.Stop)
 
 	run := stepsOn(t, target, 500*time.Millisecond)
-	p99 := func(rps int, hold time.Duration) time.Duration {
+	probe := func(rps int, hold time.Duration) engine.MethodReport {
 		r, err := run(t.Context(), rps, 0, hold, 2*rps)
 		if err != nil {
 			t.Fatalf("run %d: %v", rps, err)
@@ -86,21 +86,33 @@ func TestBreakpoint_ATargetsQueueOutlivesTheStep(t *testing.T) {
 		if planned := float64(rps) * hold.Seconds(); float64(r.Sent) < 0.95*planned {
 			t.Fatalf("%d rps for %v sent %d of %.0f planned: the premise needs 95%%", rps, hold, r.Sent, planned)
 		}
-		t.Logf("%d rps for %v: sent %d, p99 %v", rps, hold, r.Sent, r.Methods[0].P99.Value)
+		m := r.Methods[0]
+		t.Logf("%d rps for %v: sent %d, p50 %v, p90 %v, p99 %v, start lag p99 %v",
+			rps, hold, r.Sent, m.P50.Value, m.P90.Value, m.P99.Value, r.StartLagP99.Value)
 
-		return r.Methods[0].P99.Value
+		return m
 	}
 
-	p99(200, time.Second)
-	if got := p99(50, 1500*time.Millisecond); got < 100*time.Millisecond {
+	probe(200, time.Second)
+	if got := probe(50, 1500*time.Millisecond).P99.Value; got < 100*time.Millisecond {
 		t.Errorf("right after a broken step, 50 rps p99 %v: no backlog seen", got)
 	}
 
 	// The probe above ran 1.5s into the backlog and worked it off.
-	p99(200, time.Second)
+	probe(200, time.Second)
 	time.Sleep(500 * time.Millisecond)
-	if got := p99(50, 1500*time.Millisecond); got > 40*time.Millisecond {
-		t.Errorf("after a cooldown, 50 rps p99 %v, want near the 20ms delay", got)
+
+	// A backlog B left by the cooldown delays the first calls of the probe,
+	// by B, B−10ms, B−20ms… (the stand works a call in 10ms, calls come every
+	// 20ms): many calls, never one. Of 75 calls p99 is the slowest one, and on
+	// a loaded machine the in-process stand's 20ms timer alone is late by 20ms
+	// or more for a call with no queue behind it (#296); p90 is the 8th
+	// slowest, over 3 × 20ms = 60ms only for B over 110ms. Without the
+	// cooldown B is ~440ms and p90 ~390ms.
+	m := probe(50, 1500*time.Millisecond)
+	if !m.P90.Defined || m.P90.Value > 60*time.Millisecond {
+		t.Errorf("after a cooldown, 50 rps p90 %v (p50 %v, p99 %v), want near the 20ms delay: a queue left holds the first calls back",
+			m.P90.Value, m.P50.Value, m.P99.Value)
 	}
 }
 
