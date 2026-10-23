@@ -675,11 +675,16 @@ func echoOfOurDeadline(code codes.Code, times callTimes, deadline time.Time) boo
 	return code == codes.Canceled && times.answered && !deadline.IsZero() && !times.answeredAt.Before(deadline)
 }
 
+// expiredCopyPercent is how far into a call's budget, in percent, a
+// DEADLINE_EXCEEDED must arrive to count as the target's copy of our deadline.
+const expiredCopyPercent = 90
+
 // expiredCopy reports whether a trailer is only the target's copy of our
-// deadline running out: DEADLINE_EXCEEDED arriving at or after 90% of the
-// budget the call went out with. grpc-go on the target sends it by itself,
-// frozen application or not, so it does not show the target alive. One that
-// came earlier is the target's own answer, such as a dependency timing out.
+// deadline running out: DEADLINE_EXCEEDED arriving at or after
+// expiredCopyPercent of the budget the call went out with. grpc-go on the
+// target sends it by itself, frozen application or not, so it does not show
+// the target alive. One that came earlier is the target's own answer, such as
+// a dependency timing out.
 func expiredCopy(code codes.Code, times callTimes, deadline time.Time) bool {
 	if code != codes.DeadlineExceeded || deadline.IsZero() || times.sentAt.IsZero() {
 		return code == codes.DeadlineExceeded
@@ -687,7 +692,7 @@ func expiredCopy(code codes.Code, times callTimes, deadline time.Time) bool {
 
 	budget := deadline.Sub(times.sentAt)
 
-	return !times.answeredAt.Before(times.sentAt.Add(budget * 9 / 10))
+	return !times.answeredAt.Before(times.sentAt.Add(budget * expiredCopyPercent / 100))
 }
 
 // Conn is a connection calls go through, for resolving method schemas over
