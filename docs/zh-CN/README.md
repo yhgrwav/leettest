@@ -86,7 +86,7 @@ leettest -c leettest.yaml
 
 方法名使用全名 `package.Service/Method`。工具通过 gRPC server reflection 从服务获取方法的结构，
 因此不需要 `.proto`。没有 reflection 的服务（自 v0.3 起）：结构来自 `.proto` 文件或 protoset——
-[`examples/proto.yaml`](../../examples/proto.yaml)，字段 `app.proto` / `app.protoset`（未发布）见
+[`examples/proto.yaml`](../../examples/proto.yaml)，字段 `app.proto` / `app.protoset` 见
 [参考手册](reference.md)。配置、地址、方法和请求体都在启动前检查：任何错误都意味着退出码 1，且不会向
 目标发出任何调用。前 `warmup` 秒不计入统计。一个方法的每次调用都使用同一个请求体：对于带幂等键的
 写操作，测到的是重复请求的路径，而不是创建记录。每次调用使用不同的请求：用 `dataset` 指定文件，
@@ -189,7 +189,7 @@ labels: commit=abc123, env=staging
 - 哈希是配置文件在磁盘上原样的 SHA-256，`sha256sum load.yaml` 也能得到同样的值；文本中显示前 12 位，
   JSON 中是全部。文件的任何改动，哪怕只是注释，都会改变哈希。哈希在替换 `${ENV}` 之前计算：
   `metadata` 中的密钥请通过 `${ENV}` 写，不要把值写在文件里。
-- 标签（未发布）是配置中的 `labels:` 和命令行的 `-label key=value`（可重复；命令行参数覆盖配置中的
+- 标签是配置中的 `labels:` 和命令行的 `-label key=value`（可重复；命令行参数覆盖配置中的
   同名键）：
 
 ```sh
@@ -197,7 +197,7 @@ leettest -c load.yaml -label env=staging -label commit=abc123
 ```
 
 键由拉丁字母、数字和 `_.-` 组成，最多 64 个字符；值是不超过 256 字节的字符串，YAML 中的数字请加引号
-（`build: "1.10"`）。违反规则时在开始前退出码为 `1`。在 JSON 中护照是字段 `passport`（未发布），
+（`build: "1.10"`）。违反规则时在开始前退出码为 `1`。在 JSON 中护照是字段 `passport`，
 `dataset` 的 `file` 旁边有 `sha256`；所有字段见[参考手册](reference.md#json-字段)。
 
 ## 运行何时无效
@@ -264,7 +264,7 @@ Thresholds: passed
 | 代码 | 发生了什么 |
 |---|---|
 | `0` | 计划执行完毕，报告完整；有 `pass` 时所有限值都达标 |
-| `1` | 没有得到所要求的报告：运行没有发生（命令行参数、配置、连接），或报告无法写入 `-json-file`（未发布）。原因见 stderr |
+| `1` | 没有得到所要求的报告：运行没有发生（命令行参数、配置、连接），或报告无法写入 `-json-file`。原因见 stderr |
 | `2` | 运行无效（见上文），或某个 `pass` 限值无法判定。有报告，但数字与负载无关，或回答不了限值提出的问题 |
 | `3` | 运行在计划结束前停止。有报告，只涵盖已完成的部分 |
 | `4` | 已结束的运行没达到某个 `pass` 限值。有报告，JSON 中的 `outcome` 是 `complete` |
@@ -278,10 +278,10 @@ Thresholds: passed
 使用 `-output json` 时，stdout 只输出一个 JSON 对象和一个换行；其他内容都输出到 stderr，因此
 stdout 可以直接交给 `jq`。只有运行确实发生时（代码 `0`、`2`、`3`、`4`）才输出该对象；代码 `1`、
 `130` 和 `143` 时 stdout 为空。字段 `outcome`（`complete`、`invalid` 或 `incomplete`）与退出码
-`0`、`2`、`3` 一致；代码 `4` 是 `complete`，哪个限值未达标由字段 `thresholds`（未发布）说明。唯一的
-例外：报告无法写入文件（未发布）时，退出码为 `1`，stdout 中仍是该次运行的对象。
+`0`、`2`、`3` 一致；代码 `4` 是 `complete`，哪个限值未达标由字段 `thresholds` 说明。唯一的
+例外：报告无法写入文件时，退出码为 `1`，stdout 中仍是该次运行的对象。
 
-要在日志中保留文本、同时为下一步保留 JSON，可用 `-json-file`（未发布）：
+要在日志中保留文本、同时为下一步保留 JSON，可用 `-json-file`：
 
 ```sh
 leettest -c load.yaml -json-file report.json
@@ -356,7 +356,7 @@ p99 越过界线时判为崩溃。因没有连接而未发出的调用，在任�
 `-max-in-flight` 用尽：更高负载下目标的情况未知）、`stopped`（Ctrl+C）、`invalid`（某一级是无效
 运行）。原因（`why`）也是封闭列表：`errors`、`p99_limit`、`p99_vs_base`、`connection`、
 `no_recovery`、`generator`、`in_flight_cap`、`stream_limit`、`stream_wait`、`client_errors`、
-`clock_step`、`request_errors` 或 `null`。错误上限是字符串 `breakpoint.errors_limit`（未发布）。
+`clock_step`、`request_errors` 或 `null`。错误上限是字符串 `breakpoint.errors_limit`。
 没有对应值时，`held_rps` 和 `broke_rps` 为 `null`。在搜索模式下 JSON
 是另一种对象：`mode: "breakpoint"`，普通运行的字段都不在顶层，每次运行连同其完整报告放在
 `breakpoint.runs` 中（`kind`：`step`、`repeat`、`probe`；`planned_rps` 和 `sent_rps`）。
@@ -367,7 +367,7 @@ p99 越过界线时判为崩溃。因没有连接而未发出的调用，在任�
 
 ### 比较两次搜索
 
-用 `-json-file` 写下的两份搜索报告（未发布）——改动之前和之后。`leettest compare`（未发布）会说出
+用 `-json-file` 写下的两份搜索报告——改动之前和之后。`leettest compare` 会说出
 容量（`held_rps`）下降了多少，并在给出 `-max-capacity-drop` 时据此判定。在参考测试台上，从仓库根目录
 运行：先对容量 270 rps 的测试台做一次搜索（在测试台的终端里），然后在另一个终端里搜索并保存“之前”的
 报告：
@@ -414,7 +414,7 @@ capacity: 250 rps -> 200 rps, drop 20.0%, limit 10%: FAIL
 
 ### 比较两次运行
 
-同样的命令也能读取普通运行的报告（`-json-file`，未发布）：`-max-p99-rise` 判定每个方法 p99 相对于
+同样的命令也能读取普通运行的报告（`-json-file`）：`-max-p99-rise` 判定每个方法 p99 相对于
 “之前”p99 的增长百分比，`-max-errors-rise` 判定失败调用占比的增长（以百分点计）。没有限值时该行
 会输出，但不判定。一次命令里同时给搜索报告和运行报告——退出码 `1`。在参考测试台上，从仓库根目录运行：
 先在 20 ms 延迟下运行，再在 30 ms 下运行：
@@ -456,7 +456,7 @@ p99 从 21.2 升到 31.3 ms，即 47.3%，限值为 20%，退出码 `4`。你的
 撞上了超时（因此它比输出的更大，`>=`），或客户端自身的错误使人无法判断服务是否有责任时。不在两份
 报告中同时出现的方法不参与比较。退出码与搜索相同。
 
-供脚本和 CI 使用时，同样的结果也可以作为一个 JSON 对象输出（未发布）：`-output json` 只把它输出到
+供脚本和 CI 使用时，同样的结果也可以作为一个 JSON 对象输出：`-output json` 只把它输出到
 stdout，退出码和 stderr 与文本相同；退出码为 `1` 时 stdout 为空。
 
 ```sh

@@ -93,7 +93,7 @@ leettest -c leettest.yaml
 Der Methodenname ist der volle, `package.Service/Method`. Das Werkzeug holt das Schema der Methode
 über gRPC Server Reflection vom Dienst, deshalb ist kein `.proto` nötig. Ein Dienst ohne Reflection
 (ab v0.3): Das Schema kommt aus `.proto`-Dateien oder einem Protoset —
-[`examples/proto.yaml`](../../examples/proto.yaml), das Feld `app.proto` / `app.protoset` (nicht veröffentlicht) in der
+[`examples/proto.yaml`](../../examples/proto.yaml), das Feld `app.proto` / `app.protoset` in der
 [Referenz](reference.md). Konfiguration, Adresse,
 Methoden und Anfrage-Body werden vor dem Start geprüft: Jeder Fehler heißt Exit-Code 1 und kein
 einziger Aufruf ans Ziel. Die ersten `warmup` Sekunden zählen nicht zur Statistik. Jeder Aufruf einer
@@ -227,7 +227,7 @@ labels: commit=abc123, env=staging
   `sha256sum load.yaml`; im Text stehen die ersten 12 Ziffern, im JSON alle. Jede Änderung der Datei,
   auch an einem Kommentar, ändert den Hash. Er wird vor dem Einsetzen von `${ENV}` gebildet:
   Geheimnisse in `metadata` schreiben Sie über `${ENV}`, nicht als Wert in die Datei.
-- Labels (nicht veröffentlicht) sind `labels:` in der Konfiguration und `-label key=value` in der
+- Labels sind `labels:` in der Konfiguration und `-label key=value` in der
   Kommandozeile (wiederholbar; das Flag überschreibt denselben Schlüssel aus der Konfiguration):
 
 ```sh
@@ -236,7 +236,7 @@ leettest -c load.yaml -label env=staging -label commit=abc123
 
 Ein Schlüssel besteht aus lateinischen Buchstaben, Ziffern und `_.-`, bis zu 64 Zeichen; ein Wert ist
 ein String bis zu 256 Bytes, in YAML setzen Sie eine Zahl in Anführungszeichen (`build: "1.10"`). Eine
-Verletzung ist Exit-Code `1` vor dem Start. Im JSON ist der Pass das Feld `passport` (nicht veröffentlicht),
+Verletzung ist Exit-Code `1` vor dem Start. Im JSON ist der Pass das Feld `passport`,
 und bei einem `dataset` steht neben `file` ein `sha256`; alle Felder stehen in der
 [Referenz](reference.md#json-felder).
 
@@ -311,7 +311,7 @@ eine Grenze verfehlt hat, ist `4`, und Grenzen machen aus einem ungültigen oder
 | Code | Was passiert ist |
 |---|---|
 | `0` | Der Plan lief durch, der Bericht ist vollständig; mit `pass` sind alle Grenzen eingehalten |
-| `1` | Der gewünschte Bericht wurde nicht erzeugt: der Lauf fand nicht statt (Flags, Konfiguration, Verbindung) oder der Bericht konnte nicht in `-json-file` geschrieben werden (nicht veröffentlicht). stderr nennt den Grund |
+| `1` | Der gewünschte Bericht wurde nicht erzeugt: der Lauf fand nicht statt (Flags, Konfiguration, Verbindung) oder der Bericht konnte nicht in `-json-file` geschrieben werden. stderr nennt den Grund |
 | `2` | Der Lauf ist ungültig (siehe oben) oder eine `pass`-Grenze lässt sich nicht entscheiden. Es gibt einen Bericht, aber seine Zahlen handeln nicht von der Last oder beantworten die Frage der Grenze nicht |
 | `3` | Der Lauf hielt vor seinem Plan an. Es gibt einen Bericht, und er deckt nur ab, was durchging |
 | `4` | Ein beendeter Lauf hat eine `pass`-Grenze verfehlt. Es gibt einen Bericht, `outcome` im JSON ist `complete` |
@@ -326,12 +326,12 @@ Mit `-output json` bekommt stdout genau ein JSON-Objekt und einen Zeilenumbruch;
 nach stderr, sodass stdout direkt in `jq` gehen kann. Das Objekt wird nur für einen Lauf ausgegeben,
 der stattfand (Codes `0`, `2`, `3`, `4`); bei `1`, `130` und `143` ist stdout leer. Das Feld
 `outcome` (`complete`, `invalid` oder `incomplete`) passt zum Exit-Code `0`, `2`, `3`; Code `4` ist
-`complete`, und welche Grenze verfehlt wurde, sagt das Feld `thresholds` (nicht veröffentlicht). Die
-einzige Abweichung: Konnte der Bericht nicht in die Datei geschrieben werden (nicht veröffentlicht),
+`complete`, und welche Grenze verfehlt wurde, sagt das Feld `thresholds`. Die
+einzige Abweichung: Konnte der Bericht nicht in die Datei geschrieben werden,
 ist der Code `1`, und auf stdout steht weiter das Objekt des Laufs.
 
 Den Text im Log und das JSON für den nächsten Schritt aus einem Lauf liefert
-`-json-file` (nicht veröffentlicht):
+`-json-file`:
 
 ```sh
 leettest -c load.yaml -json-file report.json
@@ -424,7 +424,7 @@ bis `to`), `run_limit` (der Generator, das Limit einer Verbindung oder `-max-in-
 ungültiger Lauf). Die Ursache (`why`) ist ebenfalls eine geschlossene Liste: `errors`, `p99_limit`,
 `p99_vs_base`, `connection`, `no_recovery`, `generator`, `in_flight_cap`, `stream_limit`,
 `stream_wait`, `client_errors`, `clock_step`, `request_errors` oder `null`. Das Fehlerlimit steht
-als String in `breakpoint.errors_limit` (nicht veröffentlicht). `held_rps` und `broke_rps` sind
+als String in `breakpoint.errors_limit`. `held_rps` und `broke_rps` sind
 `null`, wo es keinen gibt. Im Suchmodus ist das JSON ein anderes Objekt: `mode: "breakpoint"`, keines der
 Felder eines gewöhnlichen Laufs auf der obersten Ebene, jeder Lauf mit seinem vollständigen Bericht
 in `breakpoint.runs` (`kind`: `step`, `repeat`, `probe`; `planned_rps` und
@@ -436,8 +436,8 @@ Exit-Codes: `0` für `broke`, `broke_at_first`, `held_all`, `run_limit` — das 
 
 ### Zwei Suchen vergleichen
 
-Zwei Berichte der Suche, mit `-json-file` geschrieben (nicht veröffentlicht): vor einer Änderung und
-danach. `leettest compare` (nicht veröffentlicht) sagt, um wie viel die Kapazität (`held_rps`)
+Zwei Berichte der Suche, mit `-json-file` geschrieben: vor einer Änderung und
+danach. `leettest compare` sagt, um wie viel die Kapazität (`held_rps`)
 gesunken ist, und urteilt mit `-max-capacity-drop` darüber. Am Referenz-Stand, aus dem Repository-Root:
 eine Suche bei einer Kapazität von 270 rps (im Terminal des Stands), dann in einem anderen Terminal
 die Suche und der Bericht „vorher":
@@ -487,7 +487,7 @@ lässt sich nicht entscheiden, `4` — die Kapazität fiel über die Grenze.
 
 ### Zwei Läufe vergleichen
 
-Dieselben Befehle lesen auch Berichte eines gewöhnlichen Laufs (`-json-file`, nicht veröffentlicht):
+Dieselben Befehle lesen auch Berichte eines gewöhnlichen Laufs (`-json-file`):
 `-max-p99-rise` beurteilt den Anstieg des p99 jeder Methode in Prozent des p99 „vorher",
 `-max-errors-rise` den Anstieg des Anteils fehlgeschlagener Aufrufe in Prozentpunkten. Ohne Grenze
 wird die Zeile ausgegeben, aber nicht beurteilt. Ein Bericht der Suche und ein Bericht eines Laufs in
@@ -535,7 +535,7 @@ ist er größer als ausgegeben, `>=`) oder die eigenen Fehler des Clients offenl
 schuld ist. Methoden, die nicht in beiden Berichten stehen, werden nicht verglichen. Die Exit-Codes
 sind dieselben wie bei den Suchen.
 
-Für ein Skript und CI kommt dasselbe Ergebnis als ein JSON-Objekt (nicht veröffentlicht): `-output json`
+Für ein Skript und CI kommt dasselbe Ergebnis als ein JSON-Objekt: `-output json`
 gibt nur es auf stdout aus, Exit-Codes und stderr sind die des Textes; bei Code `1` ist stdout
 leer.
 
