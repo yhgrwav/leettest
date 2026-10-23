@@ -22,6 +22,10 @@ import (
 	"github.com/yhgrwav/leettest/pkg/engine"
 )
 
+// silencePlanTolerancePercent is how far the rate sent in the silence's second
+// may part from the plan of that second before the note names the plan too.
+const silencePlanTolerancePercent = 10
+
 // reportNotes is everything the report says in words: what the target did,
 // what the generator did, and the verdicts. One source for both the text
 // report and the final screen of the live view, so what the screen shows and
@@ -70,11 +74,12 @@ func reportNotes(report engine.Report, maxResponse string) []string {
 		rate := "at " + planned + " rps"
 		if m.SilentFrom != nil {
 			// The target saw what went out, not the plan; the plan of that
-			// second is named only when the two part by more than a tenth,
-			// and never when no stage ran then.
+			// second is named only when the two part by more than
+			// silencePlanTolerancePercent, and never when no stage ran then.
 			rate = fmt.Sprintf("at %d rps", m.SentRPS)
 			low, high := m.SilentPlannedLow, m.SilentPlannedHigh
-			if high > 0 && (m.SentRPS*10 < low*9 || m.SentRPS*10 > high*11) {
+			if high > 0 && (m.SentRPS*100 < low*(100-silencePlanTolerancePercent) ||
+				m.SentRPS*100 > high*(100+silencePlanTolerancePercent)) {
 				planned = fmt.Sprintf("%d", low)
 				if high != low {
 					planned = fmt.Sprintf("%d-%d", low, high)

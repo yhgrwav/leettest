@@ -82,8 +82,14 @@ func (Text) InFlightNote() string {
 func (Text) ErrorsNote() string { return "the error share is growing - see the per-method tab" }
 
 // The search's summary is its one method's numbers: no tab to send the reader to.
-func (Text) SearchErrorsNote() string      { return "more than 5% of the calls of this run failed" }
-func (Text) SearchErrorsNoteShort() string { return "over 5% of calls failed" }
+// percent is the threshold of the live view, errorNotePercent.
+func (Text) SearchErrorsNote(percent int) string {
+	return "more than " + strconv.Itoa(percent) + "% of the calls of this run failed"
+}
+
+func (Text) SearchErrorsNoteShort(percent int) string {
+	return "over " + strconv.Itoa(percent) + "% of calls failed"
+}
 
 func (Text) HelpTitle() string { return "Keys" }
 

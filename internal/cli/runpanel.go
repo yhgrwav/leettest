@@ -24,6 +24,10 @@ import (
 	"github.com/yhgrwav/leettest/pkg/engine"
 )
 
+// errorNotePercent is the share of failed calls, in percent, above which the
+// live view raises its note about errors. The search's note names this number.
+const errorNotePercent = 5
+
 // runPanel is one run's live numbers and their drawing: the summary and the
 // per-method panels, fed from snapshots of one engine. The plain run's view
 // has one; a search's view has one per run.
@@ -238,9 +242,9 @@ func (m *runPanel) note() (full, short string) {
 	if m.warmup > 0 && s.Elapsed < m.warmup {
 		return m.text.WarmupNote(formatDuration(m.warmup-s.Elapsed), s.WarmupSent), m.text.WarmupNoteShort(s.WarmupSent)
 	}
-	if s.Sent > 0 && float64(s.Failed)/float64(s.Sent) > 0.05 {
+	if s.Sent > 0 && s.Failed*100 > s.Sent*errorNotePercent {
 		if m.search {
-			return m.text.SearchErrorsNote(), m.text.SearchErrorsNoteShort()
+			return m.text.SearchErrorsNote(errorNotePercent), m.text.SearchErrorsNoteShort(errorNotePercent)
 		}
 
 		return m.text.ErrorsNote(), m.text.ErrorsNoteShort()

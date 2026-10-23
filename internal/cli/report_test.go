@@ -547,8 +547,10 @@ func TestPrintReportNamesTheSentRateOfASilence(t *testing.T) {
 		{150, "sent at 150 rps (planned 200)", "at 200 rps"},
 		{190, "at 190 rps,", "planned"},
 		{179, "sent at 179 rps (planned 200)", "at 200 rps"},
+		{180, "at 180 rps,", "planned"},
 		{181, "at 181 rps,", "planned"},
 		{219, "at 219 rps,", "planned"},
+		{220, "at 220 rps,", "planned"},
 		{221, "sent at 221 rps (planned 200)", "at 200 rps"},
 	} {
 		from := 2
