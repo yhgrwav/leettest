@@ -1188,10 +1188,18 @@ func (s *Stats) countWaits(gen, conn, stream bool) {
 // microseconds between picking the connection and writing headers.
 const StreamWaitFloor = time.Millisecond
 
-// WaitFloorFor is the floor on a clock of this step: StreamWaitFloor, or four
-// steps when that is more, so a wait counted is off by at most 25%.
+// ClockStepRatio is how many clock steps fit in what the step measures: a
+// wait counts from that many steps, and a step over 1/ClockStepRatio of a
+// method's p50 makes the run invalid. Either way the measured value is off by
+// at most 100/ClockStepRatio percent. The report and the docs say it in
+// words: "four steps", "a quarter", "25%" (internal/cli/notes.go; README.md,
+// docs/*/README.md, docs/*/quickstart.md).
+const ClockStepRatio = 4
+
+// WaitFloorFor is the floor on a clock of this step: StreamWaitFloor, or
+// ClockStepRatio steps when that is more.
 func WaitFloorFor(step time.Duration) time.Duration {
-	return max(StreamWaitFloor, 4*step)
+	return max(StreamWaitFloor, ClockStepRatio*step)
 }
 
 // SetWaitFloor replaces StreamWaitFloor for the calls recorded after it.

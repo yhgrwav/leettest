@@ -276,8 +276,9 @@ func runNotes(run RunReport) []string {
 	if m := coarseClockMethod(run); m != nil {
 		notes = append(notes, fmt.Sprintf("invalid run: the clock step on this host (%s) is over a quarter of the p50 of\n"+
 			"%s (%s). Each latency is off by up to one step, so the percentiles are\n"+
-			"off by over 25%%. Run on a host with a finer clock, such as Linux next to the target.",
-			formatLatency(run.ClockStep), strings.TrimPrefix(m.Method, "/"), formatLatency(m.P50.Value)))
+			"off by over %d%%. Run on a host with a finer clock, such as Linux next to the target.",
+			formatLatency(run.ClockStep), strings.TrimPrefix(m.Method, "/"), formatLatency(m.P50.Value),
+			100/engine.ClockStepRatio))
 	}
 	if run.ClockStep >= time.Microsecond {
 		line := fmt.Sprintf("clock step %s on this host: every latency and wait is +/- %s",
@@ -292,12 +293,12 @@ func runNotes(run RunReport) []string {
 	return notes
 }
 
-// coarseClockMethod is the first method whose p50 the clock step is over a
-// quarter of, or nil.
+// coarseClockMethod is the first method whose p50 the clock step is over
+// 1/engine.ClockStepRatio of, or nil.
 func coarseClockMethod(run RunReport) *engine.MethodReport {
 	for i := range run.Methods {
 		m := &run.Methods[i]
-		if m.P50.Defined && 4*run.ClockStep > m.P50.Value {
+		if m.P50.Defined && engine.ClockStepRatio*run.ClockStep > m.P50.Value {
 			return m
 		}
 	}
@@ -359,11 +360,21 @@ func invalidNote(m *engine.MethodReport, maxResponse string) string {
 		"tested there.", name, m.Rejected.Count, m.ClientError, bad)
 }
 
-// clockGrew says the step after the run is a quarter or more over the one
-// before, which set the wait floor. Under 1µs, where the "+/-" note starts,
-// the step is the cost of reading the clock, not its tick: it moves no
-// printed number.
+// The step after the run is clockGrowthNum/clockGrowthDen of the one before
+// or more: the drift tolerance of the wait floor, not a share of a measured
+// value (the floor stands on engine.ClockStepRatio steps of the step before,
+// so any growth already moves a counted wait past its error bound). Integers,
+// so the boundary is exact.
+const (
+	clockGrowthNum = 5
+	clockGrowthDen = 4
+)
+
+// clockGrew says the step after the run grew by the ratio above or more over
+// the one before, which set the wait floor. Under 1µs, where the "+/-" note
+// starts, the step is the cost of reading the clock, not its tick: it moves
+// no printed number.
 func clockGrew(run RunReport) bool {
 	return run.ClockStepBefore > 0 && run.ClockStep >= time.Microsecond &&
-		4*run.ClockStep >= 5*run.ClockStepBefore
+		clockGrowthDen*run.ClockStep >= clockGrowthNum*run.ClockStepBefore
 }

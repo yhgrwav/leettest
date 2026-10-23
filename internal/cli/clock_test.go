@@ -94,6 +94,7 @@ func TestClockStep_AStepThatGrewIsAnInvalidRun(t *testing.T) {
 	}{
 		{500 * time.Microsecond, 15625 * time.Microsecond, true},
 		{500 * time.Microsecond, 625 * time.Microsecond, true},
+		{500 * time.Microsecond, 624 * time.Microsecond, false},
 		{500 * time.Microsecond, 521 * time.Microsecond, false},
 	} {
 		run := clockRun(max(tc.before, tc.after), 100*time.Millisecond)
@@ -117,6 +118,30 @@ func TestClockStep_TheFloorSaysWhichMeasureItCameFrom(t *testing.T) {
 	want := "a wait counts from " + formatLatency(run.WaitFloor) + ", four steps of the " + formatLatency(run.ClockStepBefore) + " before the run"
 	if out := printedRun(run); !strings.Contains(out, want) {
 		t.Errorf("no %q in:\n%s", want, out)
+	}
+}
+
+// The report says the clock rule in words and one digit; the number lives in
+// engine.ClockStepRatio. A new value reddens this test: change the words in
+// notes.go and in README.md, docs/*/README.md and docs/*/quickstart.md, which
+// the test does not reach, then the numbers here.
+func TestClockStep_TheWordsMatchTheRatio(t *testing.T) {
+	if engine.ClockStepRatio != 4 {
+		t.Fatalf("engine.ClockStepRatio = %d: the words \"four steps\", \"a quarter\" and the 25%% no longer match it", engine.ClockStepRatio)
+	}
+
+	coarse := printedRun(clockRun(15625*time.Microsecond, 60*time.Millisecond))
+	for _, want := range []string{"is over a quarter of the p50 of", "off by over 25%."} {
+		if !strings.Contains(coarse, want) {
+			t.Errorf("no %q in:\n%s", want, coarse)
+		}
+	}
+
+	floored := clockRun(521*time.Microsecond, 10*time.Millisecond)
+	floored.ClockStepBefore = 500 * time.Microsecond
+	floored.WaitFloor = 2 * time.Millisecond
+	if out := printedRun(floored); !strings.Contains(out, "; a wait counts from 2.00ms, four steps of the") {
+		t.Errorf("no \"four steps\" in the floor line:\n%s", out)
 	}
 }
 
