@@ -151,6 +151,14 @@ func TestStats_TheWaitFloorFollowsTheClockStep(t *testing.T) {
 	if got := WaitFloorFor(40 * time.Nanosecond); got != StreamWaitFloor {
 		t.Errorf("WaitFloorFor(40ns) = %v, want %v on a fine clock", got, StreamWaitFloor)
 	}
+	// Ground: boundary — four steps of 250µs is exactly the 1 ms floor; one
+	// microsecond more and the steps win.
+	if got := WaitFloorFor(250 * time.Microsecond); got != StreamWaitFloor {
+		t.Errorf("WaitFloorFor(250µs) = %v, want %v: four steps equal the floor", got, StreamWaitFloor)
+	}
+	if got := WaitFloorFor(251 * time.Microsecond); got != 1004*time.Microsecond {
+		t.Errorf("WaitFloorFor(251µs) = %v, want 1.004ms: four steps over the floor", got)
+	}
 
 	stats := NewStats()
 	stats.SetWaitFloor(WaitFloorFor(step))
