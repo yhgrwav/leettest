@@ -6,7 +6,7 @@ LINT_VERSION := v2.14.0
 # CI calls these targets rather than copying their commands: one definition,
 # so a local run and CI cannot drift apart.
 
-.PHONY: help vet test race stress lint lint-install fmt check build demo stand run proto clean
+.PHONY: help vet test race stress stress-timing lint lint-install fmt check build demo stand run proto clean
 
 # Recipes run in sh (Git Bash, CI) or in cmd.exe (an IDE on Windows, no sh
 # in PATH): every one must mean the same in both. $(info) needs no shell.
@@ -15,6 +15,7 @@ help:
 	$(info make test          unit and measurement tests)
 	$(info make race          tests under -race (needs gcc in PATH))
 	$(info make stress        the nightly run: -race -count=20, takes long)
+	$(info make stress-timing the tests stress skips: -count=20, no -race, go test -json)
 	$(info make lint          golangci-lint, gofmt and goimports included)
 	$(info make fmt           gofmt the tree)
 	$(info make check         what must pass before a push: vet, test, lint)
@@ -52,6 +53,14 @@ STRESS_SKIP := ^TestReport_SlotsHeldWithinTheAllowanceDoNotHitTheCap$$|^TestSear
 
 stress:
 	go test -race -count=20 -timeout 90m -skip "$(STRESS_SKIP)" ./...
+
+# The tests STRESS_SKIP leaves out, run the same 20 times without -race (the
+# detector's slowdown is what they must not measure). Its stdout is read by
+# `stressplan timing`, which colours the job red above 5 failed repeats of 20.
+# Add a test to STRESS_SKIP only when its failed check compares a duration, a
+# rate or a capacity; write the failing line and the run number above.
+stress-timing:
+	go test -json -count=20 -timeout 90m -run "$(STRESS_SKIP)" ./...
 
 lint:
 	$(LINT) run ./...
