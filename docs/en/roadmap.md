@@ -12,14 +12,9 @@
 
 These are plans, not promised dates. What works today is in the [README](README.md).
 
-## Next version (v0.3)
-
-- **`.proto` and protoset** for services without server reflection.
-
 ## Later
 
 - **Ramp-up** from zero to the target RPS.
-- **Pass/fail thresholds for CI**: the run fails if p99 or the error share is above a limit.
 - **[Call chaining](chaining.md)**: a field from one method's reply goes into another's request.
 - **Token refresh** during a long run.
 - **Metrics export** to Prometheus.

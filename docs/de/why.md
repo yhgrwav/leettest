@@ -26,11 +26,11 @@ JMeter ist Version 5.6.3 mit einem gRPC-Plugin: JMeter selbst kann kein gRPC [20
 |---|---|---|---|---|
 | gRPC ohne Plugin | 🟢 [1] | 🟢 [13] | 🟡 Plugin [20][21] | 🟢 |
 | Eine Methode ohne `.proto`, per Server Reflection | 🟢 [3] | 🟢 [14] | 🔴 braucht `.proto` [21] | 🟢 |
-| Ein Dienst ohne Reflection: Schema aus `.proto` oder Protoset | 🟢 [3] | 🟢 [15] | 🟢 [21] | 🔴 [roadmap](roadmap.md#nächste-version-v03) |
+| Ein Dienst ohne Reflection: Schema aus `.proto` oder Protoset | 🟢 [3] | 🟢 [15] | 🟢 [21] | 🟢 |
 | Mehrere Methoden, jede mit eigener RPS, in einem Lauf | 🔴 eine Methode [1] | 🟡 Szenarien im Skript [10] | 🟡 Thread-Gruppen [22] | 🟢 |
 | Last ohne eigenen Code beschrieben | 🟢 Flags, JSON, TOML [2] | 🔴 JavaScript [10] | 🟢 `.jmx`-Plan [28] | 🟢 YAML |
 | Hochfahren auf eine Ziel-RPS, danach gleichmäßige Last | 🟢 [7] | 🟢 [16] | 🟡 experimentell [23] | 🔴 [roadmap](roadmap.md#später) |
-| Schwellen und ein Exit-Code für CI | 🔴 [8] | 🟢 [17] | 🔴 [20][26] | 🔴 [roadmap](roadmap.md#später) |
+| Schwellen und ein Exit-Code für CI | 🔴 [8] | 🟢 [17] | 🔴 [20][26] | 🟢 |
 | Ein Antwortfeld geht in die nächste Anfrage | 🔴 [9] | 🟡 Skript [18] | 🟢 Postprozessoren [27] | 🔴 [roadmap](roadmap.md#später) |
 | Suche nach der Last, bei der das Ziel zusammenbricht | 🔴 [8] | 🟡 Skript [19] | 🔴 [20] | 🟢 Stufen |
 
@@ -83,8 +83,9 @@ etwas zu starten.
 
 Open Model als Standard, Erfassung der Verspätung des Generators und die Suche nach dem
 Ausfallpunkt sind die Zeilen, in denen weder ghz noch k6 noch JMeter ein 🟢 haben. Hochfahren auf
-eine Ziel-RPS, Schwellen für CI, Verkettung von Aufrufen und der Betrieb ohne Reflection fehlen
-LeetTest noch; die Reihenfolge steht in der [roadmap](roadmap.md).
+eine Ziel-RPS und Verkettung von Aufrufen fehlen LeetTest noch; die Reihenfolge steht in der
+[roadmap](roadmap.md). Schwellen für CI (`pass`) und der Betrieb ohne Reflection (`.proto`,
+Protoset) sind vorhanden.
 
 ## Last wie in der Produktion
 

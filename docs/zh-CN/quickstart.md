@@ -106,7 +106,7 @@ load:
       dataset_seed: 42
 ```
 
-- **`name`**——运行在标题和 JSON 报告（`name`，未发布）中的名称。
+- **`name`**——运行在标题和 JSON 报告（`name`）中的名称。
 - **`tls: false`**——测试台不加密。TLS 默认开启；`ca`、`cert`、`key`、`server_name` 见
   [`examples/tour-tls.yaml`](../../examples/tour-tls.yaml)（下文 “TLS”）。
 - **`metadata`**——每次调用附带的请求头。`${LEETTEST_TOKEN}` 来自环境变量：token 既不出现在配置里，
@@ -199,7 +199,7 @@ is a lower bound: the real tail lies above it. Raise the timeout to see it.
 要点：
 
 - **这是哪一次运行。** `name:` 和 `settings:` 重复运行的名称及其启动设置，方法下的 `plan:`
-  是为它配置的速率和时长：贴进工单的报告可以与另一份对比（未发布）。
+  是为它配置的速率和时长：贴进工单的报告可以与另一份对比。
 - **服务在多大负载下开始扛不住。** “at 300 rps … nothing after the call sent at 25.0s”——目标在
   第 25 秒沉默，恰好是测试台被设定的时刻。时刻按调用实际发出的时间计算，而不是按计划时间：落后的
   压测机不会被当成目标的沉默。
@@ -267,15 +267,15 @@ JSON 是版本化的（`schema_version`）；结论以字段而不是文本给�
 | 代码 | 含义 |
 |---|---|
 | `0` | 计划执行完毕，报告完整 |
-| `1` | 没有得到所要求的报告：运行没有发生（命令行参数、配置、连接），或报告无法写入 `-json-file`（未发布）。原因见 stderr |
+| `1` | 没有得到所要求的报告：运行没有发生（命令行参数、配置、连接），或报告无法写入 `-json-file`。原因见 stderr |
 | `2` | 运行无效：触及在途上限、某个方法所有调用都是请求错误，或主机时钟比 p50 的四分之一还粗。有报告，但数字与负载无关 |
 | `3` | 在计划结束前停止。报告涵盖已运行的部分 |
-| `4` | 已结束的运行没达到某个 `pass` 限值。有报告；`thresholds`（未发布）指出是哪个 |
+| `4` | 已结束的运行没达到某个 `pass` 限值。有报告；`thresholds` 指出是哪个 |
 | `130`、`143` | 被 Ctrl+C 或 SIGTERM 终止，没有报告 |
 
 要在 CI 中做通过/失败判定，在调用下设置 `pass` 限值
 （[`examples/pass.yaml`](../../examples/pass.yaml)，[README，“限值”](README.md#限值把运行当作检查)），
-并在退出码非零时让构建失败；JSON 字段 `thresholds`（未发布）会指出哪个限值未达标或无法判定。
+并在退出码非零时让构建失败；JSON 字段 `thresholds` 会指出哪个限值未达标或无法判定。
 
 ## 8. 完全没有服务
 
