@@ -313,6 +313,37 @@ func TestSearchView_TheErrorHintPointsToNoTabTheSearchLacks(t *testing.T) {
 	}
 }
 
+// The hint appears above 5% of the calls failed, not at it, and names that
+// number: the threshold and the words come from one constant. The numbers are
+// written here on purpose: moving errorNotePercent must turn this red.
+func TestSearchView_TheErrorHintComesAboveFivePercentAndSaysSo(t *testing.T) {
+	const words = "more than 5% of the calls of this run failed"
+	for _, tc := range []struct {
+		failed int
+		hint   bool
+	}{
+		{49, false},
+		{50, false},
+		{51, true},
+	} {
+		m := failing(t)
+		m.base.width = 120
+		m.base.snapshot = engine.Snapshot{Elapsed: 30 * time.Second, Sent: 1000, Failed: tc.failed}
+		if got := strings.Contains(m.View(), words); got != tc.hint {
+			t.Errorf("%d of 1000 failed: hint shown = %v, want %v", tc.failed, got, tc.hint)
+		}
+	}
+}
+
+// The words of the hint take the threshold they are given, in both forms.
+func TestText_TheSearchErrorHintNamesTheThresholdItIsGiven(t *testing.T) {
+	for _, text := range []string{Text{}.SearchErrorsNote(7), Text{}.SearchErrorsNoteShort(7)} {
+		if !strings.Contains(text, " 7% ") || strings.Contains(text, "5%") {
+			t.Errorf("%q: want the given 7%% and no other number", text)
+		}
+	}
+}
+
 // A view is never taller than the terminal while it can be shorter: the
 // table's rows give way first, counted in one line, the newest kept; the
 // header with the step stays on the screen.
