@@ -166,8 +166,10 @@ func TestJSON_EmptyListsAreArraysNotNull(t *testing.T) {
 	}
 
 	none := writeJSON(t, jsonRun(engine.Report{}))
-	if _, ok := field(t, none, "methods").([]any); !ok {
-		t.Errorf("methods = %v, want []", field(t, none, "methods"))
+	for _, name := range []string{"methods", "notes", "invalid_reasons", "unchecked"} {
+		if _, ok := field(t, none, name).([]any); !ok {
+			t.Errorf("an empty run: %s = %v, want []", name, field(t, none, name))
+		}
 	}
 }
 
