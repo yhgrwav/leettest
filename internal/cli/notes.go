@@ -214,21 +214,21 @@ func startLagNote(report engine.Report) []string {
 	return []string{lag}
 }
 
+// rowNotes explains the rows under a method's percentiles that the run filled.
 func rowNotes(report engine.Report, totals noteTotals, maxResponse string) []string {
-	notes := make([]string, 0, 5)
+	var notes []string //nolint:prealloc // five appends of zero or one note: nothing to preallocate
 
 	notes = append(notes, requestErrorNote(totals)...)
 	notes = append(notes, requestRejectedNotes(report, maxResponse)...)
 	notes = append(notes, answerRowNotes(report)...)
 	notes = append(notes, abandonedNote(report, totals)...)
 	notes = append(notes, abortCutOffNote(report)...)
-	if len(notes) == 0 {
-		return nil
-	}
 
 	return notes
 }
 
+// requestErrorNote speaks when some methods had requests that fail the same
+// way at any rate.
 func requestErrorNote(totals noteTotals) []string {
 	if len(totals.rejected) > 0 {
 		return []string{noteLine("The \"request error\" rows are calls that fail the same way at any rate. Either\n"+
@@ -241,8 +241,10 @@ func requestErrorNote(totals noteTotals) []string {
 	return nil
 }
 
+// requestRejectedNotes gives one invalid-run line per method that measured
+// nothing about the load.
 func requestRejectedNotes(report engine.Report, maxResponse string) []string {
-	notes := make([]string, 0, len(report.Methods))
+	var notes []string
 	if report.RequestRejected {
 		for i := range report.Methods {
 			if note := invalidNote(&report.Methods[i], maxResponse); note != "" {
@@ -250,13 +252,12 @@ func requestRejectedNotes(report engine.Report, maxResponse string) []string {
 			}
 		}
 	}
-	if len(notes) == 0 {
-		return nil
-	}
 
 	return notes
 }
 
+// answerRowNotes speaks when overload, failure or bad-response answers were
+// counted.
 func answerRowNotes(report engine.Report) []string {
 	var overload, failure, bad int
 	for i := range report.Methods {
@@ -285,6 +286,8 @@ func answerRowNotes(report engine.Report) []string {
 	return nil
 }
 
+// abandonedNote speaks when calls other than the aborted ones were abandoned
+// before answering.
 func abandonedNote(report engine.Report, totals noteTotals) []string {
 	// Aborted calls are censored too, but raising the timeout would not show
 	// their tail: the stop cut them off, not the deadline.
@@ -296,6 +299,7 @@ func abandonedNote(report engine.Report, totals noteTotals) []string {
 	return nil
 }
 
+// abortCutOffNote speaks when the stop cut calls off.
 func abortCutOffNote(report engine.Report) []string {
 	if report.Aborted > 0 {
 		return []string{noteLine("%d requests were cut off by the abort. They are no fault of the target and are\n"+
