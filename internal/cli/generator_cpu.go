@@ -201,9 +201,9 @@ func cpuGrid(report engine.Report) int {
 	return grid
 }
 
-// cpuWindows are the counted seconds: each whole second after the warm-up
-// that starts before end, cut at end. A last one shorter than minLastSecond
-// joins the one before it; merged is that second, or -1.
+// cpuWindows are the counted seconds: each second after the warm-up that
+// starts before end, cut at end. A last one shorter than minLastSecond joins
+// the one before it, if there is one; merged is that second, or -1.
 func cpuWindows(warmup, end time.Duration, grid int) (windows []cpuWindow, merged int) {
 	first := int((max(0, warmup) + time.Second - 1) / time.Second)
 	for i := first; i < grid && time.Duration(i)*time.Second < end; i++ {
@@ -221,8 +221,8 @@ func cpuWindows(warmup, end time.Duration, grid int) (windows []cpuWindow, merge
 }
 
 // countWindows gives each counted second its share in hundredths, and returns
-// the CPU time and the wall time of them all. A second no reading covers is
-// left out of all three.
+// the CPU time and the wall time the readings cover in them all. A second no
+// reading covers is left out of all three.
 func countWindows(spans cpuSpans, windows []cpuWindow, rate *big.Rat) (map[int]int64, *big.Rat, time.Duration) {
 	counted := make(map[int]int64, len(windows))
 	total, wall := new(big.Rat), time.Duration(0)
