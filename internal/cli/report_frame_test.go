@@ -122,6 +122,36 @@ func fullTextRun() RunReport {
 	}
 }
 
+// minimalTextRun is one run with every optional branch silent: no methods
+// source, passport, name or settings line; no not-sent or aborted count; no
+// plan, dataset or bytes line; undefined p99.9; no connections, unchecked or
+// thresholds block; no answer rows. The two method rows stay, so the header and
+// the table still print.
+func minimalTextRun() RunReport {
+	return RunReport{
+		Report: engine.Report{
+			Duration: 10 * time.Second,
+			Sent:     150,
+			Methods: []engine.MethodReport{
+				{
+					Method: "/min.v1.Min/First",
+					Sent:   100, RPS: 10,
+					P50: exactQ(1 * time.Millisecond), P90: exactQ(2 * time.Millisecond),
+					P95: exactQ(3 * time.Millisecond), P99: exactQ(4 * time.Millisecond),
+					Latencies: 50,
+				},
+				{
+					Method: "/min.v1.Min/Second",
+					Sent:   50, RPS: 5,
+					P50: exactQ(5 * time.Millisecond), P90: exactQ(6 * time.Millisecond),
+					P95: exactQ(7 * time.Millisecond), P99: exactQ(8 * time.Millisecond),
+					Latencies: 50,
+				},
+			},
+		},
+	}
+}
+
 // Ground: contract — the text report as it is before the report.go refactor:
 // one full run, byte for byte. A change here is a change of the report, never a
 // side effect of moving code. -update-report rewrites the file.
@@ -130,6 +160,33 @@ func TestReport_TheTextIsUnchanged(t *testing.T) {
 	PrintReport(&buf, "localhost:50051", fullTextRun())
 
 	path := filepath.Join("testdata", "report", "full.txt")
+	if *updateReport {
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, buf.Bytes(), 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		return
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("%s: %v (run with -update-report once)", path, err)
+	}
+	if got := buf.String(); got != string(want) {
+		t.Errorf("the report changed; first difference at byte %d", firstDiff(got, string(want)))
+	}
+}
+
+// Ground: contract — the text report with every optional branch silent, byte
+// for byte. A change here is a change of the report, never a side effect of
+// moving code. -update-report rewrites the file.
+func TestReport_TheMinimalTextIsUnchanged(t *testing.T) {
+	var buf bytes.Buffer
+	PrintReport(&buf, "localhost:50051", minimalTextRun())
+
+	path := filepath.Join("testdata", "report", "minimal.txt")
 	if *updateReport {
 		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 			t.Fatal(err)
