@@ -115,7 +115,52 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 	stopFor := stopWhy.stopFor
 
 	var current atomic.Pointer[engine.Engine]
-	st := cli.NewStopper(
+	st := newSearchStopper(stderr, screen, abort, stopSearch, stopFor, &current)
+	stopper.Store(st)
+
+	maxResponse := searchMaxResponse(s.cfg)
+
+	program, feed, obs, err := openSearchScreen(s, screen, method, plan, st, stderr)
+	if err != nil {
+		return err
+	}
+
+	cores := cli.AvailableCPU()
+	runner := &searchRunner{
+		ctx: ctx, searchCtx: searchCtx, s: s, screen: screen, maxResponse: maxResponse,
+		current: &current, feed: feed, obs: obs, plan: plan, cores: cores, stderr: stderr,
+		stopFor: stopFor, stopSearch: stopSearch,
+	}
+
+	started := time.Now()
+	err = runSearchPlan(screen, program, st, abort, runner.search)
+	if err != nil {
+		return err
+	}
+
+	info, _ := debug.ReadBuildInfo()
+	reason := ""
+	if runner.res.Outcome == breakpoint.Stopped {
+		reason = stopWhy.get()
+	}
+	report := newBreakpointRun(s, method, started, plan, runner.res, runner.runs, reason, info)
+	data, err := printSearchReport(stdout, s, report)
+	if err != nil {
+		return err
+	}
+	st.Finish()
+
+	if err := saveJSONFile(s.jsonFile, data); err != nil {
+		return err
+	}
+
+	return searchResult(runner.res.Outcome, report.Thresholds)
+}
+
+func newSearchStopper(stderr io.Writer, screen bool, abort, stopSearch context.CancelFunc,
+	stopFor func(string), current *atomic.Pointer[engine.Engine],
+) *cli.Stopper {
+	return cli.NewStopper(
 		func() {
 			stopFor(cli.StopRequested)
 			if !screen {
@@ -136,13 +181,20 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 		exitNow,
 		time.Second,
 	)
-	stopper.Store(st)
+}
 
+func searchMaxResponse(cfg *config.MasterConfig) string {
 	var maxResponse string
-	if raw := s.cfg.App.RawMaxResponseSize; raw != nil {
+	if raw := cfg.App.RawMaxResponseSize; raw != nil {
 		maxResponse = strings.TrimSpace(*raw)
 	}
 
+	return maxResponse
+}
+
+func openSearchScreen(s searchSetup, screen bool, method string, plan breakpoint.Plan, st *cli.Stopper,
+	stderr io.Writer,
+) (*tea.Program, *cli.SearchFeed, breakpoint.Observer, error) {
 	var (
 		program *tea.Program
 		feed    *cli.SearchFeed
@@ -151,7 +203,7 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 	if screen {
 		settings, err := screenSettings()
 		if err != nil {
-			return err
+			return nil, nil, breakpoint.Observer{}, err
 		}
 		program, feed = cli.NewSearchProgram(s.target, method, plan, s.connect, settings, st)
 		obs = feed.Observer()
@@ -159,93 +211,110 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 		fmt.Fprintln(stderr, cli.PlanLine(plan, s.connect))
 	}
 
-	cores := cli.AvailableCPU()
-	var runs []cli.RunReport
-	step := func(_ context.Context, rps int, settle, hold time.Duration, need int) (engine.Report, error) {
-		calls := slices.Clone(s.calls)
-		calls[0].Stages = []engine.Stage{{StartRPS: rps, TargetRPS: rps, Duration: hold}}
-		before := clockStep()
-		eng, err := engine.New(engine.Options{
-			Calls: calls, Sender: s.sender, MaxInFlight: need, Warmup: settle, WaitFloor: engine.WaitFloorFor(before),
-		})
-		if err != nil {
-			return engine.Report{}, err
-		}
-		if current.Swap(eng) == nil {
-			runStarting(eng)
-		}
-		if searchCtx.Err() != nil {
-			eng.Stop()
-		}
-		// Before Run: the schedule is anchored when the run starts, so the
-		// screen taking its time here delays no call.
-		if feed != nil {
-			feed.Starting(eng)
-		}
-		// Each step is a run of its own, with readings of its own.
-		meter := cli.NewCPUMeter(cli.ProcessCPU, time.Now, time.Second)
-		stopMeter := meter.Start()
-		// The run's own context is the command's: a stop of the search ends it
-		// gently through Stop, only an abort cuts its calls off.
-		runErr := eng.Run(ctx)
-		stopMeter()
-		report := eng.Report()
-		run := cli.RunReport{
-			Report: report, Unchecked: s.unchecked, MaxResponse: maxResponse,
-			ClockStep: max(before, clockStep()), ClockStepBefore: before,
-			GeneratorCPU: meter.Result(report, cores),
-			Settings:     searchSettings(s, need, settle),
-		}
-		runs = append(runs, run)
-		r := run.Report
-		if !screen {
-			fmt.Fprintf(stderr, "%d rps: sent %d of %d, failed %d\n", rps, r.Sent, r.Scheduled, r.Failed)
-		}
+	return program, feed, obs, nil
+}
 
-		if r.DatasetExhausted != nil {
-			// The same path as Ctrl-C: this run is not judged, the search ends as stopped.
-			stopFor(cli.StopDatasetExhausted)
-			stopSearch()
-		}
+// searchRunner runs one step of the search and the plan over those steps.
+type searchRunner struct {
+	ctx         context.Context
+	searchCtx   context.Context
+	s           searchSetup
+	screen      bool
+	maxResponse string
+	current     *atomic.Pointer[engine.Engine]
+	feed        *cli.SearchFeed
+	obs         breakpoint.Observer
+	plan        breakpoint.Plan
+	cores       float64
+	stderr      io.Writer
+	stopFor     func(string)
+	stopSearch  context.CancelFunc
+	runs        []cli.RunReport
+	res         breakpoint.Result
+}
 
-		switch {
-		case runErr != nil && !errors.Is(runErr, context.Canceled) && !errors.Is(runErr, engine.ErrInFlightCapExceeded):
-			return r, runErr
-		case r.RequestRejected:
-			return r, breakpoint.ErrRequestErrors
-		case cli.ClockTooCoarse(run):
-			return r, breakpoint.ErrClockStep
-		}
-
-		return r, nil
-	}
-
-	started := time.Now()
-	var res breakpoint.Result
-	search := func() error {
-		var err error
-		res, err = breakpoint.SearchWith(searchCtx, plan, step, obs)
-		if err == nil && feed != nil {
-			feed.Done(res)
-		}
-
-		return err
-	}
-	var err error
-	if screen {
-		err = cli.RunLive(program, st, search, abort)
-	} else {
-		err = search()
-	}
+func (r *searchRunner) step(_ context.Context, rps int, settle, hold time.Duration, need int) (engine.Report, error) {
+	calls := slices.Clone(r.s.calls)
+	calls[0].Stages = []engine.Stage{{StartRPS: rps, TargetRPS: rps, Duration: hold}}
+	before := clockStep()
+	eng, err := engine.New(engine.Options{
+		Calls: calls, Sender: r.s.sender, MaxInFlight: need, Warmup: settle, WaitFloor: engine.WaitFloorFor(before),
+	})
 	if err != nil {
-		return err
+		return engine.Report{}, err
+	}
+	if r.current.Swap(eng) == nil {
+		runStarting(eng)
+	}
+	if r.searchCtx.Err() != nil {
+		eng.Stop()
+	}
+	// Before Run: the schedule is anchored when the run starts, so the
+	// screen taking its time here delays no call.
+	if r.feed != nil {
+		r.feed.Starting(eng)
+	}
+	// Each step is a run of its own, with readings of its own.
+	meter := cli.NewCPUMeter(cli.ProcessCPU, time.Now, time.Second)
+	stopMeter := meter.Start()
+	// The run's own context is the command's: a stop of the search ends it
+	// gently through Stop, only an abort cuts its calls off.
+	runErr := eng.Run(r.ctx)
+	stopMeter()
+	report := eng.Report()
+	run := cli.RunReport{
+		Report: report, Unchecked: r.s.unchecked, MaxResponse: r.maxResponse,
+		ClockStep: max(before, clockStep()), ClockStepBefore: before,
+		GeneratorCPU: meter.Result(report, r.cores),
+		Settings:     searchSettings(r.s, need, settle),
+	}
+	r.runs = append(r.runs, run)
+	rp := run.Report
+	if !r.screen {
+		fmt.Fprintf(r.stderr, "%d rps: sent %d of %d, failed %d\n", rps, rp.Sent, rp.Scheduled, rp.Failed)
 	}
 
-	info, _ := debug.ReadBuildInfo()
-	var reason string
-	if res.Outcome == breakpoint.Stopped {
-		reason = stopWhy.get()
+	if rp.DatasetExhausted != nil {
+		// The same path as Ctrl-C: this run is not judged, the search ends as stopped.
+		r.stopFor(cli.StopDatasetExhausted)
+		r.stopSearch()
 	}
+
+	switch {
+	case runErr != nil && !errors.Is(runErr, context.Canceled) && !errors.Is(runErr, engine.ErrInFlightCapExceeded):
+		return rp, runErr
+	case rp.RequestRejected:
+		return rp, breakpoint.ErrRequestErrors
+	case cli.ClockTooCoarse(run):
+		return rp, breakpoint.ErrClockStep
+	}
+
+	return rp, nil
+}
+
+func (r *searchRunner) search() error {
+	var err error
+	r.res, err = breakpoint.SearchWith(r.searchCtx, r.plan, r.step, r.obs)
+	if err == nil && r.feed != nil {
+		r.feed.Done(r.res)
+	}
+
+	return err
+}
+
+func runSearchPlan(screen bool, program *tea.Program, st *cli.Stopper, abort context.CancelFunc,
+	search func() error,
+) error {
+	if screen {
+		return cli.RunLive(program, st, search, abort)
+	}
+
+	return search()
+}
+
+func newBreakpointRun(s searchSetup, method string, started time.Time, plan breakpoint.Plan,
+	res breakpoint.Result, runs []cli.RunReport, reason string, info *debug.BuildInfo,
+) cli.BreakpointRun {
 	report := cli.BreakpointRun{
 		StopReason: reason,
 		Target:     s.target, Name: cli.ServiceLabel(s.cfg, s.configPath), Version: versionString(version, info), Method: method,
@@ -256,27 +325,27 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 	if b := s.cfg.Load.Breakpoint; b != nil && b.RawPass != nil {
 		report.Thresholds = []threshold.Result{threshold.EvaluateSearch(res, b.Pass)}
 	}
+
+	return report
+}
+
+func printSearchReport(stdout io.Writer, s searchSetup, report cli.BreakpointRun) ([]byte, error) {
 	var data []byte
 	if s.json || s.jsonFile != "" {
 		var err error
 		if data, err = encodeJSON(func(w io.Writer) error { return cli.WriteBreakpointJSON(w, report) }); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	if s.json {
 		if _, err := stdout.Write(data); err != nil {
-			return fmt.Errorf("write the JSON report: %w", err)
+			return nil, fmt.Errorf("write the JSON report: %w", err)
 		}
 	} else {
 		cli.PrintBreakpoint(stdout, report)
 	}
-	st.Finish()
 
-	if err := saveJSONFile(s.jsonFile, data); err != nil {
-		return err
-	}
-
-	return searchResult(res.Outcome, report.Thresholds)
+	return data, nil
 }
 
 // searchSettings are what a step of the search is started with: the cap, the
