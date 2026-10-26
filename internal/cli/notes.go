@@ -215,16 +215,34 @@ func startLagNote(report engine.Report) []string {
 }
 
 func rowNotes(report engine.Report, totals noteTotals, maxResponse string) []string {
-	var notes []string
+	notes := make([]string, 0, 5)
 
+	notes = append(notes, requestErrorNote(totals)...)
+	notes = append(notes, requestRejectedNotes(report, maxResponse)...)
+	notes = append(notes, answerRowNotes(report)...)
+	notes = append(notes, abandonedNote(report, totals)...)
+	notes = append(notes, abortCutOffNote(report)...)
+	if len(notes) == 0 {
+		return nil
+	}
+
+	return notes
+}
+
+func requestErrorNote(totals noteTotals) []string {
 	if len(totals.rejected) > 0 {
-		notes = append(notes, noteLine("The \"request error\" rows are calls that fail the same way at any rate. Either\n"+
+		return []string{noteLine("The \"request error\" rows are calls that fail the same way at any rate. Either\n"+
 			"the request is wrong - no such method, a bad argument, a body that does not match\n"+
 			"the schema - or\n"+
 			"a request refused as larger than accepted, by the target or a proxy in front of it.\n"+
-			"Check the config for %s.", strings.Join(totals.rejected, ", ")))
+			"Check the config for %s.", strings.Join(totals.rejected, ", "))}
 	}
 
+	return nil
+}
+
+func requestRejectedNotes(report engine.Report, maxResponse string) []string {
+	notes := make([]string, 0, len(report.Methods))
 	if report.RequestRejected {
 		for i := range report.Methods {
 			if note := invalidNote(&report.Methods[i], maxResponse); note != "" {
@@ -232,7 +250,14 @@ func rowNotes(report engine.Report, totals noteTotals, maxResponse string) []str
 			}
 		}
 	}
+	if len(notes) == 0 {
+		return nil
+	}
 
+	return notes
+}
+
+func answerRowNotes(report engine.Report) []string {
 	var overload, failure, bad int
 	for i := range report.Methods {
 		overload += report.Methods[i].Overload.Count
@@ -254,22 +279,30 @@ func rowNotes(report engine.Report, totals noteTotals, maxResponse string) []str
 		if bad > 0 {
 			rows = append(rows, "\"bad response\": a reply came and the client did not accept it.")
 		}
-		notes = append(notes, strings.Join(rows, "\n"))
+		return []string{strings.Join(rows, "\n")}
 	}
 
+	return nil
+}
+
+func abandonedNote(report engine.Report, totals noteTotals) []string {
 	// Aborted calls are censored too, but raising the timeout would not show
 	// their tail: the stop cut them off, not the deadline.
 	if timedOut := totals.censored - report.Aborted; timedOut > 0 {
-		notes = append(notes, noteLine("%d requests were abandoned before answering. A percentile shown as \"> value\"\n"+
-			"is a lower bound: the real tail lies above it. Raise the timeout to see it.", timedOut))
+		return []string{noteLine("%d requests were abandoned before answering. A percentile shown as \"> value\"\n"+
+			"is a lower bound: the real tail lies above it. Raise the timeout to see it.", timedOut)}
 	}
 
+	return nil
+}
+
+func abortCutOffNote(report engine.Report) []string {
 	if report.Aborted > 0 {
-		notes = append(notes, noteLine("%d requests were cut off by the abort. They are no fault of the target and are\n"+
-			"not counted as failures; each is known only to have lasted until the abort.", report.Aborted))
+		return []string{noteLine("%d requests were cut off by the abort. They are no fault of the target and are\n"+
+			"not counted as failures; each is known only to have lasted until the abort.", report.Aborted)}
 	}
 
-	return notes
+	return nil
 }
 
 func capHitNote(report engine.Report) []string {
