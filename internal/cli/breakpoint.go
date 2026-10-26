@@ -111,6 +111,7 @@ var causeNames = map[breakpoint.Cause]string{
 	breakpoint.CauseRequestErrors: "request_errors",
 }
 
+// causeName is the JSON name of c, nil for a cause outside causeNames.
 func causeName(c breakpoint.Cause) *string {
 	if name, ok := causeNames[c]; ok {
 		return &name
@@ -411,6 +412,7 @@ type jsonRunBP struct {
 	Report    JSONReport `json:"report"`
 }
 
+// rate is a found rate for JSON: 0, no rate found, is null.
 func rate(n int) *int {
 	if n == 0 {
 		return nil

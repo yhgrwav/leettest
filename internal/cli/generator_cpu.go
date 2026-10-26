@@ -136,6 +136,7 @@ func hundredths(cpu *big.Rat, wall time.Duration, cores *big.Rat) int64 {
 	return new(big.Int).Quo(share.Num(), share.Denom()).Int64()
 }
 
+// fromHundredths is the share as the report prints it: 29 is 0.29.
 func fromHundredths(h int64) float64 {
 	return float64(h) / 100
 }
@@ -190,6 +191,7 @@ func LayGeneratorCPU(report engine.Report, samples []CPUSample, cores float64) *
 	return out
 }
 
+// cpuGrid is the run's length in seconds: the longest per-method seconds list.
 func cpuGrid(report engine.Report) int {
 	grid := 0
 	for i := range report.Methods {
@@ -199,6 +201,9 @@ func cpuGrid(report engine.Report) int {
 	return grid
 }
 
+// cpuWindows are the counted seconds: each second after the warm-up that
+// starts before end, cut at end. A last one shorter than minLastSecond joins
+// the one before it, if there is one; merged is that second, or -1.
 func cpuWindows(warmup, end time.Duration, grid int) (windows []cpuWindow, merged int) {
 	first := int((max(0, warmup) + time.Second - 1) / time.Second)
 	for i := first; i < grid && time.Duration(i)*time.Second < end; i++ {
@@ -215,6 +220,9 @@ func cpuWindows(warmup, end time.Duration, grid int) (windows []cpuWindow, merge
 	return windows, merged
 }
 
+// countWindows gives each counted second its share in hundredths, and returns
+// the CPU time and the wall time the readings cover in them all. A second no
+// reading covers is left out of all three.
 func countWindows(spans cpuSpans, windows []cpuWindow, rate *big.Rat) (map[int]int64, *big.Rat, time.Duration) {
 	counted := make(map[int]int64, len(windows))
 	total, wall := new(big.Rat), time.Duration(0)
@@ -231,6 +239,9 @@ func countWindows(spans cpuSpans, windows []cpuWindow, rate *big.Rat) (map[int]i
 	return counted, total, wall
 }
 
+// cpuSecondShares is the share of every second on the grid: the counted one
+// where there is one, the second's own readings elsewhere, nil for the merged
+// second and for a second no reading covers.
 func cpuSecondShares(spans cpuSpans, rate *big.Rat, grid int, counted map[int]int64, merged int) []*float64 {
 	seconds := make([]*float64, grid)
 	for i := range grid {
@@ -254,6 +265,8 @@ func cpuSecondShares(spans cpuSpans, rate *big.Rat, grid int, counted map[int]in
 	return seconds
 }
 
+// countBusySeconds sets Counted, BusySeconds (at least busyHundredths) and
+// FirstBusy from the counted seconds.
 func countBusySeconds(out *GeneratorCPU, counted map[int]int64, grid int) {
 	for i := range grid {
 		h, ok := counted[i]
