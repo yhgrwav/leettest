@@ -1,0 +1,8 @@
+run finished: localhost:50051 in 10.0s
+sent 150, failed 0
+
+method                                           sent   failed    sent/s       p50       p90       p95       p99
+min.v1.Min/First                                  100        0        10    1.00ms    2.00ms    3.00ms    4.00ms
+  p99.9: too few observations (50 of 1000)
+min.v1.Min/Second                                  50        0         5    5.00ms    6.00ms    7.00ms    8.00ms
+  p99.9: too few observations (50 of 1000)
