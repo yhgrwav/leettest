@@ -1,0 +1,71 @@
+warm-up 40 sent (1 failed), excluded from stats
+
+a.B/One: at 50 rps, 48 of 150 calls (32.0%) got no answer within 300ms,
+and nothing after the call sent at 6.0s of the run got one.
+30 of them went out with less than half the timeout left: the target had
+the smaller part of it.
+a.B/One: 4 calls timed out before going out: they waited on the connection or the
+generator, not the target.
+
+failed calls by gRPC code:
+a.B/One codes sent by the target: Unavailable 5
+a.B/One codes set by the client: DeadlineExceeded 3
+
+connections: 1; target stream limit 1.
+
+not sent 4: waited for a stream 3, waited for the connection 1.
+
+a.B/One: p99 without client-side waits (generator, connection, stream) is 100ms.
+
+start lag, how late calls began against their schedule: p99 3.00ms, max 12.0ms.
+It does not see answers picked up late.
+Timeouts returned up to 7.00ms past their deadline.
+
+The "request error" rows are calls that fail the same way at any rate. Either
+the request is wrong - no such method, a bad argument, a body that does not match
+the schema - or
+a request refused as larger than accepted, by the target or a proxy in front of it.
+Check the config for a.B/One.
+
+A method's percentiles are the time to serve a call: successes, and timeouts
+as lower bounds. The rows under it time the other answers:
+"overload": the status says overloaded or unavailable (RESOURCE_EXHAUSTED,
+UNAVAILABLE), from the target or a proxy in front of it; a proxy with no live
+backend says the same;
+"failure": the status says the call broke (INTERNAL, UNKNOWN, ABORTED and
+others), from the target or a proxy in front of it;
+"bad response": a reply came and the client did not accept it.
+
+50 requests were abandoned before answering. A percentile shown as "> value"
+is a lower bound: the real tail lies above it. Raise the timeout to see it.
+
+invalid run: calls held their slots more than 100ms (the allowance) past their
+deadline, and the in-flight cap was hit at 1.2s. The generator lacked CPU, or the sender
+does not honor deadlines; the target is not what filled the cap. At the hit 21 slots
+were being held past their own deadline; 1 call was refused by the cap and
+never sent.
+
+incomplete: the run stopped before its planned end, and ran 10.0s of the planned 12.0s.
+The numbers are honest but cover only the part that ran; do not compare them with a
+full run.
+
+limited by the run, not the target: on 1 connection the target allows 1 stream
+(MAX_CONCURRENT_STREAMS), and 48 of 200 sent calls waited for one (p99 130ms), 3 more were not sent.
+The printed p99 includes the wait for 1 of 1 methods. The target was not tested
+above 1 call in flight.
+
+3 calls were cut off after going out: no status came back, and the other end,
+the target or a proxy in front of it, may have processed them.
+
+2 requests never reached the target and carry no latency, so they are
+counted as failures but left out of the percentiles above.
+
+warning: 1 requests fell outside the per-second timeline and are missing
+from it. The generator ran far behind its schedule or a clock jumped; the
+totals above still count them.
+
+warning: 1 requests came back without a category and are left out of the
+percentiles. This is a bug in the sender, not in the target. Please report it.
+
+warning: 2 measurements were impossible (negative latency) and left out.
+This is a bug in LeetTest, not in the target. Please report it.
