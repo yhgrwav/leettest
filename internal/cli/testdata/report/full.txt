@@ -1,0 +1,57 @@
+run finished: localhost:50051 in 40.0s
+methods: server reflection
+machine: linux/amd64, 8 CPU, GOMAXPROCS 8, go1.26.0; config sha256:0123456789ab
+labels: run=full
+name: wallet
+settings: warm-up 5s, max in flight 5000, connections 2, compression gzip
+sent 11012, failed 20, not sent 12, aborted 3
+
+method                                           sent   failed    sent/s       p50       p90       p95       p99
+wallet.v1.Wallet/GetBalance                      6000       20       300    31.0ms    36.0ms    39.0ms    45.0ms
+  plan: 100-300 rps for 40s
+  p99.9: 52.0ms
+  bytes: 1200 -> 310 per call
+  data: 8 of 10 requests from users.jsonl, each used up to 3 times
+  request error                                              4               300us         -         -         -
+  overload                                                   5              2.00ms         -         -    3.00ms
+  failure                                                    2              5.00ms         -         -    6.00ms
+  bad response                                               1              7.00ms         -         -    8.00ms
+wallet.v1.Wallet/List                            5012        0       150    20.0ms    25.0ms    28.0ms    30.0ms
+  plan: 150 rps for 40s
+  p99.9: too few observations (100 of 1000)
+
+connections: 2; no stream limit announced.
+
+not sent 12: cause unknown 12 (a defect of the tool; please report it).
+
+The "request error" rows are calls that fail the same way at any rate. Either
+the request is wrong - no such method, a bad argument, a body that does not match
+the schema - or
+a request refused as larger than accepted, by the target or a proxy in front of it.
+Check the config for wallet.v1.Wallet/GetBalance.
+
+A method's percentiles are the time to serve a call: successes, and timeouts
+as lower bounds. The rows under it time the other answers:
+"overload": the status says overloaded or unavailable (RESOURCE_EXHAUSTED,
+UNAVAILABLE), from the target or a proxy in front of it; a proxy with no live
+backend says the same;
+"failure": the status says the call broke (INTERNAL, UNKNOWN, ABORTED and
+others), from the target or a proxy in front of it;
+"bad response": a reply came and the client did not accept it.
+
+3 requests were cut off by the abort. They are no fault of the target and are
+not counted as failures; each is known only to have lasted until the abort.
+
+Connections: 2 to 2 addresses of localhost
+  1  10.0.0.1:50051  5500 calls  0.0% failed  p99 31.0ms
+  2  10.0.0.2:50051  5524 calls  0.4% failed  p99 48.0ms  7 waited for a stream
+
+not checked before the run:
+  wallet.v1.Wallet/Unchecked: server reflection is off on the target
+  wallet.v1.Wallet/Refused: server reflection could not be used: reflection refused
+A method that does not exist on the target is then seen only as the failures
+above.
+
+Thresholds: passed
+  wallet.v1.Wallet/GetBalance  p99     <= 200ms  pass  45.0ms
+  wallet.v1.Wallet/GetBalance  errors  <= 1%     pass  0.2% (20 of 11012)

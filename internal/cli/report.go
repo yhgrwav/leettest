@@ -89,6 +89,16 @@ func ClockTooCoarse(run RunReport) bool {
 func PrintReport(w io.Writer, target string, run RunReport) {
 	w = asciiWriter{w: w}
 	run.Target = target
+
+	printRunHeader(w, target, run)
+	printMethodTable(w, run)
+	printRunNotes(w, run)
+	printConnectionsBlock(w, target, run.Connections)
+	printUncheckedNote(w, run.Unchecked)
+	printThresholdsBlock(w, run)
+}
+
+func printRunHeader(w io.Writer, target string, run RunReport) {
 	report := run.Report
 
 	fmt.Fprintf(w, "run finished: %s in %s\n", target, formatDuration(report.Duration))
@@ -110,58 +120,77 @@ func PrintReport(w io.Writer, target string, run RunReport) {
 		fmt.Fprintf(w, ", aborted %d", report.Aborted)
 	}
 	fmt.Fprint(w, "\n\n")
+}
 
+func printMethodTable(w io.Writer, run RunReport) {
 	fmt.Fprintf(w, "%-44s %8s %8s %9s %9s %9s %9s %9s\n",
 		"method", "sent", "failed", "sent/s", "p50", "p90", "p95", "p99")
 
-	for i := range report.Methods {
-		m := &report.Methods[i]
+	for i := range run.Methods {
+		printMethodRow(w, &run.Methods[i], run)
+	}
+}
 
-		fmt.Fprintf(w, "%-44s %8d %8d %9.0f %9s %9s %9s %9s\n",
-			displayMethod(m.Method), m.Sent, m.Failed, m.RPS,
-			formatQuantile(m.P50), formatQuantile(m.P90), formatQuantile(m.P95), formatQuantile(m.P99))
+func printMethodRow(w io.Writer, m *engine.MethodReport, run RunReport) {
+	fmt.Fprintf(w, "%-44s %8d %8d %9.0f %9s %9s %9s %9s\n",
+		displayMethod(m.Method), m.Sent, m.Failed, m.RPS,
+		formatQuantile(m.P50), formatQuantile(m.P90), formatQuantile(m.P95), formatQuantile(m.P99))
 
-		if m.PlannedDuration > 0 {
-			rate := strconv.Itoa(m.RPSLow)
-			if m.RPSHigh != m.RPSLow {
-				rate = fmt.Sprintf("%d-%d", m.RPSLow, m.RPSHigh)
-			}
-			fmt.Fprintf(w, "  plan: %s rps for %s\n", rate, m.PlannedDuration)
+	if m.PlannedDuration > 0 {
+		rate := strconv.Itoa(m.RPSLow)
+		if m.RPSHigh != m.RPSLow {
+			rate = fmt.Sprintf("%d-%d", m.RPSLow, m.RPSHigh)
 		}
-
-		if m.P999.Defined {
-			fmt.Fprintf(w, "  p99.9: %s\n", formatQuantile(m.P999))
-		} else {
-			fmt.Fprintf(w, "  p99.9: too few observations (%d of %d)\n", m.Latencies, metrics.MinCount(0.999))
-		}
-
-		// Without compression raw and wire are the same number: no line.
-		if b := m.RequestBytes; b != nil && run.Settings != nil && run.Settings.Compression != "" {
-			fmt.Fprintf(w, "  bytes: %.0f -> %.0f per call\n", b.Raw, b.Wire)
-		}
-
-		if m.Dataset != nil {
-			fmt.Fprintln(w, datasetLine(m.Dataset))
-		}
-
-		for _, sub := range answerRows(m) {
-			r := sub.r
-			fmt.Fprintf(w, "%-44s %8s %8d %9s %9s %9s %9s %9s\n", "  "+sub.label, "", r.Count, "",
-				formatQuantile(r.P50), formatQuantile(r.P90), formatQuantile(r.P95), formatQuantile(r.P99))
-		}
+		fmt.Fprintf(w, "  plan: %s rps for %s\n", rate, m.PlannedDuration)
 	}
 
+	if m.P999.Defined {
+		fmt.Fprintf(w, "  p99.9: %s\n", formatQuantile(m.P999))
+	} else {
+		fmt.Fprintf(w, "  p99.9: too few observations (%d of %d)\n", m.Latencies, metrics.MinCount(0.999))
+	}
+
+	// Without compression raw and wire are the same number: no line.
+	if b := m.RequestBytes; b != nil && run.Settings != nil && run.Settings.Compression != "" {
+		fmt.Fprintf(w, "  bytes: %.0f -> %.0f per call\n", b.Raw, b.Wire)
+	}
+
+	if m.Dataset != nil {
+		fmt.Fprintln(w, datasetLine(m.Dataset))
+	}
+
+	printAnswerRows(w, m)
+}
+
+func printAnswerRows(w io.Writer, m *engine.MethodReport) {
+	for _, sub := range answerRows(m) {
+		r := sub.r
+		fmt.Fprintf(w, "%-44s %8s %8d %9s %9s %9s %9s %9s\n", "  "+sub.label, "", r.Count, "",
+			formatQuantile(r.P50), formatQuantile(r.P90), formatQuantile(r.P95), formatQuantile(r.P99))
+	}
+}
+
+func printRunNotes(w io.Writer, run RunReport) {
 	for _, note := range runNotes(run) {
 		fmt.Fprintf(w, "\n%s\n", note)
 	}
-	// Not a note: the notes are also the JSON report's and the live screen's,
-	// where the block would repeat per_connection or crowd the verdicts.
-	if block := connectionsBlock(target, report.Connections); block != "" {
+}
+
+// Not a note: the notes are also the JSON report's and the live screen's,
+// where the block would repeat per_connection or crowd the verdicts.
+func printConnectionsBlock(w io.Writer, target string, c *engine.Connections) {
+	if block := connectionsBlock(target, c); block != "" {
 		fmt.Fprintf(w, "\n%s\n", block)
 	}
-	if note := uncheckedNote(run.Unchecked); note != "" {
+}
+
+func printUncheckedNote(w io.Writer, methods []Unchecked) {
+	if note := uncheckedNote(methods); note != "" {
 		fmt.Fprintf(w, "\n%s\n", note)
 	}
+}
+
+func printThresholdsBlock(w io.Writer, run RunReport) {
 	if block := thresholdsBlock(run.Thresholds, &run); block != "" {
 		fmt.Fprintf(w, "\n%s\n", block)
 	}
