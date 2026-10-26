@@ -254,3 +254,89 @@ func TestPlan_ABrokenBranchDoesNotStopTheOthers(t *testing.T) {
 		t.Errorf("plan of a broken branch only: exit %d (%s), want 1", code, errOut)
 	}
 }
+
+func TestTimingTitle_IsThePackages(t *testing.T) {
+	if _, out, _ := runCmd(t, "timing-title", "release/v0.3"); out != "Timing tests red on release/v0.3\n" {
+		t.Errorf("timing-title = %q", out)
+	}
+}
+
+// The matrix carries the timing job's name beside the stress job's: the
+// workflow cannot cut a sha to seven characters itself.
+func TestPlan_EachJobCarriesItsTimingName(t *testing.T) {
+	t.Chdir(repoWithBranches(t, map[string][2]string{"main": {ciYML, releaseYML}}))
+	code, out, errOut := runCmd(t, "plan", write(t, "stress-branches", "main\n"))
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errOut)
+	}
+	var m struct {
+		Include []struct {
+			Name       string `json:"name"`
+			TimingName string `json:"timing_name"`
+		}
+	}
+	if err := json.Unmarshal([]byte(out), &m); err != nil || len(m.Include) != 2 {
+		t.Fatalf("matrix %q: %v", out, err)
+	}
+	for _, e := range m.Include {
+		if want := "timing " + strings.TrimPrefix(e.Name, "stress "); e.TimingName != want {
+			t.Errorf("timing_name = %q, want %q", e.TimingName, want)
+		}
+	}
+}
+
+const timingMakefile = "STRESS_SKIP := ^TestA$$|^TestB$$\n"
+
+func timingEvents(failsOfA int) string {
+	var b strings.Builder
+	line := func(test, action string) {
+		b.WriteString(`{"Action":"` + action + `","Package":"p","Test":"` + test + `"}` + "\n")
+	}
+	for i := range 20 {
+		line("TestA", "run")
+		if i < failsOfA {
+			line("TestA", "fail")
+		} else {
+			line("TestA", "pass")
+		}
+		line("TestB", "run")
+		line("TestB", "pass")
+	}
+	return b.String()
+}
+
+// The table goes to stdout either way, so the workflow can put it in the job
+// summary; the exit code is the job's verdict.
+func TestTiming_PrintsTheTableAndExitsByTheVerdict(t *testing.T) {
+	mk := write(t, "Makefile", timingMakefile)
+
+	code, out, errOut := runCmd(t, "timing", mk, write(t, "t.json", timingEvents(2)), "1")
+	if code != 0 || !strings.Contains(out, "| TestA | 20 | 2 | 0 |") {
+		t.Errorf("2 fails: exit %d, stdout %q, stderr %q, want 0 and the table", code, out, errOut)
+	}
+
+	code, out, _ = runCmd(t, "timing", mk, write(t, "t.json", timingEvents(6)), "1")
+	if code != 1 || !strings.Contains(out, "| TestA | 20 | 6 | 0 |") || !strings.Contains(out, "TestA") {
+		t.Errorf("6 fails: exit %d, stdout %q, want 1 and the table", code, out)
+	}
+}
+
+func TestTiming_UnreadableInputIsAnErrorNotGreen(t *testing.T) {
+	mk := write(t, "Makefile", timingMakefile)
+	ev := write(t, "t.json", timingEvents(0))
+	missing := filepath.Join(t.TempDir(), "none")
+
+	for name, args := range map[string][]string{
+		"no events file":    {"timing", mk, missing, "0"},
+		"no Makefile":       {"timing", missing, ev, "0"},
+		"no list in it":     {"timing", write(t, "Makefile2", "all:\n"), ev, "0"},
+		"exit not a number": {"timing", mk, ev, "x"},
+	} {
+		if code, out, _ := runCmd(t, args...); code == 0 {
+			t.Errorf("%s: exit 0, stdout %q", name, out)
+		}
+	}
+	if code, _, errOut := runCmd(t, "timing", mk, ev); code != 2 || !strings.Contains(errOut, "usage") {
+		t.Errorf("missing argument: exit %d, stderr %q, want 2 with usage", code, errOut)
+	}
+}
