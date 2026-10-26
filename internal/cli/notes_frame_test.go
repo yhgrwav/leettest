@@ -71,6 +71,51 @@ func allNotesReport() engine.Report {
 	}
 }
 
+// invalidNotesReport is one run whose every invalidNote branch fires: a method
+// refused outright, one the client could not send, one whose replies were too
+// large, one whose replies came compressed with an encoding the client does not
+// accept, one with every kind of failure at once, and one that was fine.
+func invalidNotesReport() engine.Report {
+	const sent = 10
+
+	return engine.Report{
+		Duration:        10 * time.Second,
+		Sent:            6 * sent,
+		Failed:          5 * sent,
+		RequestRejected: true,
+		Methods: []engine.MethodReport{
+			{
+				Method: "inv.v1.Inv/Rejected", Sent: sent, Failed: sent,
+				Rejected: refusals(sent, time.Millisecond),
+			},
+			{
+				Method: "inv.v1.Inv/ClientError", Sent: sent, Failed: sent,
+				ClientError: sent,
+			},
+			{
+				Method: "inv.v1.Inv/Oversized", Sent: sent, Failed: sent,
+				BadResponse: refusals(sent, time.Millisecond),
+				FailureCodes: []engine.CodeCount{
+					{Code: "ResourceExhausted", Count: sent, FromTarget: false},
+				},
+			},
+			{
+				Method: "inv.v1.Inv/Compressed", Sent: sent, Failed: sent,
+				BadResponse: refusals(sent, time.Millisecond),
+			},
+			{
+				Method: "inv.v1.Inv/Mixed", Sent: sent, Failed: sent,
+				Rejected:    refusals(4, time.Millisecond),
+				ClientError: 3,
+				BadResponse: refusals(3, time.Millisecond),
+			},
+			{
+				Method: "inv.v1.Inv/Fine", Sent: sent,
+			},
+		},
+	}
+}
+
 // Ground: contract — every helper of reportNotes speaks for this report, so
 // the frame below it holds a line for each of them.
 func TestNotes_EveryHelperSpeaksForTheFrame(t *testing.T) {
@@ -129,5 +174,41 @@ func TestNotes_TheFrameIsUnchanged(t *testing.T) {
 	}
 	if got != string(want) {
 		t.Errorf("the notes changed; first difference at byte %d", firstDiff(got, string(want)))
+	}
+}
+
+// Ground: contract — the invalid-run notes as they were before the next
+// notes.go refactor: reportNotes over a report that makes every invalidNote
+// branch speak, with and without a max_response_size. -update-notes rewrites
+// them.
+func TestNotes_TheInvalidFramesAreUnchanged(t *testing.T) {
+	for _, tc := range []struct {
+		file        string
+		maxResponse string
+	}{
+		{file: "invalid.txt", maxResponse: "4MB"},
+		{file: "invalid-no-max.txt", maxResponse: ""},
+	} {
+		got := strings.Join(reportNotes(invalidNotesReport(), tc.maxResponse), "\n\n")
+
+		path := filepath.Join("testdata", "notes", tc.file)
+		if *updateNotes {
+			if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte(got), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			continue
+		}
+
+		want, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("%v (run with -update-notes once)", err)
+		}
+		if got != string(want) {
+			t.Errorf("the notes changed; first difference at byte %d", firstDiff(got, string(want)))
+		}
 	}
 }

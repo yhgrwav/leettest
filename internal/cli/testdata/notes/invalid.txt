@@ -1,0 +1,31 @@
+failed calls by gRPC code:
+inv.v1.Inv/Oversized codes set by the client: ResourceExhausted 10
+
+The "request error" rows are calls that fail the same way at any rate. Either
+the request is wrong - no such method, a bad argument, a body that does not match
+the schema - or
+a request refused as larger than accepted, by the target or a proxy in front of it.
+Check the config for inv.v1.Inv/Rejected, inv.v1.Inv/Mixed.
+
+invalid run: every measured call of inv.v1.Inv/Rejected came back as a request that will not
+be served, by the target or a proxy in front of it. Nothing about the load was
+tested there; fix the request and run again.
+
+invalid run: the client could not send any call of inv.v1.Inv/ClientError: the request did not
+encode, or the client's own stack refused it; see the codes set by the client.
+Nothing reached the target.
+
+invalid run: every response of inv.v1.Inv/Oversized was larger than max_response_size (4MB):
+raise it.
+
+invalid run: responses of inv.v1.Inv/Compressed came compressed with an encoding the client does
+not accept. gRPC lets a server compress only with an encoding the client
+announced in grpc-accept-encoding: the target or a proxy in front of it breaks that.
+
+invalid run: every measured call of inv.v1.Inv/Mixed failed the same way at any rate:
+request error 4, client error 3, bad response 3. Nothing about the load was
+tested there.
+
+A method's percentiles are the time to serve a call: successes, and timeouts
+as lower bounds. The rows under it time the other answers:
+"bad response": a reply came and the client did not accept it.
