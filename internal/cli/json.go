@@ -406,7 +406,23 @@ func answers(r engine.RefusalLatency) jsonAnswers {
 func NewJSONReport(run JSONRun) JSONReport {
 	run.Run.Target = run.Target
 	r := &run.Run.Report
-	out := JSONReport{
+
+	out := jsonRunFacts(run)
+	out.StartLag = startLagJSON(r)
+	out.CapHit = capHitJSON(r.CapHit)
+	out.Connections = connectionsOf(r.Connections)
+	out.Methods = methodsJSON(r.Methods, r.Warmup, out.Settings.Compression)
+	out.Notes = notesJSON(run.Run)
+	out.InvalidReasons = invalidReasonsJSON(run.Run, out.Methods)
+	out.Unchecked = uncheckedJSON(run.Run.Unchecked)
+
+	return out
+}
+
+func jsonRunFacts(run JSONRun) JSONReport {
+	r := &run.Run.Report
+
+	return JSONReport{
 		SchemaVersion:     JSONSchemaVersion,
 		Mode:              ModeRun,
 		LeetTestVersion:   run.Version,
@@ -430,8 +446,6 @@ func NewJSONReport(run JSONRun) JSONReport {
 		WarmupSent:        r.WarmupSent,
 		WarmupFailed:      r.WarmupFailed,
 		WarmupNotSent:     r.WarmupNotSent,
-		StartLag:          jsonStartLag{P99: quantile(r.StartLagP99)},
-		InvalidReasons:    make([]string, 0, 2),
 		TailWaitCause:     tailWaitCause(*r),
 		ClockStepNS:       int64(run.Run.ClockStep),
 		ClientWaits: jsonClientWaits{
@@ -439,78 +453,114 @@ func NewJSONReport(run JSONRun) JSONReport {
 			GeneratorTailCalls: r.GeneratorTailCalls, StreamTailCalls: r.StreamTailCalls, ConnectionTailCalls: r.ConnectionTailCalls,
 		},
 		GeneratorCPU: genCPUOf(run.Run.GeneratorCPU),
-		Notes:        runNotes(run.Run),
-		Methods:      make([]jsonMethod, 0, len(r.Methods)),
-		Unchecked:    make([]jsonUnchecked, 0, len(run.Run.Unchecked)),
 		Thresholds:   thresholdsJSON(run.Run.Thresholds),
 	}
+}
+
+func startLagJSON(r *engine.Report) jsonStartLag {
+	out := jsonStartLag{P99: quantile(r.StartLagP99)}
 	// The maximum is exact, but there is none without a call.
 	if r.StartLagP99.Defined {
-		out.StartLag.Max = &jsonQuantile{US: micros(r.StartLagMax), NS: r.StartLagMax.Nanoseconds()}
+		out.Max = &jsonQuantile{US: micros(r.StartLagMax), NS: r.StartLagMax.Nanoseconds()}
 	}
-	if c := r.CapHit; c != nil {
-		out.CapHit = &jsonCapHit{AtUS: micros(c.At), Unsent: c.Unsent, OverDeadline: c.OverDeadline}
+
+	return out
+}
+
+func capHitJSON(c *engine.CapHit) *jsonCapHit {
+	if c == nil {
+		return nil
 	}
-	if c := r.Connections; c != nil {
-		conns := &jsonConns{Open: c.Open, Reconnects: c.Reconnects, LimitChanges: c.LimitChanges}
 
-		if severalConnections(c) {
-			resolved := append([]string{}, c.Resolved...)
-			links := make([]jsonLink, len(c.Each))
+	return &jsonCapHit{AtUS: micros(c.At), Unsent: c.Unsent, OverDeadline: c.OverDeadline}
+}
 
-			for i := range c.Each {
-				l := &c.Each[i]
-				links[i] = jsonLink{
-					Address: l.Address, Calls: l.Calls, Failed: l.Failed, StreamWaited: l.StreamWaited,
-					NotSentStream: l.NotSentStream, P99: quantile(l.P99), LimitChanges: l.LimitChanges,
-				}
-				links[i].FirstLimit, links[i].LastLimit = limitsOf(l.LimitAnnounced, l.FirstLimit, l.LastLimit, l.LimitChanges)
+func connectionsOf(c *engine.Connections) *jsonConns {
+	if c == nil {
+		return nil
+	}
+
+	conns := &jsonConns{Open: c.Open, Reconnects: c.Reconnects, LimitChanges: c.LimitChanges}
+
+	if severalConnections(c) {
+		resolved := append([]string{}, c.Resolved...)
+		links := make([]jsonLink, len(c.Each))
+
+		for i := range c.Each {
+			l := &c.Each[i]
+			links[i] = jsonLink{
+				Address: l.Address, Calls: l.Calls, Failed: l.Failed, StreamWaited: l.StreamWaited,
+				NotSentStream: l.NotSentStream, P99: quantile(l.P99), LimitChanges: l.LimitChanges,
 			}
-
-			conns.Resolved, conns.PerConnection = &resolved, &links
-
-			if c.InFlightAnnounced {
-				limit := c.InFlightLimit
-				conns.InFlightLimit = &limit
-			}
-		} else {
-			conns.FirstLimit, conns.LastLimit = limitsOf(c.LimitAnnounced, c.FirstLimit, c.LastLimit, c.LimitChanges)
-			conns.InFlightLimit = conns.LastLimit
+			links[i].FirstLimit, links[i].LastLimit = limitsOf(l.LimitAnnounced, l.FirstLimit, l.LastLimit, l.LimitChanges)
 		}
-		out.Connections = conns
+
+		conns.Resolved, conns.PerConnection = &resolved, &links
+
+		if c.InFlightAnnounced {
+			limit := c.InFlightLimit
+			conns.InFlightLimit = &limit
+		}
+	} else {
+		conns.FirstLimit, conns.LastLimit = limitsOf(c.LimitAnnounced, c.FirstLimit, c.LastLimit, c.LimitChanges)
+		conns.InFlightLimit = conns.LastLimit
 	}
-	for i := range r.Methods {
-		m := jsonMethodOf(&r.Methods[i], r.Warmup)
+
+	return conns
+}
+
+func methodsJSON(methods []engine.MethodReport, warmup time.Duration, compression *string) []jsonMethod {
+	out := make([]jsonMethod, 0, len(methods))
+	for i := range methods {
+		m := jsonMethodOf(&methods[i], warmup)
 		// Without compression raw and wire are the same number: null.
-		if b := r.Methods[i].RequestBytes; b != nil && out.Settings.Compression != nil {
+		if b := methods[i].RequestBytes; b != nil && compression != nil {
 			m.RequestBytes = &jsonRequestBytes{Raw: b.Raw, Wire: b.Wire}
 		}
-		out.Methods = append(out.Methods, m)
+		out = append(out, m)
 	}
-	if note := uncheckedNote(run.Run.Unchecked); note != "" {
-		out.Notes = append(out.Notes, note)
+
+	return out
+}
+
+func notesJSON(run RunReport) []string {
+	notes := runNotes(run)
+	if note := uncheckedNote(run.Unchecked); note != "" {
+		notes = append(notes, note)
 	}
 	// Notes read as the text report prints them.
-	for i := range out.Notes {
-		out.Notes[i] = asciiText(out.Notes[i])
+	for i := range notes {
+		notes[i] = asciiText(notes[i])
 	}
-	if r.CapHit != nil {
-		out.InvalidReasons = append(out.InvalidReasons, "in_flight_cap")
+
+	return notes
+}
+
+func invalidReasonsJSON(run RunReport, methods []jsonMethod) []string {
+	out := make([]string, 0, 2)
+	if run.CapHit != nil {
+		out = append(out, "in_flight_cap")
 	}
-	for i := range out.Methods {
-		if out.Methods[i].InvalidReason != nil {
-			out.InvalidReasons = append(out.InvalidReasons, "nothing_measured")
+	for i := range methods {
+		if methods[i].InvalidReason != nil {
+			out = append(out, "nothing_measured")
 
 			break
 		}
 	}
-	if ClockTooCoarse(run.Run) {
-		out.InvalidReasons = append(out.InvalidReasons, "clock_step")
+	if ClockTooCoarse(run) {
+		out = append(out, "clock_step")
 	}
-	if thresholdsUndecided(run.Run.Thresholds) {
-		out.InvalidReasons = append(out.InvalidReasons, reasonThresholdsUndecided)
+	if thresholdsUndecided(run.Thresholds) {
+		out = append(out, reasonThresholdsUndecided)
 	}
-	for _, u := range run.Run.Unchecked {
+
+	return out
+}
+
+func uncheckedJSON(unchecked []Unchecked) []jsonUnchecked {
+	out := make([]jsonUnchecked, 0, len(unchecked))
+	for _, u := range unchecked {
 		reason := "reflection_failed"
 		if errors.Is(u.Err, descriptor.ErrReflectionUnsupported) {
 			reason = "reflection_off"
@@ -519,7 +569,7 @@ func NewJSONReport(run JSONRun) JSONReport {
 		if u.Err != nil {
 			msg = u.Err.Error()
 		}
-		out.Unchecked = append(out.Unchecked, jsonUnchecked{Method: u.Method, Reason: reason, Error: msg})
+		out = append(out, jsonUnchecked{Method: u.Method, Reason: reason, Error: msg})
 	}
 
 	return out
