@@ -104,22 +104,27 @@ func writeFileAtomic(path string, data []byte) (err error) {
 		}
 	}()
 
-	if fillErr := fillTemp(tmp, data); fillErr != nil {
+	if fillErr := fillTemp(tmp, path, data); fillErr != nil {
 		return fillErr
 	}
 
 	return os.Rename(tmp.Name(), path)
 }
 
-// fillTemp writes data, makes it durable and closes the file.
-func fillTemp(tmp *os.File, data []byte) error {
+// fillTemp writes data, gives it the mode of the reserved file, makes it
+// durable and closes it.
+func fillTemp(tmp *os.File, path string, data []byte) error {
 	if _, err := tmp.Write(data); err != nil {
 		return err
 	}
 	if err := tmp.Sync(); err != nil {
 		return err
 	}
-	if err := tmp.Chmod(0o644); err != nil {
+	reserved, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if err := tmp.Chmod(reserved.Mode().Perm()); err != nil {
 		return err
 	}
 
