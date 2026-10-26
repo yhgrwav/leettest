@@ -30,11 +30,15 @@ import (
 // defer, or exitNow, which skips every defer.
 var pendingJSONFile atomic.Pointer[string]
 
+// jsonFileMode is the mode the report is created with when the reserved file
+// has none to keep.
+const jsonFileMode os.FileMode = 0o644
+
 // reserveJSONFile creates the empty file before anything is sent: a path that
 // exists, or cannot be created, ends the command before the target sees a
 // call, and a repeated command never meets half of an earlier one.
 func reserveJSONFile(path string) error {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, jsonFileMode)
 	if err != nil {
 		if errors.Is(err, fs.ErrExist) {
 			return fmt.Errorf("-json-file %s: exists; remove it or choose another path", path)
@@ -111,8 +115,8 @@ func writeFileAtomic(path string, data []byte) (err error) {
 	return os.Rename(tmp.Name(), path)
 }
 
-// fillTemp writes data, gives it the mode of the reserved file, makes it
-// durable and closes it.
+// fillTemp writes data, gives it the mode of the reserved file, or the default
+// mode when the reserved file is gone, makes it durable and closes it.
 func fillTemp(tmp *os.File, path string, data []byte) error {
 	if _, err := tmp.Write(data); err != nil {
 		return err
@@ -120,11 +124,13 @@ func fillTemp(tmp *os.File, path string, data []byte) error {
 	if err := tmp.Sync(); err != nil {
 		return err
 	}
-	reserved, err := os.Stat(path)
-	if err != nil {
+	mode := jsonFileMode
+	if reserved, err := os.Stat(path); err == nil {
+		mode = reserved.Mode().Perm()
+	} else if !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	if err := tmp.Chmod(reserved.Mode().Perm()); err != nil {
+	if err := tmp.Chmod(mode); err != nil {
 		return err
 	}
 
