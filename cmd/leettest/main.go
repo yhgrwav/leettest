@@ -365,9 +365,10 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 	}
 
 	var runErr error
+	label := cli.ServiceLabel(cfg, flags.configPath)
 
 	if flags.interactive {
-		program := cli.NewProgram(target, cli.ServiceLabel(cfg, flags.configPath), eng, cfg.Load.Warmup, settings, s, reportOf)
+		program := cli.NewProgram(target, label, eng, cfg.Load.Warmup, settings, s, reportOf)
 		view.Store(program)
 		runErr = cli.RunLive(program, s, start, abort)
 	} else if runErr = cli.RunPlain(stderr, target, eng, start); runErr != nil &&
@@ -378,7 +379,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 	report := reportOf()
 	result := runResult(report, runErr)
 
-	if err := writeReport(stdout, s, cfg, flags.configPath, target, flags.output, flags.jsonFile, report, result); err != nil {
+	if err := writeReport(stdout, s, label, target, flags.output, flags.jsonFile, report, result); err != nil {
 		return err
 	}
 
@@ -677,7 +678,7 @@ func buildReport(p reportParts) cli.RunReport {
 
 // writeReport encodes the report, writes it to stdout in the format asked for
 // and saves it to -json-file.
-func writeReport(stdout io.Writer, s *cli.Stopper, cfg *config.MasterConfig, configPath, target, output, jsonFile string,
+func writeReport(stdout io.Writer, s *cli.Stopper, label, target, output, jsonFile string,
 	report cli.RunReport, result error,
 ) error {
 	// Only a run that happened has a report: on exit 1 stdout stays empty,
@@ -690,7 +691,7 @@ func writeReport(stdout io.Writer, s *cli.Stopper, cfg *config.MasterConfig, con
 		var err error
 		if data, err = encodeJSON(func(w io.Writer) error {
 			return cli.WriteJSON(w, cli.JSONRun{
-				Target: target, Name: cli.ServiceLabel(cfg, configPath), Version: versionString(version, info), Outcome: outcome,
+				Target: target, Name: label, Version: versionString(version, info), Outcome: outcome,
 				StartedAt: report.StartedAt, Run: report,
 			})
 		}); err != nil {
