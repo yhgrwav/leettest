@@ -32,38 +32,84 @@ const silencePlanTolerancePercent = 10
 // what the log keeps cannot drift apart.
 func reportNotes(report engine.Report, maxResponse string) []string {
 	notes := make([]string, 0, 8)
-	add := func(format string, args ...any) {
-		notes = append(notes, strings.TrimRight(fmt.Sprintf(format, args...), "\n"))
+	notes = append(notes, warmUpNote(report)...)
+
+	totals := methodTotals(report)
+
+	notes = append(notes, timedOutNotes(report)...)
+	notes = append(notes, failedCodeNotes(report)...)
+	notes = append(notes, streamNotes(report)...)
+	notes = append(notes, startLagNote(report)...)
+	notes = append(notes, rowNotes(report, totals, maxResponse)...)
+	notes = append(notes, capHitNote(report)...)
+	notes = append(notes, incompleteNote(report)...)
+	if v := streamVerdict(report); v != "" {
+		notes = append(notes, v)
+	}
+	notes = append(notes, cutOffNote(totals)...)
+	notes = append(notes, unansweredNote(totals)...)
+	notes = append(notes, outsideNote(totals)...)
+	notes = append(notes, unclassifiedNote(totals)...)
+	notes = append(notes, invalidMeasurementNote(totals)...)
+
+	return notes
+}
+
+// noteLine is one formatted note with the trailing newline the format strings
+// may carry removed.
+func noteLine(format string, args ...any) string {
+	return strings.TrimRight(fmt.Sprintf(format, args...), "\n")
+}
+
+// Sent leaves the warmup out; this line holds it, so the two add up to
+// every call that went out.
+func warmUpNote(report engine.Report) []string {
+	if report.Warmup <= 0 {
+		return nil
 	}
 
-	// Sent leaves the warmup out; this line holds it, so the two add up to
-	// every call that went out.
-	if report.Warmup > 0 {
-		failed := ""
-		if report.WarmupFailed > 0 {
-			failed = fmt.Sprintf(" (%d failed)", report.WarmupFailed)
-		}
-		add("warm-up %d sent%s, excluded from stats", report.WarmupSent, failed)
+	failed := ""
+	if report.WarmupFailed > 0 {
+		failed = fmt.Sprintf(" (%d failed)", report.WarmupFailed)
 	}
 
-	censored, unanswered, cutOff, unclassified, outside, invalid := 0, 0, 0, 0, 0, 0
-	rejected := make([]string, 0, len(report.Methods))
+	return []string{noteLine("warm-up %d sent%s, excluded from stats", report.WarmupSent, failed)}
+}
+
+type noteTotals struct {
+	censored     int
+	invalid      int
+	unanswered   int
+	cutOff       int
+	unclassified int
+	outside      int
+	rejected     []string
+}
+
+func methodTotals(report engine.Report) noteTotals {
+	var totals noteTotals
+	totals.rejected = make([]string, 0, len(report.Methods))
 	for i := range report.Methods {
 		m := &report.Methods[i]
-		censored += m.Censored
-		invalid += m.Invalid
-		unanswered += m.Unanswered
-		cutOff += m.CutOff
-		unclassified += m.Unclassified
-		outside += m.OutsideTimeline
+		totals.censored += m.Censored
+		totals.invalid += m.Invalid
+		totals.unanswered += m.Unanswered
+		totals.cutOff += m.CutOff
+		totals.unclassified += m.Unclassified
+		totals.outside += m.OutsideTimeline
 		if m.Rejected.Count > 0 {
-			rejected = append(rejected, displayMethod(m.Method))
+			totals.rejected = append(totals.rejected, displayMethod(m.Method))
 		}
 	}
 
-	// What the target did: stated as measured, with no threshold. Whether the
-	// rate is more than it can take needs one, and picking it is not this
-	// report's job.
+	return totals
+}
+
+// What the target did: stated as measured, with no threshold. Whether the
+// rate is more than it can take needs one, and picking it is not this
+// report's job.
+func timedOutNotes(report engine.Report) []string {
+	var notes []string
 	for i := range report.Methods {
 		m := &report.Methods[i]
 
@@ -119,9 +165,13 @@ func reportNotes(report engine.Report, maxResponse string) []string {
 		}
 	}
 
-	// The category says whose fault a failure is; the code is what the
-	// target's logs call it. A code the client set is kept apart: next to the
-	// target's it would read as the target's answer.
+	return notes
+}
+
+// The category says whose fault a failure is; the code is what the
+// target's logs call it. A code the client set is kept apart: next to the
+// target's it would read as the target's answer.
+func failedCodeNotes(report engine.Report) []string {
 	var codeLines []string
 	for i := range report.Methods {
 		m := &report.Methods[i]
@@ -140,36 +190,45 @@ func reportNotes(report engine.Report, maxResponse string) []string {
 			}
 		}
 	}
-	if len(codeLines) > 0 {
-		notes = append(notes, "failed calls by gRPC code:\n"+strings.Join(codeLines, "\n"))
+	if len(codeLines) == 0 {
+		return nil
 	}
 
-	notes = append(notes, streamNotes(report)...)
+	return []string{"failed calls by gRPC code:\n" + strings.Join(codeLines, "\n")}
+}
 
-	// What the generator did. Named for what it measures: a generator late to
-	// pick up answers is not in it, so it does not vouch for the latencies.
-	if report.StartLagP99.Defined || report.StartLagMax > 0 {
-		lag := fmt.Sprintf("start lag, how late calls began against their schedule: p99 %s, max %s.\n"+
-			"It does not see answers picked up late.",
-			formatQuantile(report.StartLagP99), formatLatency(report.StartLagMax))
-		if report.LateCancelMax > 0 {
-			lag += fmt.Sprintf("\nTimeouts returned up to %s past their deadline.", formatLatency(report.LateCancelMax))
-		}
-		notes = append(notes, lag)
+// What the generator did. Named for what it measures: a generator late to
+// pick up answers is not in it, so it does not vouch for the latencies.
+func startLagNote(report engine.Report) []string {
+	if !report.StartLagP99.Defined && report.StartLagMax <= 0 {
+		return nil
 	}
 
-	if len(rejected) > 0 {
-		add("The \"request error\" rows are calls that fail the same way at any rate. Either\n"+
+	lag := fmt.Sprintf("start lag, how late calls began against their schedule: p99 %s, max %s.\n"+
+		"It does not see answers picked up late.",
+		formatQuantile(report.StartLagP99), formatLatency(report.StartLagMax))
+	if report.LateCancelMax > 0 {
+		lag += fmt.Sprintf("\nTimeouts returned up to %s past their deadline.", formatLatency(report.LateCancelMax))
+	}
+
+	return []string{lag}
+}
+
+func rowNotes(report engine.Report, totals noteTotals, maxResponse string) []string {
+	var notes []string
+
+	if len(totals.rejected) > 0 {
+		notes = append(notes, noteLine("The \"request error\" rows are calls that fail the same way at any rate. Either\n"+
 			"the request is wrong - no such method, a bad argument, a body that does not match\n"+
 			"the schema - or\n"+
 			"a request refused as larger than accepted, by the target or a proxy in front of it.\n"+
-			"Check the config for %s.", strings.Join(rejected, ", "))
+			"Check the config for %s.", strings.Join(totals.rejected, ", ")))
 	}
 
 	if report.RequestRejected {
 		for i := range report.Methods {
 			if note := invalidNote(&report.Methods[i], maxResponse); note != "" {
-				add("%s", note)
+				notes = append(notes, noteLine("%s", note))
 			}
 		}
 	}
@@ -200,62 +259,87 @@ func reportNotes(report engine.Report, maxResponse string) []string {
 
 	// Aborted calls are censored too, but raising the timeout would not show
 	// their tail: the stop cut them off, not the deadline.
-	if timedOut := censored - report.Aborted; timedOut > 0 {
-		add("%d requests were abandoned before answering. A percentile shown as \"> value\"\n"+
-			"is a lower bound: the real tail lies above it. Raise the timeout to see it.", timedOut)
+	if timedOut := totals.censored - report.Aborted; timedOut > 0 {
+		notes = append(notes, noteLine("%d requests were abandoned before answering. A percentile shown as \"> value\"\n"+
+			"is a lower bound: the real tail lies above it. Raise the timeout to see it.", timedOut))
 	}
 
 	if report.Aborted > 0 {
-		add("%d requests were cut off by the abort. They are no fault of the target and are\n"+
-			"not counted as failures; each is known only to have lasted until the abort.", report.Aborted)
-	}
-
-	if hit := report.CapHit; hit != nil {
-		add("invalid run: calls held their slots more than %s (the allowance) past their\n"+
-			"deadline, and the in-flight cap was hit at %s. The generator lacked CPU, or the sender\n"+
-			"does not honor deadlines; the target is not what filled the cap. At the hit %d slots\n"+
-			"were being held past their own deadline; %d call was refused by the cap and\n"+
-			"never sent.",
-			formatDuration(engine.ReleaseMargin), formatDuration(hit.At), hit.OverDeadline, hit.Unsent)
-	}
-
-	if report.Incomplete {
-		add("incomplete: the run stopped before its planned end, and ran %s of the planned %s.\n"+
-			"The numbers are honest but cover only the part that ran; do not compare them with a\n"+
-			"full run.", formatDuration(report.Duration), formatDuration(report.Planned))
-	}
-
-	if v := streamVerdict(report); v != "" {
-		notes = append(notes, v)
-	}
-
-	if cutOff > 0 {
-		add("%d calls were cut off after going out: no status came back, and the other end,\n"+
-			"the target or a proxy in front of it, may have processed them.", cutOff)
-	}
-
-	if unanswered > 0 {
-		add("%d requests never reached the target and carry no latency, so they are\n"+
-			"counted as failures but left out of the percentiles above.", unanswered)
-	}
-
-	if outside > 0 {
-		add("warning: %d requests fell outside the per-second timeline and are missing\n"+
-			"from it. The generator ran far behind its schedule or a clock jumped; the\n"+
-			"totals above still count them.", outside)
-	}
-
-	if unclassified > 0 {
-		add("warning: %d requests came back without a category and are left out of the\n"+
-			"percentiles. This is a bug in the sender, not in the target. Please report it.", unclassified)
-	}
-
-	if invalid > 0 {
-		add("warning: %d measurements were impossible (negative latency) and left out.\n"+
-			"This is a bug in LeetTest, not in the target. Please report it.", invalid)
+		notes = append(notes, noteLine("%d requests were cut off by the abort. They are no fault of the target and are\n"+
+			"not counted as failures; each is known only to have lasted until the abort.", report.Aborted))
 	}
 
 	return notes
+}
+
+func capHitNote(report engine.Report) []string {
+	hit := report.CapHit
+	if hit == nil {
+		return nil
+	}
+
+	return []string{noteLine("invalid run: calls held their slots more than %s (the allowance) past their\n"+
+		"deadline, and the in-flight cap was hit at %s. The generator lacked CPU, or the sender\n"+
+		"does not honor deadlines; the target is not what filled the cap. At the hit %d slots\n"+
+		"were being held past their own deadline; %d call was refused by the cap and\n"+
+		"never sent.",
+		formatDuration(engine.ReleaseMargin), formatDuration(hit.At), hit.OverDeadline, hit.Unsent)}
+}
+
+func incompleteNote(report engine.Report) []string {
+	if !report.Incomplete {
+		return nil
+	}
+
+	return []string{noteLine("incomplete: the run stopped before its planned end, and ran %s of the planned %s.\n"+
+		"The numbers are honest but cover only the part that ran; do not compare them with a\n"+
+		"full run.", formatDuration(report.Duration), formatDuration(report.Planned))}
+}
+
+func cutOffNote(totals noteTotals) []string {
+	if totals.cutOff <= 0 {
+		return nil
+	}
+
+	return []string{noteLine("%d calls were cut off after going out: no status came back, and the other end,\n"+
+		"the target or a proxy in front of it, may have processed them.", totals.cutOff)}
+}
+
+func unansweredNote(totals noteTotals) []string {
+	if totals.unanswered <= 0 {
+		return nil
+	}
+
+	return []string{noteLine("%d requests never reached the target and carry no latency, so they are\n"+
+		"counted as failures but left out of the percentiles above.", totals.unanswered)}
+}
+
+func outsideNote(totals noteTotals) []string {
+	if totals.outside <= 0 {
+		return nil
+	}
+
+	return []string{noteLine("warning: %d requests fell outside the per-second timeline and are missing\n"+
+		"from it. The generator ran far behind its schedule or a clock jumped; the\n"+
+		"totals above still count them.", totals.outside)}
+}
+
+func unclassifiedNote(totals noteTotals) []string {
+	if totals.unclassified <= 0 {
+		return nil
+	}
+
+	return []string{noteLine("warning: %d requests came back without a category and are left out of the\n"+
+		"percentiles. This is a bug in the sender, not in the target. Please report it.", totals.unclassified)}
+}
+
+func invalidMeasurementNote(totals noteTotals) []string {
+	if totals.invalid <= 0 {
+		return nil
+	}
+
+	return []string{noteLine("warning: %d measurements were impossible (negative latency) and left out.\n"+
+		"This is a bug in LeetTest, not in the target. Please report it.", totals.invalid)}
 }
 
 // runNotes are reportNotes and what the CLI measured beside the engine: the
