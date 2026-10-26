@@ -117,7 +117,12 @@ func ServiceLabel(cfg *config.MasterConfig, configPath string) string {
 	for i := range cfg.Load.Calls {
 		full, _, _ := strings.Cut(cfg.Load.Calls[i].Method, "/")
 		if service != "" && full != service {
-			return strings.TrimSuffix(filepath.Base(configPath), filepath.Ext(configPath))
+			base := filepath.Base(configPath)
+			if label := strings.TrimSuffix(base, filepath.Ext(base)); label != "" {
+				return label
+			}
+
+			return base
 		}
 		service = full
 	}
