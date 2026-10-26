@@ -71,6 +71,12 @@ type cpuSpan struct {
 // cpuSpans are the CPU the process used between each two readings.
 type cpuSpans []cpuSpan
 
+// cpuWindow is a counted second of the run; the last may be a piece.
+type cpuWindow struct {
+	second   int
+	from, to time.Duration
+}
+
 // newCPUSpans turns the readings into spans from the start of the run. Two
 // readings at one instant make one, the later; a reading that goes back in
 // time is dropped.
@@ -150,44 +156,13 @@ func LayGeneratorCPU(report engine.Report, samples []CPUSample, cores float64) *
 		return nil
 	}
 
-	grid := 0
-	for i := range report.Methods {
-		grid = max(grid, len(report.Methods[i].Seconds))
-	}
+	grid := cpuGrid(report)
 	spans := newCPUSpans(samples, report.StartedAt)
 	rate := new(big.Rat).SetFloat64(cores)
-
-	// The counted seconds as windows of the run; the last may be a piece.
-	type window struct {
-		second   int
-		from, to time.Duration
-	}
-
-	first := int((max(0, report.Warmup) + time.Second - 1) / time.Second)
 	end := report.SendingEnded
-	var windows []window
-	for i := first; i < grid && time.Duration(i)*time.Second < end; i++ {
-		from := time.Duration(i) * time.Second
-		windows = append(windows, window{i, from, min(from+time.Second, end)})
-	}
-	merged := -1
-	if n := len(windows); n >= 2 && windows[n-1].to-windows[n-1].from < minLastSecond {
-		windows[n-2].to = windows[n-1].to
-		merged = windows[n-1].second
-		windows = windows[:n-1]
-	}
 
-	counted := make(map[int]int64, len(windows))
-	total, wall := new(big.Rat), time.Duration(0)
-	for _, w := range windows {
-		used, covered := spans.in(w.from, w.to)
-		if covered <= 0 {
-			continue
-		}
-		counted[w.second] = hundredths(used, covered, rate)
-		total.Add(total, used)
-		wall += covered
-	}
+	windows, merged := cpuWindows(report.Warmup, end, grid)
+	counted, total, wall := countWindows(spans, windows, rate)
 	// A counted part under a second, or none, has a share from the run after
 	// its warm-up as a whole, and no second to call busy.
 	short := wall < time.Second
@@ -203,8 +178,61 @@ func LayGeneratorCPU(report engine.Report, samples []CPUSample, cores float64) *
 	}
 
 	out := &GeneratorCPU{
-		AvailableCores: cores, Share: fromHundredths(hundredths(total, wall, rate)), Seconds: make([]*float64, grid),
+		AvailableCores: cores, Share: fromHundredths(hundredths(total, wall, rate)),
+		Seconds: cpuSecondShares(spans, rate, grid, counted, merged),
 	}
+
+	if short {
+		return out
+	}
+	countBusySeconds(out, counted, grid)
+
+	return out
+}
+
+func cpuGrid(report engine.Report) int {
+	grid := 0
+	for i := range report.Methods {
+		grid = max(grid, len(report.Methods[i].Seconds))
+	}
+
+	return grid
+}
+
+func cpuWindows(warmup, end time.Duration, grid int) (windows []cpuWindow, merged int) {
+	first := int((max(0, warmup) + time.Second - 1) / time.Second)
+	for i := first; i < grid && time.Duration(i)*time.Second < end; i++ {
+		from := time.Duration(i) * time.Second
+		windows = append(windows, cpuWindow{i, from, min(from+time.Second, end)})
+	}
+	merged = -1
+	if n := len(windows); n >= 2 && windows[n-1].to-windows[n-1].from < minLastSecond {
+		windows[n-2].to = windows[n-1].to
+		merged = windows[n-1].second
+		windows = windows[:n-1]
+	}
+
+	return windows, merged
+}
+
+func countWindows(spans cpuSpans, windows []cpuWindow, rate *big.Rat) (map[int]int64, *big.Rat, time.Duration) {
+	counted := make(map[int]int64, len(windows))
+	total, wall := new(big.Rat), time.Duration(0)
+	for _, w := range windows {
+		used, covered := spans.in(w.from, w.to)
+		if covered <= 0 {
+			continue
+		}
+		counted[w.second] = hundredths(used, covered, rate)
+		total.Add(total, used)
+		wall += covered
+	}
+
+	return counted, total, wall
+}
+
+func cpuSecondShares(spans cpuSpans, rate *big.Rat, grid int, counted map[int]int64, merged int) []*float64 {
+	seconds := make([]*float64, grid)
 	for i := range grid {
 		h, isCounted := counted[i]
 		switch {
@@ -220,12 +248,13 @@ func LayGeneratorCPU(report engine.Report, samples []CPUSample, cores float64) *
 			h = hundredths(used, covered, rate)
 		}
 		s := fromHundredths(h)
-		out.Seconds[i] = &s
+		seconds[i] = &s
 	}
 
-	if short {
-		return out
-	}
+	return seconds
+}
+
+func countBusySeconds(out *GeneratorCPU, counted map[int]int64, grid int) {
 	for i := range grid {
 		h, ok := counted[i]
 		if !ok {
@@ -240,8 +269,6 @@ func LayGeneratorCPU(report engine.Report, samples []CPUSample, cores float64) *
 			}
 		}
 	}
-
-	return out
 }
 
 // CPUMeter records the process's CPU time beside a run.
