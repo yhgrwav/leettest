@@ -2,4 +2,6 @@
 # its own commit with the Go versions of its own ci.yml and release.yml.
 # A branch enters at its cut and leaves with its last tag; change this list
 # only by a pull request into main (the schedule reads it from there).
+# A branch enters only with the `stress-timing` target in its own Makefile and
+# `stressplan timing`: its timing job runs them (red «No rule» otherwise).
 main

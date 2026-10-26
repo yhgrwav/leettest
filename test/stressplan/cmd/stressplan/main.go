@@ -19,6 +19,9 @@
 //	stressplan verdicts <list-file> <plan.json> <results-dir>
 //	                                                 "<branch> green|red" per branch
 //	stressplan title <branch>                     the failure issue's title
+//	stressplan timing-title <branch>              the timing issue's title
+//	stressplan timing <Makefile> <go-test-json> <go-test-exit-code>
+//	                                                 the table; exit 1 if the timing job is red
 //	stressplan tag <tag> <points-at-file>         exit 1 unless the tag is a branch tip
 package main
 
@@ -31,6 +34,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/yhgrwav/leettest/test/stressplan"
@@ -40,6 +44,8 @@ const usage = `usage:
   stressplan plan <list-file>
   stressplan verdicts <list-file> <plan.json> <results-dir>
   stressplan title <branch>
+  stressplan timing-title <branch>
+  stressplan timing <Makefile> <go-test-json> <go-test-exit-code>
   stressplan tag <tag> <points-at-file>`
 
 func main() {
@@ -59,6 +65,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 		err = verdicts(rest[0], rest[1], rest[2], stdout, stderr)
 	case cmd == "title" && len(rest) == 1:
 		fmt.Fprintln(stdout, stressplan.IssueTitle(rest[0]))
+	case cmd == "timing-title" && len(rest) == 1:
+		fmt.Fprintln(stdout, stressplan.TimingIssueTitle(rest[0]))
+	case cmd == "timing" && len(rest) == 3:
+		err = timing(rest[0], rest[1], rest[2], stdout)
 	case cmd == "tag" && len(rest) == 2:
 		err = tag(rest[0], rest[1])
 	default:
@@ -85,6 +95,9 @@ type matrixEntry struct {
 	SHA    string `json:"sha"`
 	Go     string `json:"go"`
 	Name   string `json:"name"`
+	// TimingName is the timing job's name; the workflow cannot cut a sha to
+	// seven characters itself.
+	TimingName string `json:"timing_name"`
 }
 
 // plan prints the matrix. A branch whose files are broken goes to stderr
@@ -107,7 +120,7 @@ func plan(listPath string, stdout, stderr io.Writer) error {
 	}
 	entries := make([]matrixEntry, 0, len(jobs))
 	for _, j := range jobs {
-		entries = append(entries, matrixEntry{Branch: j.Branch, SHA: j.SHA, Go: j.Go, Name: j.Name()})
+		entries = append(entries, matrixEntry{Branch: j.Branch, SHA: j.SHA, Go: j.Go, Name: j.Name(), TimingName: j.TimingName()})
 	}
 	out, err := json.Marshal(map[string]any{"include": entries})
 	if err != nil {
@@ -201,6 +214,33 @@ func verdicts(listPath, planPath, resultsDir string, stdout, stderr io.Writer) e
 			verdict = "green"
 		}
 		fmt.Fprintf(stdout, "%s %s\n", n, verdict)
+	}
+	return nil
+}
+
+// timing prints the table to stdout, red or green, for the job summary; a red
+// timing job is the error. The test names come from the Makefile that ran them.
+func timing(makefilePath, eventsPath, exitCode string, stdout io.Writer) error {
+	raw, err := os.ReadFile(makefilePath)
+	if err != nil {
+		return err
+	}
+	names, err := stressplan.ParseSkipList(raw)
+	if err != nil {
+		return fmt.Errorf("%s: %w", makefilePath, err)
+	}
+	events, err := os.ReadFile(eventsPath)
+	if err != nil {
+		return err
+	}
+	exit, err := strconv.Atoi(strings.TrimSpace(exitCode))
+	if err != nil {
+		return fmt.Errorf("go test exit code %q: %w", exitCode, err)
+	}
+	report := stressplan.Timing(names, events, exit)
+	fmt.Fprint(stdout, report.Table())
+	if !report.Green() {
+		return errors.New("the timing tests are red")
 	}
 	return nil
 }
