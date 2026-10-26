@@ -91,6 +91,18 @@ func TestServiceLabel(t *testing.T) {
 			path:  "leettest.yaml",
 			label: "wallet smoke",
 		},
+		{
+			name:  "a file with nothing before its extension keeps its whole name",
+			cfg:   config.MasterConfig{Load: config.Load{Calls: []config.Call{call("a.v1.One/Get"), call("b.v1.Two/Get")}}},
+			path:  "configs/.yaml",
+			label: ".yaml",
+		},
+		{
+			name:  "a dot file with an extension drops only the extension",
+			cfg:   config.MasterConfig{Load: config.Load{Calls: []config.Call{call("a.v1.One/Get"), call("b.v1.Two/Get")}}},
+			path:  "configs/.checkout.yaml",
+			label: ".checkout",
+		},
 	}
 
 	for _, tt := range tests {
