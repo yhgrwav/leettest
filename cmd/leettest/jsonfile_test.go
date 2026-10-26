@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -206,6 +207,39 @@ func TestRun_JSONFileLeavesAnotherFilesTmpAlone(t *testing.T) {
 	}
 	if got := string(readFile(t, leftover)); got != "leftover" {
 		t.Errorf("%s was changed: %q", leftover, got)
+	}
+}
+
+// The report keeps the mode of the reserved file: the umask decided it when
+// the file was created, and the write must not widen it.
+func TestSaveJSONFile_KeepsTheModeOfTheReservedFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows keeps no permission bits beyond read-only")
+	}
+
+	for _, mode := range []os.FileMode{0o600, 0o640, 0o644} {
+		t.Run(mode.String(), func(t *testing.T) {
+			path := newJSONPath(t)
+			if err := reserveJSONFile(path); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(discardJSONFile)
+			if err := os.Chmod(path, mode); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := saveJSONFile(path, []byte(`{}`)); err != nil {
+				t.Fatalf("save: %v", err)
+			}
+
+			info, err := os.Stat(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := info.Mode().Perm(); got != mode {
+				t.Errorf("mode = %v, want %v, the reserved file's", got, mode)
+			}
+		})
 	}
 }
 
