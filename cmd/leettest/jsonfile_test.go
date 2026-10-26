@@ -243,6 +243,42 @@ func TestSaveJSONFile_KeepsTheModeOfTheReservedFile(t *testing.T) {
 	}
 }
 
+// A reserved file removed during the run has no mode to keep: the report is
+// still written, with the mode a reserved file is created with.
+func TestSaveJSONFile_RemovedReservedFileGetsTheDefaultMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows keeps no permission bits beyond read-only")
+	}
+
+	path := newJSONPath(t)
+	if err := reserveJSONFile(path); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(discardJSONFile)
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := saveJSONFile(path, []byte(`{}`)); err != nil {
+		t.Fatalf("save: %v, want the report written", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o644 {
+		t.Errorf("mode = %v, want -rw-r--r--", got)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != `{}` {
+		t.Errorf("content = %q, want the report", got)
+	}
+}
+
 // A directory that is not there is a config error like any other: exit 1
 // naming the path, nothing sent, nothing created.
 func TestRun_JSONFileInAMissingDirectoryFailsBeforeAnyCall(t *testing.T) {
