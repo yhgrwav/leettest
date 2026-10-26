@@ -126,12 +126,17 @@ func printMethodTable(w io.Writer, run RunReport) {
 	fmt.Fprintf(w, "%-44s %8s %8s %9s %9s %9s %9s %9s\n",
 		"method", "sent", "failed", "sent/s", "p50", "p90", "p95", "p99")
 
+	compression := ""
+	if run.Settings != nil {
+		compression = run.Settings.Compression
+	}
+
 	for i := range run.Methods {
-		printMethodRow(w, &run.Methods[i], run)
+		printMethodRow(w, &run.Methods[i], compression)
 	}
 }
 
-func printMethodRow(w io.Writer, m *engine.MethodReport, run RunReport) {
+func printMethodRow(w io.Writer, m *engine.MethodReport, compression string) {
 	fmt.Fprintf(w, "%-44s %8d %8d %9.0f %9s %9s %9s %9s\n",
 		displayMethod(m.Method), m.Sent, m.Failed, m.RPS,
 		formatQuantile(m.P50), formatQuantile(m.P90), formatQuantile(m.P95), formatQuantile(m.P99))
@@ -151,7 +156,7 @@ func printMethodRow(w io.Writer, m *engine.MethodReport, run RunReport) {
 	}
 
 	// Without compression raw and wire are the same number: no line.
-	if b := m.RequestBytes; b != nil && run.Settings != nil && run.Settings.Compression != "" {
+	if b := m.RequestBytes; b != nil && compression != "" {
 		fmt.Fprintf(w, "  bytes: %.0f -> %.0f per call\n", b.Raw, b.Wire)
 	}
 
