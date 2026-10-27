@@ -257,9 +257,49 @@ seed 在启动时选取，每个调用各有一个。
 | `-connect-timeout` | 服务接受了连接却不应答时等待多久。默认 `10s`。连接被拒绝和地址错误不会等待 |
 | `-max-in-flight` | 等待应答的请求数上限。默认 `5000` |
 | `-plain` | 不用实时屏幕：每秒一行进度输出到 stderr，与没有终端时相同，并且没有首次运行的对话。报告和退出码不变 |
+| `-dry-run` | 不加压地检查配置：建立连接、检查方法、每个调用发送一个请求，并打印请求、状态和响应。没有统计，没有报告。详见下面的“压测前检查”一节。不能与 `-fake`、`-output`、`-json-file`、`-label`、`-plain` 一起使用（退出码 1）。（未发布） |
 | `-fake` | 用内置的桩代替配置中的服务施压——无需服务即可查看工具。报告会标记为 `fake target` |
 | `-fake-delay`、`-fake-jitter`、`-fake-fail-ratio` | 桩的行为。只能与 `-fake` 一起使用 |
 | `-version` | 输出版本并退出。从源码构建时输出提交哈希 |
+
+## 压测前检查
+
+`leettest -c x.yaml -dry-run`（未发布）像一次压测那样建立连接并检查方法，然后对 `load.calls` 的每个条目按配置顺序依次发送一个请求，
+并为每个调用打印实际发出的请求、状态和 JSON 形式的响应。没有负载、没有统计、没有报告：一秒钟就能看出这份配置带着这些数据和这个授权能否到达服务，
+免得压测把报告填满同一个重复十万次的错误。
+
+```
+dry run: 2 calls, one request each, nothing measured
+1/2 grpc.health.v1.Health/Check: success, OK, 1.20ms
+  request: {"service":"wallet"}
+  response: {"status":"SERVING"}
+2/2 wallet.Wallet/Transfer: failure, InvalidArgument sent by the target, 800us
+  request (record 1 of 500): {"from":"a-1","amount":"-5"}
+  message: amount must be positive
+metadata: authorization: Bearer ${TOKEN}, x-tenant: acme
+```
+
+- **调用的第一行：** 与报告相同的类别名、状态码、谁设置的它（`sent by the target` 或 `set by the client`；成功时没有），
+  以及从发送到响应的时间。没有收到状态的调用（`unreachable`、`cut_off`）没有时间。
+- **`request:` 和 `response:`** 是按方法的 schema 解码的字节，使用 `.proto` 的字段名，写在一行里。请求是实际发到线路上的内容，
+  所以取默认值的字段不会出现。失败的调用没有 `response:`，而是 `message:`（状态消息，仅在非空时）。无法解码的响应打印为
+  `response: N bytes, not decoded: <错误>`，调用的类别不变。reflection 不认识的方法以空消息发出，并像压测一样在 stderr 给出警告，
+  打印 `request: {}`。
+- **超过 4096 字节的正文或消息** 在此处截断，并以 `… (N bytes in all)` 结尾，N 是隐藏密钥之后的长度。消息中的控制字符写成 `\xNN`。
+- **数据。** 带 `dataset` 的调用发送文件的第一条记录，无论 `dataset_order`、`dataset_seed` 和 `dataset_reuse` 怎么写；
+  该块会写明 `record 1 of N`。
+- **元数据** 是块之后的一行：键为小写（与实际发出的一致）并排序，值与配置中所写一致，所以 `${ENV}` 保持未展开。没有元数据就没有这一行。
+- **密钥。** 元数据中代入的每个 `${NAME}` 的值，在 `message:` 和 `response:` 中都会被替换为 `${NAME}`：把请求头原样回显的服务，
+  不会把密钥带到屏幕或 CI 日志里，带有它的响应读作 `{"tenant":"${TENANT}"}`，而不是 `acme`。无法识别的是 `bytes` 字段中的 base64 密钥。
+  直接写在 YAML 里的密钥会原样打印，元数据那一行也是如此：要避免它出现在屏幕上，请用 `${ENV}` 从环境变量中取。
+- **与压测相同的检查。** 压测在接触网络之前拒绝的内容，dry run 以相同的文字和退出码 1 拒绝：文件对计划来说太短、调用超过在途请求上限、
+  同一个方法出现两次。`-max-in-flight` 生效，`-c` 和 `-connect-timeout` 也生效。`-fake`、`-fake-delay`、`-fake-jitter`、
+  `-fake-fail-ratio`、`-output`、`-json-file`、`-label` 和 `-plain` 在 dry run 中不起任何作用，因而被拒绝：`-<名称> with -dry-run: …`。
+- **配置中有关负载的部分**——`rps`、`duration`、`load.ramp`、`load.warmup`、`pass`、`load.breakpoint`——会被接受但不使用：
+  带 `load.breakpoint` 的配置每个调用得到一个请求，不做搜索。每个调用的请求使用它自己的 `timeout`。
+- **退出码。** 每个调用都是 `success` 时为 `0`。否则为 `1`，stderr 输出 `dry run: 1 of 2 calls did not succeed`；
+  在开始前就会让压测停止的情况（配置、文件、服务不可达）同样是 `1`。Ctrl+C 或 SIGTERM 会取消正在进行的调用：已打印的块保留，
+  不再发送任何请求，stderr 输出 `dry run: stopped after K of N calls`，退出码 `1`。CI 步骤把 `1` 理解为“不要开始压测”。
 
 ## 停止
 

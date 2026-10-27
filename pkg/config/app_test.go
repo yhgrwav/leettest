@@ -391,6 +391,28 @@ func TestMetadata_DoubledDollarWritesALiteralReference(t *testing.T) {
 	}
 }
 
+// The names are the ones the loader reads: a "$${NAME}" is text, and no
+// variable of it was ever read, so a caller hiding values must not look for it.
+// Ground: contract — SubstitutedEnvNames shares the grammar of the metadata loader.
+func TestSubstitutedEnvNames_AreTheOnesTheLoaderReads(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		want  []string
+	}{
+		{"plain", nil},
+		{"Bearer ${LT_A}", []string{"LT_A"}},
+		{"${LT_A}-${LT_B}${LT_A}", []string{"LT_A", "LT_B", "LT_A"}},
+		{"p$${LT_NOT}q ${LT_YES}", []string{"LT_YES"}},
+		{"$${LT_NOT}", nil},
+		{"${1BAD} ${LT-BAD} $", nil},
+	} {
+		got := config.SubstitutedEnvNames(tc.value)
+		if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+			t.Errorf("SubstitutedEnvNames(%q) = %v, want %v", tc.value, got, tc.want)
+		}
+	}
+}
+
 // Ground: contract — the refusal of a binary key says why in the words users search for.
 func TestMetadata_BinaryKeySaysItIsNotSupported(t *testing.T) {
 	_, err := config.Parse(withApp("  metadata:\n    x-trace-bin: AAAA\n"))
