@@ -88,6 +88,11 @@ func TestRatesOver_TheMeasuredPart(t *testing.T) {
 		{"from the middle of the ramp", 15 * time.Second, math.MaxInt64, 400, 800},
 		{"from a tick inside a second", 15500 * time.Millisecond, math.MaxInt64, 413, 800},
 		{"a window of half a second inside the ramp", 15 * time.Second, 15500 * time.Millisecond, 400, 414},
+		// 800/30 s is 80/3 rps per second: 525 ms to 1.05 s are exactly 14 and
+		// 28 rps. A float formula lands at 28.000000000000004 and 29.
+		{"a window that ends on a whole rate", 525 * time.Millisecond, 1050 * time.Millisecond, 14, 28},
+		// 1.275 s is exactly 34 rps; a float formula gives 33.99999999999999.
+		{"a window that starts on a whole rate", 1275 * time.Millisecond, math.MaxInt64, 34, 800},
 		{"from the plan's end", 50 * time.Second, math.MaxInt64, 0, 0},
 		{"from past the plan", 60 * time.Second, math.MaxInt64, 0, 0},
 	} {

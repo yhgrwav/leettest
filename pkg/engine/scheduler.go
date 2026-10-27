@@ -23,9 +23,8 @@ import (
 
 var (
 	ErrNoStages      = errors.New("scheduler has no stages")
-	ErrStageRPS      = errors.New("stage rps must be positive")
+	ErrStageRPS      = errors.New("stage rps must not be negative, and not 0 at both ends")
 	ErrStageDuration = errors.New("stage duration must be positive")
-	ErrRampNotYet    = errors.New("gradual ramp is not implemented yet")
 	// ErrOnceNeedsEngine is what Scheduler.Run returns for a call whose dataset
 	// has Once set: only Engine counts records across runs.
 	ErrOnceNeedsEngine = errors.New("a dataset with Once needs the engine; Scheduler.Run does not honour it")
@@ -84,11 +83,9 @@ func (s *Scheduler) validate() error {
 	}
 
 	for i, stage := range s.Call.Stages {
-		if stage.StartRPS != stage.TargetRPS {
-			return fmt.Errorf("stage %d: %w", i, ErrRampNotYet)
-		}
-		if stage.TargetRPS < 1 {
-			return fmt.Errorf("stage %d: %w: %d", i, ErrStageRPS, stage.TargetRPS)
+		// A ramp may start or end at 0; a stage idle at both ends has no tick.
+		if stage.StartRPS < 0 || stage.TargetRPS < 0 || max(stage.StartRPS, stage.TargetRPS) < 1 {
+			return fmt.Errorf("stage %d: %w: %d to %d", i, ErrStageRPS, stage.StartRPS, stage.TargetRPS)
 		}
 		if stage.Duration <= 0 {
 			return fmt.Errorf("stage %d: %w: %s", i, ErrStageDuration, stage.Duration)
@@ -100,8 +97,8 @@ func (s *Scheduler) validate() error {
 
 func (s *Scheduler) runStage(ctx context.Context, out chan<- Request, stage Stage, stageStart time.Time) error {
 	for i := 0; ; i++ {
-		offset := time.Duration(i) * time.Second / time.Duration(stage.TargetRPS)
-		if offset >= stage.Duration {
+		offset, ok := stage.offset(i)
+		if !ok {
 			return nil
 		}
 

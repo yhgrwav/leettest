@@ -50,6 +50,14 @@ func CallsFromConfig(cfg *config.MasterConfig) ([]engine.Call, error) {
 				Duration:  call.Duration,
 			}},
 		}
+		if cfg.Load.Ramp > 0 {
+			// The ramp comes before the call's duration: it does not shorten it.
+			built.Stages = append([]engine.Stage{{
+				StartRPS:  0,
+				TargetRPS: int(call.RPS),
+				Duration:  cfg.Load.Ramp,
+			}}, built.Stages...)
+		}
 
 		if call.Dataset != "" {
 			if len(call.Records) == 0 {
@@ -81,10 +89,9 @@ func CallsFromConfig(cfg *config.MasterConfig) ([]engine.Call, error) {
 
 // ExcludedWindow is the time from the start of a run that its statistics leave
 // out: the ramp and then the warm-up. It is the engine's Warmup option and
-// the live view's, never the report's echo of load.warmup. Red-test stub: the
-// warm-up only.
+// the live view's, never the report's echo of load.warmup.
 func ExcludedWindow(cfg *config.MasterConfig) time.Duration {
-	return cfg.Load.Warmup
+	return cfg.Load.Ramp + cfg.Load.Warmup
 }
 
 // datasetCounter is the counter of a dataset call: the file's order, or a

@@ -235,7 +235,7 @@ func (b Breakpoint) validate() error {
 }
 
 // validateSearch refuses what a search cannot run with: more than one call,
-// a warm-up of its own, the rate or length a search sets per step.
+// a warm-up or a ramp of its own, the rate or length a search sets per step.
 func (l Load) validateSearch() []error {
 	var errs []error
 	if len(l.Calls) > 1 {
@@ -243,6 +243,9 @@ func (l Load) validateSearch() []error {
 	}
 	if l.Warmup != 0 {
 		errs = append(errs, fmt.Errorf("%w: load.warmup with load.breakpoint: each step has its breakpoint.settle", ErrBreakpoint))
+	}
+	if l.Ramp > 0 {
+		errs = append(errs, fmt.Errorf("%w: load.ramp with load.breakpoint: the search sets the rates", ErrBreakpoint))
 	}
 	for i := range l.Calls {
 		call := &l.Calls[i]
@@ -368,6 +371,9 @@ func (l Load) Validate() error {
 
 	if l.Warmup < 0 {
 		errs = append(errs, fmt.Errorf("%w: %s", ErrInvalidWarmup, l.Warmup))
+	}
+	if l.Ramp < 0 {
+		errs = append(errs, fmt.Errorf("%w: %s", ErrInvalidRamp, l.Ramp))
 	}
 	if len(l.Calls) == 0 {
 		errs = append(errs, ErrNoCalls)

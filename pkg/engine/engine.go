@@ -383,7 +383,7 @@ func (e *Engine) Report() Report {
 			if call.Dataset != nil {
 				m.Dataset = e.datasetReport(call)
 			}
-			m.RPSLow, m.RPSHigh = ratesOver(call.Stages, 0, math.MaxInt64)
+			m.RPSLow, m.RPSHigh = ratesOver(call.Stages, e.opts.Warmup, math.MaxInt64)
 			if m.SilentFrom != nil {
 				m.SilentPlannedLow, m.SilentPlannedHigh = ratesInWindow(call.Stages, *m.SilentFrom)
 			}
@@ -490,8 +490,8 @@ func ScheduledAfter(stages []Stage, warmup time.Duration) int {
 	n := 0
 	for _, stage := range stages {
 		for i := 0; ; i++ {
-			offset := time.Duration(i) * time.Second / time.Duration(stage.TargetRPS)
-			if offset >= stage.Duration {
+			offset, ok := stage.offset(i)
+			if !ok {
 				break
 			}
 			if at+offset >= warmup {
@@ -505,7 +505,10 @@ func ScheduledAfter(stages []Stage, warmup time.Duration) int {
 }
 
 // ratesOver is the lowest and highest planned rate of the stages that overlap
-// [from, to).
+// [from, to). Of a ramp it counts the rate at the two ends of the overlap, not
+// the whole range of the stage: the whole number below the lower one and the
+// whole number above the higher. A window at or past the plan's end gives 0, 0,
+// which a config cannot ask for (warmup < duration), a library caller can.
 func ratesOver(stages []Stage, from, to time.Duration) (low, high int) {
 	var at time.Duration
 
@@ -517,7 +520,9 @@ func ratesOver(stages []Stage, from, to time.Duration) (low, high int) {
 			continue
 		}
 
-		lo, hi := min(stage.StartRPS, stage.TargetRPS), max(stage.StartRPS, stage.TargetRPS)
+		floorIn, ceilIn := stage.rateBounds(max(start, from) - start)
+		floorOut, ceilOut := stage.rateBounds(min(end, to) - start)
+		lo, hi := min(floorIn, floorOut), max(ceilIn, ceilOut)
 		if first {
 			low, high, first = lo, hi, false
 

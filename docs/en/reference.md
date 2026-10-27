@@ -45,6 +45,7 @@ load:
 | `app.proto.import_paths` | Where to look for the files and their imports, as `protoc -I`. Paths are relative to the config file's directory. Left out — that directory. The well-known types (`google/protobuf/…`) need no path |
 | `app.protoset` | A descriptor set file instead of `.proto` files, built with `protoc --include_imports --descriptor_set_out=FILE`. The path is relative to the config file's directory. Not together with `app.proto`; neither of them — methods come from reflection |
 | `load.warmup` | The first N seconds stay out of the percentiles and of `sent`: cold caches spoil them. Warm-up calls do reach the target; the report prints them on a line `warm-up N sent (M failed), excluded from stats` — `sent` plus that line is every call the generator attempted. The target got all of them except those counted as unreachable or client error; `cut off` and timed-out ones may not have fully reached it: a target that does not open its HTTP/2 window (flow control) gets the headers only, and its counters may not see the call. Counts toward `duration`, shorter than any call |
+| `load.ramp` | Raise every call from 0 to its `rps`, linearly, over this long before its `duration` starts: the run lasts `ramp` + `duration`, and `duration` keeps its meaning (time at `rps`). Left out or `0s` — none. The ramp's calls stay out of the percentiles and of `sent`, like the warm-up's, which starts when the ramp ends; the report prints both on one line, `ramp and warm-up N sent, excluded from stats`. The limits in `pass` and the error share count the hold only: a target that fails during the ramp and recovers passes, and only that line shows it. The ramp begins with one call at moment 0. Not together with `load.breakpoint`. (not released) |
 | `load.calls[].method` | The full method name: `package.Service/Method` |
 | `load.calls[].rps` | Requests per second for this method |
 | `load.calls[].duration` | How long to load it: `30s`, `5m`, `1h` |
@@ -359,12 +360,13 @@ measured calls only. The first column is the field's full path.
 | `clock_step_ns` | int | The host clock step, ns: every latency and wait is ± it |
 | `started_at` | string | Start of the schedule, RFC 3339 UTC, warm-up included. Every `_us` and `_s` counts from it |
 | `duration_us` | int | How long the run went, warm-up included |
-| `planned_us` | int | How long it was meant to go |
-| `warmup_us` | int | Warm-up length |
+| `planned_us` | int | How long it was meant to go, the ramp included |
+| `warmup_us` | int | The window the statistics leave out: the ramp and the warm-up. Without a ramp, the warm-up length; for the warm-up alone take `warmup_us` − `settings.ramp_us` |
 | `settings` | object | What the run was started with, as configured, not as measured |
 | `settings.max_in_flight` | int; search: `int?` | The in-flight cap: the `-max-in-flight` value, else the default. A search: `null` without the flag (each run takes the smallest cap it can run with); in its runs, that run's cap |
 | `settings.connections` | int | `app.connections` as configured, 1 by default; `connections.open` is what opened |
 | `settings.warmup_us` | int | The warm-up as configured. A search: the settle |
+| `settings.ramp_us` | int | `load.ramp` as configured, in whole microseconds; 0 without one. (not released) |
 | `settings.compression` | string? | `app.compression` as configured: `"gzip"`, `null` — left out |
 | `passport` | object? | The machine and the config the run was made with, for telling runs apart. A search has it once at the top level, its runs in `breakpoint.runs` do not |
 | `passport.config_sha256` | string | SHA-256 of the config file's bytes as read, 64 hex digits |
@@ -379,7 +381,7 @@ measured calls only. The first column is the field's full path.
 | `aborted` | int | Cut off by our own stop |
 | `not_sent` | int | The timeout ran out before sending: in neither `sent` nor `failed` |
 | `not_sent_generator`, `not_sent_stream`, `not_sent_connection` | int | `not_sent` by cause: the generator was late, no free stream, no ready connection. They add up to `not_sent` |
-| `warmup_sent`, `warmup_failed`, `warmup_not_sent` | int | The same for calls scheduled in the warm-up |
+| `warmup_sent`, `warmup_failed`, `warmup_not_sent` | int | The same for calls scheduled in the excluded window (the ramp and the warm-up) |
 | `cap_hit` | object? | The `-max-in-flight` cap was hit; `null` — it was not |
 | `cap_hit.at_us` | int | When |
 | `cap_hit.unsent` | int | Calls the cap refused |
@@ -441,8 +443,8 @@ The rest are plain counters.
 | `methods[].sent`, `methods[].failed`, `methods[].aborted`, `methods[].not_sent`, `methods[].not_sent_generator`, `methods[].not_sent_stream`, `methods[].not_sent_connection`, `methods[].warmup_sent`, `methods[].warmup_failed`, `methods[].warmup_not_sent` | int | The method's share of the run's fields of the same name |
 | `methods[].rps` | float? | `sent/s`: calls sent divided by the sending time; `null` — no calls |
 | `methods[].timeout_us` | int | The method's timeout |
-| `methods[].planned_rps_low`, `methods[].planned_rps_high` | int | Lowest and highest planned rate of the whole plan |
-| `methods[].planned_duration_us` | int | How long the method was meant to go, as configured |
+| `methods[].planned_rps_low`, `methods[].planned_rps_high` | int | Lowest and highest planned rate of the measured part of the plan, after the excluded window: a ramped call gives its `rps` twice |
+| `methods[].planned_duration_us` | int | How long the method was meant to go, as configured, the ramp included |
 | `methods[].request_bytes` | object? | The request body, mean over the measured calls that went out; `null` without compression |
 | `methods[].request_bytes.raw`, `methods[].request_bytes.wire` | float | Bytes before compression and on the wire (without the 5-byte frame) |
 | `methods[].latency` | object | Latency of successful calls, with timeouts and aborted calls as lower bounds |
@@ -489,7 +491,7 @@ of the method.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `methods[].seconds[].warmup` | bool | The second is in the warm-up |
+| `methods[].seconds[].warmup` | bool | The second is in the excluded window (the ramp and the warm-up) |
 | `methods[].seconds[].begun` | int | Calls begun in this second |
 | `methods[].seconds[].succeeded`, `methods[].seconds[].overload`, `methods[].seconds[].failure`, `methods[].seconds[].client_error`, `methods[].seconds[].bad_response`, `methods[].seconds[].request_error`, `methods[].seconds[].timed_out`, `methods[].seconds[].unreachable`, `methods[].seconds[].cut_off`, `methods[].seconds[].aborted`, `methods[].seconds[].unclassified` | int | Calls that finished in this second, by category |
 | `methods[].seconds[].not_sent_generator`, `methods[].seconds[].not_sent_stream`, `methods[].seconds[].not_sent_connection` | int | Timeouts before sending that finished in this second, by cause |

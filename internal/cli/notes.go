@@ -29,10 +29,17 @@ const silencePlanTolerancePercent = 10
 // reportNotes is everything the report says in words: what the target did,
 // what the generator did, and the verdicts. One source for both the text
 // report and the final screen of the live view, so what the screen shows and
-// what the log keeps cannot drift apart.
+// what the log keeps cannot drift apart. It knows nothing of the ramp in the
+// engine's excluded window: reportNotesAfter does.
 func reportNotes(report engine.Report, maxResponse string) []string {
+	return reportNotesAfter(report, maxResponse, 0)
+}
+
+// reportNotesAfter is reportNotes for a run whose config had load.ramp: ramp
+// is the part of the engine's excluded window that was the ramp.
+func reportNotesAfter(report engine.Report, maxResponse string, ramp time.Duration) []string {
 	notes := make([]string, 0, 8)
-	notes = append(notes, warmUpNote(report)...)
+	notes = append(notes, warmUpNote(report, ramp)...)
 
 	totals := methodTotals(report)
 
@@ -62,8 +69,9 @@ func noteLine(format string, args ...any) string {
 }
 
 // Sent leaves the warmup out; this line holds it, so the two add up to
-// every call that went out.
-func warmUpNote(report engine.Report) []string {
+// every call that went out. The window is the ramp (the config's, ramp) and
+// then the warm-up, and the line names whichever were there.
+func warmUpNote(report engine.Report, ramp time.Duration) []string {
 	if report.Warmup <= 0 {
 		return nil
 	}
@@ -73,7 +81,16 @@ func warmUpNote(report engine.Report) []string {
 		failed = fmt.Sprintf(" (%d failed)", report.WarmupFailed)
 	}
 
-	return []string{noteLine("warm-up %d sent%s, excluded from stats", report.WarmupSent, failed)}
+	what := "warm-up"
+	switch {
+	case ramp <= 0:
+	case report.Warmup > ramp:
+		what = "ramp and warm-up"
+	default:
+		what = "ramp"
+	}
+
+	return []string{noteLine("%s %d sent%s, excluded from stats", what, report.WarmupSent, failed)}
 }
 
 type noteTotals struct {
@@ -382,7 +399,7 @@ func invalidMeasurementNote(totals noteTotals) []string {
 // runNotes are reportNotes and what the CLI measured beside the engine: the
 // CPU the process used and the host clock.
 func runNotes(run RunReport) []string {
-	notes := reportNotes(run.Report, run.MaxResponse)
+	notes := reportNotesAfter(run.Report, run.MaxResponse, run.ramp())
 	notes = append(notes, connectionNotes(run.Target, run.Connections)...)
 
 	if line := cpuNote(run.GeneratorCPU); line != "" {
