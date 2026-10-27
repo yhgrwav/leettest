@@ -20,10 +20,44 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
+
+var inFlightInTheLine = regexp.MustCompile(`; (\d+) in flight\b`)
+
+// stopLineOf is the line of a stop in a text: the one that starts «stopped at ».
+func stopLineOf(t *testing.T, text string) string {
+	t.Helper()
+
+	for _, line := range strings.Split(text, "\n") {
+		if i := strings.Index(line, "stopped at "); i >= 0 {
+			return line[i:]
+		}
+	}
+	t.Fatalf("no stop line in:\n%s", text)
+
+	return ""
+}
+
+// addPass appends a pass section to the (last) call of a config written by
+// spikeConfig; lines are indented by the caller to sit under «pass:».
+func addPass(t *testing.T, path, lines string) {
+	t.Helper()
+
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		t.Fatalf("open config: %v", err)
+	}
+	defer f.Close()
+
+	if _, err := f.WriteString("      pass:\n" + lines); err != nil {
+		t.Fatalf("append to config: %v", err)
+	}
+}
 
 const needsStopText = "app.mode: real needs load.stop_on_errors (the run stops when failures pass this share), e.g. load.stop_on_errors: 5%"
 
@@ -117,6 +151,19 @@ func TestRun_AnErrorSpikeStopsTheRunAndSaysWhy(t *testing.T) {
 	if at := fieldNumber(t, js, "stop", "at_us"); at < 1_000_000 || at > 6_000_000 {
 		t.Errorf("stop.at_us = %v, want between 1 s and 6 s", at)
 	}
+	// What hung is told as a count, never as a send rate: the engine keeps no
+	// count of calls begun. A stand that answers at once may hold none, and
+	// the line says 0 then rather than leave the clause out.
+	if n := fieldNumber(t, js, "stop", "in_flight"); n < 0 {
+		t.Errorf("stop.in_flight = %v, want a count", n)
+	}
+	line := stopLineOf(t, res.stderr)
+	if m := inFlightInTheLine.FindStringSubmatch(line); m == nil || !strings.HasSuffix(line, " in flight") {
+		t.Errorf("the stop line does not end with «; N in flight»: %q", line)
+	}
+	if strings.Contains(line, "rps") {
+		t.Errorf("the stop line tells a send rate: %q", line)
+	}
 }
 
 // Ground: signal — a stand that hangs is the case the monitor exists for: no
@@ -151,6 +198,85 @@ func TestRun_AHangingStandIsStoppedWithinTheTimeoutAndTheWindow(t *testing.T) {
 	}
 	if took > 12*time.Second {
 		t.Errorf("the run took %v of its planned 20 s: the hung calls were waited for or the stop never came", took)
+	}
+
+	// The calls that hung are the evidence of this case: at 50 rps with a
+	// timeout of a second there are dozens in flight when the stop comes, and
+	// the line and the JSON tell the same number.
+	inJSON := fieldNumber(t, js, "stop", "in_flight")
+	if inJSON <= 0 {
+		t.Errorf("stop.in_flight = %v, want the hung calls counted", inJSON)
+	}
+
+	line := stopLineOf(t, res.stderr)
+	m := inFlightInTheLine.FindStringSubmatch(line)
+	if m == nil {
+		t.Fatalf("the stop line has no «; N in flight»: %q", line)
+	}
+	if n, _ := strconv.Atoi(m[1]); n <= 0 || float64(n) != inJSON {
+		t.Errorf("the line says %s in flight and the JSON %v, want the same positive number", m[1], inJSON)
+	}
+}
+
+// Ground: signal — a ramp is part of the window: a run that starts failing in
+// the first seconds of a 10 s ramp is stopped there, not at the hold, and the
+// calls of the ramp stay in the warm-up column of the report like in any other
+// stop: the measured totals are empty.
+func TestRun_ARampedRunIsStoppedInsideTheRamp(t *testing.T) {
+	cfg := spikeConfig(t, closedPort(t), "5%", "1s", "5s")
+	setRamp(t, cfg, "10s")
+	path := newJSONPath(t)
+
+	began := time.Now()
+	res := runCLI(t.Context(), t, 40*time.Second, "-fake", "-fake-delay", "1ms", "-fake-fail-ratio", "1", "-json-file", path, "-c", cfg)
+	took := time.Since(began)
+
+	wantExit(t, res, 3)
+	if took > 12*time.Second {
+		t.Errorf("the run took %v of its planned 15 s: the ramp was not watched", took)
+	}
+
+	js := decodeOnly(t, string(readFile(t, path)))
+	if got := jsonAt(t, js, "stop_reason"); got != "error_spike" {
+		t.Fatalf("stop_reason = %v, want error_spike", got)
+	}
+	if at := fieldNumber(t, js, "stop", "at_us"); at <= 0 || at >= 10_000_000 {
+		t.Errorf("stop.at_us = %v, want inside the 10 s ramp", at)
+	}
+	if excluded := fieldNumber(t, js, "warmup_sent") + fieldNumber(t, js, "warmup_not_sent"); excluded <= 0 {
+		t.Errorf("warmup_sent + warmup_not_sent = %v, want the ramp's calls there", excluded)
+	}
+	if measured := fieldNumber(t, js, "sent") + fieldNumber(t, js, "not_sent"); measured != 0 {
+		t.Errorf("sent + not_sent = %v, want 0: the ramp's calls are not in the totals", measured)
+	}
+}
+
+// Ground: contract — the stop is a stop: exit 3 and thresholds unknown for
+// "the run was stopped", as for a Ctrl-C, whatever pass: would say. A limit of
+// 1% on a target that fails everything would be exit 4 had pass: run on the
+// part that was done; a stop outranks it (thresholds, «A stopped run checks
+// nothing»).
+func TestRun_AStopByErrorsOutranksPass(t *testing.T) {
+	cfg := spikeConfig(t, closedPort(t), "5%", "1s", "20s")
+	addPass(t, cfg, "        errors: 1%\n")
+	path := newJSONPath(t)
+
+	res := runCLI(t.Context(), t, 40*time.Second, "-fake", "-fake-delay", "1ms", "-fake-fail-ratio", "1", "-json-file", path, "-c", cfg)
+
+	wantExit(t, res, 3)
+
+	js := decodeOnly(t, string(readFile(t, path)))
+	if got := jsonAt(t, js, "stop_reason"); got != "error_spike" {
+		t.Fatalf("stop_reason = %v, want error_spike", got)
+	}
+	if got := jsonAt(t, js, "outcome"); got != "incomplete" {
+		t.Errorf("outcome = %v, want incomplete", got)
+	}
+
+	rows := verdicts(t, js)
+	wantVerdict(t, rows, "errors", "unknown")
+	if rows["errors"]["reason"] != "incomplete" {
+		t.Errorf("errors: reason = %v, want incomplete", rows["errors"]["reason"])
 	}
 }
 
@@ -209,15 +335,18 @@ func TestRun_StopConfigErrorsAreRefusedBeforeAnythingIsSent(t *testing.T) {
 	realCfg := dryConfig(t, target.addr, "  mode: real\n", dryCall(unaryCallMethod, ""))
 	setRamp(t, realCfg, "30s")
 
+	// -dry-run on the real one: until the check exists the run is a dry run that
+	// ends by itself, so the test fails on its assertion and not on a 30 s ramp.
 	for _, tc := range []struct {
 		name string
 		cfg  string
 		want string
+		args []string
 	}{
-		{"a limit with a search", withSearch, "breakpoint.errors_limit"},
-		{"real without a limit", realCfg, needsStopText},
+		{"a limit with a search", withSearch, "breakpoint.errors_limit", nil},
+		{"real without a limit", realCfg, needsStopText, []string{"-dry-run"}},
 	} {
-		res := runCLI(t.Context(), t, 10*time.Second, "-c", tc.cfg)
+		res := runCLI(t.Context(), t, 10*time.Second, append([]string{"-c", tc.cfg}, tc.args...)...)
 
 		if got := exitCode(res.err); got != 1 {
 			t.Errorf("%s: exit code %d, want 1\nerr %v\nstdout:\n%s", tc.name, got, res.err, res.stdout)

@@ -108,35 +108,47 @@ func TestRecent_WarmupSecondsAreInTheWindow(t *testing.T) {
 }
 
 // Ground: contract — which categories are failures: every one that is not a
-// success, the client's own and the target's. An abort and a timeout whose
-// request never went out say nothing of the target and are in neither count.
+// success, the client's own and the target's. An abort and a call that never
+// went out, whatever kept it back (the generator, the stream, the connection
+// or a cause nobody set), say nothing of the target and are in neither count.
+// The unclassified failure that did go out is a failure, and the unsent call
+// of unknown cause must not be mixed into it: they are different cells.
+//
+// Each case is recorded beside one good call of the same method, so that "in
+// neither count" reads as 1 call and 0 failed, not as an empty answer.
 func TestRecent_WhichCategoriesFail(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		category Category
 		notSent  bool
+		cause    Blocker
 		failed   int
-		total    int
+		total    int // of the case's call; the good call beside it is added
 	}{
-		{"success", CategorySuccess, false, 0, 1},
-		{"server fault", CategoryServerFault, false, 1, 1},
-		{"client fault", CategoryClientFault, false, 1, 1},
-		{"overload", CategoryOverload, false, 1, 1},
-		{"timeout that went out", CategoryTimeout, false, 1, 1},
-		{"unreachable", CategoryUnreachable, false, 1, 1},
-		{"cut off", CategoryCutOff, false, 1, 1},
-		{"client error", CategoryClientError, false, 1, 1},
-		{"bad response", CategoryBadResponse, false, 1, 1},
-		{"unclassified", CategoryUnknown, false, 1, 1},
-		{"aborted", CategoryAborted, false, 0, 0},
-		{"timeout that never went out", CategoryTimeout, true, 0, 0},
+		{"success", CategorySuccess, false, 0, 0, 1},
+		{"server fault", CategoryServerFault, false, 0, 1, 1},
+		{"client fault", CategoryClientFault, false, 0, 1, 1},
+		{"overload", CategoryOverload, false, 0, 1, 1},
+		{"timeout that went out", CategoryTimeout, false, 0, 1, 1},
+		{"unreachable", CategoryUnreachable, false, 0, 1, 1},
+		{"cut off", CategoryCutOff, false, 0, 1, 1},
+		{"client error", CategoryClientError, false, 0, 1, 1},
+		{"bad response", CategoryBadResponse, false, 0, 1, 1},
+		{"unclassified, went out", CategoryUnknown, false, 0, 1, 1},
+		{"aborted", CategoryAborted, false, 0, 0, 0},
+		{"not sent, held by the generator", CategoryTimeout, true, BlockedOnGenerator, 0, 0},
+		{"not sent, held by the stream", CategoryTimeout, true, BlockedOnStream, 0, 0},
+		{"not sent, held by the connection", CategoryTimeout, true, BlockedOnConnection, 0, 0},
+		{"not sent, cause unknown", CategoryTimeout, true, BlockedUnknown, 0, 0},
 	} {
 		start := time.Unix(1_000, 0)
 		stats := reserved(start, 0)
 
 		r := finishing(start, "a", 0, time.Second, tc.category)
 		r.NotSent = tc.notSent
+		r.NotSentOn = tc.cause
 		stats.Record(r)
+		stats.Record(finishing(start, "a", 0, time.Second, CategorySuccess))
 
 		got := recentOf(t, stats, start, 3*time.Second, 5)
 
@@ -145,10 +157,122 @@ func TestRecent_WhichCategoriesFail(t *testing.T) {
 			failed += m.Failed
 			total += m.Total
 		}
-		if failed != tc.failed || total != tc.total {
-			t.Errorf("%s: failed %d of %d, want %d of %d", tc.name, failed, total, tc.failed, tc.total)
+		if failed != tc.failed || total != tc.total+1 {
+			t.Errorf("%s: failed %d of %d, want %d of %d", tc.name, failed, total, tc.failed, tc.total+1)
 		}
 	}
+}
+
+// Ground: contract — the report's seconds are unchanged by keeping an unsent
+// call of unknown cause apart from an unclassified one: both are still
+// «Unclassified» in the export, and neither is left counted as in flight.
+// (Green on the stub: guards the format of the report and of the JSON while
+// the cell is split.)
+func TestRecent_UnsentOfUnknownCauseStaysUnclassifiedInTheReport(t *testing.T) {
+	start := time.Unix(1_000, 0)
+	stats := reserved(start, 0)
+
+	unsent := finishing(start, "a", 0, time.Second, CategoryTimeout)
+	unsent.NotSent = true
+	unsent.NotSentOn = BlockedUnknown
+	stats.Record(unsent)
+	stats.Record(finishing(start, "a", 0, time.Second, CategoryUnknown))
+
+	secs := seconds(t, stats)
+
+	var unclassified int
+	for _, s := range secs {
+		unclassified += s.Unclassified
+	}
+	if unclassified != 2 {
+		t.Errorf("Unclassified over the report = %d, want 2: the unsent call and the unclassified one", unclassified)
+	}
+	if last := secs[len(secs)-1]; last.InFlight != 0 {
+		t.Errorf("InFlight at the end = %d, want 0: both calls finished", last.InFlight)
+	}
+}
+
+// Ground: boundary — the edges of the array the reader walks under the lock
+// answer, never panic and never read what was not reserved: a now past the
+// reserved span reads no more than was reserved; a now before the start, a
+// Recent before Start, and a window of zero or less seconds give nothing; a
+// window longer than the run is the run.
+func TestRecent_TheEdgesOfTheTimeline(t *testing.T) {
+	start := time.Unix(1_000, 0)
+
+	t.Run("now past the reserved span", func(t *testing.T) {
+		stats := reserved(start, 0)
+		stats.Record(finishing(start, "a", 0, 59*time.Minute+58*time.Second, CategoryServerFault))
+		stats.Record(finishing(start, "a", 0, 59*time.Minute+59*time.Second, CategorySuccess))
+
+		// Two hours in the reserve is an hour: the last whole seconds of it are
+		// not 5 s before «now», and nothing past the end exists to be read.
+		got := recentOf(t, stats, start, 2*time.Hour, 5)
+
+		for _, r := range got {
+			if r.Total > 2 || r.Failed > r.Total {
+				t.Errorf("read beyond what was recorded: %+v", r)
+			}
+		}
+		if len(got) != 1 || got[0].Method != "a" || got[0].Total == 0 {
+			t.Errorf("now two hours in on an hour reserve: %+v, want the method with the last seconds it holds", got)
+		}
+	})
+
+	t.Run("now before the start", func(t *testing.T) {
+		stats := reserved(start, 0)
+		stats.Record(finishing(start, "a", 0, time.Second, CategoryServerFault))
+
+		recentFor(t, recentOf(t, stats, start, 3*time.Second, 5), "a") // the call is there to be read
+
+		got := recentOf(t, stats, start, -10*time.Second, 5)
+
+		if len(got) != 0 {
+			t.Errorf("a now before the start gives %+v, want nothing", got)
+		}
+	})
+
+	t.Run("before Start", func(t *testing.T) {
+		stats := NewStats()
+
+		if got := stats.Recent(nil, start, 5); len(got) != 0 {
+			t.Errorf("Recent on stats that never started gives %+v, want nothing", got)
+		}
+	})
+
+	t.Run("before Start after Reserve", func(t *testing.T) {
+		stats := NewStats()
+		stats.Reserve(time.Hour)
+
+		if got := stats.Recent(nil, start, 5); len(got) != 0 {
+			t.Errorf("Recent on reserved stats that never started gives %+v, want nothing", got)
+		}
+	})
+
+	for _, seconds := range []int{0, -1, -1 << 30} {
+		t.Run(fmt.Sprintf("seconds %d", seconds), func(t *testing.T) {
+			stats := reserved(start, 0)
+			stats.Record(finishing(start, "a", 0, time.Second, CategoryServerFault))
+
+			recentFor(t, recentOf(t, stats, start, 3*time.Second, 5), "a") // the call is there to be read
+
+			if got := recentOf(t, stats, start, 3*time.Second, seconds); len(got) != 0 {
+				t.Errorf("a window of %d seconds gives %+v, want nothing", seconds, got)
+			}
+		})
+	}
+
+	t.Run("a window longer than the run", func(t *testing.T) {
+		stats := reserved(start, 0)
+		stats.Record(finishing(start, "a", 0, time.Second, CategoryServerFault))
+		stats.Record(finishing(start, "a", 0, 2*time.Second, CategorySuccess))
+
+		got := recentFor(t, recentOf(t, stats, start, 3*time.Second, 1<<30), "a")
+
+		if got.Failed != 1 || got.Total != 2 {
+			t.Errorf("window of 2^30 seconds: failed %d of %d, want 1 of 2", got.Failed, got.Total)
+		}
+	})
 }
 
 // Ground: contract — counts are per method, the method named, in the order
@@ -246,9 +370,11 @@ func TestRecent_ReadsWhileWorkersRecord(t *testing.T) {
 }
 
 // Ground: signal — a run whose calls hang records nothing for a timeout's
-// worth of time, so the completed counters say 0 sent. Progress adds the
-// calls in flight to those finished, and it is what a stop line prints as
-// the rate and the number in flight.
+// worth of time, so the window alone says nothing of them. Progress is what
+// the stop line prints beside it: the number in flight, which is honest (a
+// call leaves it before it is recorded, so it is a floor, never an excess),
+// and the time since the start. There is no count of calls begun: the
+// engine keeps none, and a send loop does not gain one for a line.
 func TestProgress_CountsCallsThatHang(t *testing.T) {
 	h := newHoldingSender()
 	eng := stopEngine(t, h, time.Minute)
@@ -268,42 +394,10 @@ func TestProgress_CountsCallsThatHang(t *testing.T) {
 	if got.InFlight < 10 {
 		t.Errorf("InFlight = %d, want at least the 10 calls held in the sender", got.InFlight)
 	}
-	if got.Begun < got.InFlight {
-		t.Errorf("Begun = %d below InFlight = %d: every call in flight has begun", got.Begun, got.InFlight)
-	}
 	if got.Elapsed <= 0 {
 		t.Errorf("Elapsed = %v, want the time since the run started", got.Elapsed)
 	}
-}
-
-// Ground: signal — Begun never goes back: a call that finishes moves from
-// the in-flight part to the finished part, and the sum stays. Two readings
-// a second apart are a rate only if the second is never below the first.
-func TestProgress_BegunDoesNotDropWhenCallsFinish(t *testing.T) {
-	h := newHoldingSender()
-	eng := stopEngine(t, h, time.Minute)
-	done := runAsync(t.Context(), eng)
-
-	waitEntered(t, h, 10)
-
-	before := eng.Progress(time.Now())
-
-	eng.Stop()
-	close(h.release)
-
-	if err := waitRun(t, done); err != nil {
-		t.Fatalf("Run = %v, want nil", err)
-	}
-
-	after := eng.Progress(time.Now())
-
-	if before.Begun == 0 {
-		t.Fatal("Begun = 0 with calls held in the sender")
-	}
-	if after.Begun < before.Begun {
-		t.Errorf("Begun fell from %d to %d when the calls finished", before.Begun, after.Begun)
-	}
-	if after.InFlight != 0 {
+	if after := eng.Progress(time.Now()); after.InFlight != 0 {
 		t.Errorf("InFlight = %d after the run, want 0", after.InFlight)
 	}
 }

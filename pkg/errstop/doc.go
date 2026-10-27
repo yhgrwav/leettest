@@ -12,11 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package spike watches a run for a spike of failures and says when to stop
+// Package errstop watches a run for a rise in failures and says when to stop
 // it: once a second it asks the engine how each method did over the last few
 // whole seconds and trips when the share of failed calls passes the limit the
 // user wrote as load.stop_on_errors. The engine does not know it: the watch
 // only reads, through Source, and stopping is the caller's, in the callback.
 // Off (no limit, or 100%) there is no watch at all: New returns nil, and the
 // send loop is the same as without the feature.
-package spike
+package errstop

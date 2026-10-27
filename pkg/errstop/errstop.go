@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package spike
+package errstop
 
 import (
 	"context"
@@ -47,9 +47,8 @@ type Trip struct {
 	Limit  share.Percent
 	// At is the time since the run started.
 	At time.Duration
-	// SentRPS is the calls begun in the last second, InFlight those begun and
-	// not finished, both of the whole run.
-	SentRPS  int
+	// InFlight is the calls begun and not finished at that moment: on a stand
+	// that hangs, the number the window cannot show.
 	InFlight int
 }
 

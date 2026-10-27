@@ -19,8 +19,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/yhgrwav/leettest/pkg/errstop"
 	shr "github.com/yhgrwav/leettest/pkg/share"
-	"github.com/yhgrwav/leettest/pkg/spike"
 )
 
 func spikeLimit(t *testing.T, written string) shr.Percent {
@@ -34,26 +34,49 @@ func spikeLimit(t *testing.T, written string) shr.Percent {
 	return p
 }
 
-func spikeTrip(t *testing.T, failed, total int) spike.Trip {
+func spikeTrip(t *testing.T, failed, total int) errstop.Trip {
 	t.Helper()
 
-	return spike.Trip{
+	return errstop.Trip{
 		Method: "a.S/One", Failed: failed, Total: total, Limit: spikeLimit(t, "5%"),
-		At: 12300 * time.Millisecond, SentRPS: 1204, InFlight: 800,
+		At: 12300 * time.Millisecond, InFlight: 800,
 	}
 }
 
 // Ground: contract — the stop line is the one place a user reads why the run
 // ended: when (from the start), which method, its share, the counts it comes
-// from, the limit, what the generator was sending and how many calls hung.
-// The text is the contract; the words are the reviewer's to change in this
-// test.
+// from, the limit and how many calls hung. There is no send rate in it: the
+// engine keeps no count of calls begun. The text is the contract; the words
+// are the reviewer's to change in this test.
 func TestStopLine_SaysWhenWhoHowMuchAndAgainstWhat(t *testing.T) {
 	const want = "stopped at 12.3s: a.S/One failed 87.5% (35 of 40 calls in the last 5s), over stop_on_errors 5%; " +
-		"1204 rps sent in the last second, 800 in flight"
+		"800 in flight"
 
 	if got := StopLine(spikeTrip(t, 35, 40)); got != want {
 		t.Errorf("StopLine =\n%q\nwant\n%q", got, want)
+	}
+}
+
+// Ground: boundary — one rule for the time: seconds with one decimal, whether
+// the run is short or long, so a line read in a log of a 40-minute run is
+// told like one of a 12-second run.
+func TestStopLine_TheTimeHasOneFormat(t *testing.T) {
+	for _, tc := range []struct {
+		at   time.Duration
+		want string
+	}{
+		{12300 * time.Millisecond, "stopped at 12.3s:"},
+		{2 * time.Second, "stopped at 2.0s:"},
+		{1949 * time.Millisecond, "stopped at 1.9s:"},
+		{1960 * time.Millisecond, "stopped at 2.0s:"},
+		{42*time.Minute + 5300*time.Millisecond, "stopped at 2525.3s:"},
+	} {
+		trip := spikeTrip(t, 35, 40)
+		trip.At = tc.at
+
+		if got := StopLine(trip); !strings.HasPrefix(got, tc.want) {
+			t.Errorf("At %v: StopLine = %q, want it to start with %q", tc.at, got, tc.want)
+		}
 	}
 }
 
@@ -152,7 +175,7 @@ func TestJSON_AStoppedRunSaysWhyAndWhere(t *testing.T) {
 		t.Fatalf("stop = %#v, want an object", out["stop"])
 	}
 
-	want := map[string]any{"method": "a.S/One", "failed": 35.0, "total": 40.0, "limit": "5%", "at_us": 12_300_000.0}
+	want := map[string]any{"method": "a.S/One", "failed": 35.0, "total": 40.0, "limit": "5%", "at_us": 12_300_000.0, "in_flight": 800.0}
 	for key, w := range want {
 		if stop[key] != w {
 			t.Errorf("stop.%s = %#v, want %#v", key, stop[key], w)
@@ -160,6 +183,35 @@ func TestJSON_AStoppedRunSaysWhyAndWhere(t *testing.T) {
 	}
 	if len(stop) != len(want) {
 		t.Errorf("stop has %d keys, want %d: %v", len(stop), len(want), stop)
+	}
+}
+
+// Ground: contract — settings.stop_on_errors echoes the config as written, like
+// the other settings: "5%" as "5%", "100%" as "100%" (the report calls it off,
+// the echo says what the config says), and null when the key was left out.
+func TestJSON_SettingsEchoTheStopLimitAsWritten(t *testing.T) {
+	for _, tc := range []struct {
+		written string
+		want    any
+	}{
+		{"5%", "5%"},
+		{"0.5%", "0.5%"},
+		{"100%", "100%"},
+		{"", nil},
+	} {
+		run := jsonRun(echoReport())
+		run.Run.Settings = &RunSettings{MaxInFlight: 5000, Connections: 1, Mode: "real", StopOnErrors: tc.written}
+
+		out := writeJSON(t, run)
+
+		settings, ok := out["settings"].(map[string]any)
+		if !ok {
+			t.Fatalf("%q: settings = %#v, want an object", tc.written, out["settings"])
+		}
+		got, present := settings["stop_on_errors"]
+		if !present || got != tc.want {
+			t.Errorf("%q: settings.stop_on_errors = %#v (present %v), want %#v", tc.written, got, present, tc.want)
+		}
 	}
 }
 

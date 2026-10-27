@@ -183,7 +183,8 @@ type Load struct {
 	Breakpoint *Breakpoint `yaml:"breakpoint"`
 	// RawStopOnErrors is stop_on_errors as written, nil when left out (a key
 	// written with no value is refused before). StopOnErrors is it read; zero
-	// when left out or 100%, which is the same: the run is not stopped.
+	// when left out; 100% is kept as written (100000 thousandths) and the
+	// watch for it is not made.
 	RawStopOnErrors any           `yaml:"stop_on_errors"`
 	StopOnErrors    share.Percent `yaml:"-"`
 }

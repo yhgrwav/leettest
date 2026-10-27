@@ -24,8 +24,8 @@ import (
 
 	"github.com/yhgrwav/leettest/pkg/descriptor"
 	"github.com/yhgrwav/leettest/pkg/engine"
+	"github.com/yhgrwav/leettest/pkg/errstop"
 	"github.com/yhgrwav/leettest/pkg/metrics"
-	"github.com/yhgrwav/leettest/pkg/spike"
 	"github.com/yhgrwav/leettest/pkg/threshold"
 )
 
@@ -64,7 +64,7 @@ type RunReport struct {
 	Thresholds []threshold.Result
 	// Stop is the moment load.stop_on_errors ended the run; nil when it did
 	// not.
-	Stop *spike.Trip
+	Stop *errstop.Trip
 }
 
 // RunSettings echoes what a run was started with, as configured: the

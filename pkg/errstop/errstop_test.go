@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package spike_test
+package errstop_test
 
 import (
 	"context"
@@ -20,8 +20,8 @@ import (
 	"time"
 
 	"github.com/yhgrwav/leettest/pkg/engine"
+	"github.com/yhgrwav/leettest/pkg/errstop"
 	"github.com/yhgrwav/leettest/pkg/share"
-	"github.com/yhgrwav/leettest/pkg/spike"
 )
 
 func percent(t *testing.T, written string) share.Percent {
@@ -67,7 +67,7 @@ func TestJudge_Boundary(t *testing.T) {
 		{"nothing counted", "5%", 0, 0, false},
 		{"all failed, a hundred is off", "100%", 50, 50, false},
 	} {
-		_, got := spike.Judge(one(tc.failed, tc.total), percent(t, tc.limit))
+		_, got := errstop.Judge(one(tc.failed, tc.total), percent(t, tc.limit))
 
 		if got != tc.trips {
 			t.Errorf("%s: %d of %d at %s: trips = %v, want %v", tc.name, tc.failed, tc.total, tc.limit, got, tc.trips)
@@ -87,7 +87,7 @@ func TestJudge_NamesTheMethodOverTheLimit(t *testing.T) {
 		{Method: "e.S/Lone", Failed: 1, Total: 1},
 	}
 
-	got, ok := spike.Judge(window, percent(t, "5%"))
+	got, ok := errstop.Judge(window, percent(t, "5%"))
 	if !ok {
 		t.Fatal("no trip with three methods over 5%")
 	}
@@ -107,7 +107,7 @@ func TestJudge_IsPerMethodNotOverTheSum(t *testing.T) {
 		{Method: "b.S/Rare", Failed: 3, Total: 4},
 	}
 
-	got, ok := spike.Judge(window, percent(t, "5%"))
+	got, ok := errstop.Judge(window, percent(t, "5%"))
 
 	if !ok || got.Method != "b.S/Rare" {
 		t.Errorf("Judge = %+v, %v, want b.S/Rare over the limit", got, ok)
@@ -151,7 +151,7 @@ func TestNew_OffIsNil(t *testing.T) {
 		{"left out", share.Percent{}},
 		{"a hundred", percent(t, "100%")},
 	} {
-		if w := spike.New(src, tc.limit, func(spike.Trip) {}); w != nil {
+		if w := errstop.New(src, tc.limit, func(errstop.Trip) {}); w != nil {
 			t.Errorf("%s: New returned a watch, want nil", tc.name)
 		}
 	}
@@ -161,15 +161,15 @@ func TestNew_OffIsNil(t *testing.T) {
 func TestNew_ALimitGivesAWatch(t *testing.T) {
 	src := &fake{windows: [][]engine.Recent{one(0, 0)}, progress: []engine.Progress{{}}}
 
-	if w := spike.New(src, percent(t, "5%"), func(spike.Trip) {}); w == nil {
+	if w := errstop.New(src, percent(t, "5%"), func(errstop.Trip) {}); w == nil {
 		t.Error("New returned nil for 5%")
 	}
 }
 
-func watchOf(t *testing.T, src spike.Source, limit string, trips *[]spike.Trip) *spike.Watch {
+func watchOf(t *testing.T, src errstop.Source, limit string, trips *[]errstop.Trip) *errstop.Watch {
 	t.Helper()
 
-	w := spike.New(src, percent(t, limit), func(tr spike.Trip) { *trips = append(*trips, tr) })
+	w := errstop.New(src, percent(t, limit), func(tr errstop.Trip) { *trips = append(*trips, tr) })
 	if w == nil {
 		t.Fatal("New returned nil")
 	}
@@ -181,32 +181,31 @@ func watchOf(t *testing.T, src spike.Source, limit string, trips *[]spike.Trip) 
 func TestWatch_ReadsTheWindowOfFiveSeconds(t *testing.T) {
 	src := &fake{windows: [][]engine.Recent{one(0, 10)}, progress: []engine.Progress{{}}}
 
-	var trips []spike.Trip
+	var trips []errstop.Trip
 
 	watchOf(t, src, "5%", &trips).Tick(time.Unix(0, 0))
 
-	if len(src.seconds) != 1 || src.seconds[0] != spike.Window || spike.Window != 5 {
-		t.Errorf("Recent read with seconds %v, Window = %d, want one read of 5", src.seconds, spike.Window)
+	if len(src.seconds) != 1 || src.seconds[0] != errstop.Window || errstop.Window != 5 {
+		t.Errorf("Recent read with seconds %v, Window = %d, want one read of 5", src.seconds, errstop.Window)
 	}
 }
 
 // Ground: contract — the trip carries what the stop line prints: the method
-// and its counts, the limit as written, the time since the start, the rate
-// calls were begun at in the last second (from two readings of Begun) and the
+// and its counts, the limit as written, the time since the start and the
 // number in flight; and it is reported once, the watch saying tripped on every
 // tick after without calling again.
 func TestWatch_TripCarriesTheStopLineAndHappensOnce(t *testing.T) {
 	src := &fake{
 		windows: [][]engine.Recent{one(0, 100), one(1, 200), one(30, 200), one(60, 200)},
 		progress: []engine.Progress{
-			{Elapsed: time.Second, Begun: 100, InFlight: 3},
-			{Elapsed: 2 * time.Second, Begun: 300, InFlight: 5},
-			{Elapsed: 3 * time.Second, Begun: 520, InFlight: 40},
-			{Elapsed: 4 * time.Second, Begun: 700, InFlight: 90},
+			{Elapsed: time.Second, InFlight: 3},
+			{Elapsed: 2 * time.Second, InFlight: 5},
+			{Elapsed: 3 * time.Second, InFlight: 40},
+			{Elapsed: 4 * time.Second, InFlight: 90},
 		},
 	}
 
-	var trips []spike.Trip
+	var trips []errstop.Trip
 
 	w := watchOf(t, src, "5%", &trips)
 
@@ -223,9 +222,9 @@ func TestWatch_TripCarriesTheStopLineAndHappensOnce(t *testing.T) {
 		t.Fatalf("onTrip called %d times, want once", len(trips))
 	}
 
-	want := spike.Trip{
+	want := errstop.Trip{
 		Method: "a.S/One", Failed: 30, Total: 200, Limit: percent(t, "5%"),
-		At: 3 * time.Second, SentRPS: 220, InFlight: 40,
+		At: 3 * time.Second, InFlight: 40,
 	}
 	if trips[0] != want {
 		t.Errorf("Trip = %+v, want %+v", trips[0], want)
@@ -235,9 +234,9 @@ func TestWatch_TripCarriesTheStopLineAndHappensOnce(t *testing.T) {
 // Ground: boundary — a run that is fine never trips, however long it is
 // watched.
 func TestWatch_AFineRunNeverTrips(t *testing.T) {
-	src := &fake{windows: [][]engine.Recent{one(1, 1000)}, progress: []engine.Progress{{Elapsed: time.Second, Begun: 10}}}
+	src := &fake{windows: [][]engine.Recent{one(1, 1000)}, progress: []engine.Progress{{Elapsed: time.Second}}}
 
-	var trips []spike.Trip
+	var trips []errstop.Trip
 
 	w := watchOf(t, src, "5%", &trips)
 	for range 10 {
@@ -255,10 +254,10 @@ func TestWatch_AFineRunNeverTrips(t *testing.T) {
 // first or second tick, and Run returns after it. The limit is the test's
 // ceiling, not a sleep to wait out.
 func TestWatch_RunStopsAfterTheTrip(t *testing.T) {
-	src := &fake{windows: [][]engine.Recent{one(50, 100)}, progress: []engine.Progress{{Elapsed: time.Second, Begun: 100}}}
+	src := &fake{windows: [][]engine.Recent{one(50, 100)}, progress: []engine.Progress{{Elapsed: time.Second}}}
 
-	tripped := make(chan spike.Trip, 1)
-	w := spike.New(src, percent(t, "5%"), func(tr spike.Trip) { tripped <- tr })
+	tripped := make(chan errstop.Trip, 1)
+	w := errstop.New(src, percent(t, "5%"), func(tr errstop.Trip) { tripped <- tr })
 	if w == nil {
 		t.Fatal("New returned nil")
 	}
@@ -282,12 +281,34 @@ func TestWatch_RunStopsAfterTheTrip(t *testing.T) {
 	}
 }
 
+// Ground: signal — Run reads once a second and no oftener or seldomer: over
+// 3.5 s of a window that never trips, Recent is read 2 to 4 times (the ticks
+// at 1, 2 and 3 s). A watch ticking every 10 ms costs the run what the
+// benchmark is there to bound; one ticking every 10 s sees a spike too late.
+// The 3.5 s is the thing measured, not a wait for something else.
+func TestWatch_RunTicksOnceASecond(t *testing.T) {
+	src := &fake{windows: [][]engine.Recent{one(0, 100)}, progress: []engine.Progress{{}}}
+
+	var trips []errstop.Trip
+
+	w := watchOf(t, src, "5%", &trips)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 3500*time.Millisecond)
+	defer cancel()
+
+	w.Run(ctx)
+
+	if n := len(src.seconds); n < 2 || n > 4 {
+		t.Errorf("Recent was read %d times in 3.5 s, want 2 to 4 (once a second)", n)
+	}
+}
+
 // Ground: signal — a run that ends first ends the watch: no goroutine is left
 // behind when the context is done, and nothing is reported.
 func TestWatch_RunReturnsWhenTheContextIsDone(t *testing.T) {
 	src := &fake{windows: [][]engine.Recent{one(0, 100)}, progress: []engine.Progress{{}}}
 
-	var trips []spike.Trip
+	var trips []errstop.Trip
 
 	w := watchOf(t, src, "5%", &trips)
 

@@ -47,12 +47,8 @@ func (e *Engine) Recent(dst []Recent, now time.Time, seconds int) []Recent {
 type Progress struct {
 	// Elapsed is the time since the run started.
 	Elapsed time.Duration
-	// Begun is the calls begun so far, finished or not: the ones recorded plus
-	// those in flight. Two readings a second apart give the rate calls were
-	// sent at in that second, which a run whose calls hang still reports (the
-	// timeline counts a call when it finishes and would say 0).
-	Begun int
-	// InFlight is the calls begun and not finished.
+	// InFlight is the calls begun and not finished. There is no count of calls
+	// begun: the engine keeps none and the send loop gains none for a line.
 	InFlight int
 }
 

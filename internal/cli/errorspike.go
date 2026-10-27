@@ -14,7 +14,7 @@
 
 package cli
 
-import "github.com/yhgrwav/leettest/pkg/spike"
+import "github.com/yhgrwav/leettest/pkg/errstop"
 
 // StopErrorSpike is the JSON stop_reason of a run that load.stop_on_errors
 // ended.
@@ -22,19 +22,21 @@ const StopErrorSpike = "error_spike"
 
 // jsonStop is where load.stop_on_errors ended a run, on whose numbers: the
 // method, its failed and total calls over the last five seconds, the limit as
-// written, and the time since the start in whole microseconds.
+// written, the time since the start in whole microseconds and the calls in
+// flight at that moment.
 type jsonStop struct {
-	Method string `json:"method"`
-	Failed int    `json:"failed"`
-	Total  int    `json:"total"`
-	Limit  string `json:"limit"`
-	AtUS   int64  `json:"at_us"`
+	Method   string `json:"method"`
+	Failed   int    `json:"failed"`
+	Total    int    `json:"total"`
+	Limit    string `json:"limit"`
+	AtUS     int64  `json:"at_us"`
+	InFlight int    `json:"in_flight"`
 }
 
 // StopLine is the line printed when the run is stopped, and again in the
 // report's notes: when, which method, its share to the digit that puts it
-// over the limit, the counts, the rate calls were sent at and the number in
-// flight.
-func StopLine(_ spike.Trip) string {
+// over the limit, the counts and the number in flight. The time is told by
+// one rule, in seconds with one decimal place.
+func StopLine(_ errstop.Trip) string {
 	return ""
 }

@@ -127,6 +127,9 @@ type jsonSettings struct {
 	RampUS      int64  `json:"ramp_us"`
 	// Compression is "gzip" or null.
 	Compression *string `json:"compression"`
+	// StopOnErrors is load.stop_on_errors as written in the config ("5%",
+	// "100%"), null when left out.
+	StopOnErrors *string `json:"stop_on_errors"`
 }
 
 // settingsOf is the echo as JSON has it; nil, which nobody told, gives zeros
