@@ -45,6 +45,7 @@ load:
 | `app.proto.import_paths` | 在哪里查找这些文件及其 import，与 `protoc -I` 相同。路径从配置文件所在目录算起。省略时为该目录。标准类型（`google/protobuf/…`）不需要路径 |
 | `app.protoset` | 用描述符集文件代替 `.proto` 文件，由 `protoc --include_imports --descriptor_set_out=FILE` 生成。路径从配置文件所在目录算起。不能与 `app.proto` 同时使用；两者都没有时，方法通过 reflection 获取 |
 | `load.warmup` | 前 N 秒不计入百分位和 `sent`：冷缓存会扭曲它们。预热调用确实会到达目标；报告用一行 `warm-up N sent (M failed), excluded from stats` 输出它们——`sent` 加上这一行就是压测机尝试过的全部调用。除计为 unreachable 或 client error 的调用外，目标都收到了；`cut off` 和超时的调用可能没有完整到达：不打开 HTTP/2 窗口（流量控制）的目标只会收到请求头，它的计数器可能看不到这次调用。计入 `duration`，必须短于每个调用 |
+| `load.ramp` | 在此时间内把每个调用从 0 线性提升到它的 `rps`，之后才开始它的 `duration`：运行时长为 `ramp` + `duration`。不写或 `0s` 表示没有爬升。爬升期间的调用和预热一样不计入百分位和 `sent`，预热在爬升结束后才开始。不能与 `load.breakpoint` 同用。未发布 |
 | `load.calls[].method` | 方法全名：`package.Service/Method` |
 | `load.calls[].rps` | 该方法每秒的请求数 |
 | `load.calls[].duration` | 施压时长：`30s`、`5m`、`1h` |
@@ -324,6 +325,7 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `settings.max_in_flight` | int；搜索：`int?` | 在途请求上限：`-max-in-flight` 的值，否则为默认值。搜索：未设该参数时为 `null`（每次运行取其能运行的最小上限）；在其各次运行中为该次运行的上限 |
 | `settings.connections` | int | 按配置的 `app.connections`，默认 1；`connections.open` 是实际打开的数量 |
 | `settings.warmup_us` | int | 按配置的预热。搜索：`settle` 时长 |
+| `settings.ramp_us` | int | 按配置的 `load.ramp`，单位为整微秒；没有爬升时为 0。未发布 |
 | `settings.compression` | string? | 按配置的 `app.compression`：`"gzip"`，`null` 表示省略 |
 | `passport` | object? | 这次运行所用的机器和配置，用于区分不同的运行。搜索只在顶层有一个，`breakpoint.runs` 中的各次运行没有 |
 | `passport.config_sha256` | string | 配置文件读入时字节的 SHA-256，64 位十六进制 |

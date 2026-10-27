@@ -1,0 +1,19 @@
+# A ramp-up (not released yet): every call rises from 0 to its rps over 30s, then holds it for its
+# duration. The run lasts 30s + 1m. The ramp and the warm-up stay out of the stats; the report
+# prints them on one line. Against the reference stand, from the repository root:
+#   go run ./test/stand/cmd/stand -delay 20ms
+#   leettest -c examples/ramp.yaml
+
+app:
+  target:
+    ip: 127.0.0.1
+    port: 50051
+  tls: false
+
+load:
+  ramp: 30s
+  warmup: 5s
+  calls:
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 800
+      duration: 1m

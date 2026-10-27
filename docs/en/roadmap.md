@@ -14,7 +14,6 @@ These are plans, not promised dates. What works today is in the [README](README.
 
 ## Later
 
-- **Ramp-up** from zero to the target RPS.
 - **[Call chaining](chaining.md)**: a field from one method's reply goes into another's request.
 - **Token refresh** during a long run.
 - **Metrics export** to Prometheus.

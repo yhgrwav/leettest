@@ -74,8 +74,21 @@ type RunSettings struct {
 	// Warmup is the warm-up as the config wrote it; in a search's step the
 	// settle.
 	Warmup time.Duration
+	// Ramp is load.ramp as the config wrote it: the time each call takes to
+	// rise from 0 to its rps before its duration starts; 0 when there is none.
+	Ramp time.Duration
 	// Compression is app.compression: "gzip", or empty for none.
 	Compression string
+}
+
+// ramp is the ramp the run's config set; 0 without settings, which cannot tell
+// the ramp from the warm-up in the engine's window.
+func (r RunReport) ramp() time.Duration {
+	if r.Settings == nil {
+		return 0
+	}
+
+	return r.Settings.Ramp
 }
 
 // ClockTooCoarse says the clock step is over a quarter of some method's p50.
@@ -110,7 +123,11 @@ func printRunHeader(w io.Writer, target string, run RunReport) {
 		fmt.Fprintf(w, "name: %s\n", run.Name)
 	}
 	if s := run.Settings; s != nil {
-		fmt.Fprintf(w, "settings: warm-up %s, max in flight %d, connections %d%s\n", s.Warmup, s.MaxInFlight, s.Connections, compressionSuffix(s.Compression))
+		ramp := ""
+		if s.Ramp > 0 {
+			ramp = fmt.Sprintf(", ramp %s", s.Ramp)
+		}
+		fmt.Fprintf(w, "settings: warm-up %s%s, max in flight %d, connections %d%s\n", s.Warmup, ramp, s.MaxInFlight, s.Connections, compressionSuffix(s.Compression))
 	}
 	fmt.Fprintf(w, "sent %d, failed %d", report.Sent, report.Failed)
 	if report.NotSent > 0 {
@@ -132,11 +149,11 @@ func printMethodTable(w io.Writer, run RunReport) {
 	}
 
 	for i := range run.Methods {
-		printMethodRow(w, &run.Methods[i], compression)
+		printMethodRow(w, &run.Methods[i], compression, run.ramp())
 	}
 }
 
-func printMethodRow(w io.Writer, m *engine.MethodReport, compression string) {
+func printMethodRow(w io.Writer, m *engine.MethodReport, compression string, ramp time.Duration) {
 	fmt.Fprintf(w, "%-44s %8d %8d %9.0f %9s %9s %9s %9s\n",
 		displayMethod(m.Method), m.Sent, m.Failed, m.RPS,
 		formatQuantile(m.P50), formatQuantile(m.P90), formatQuantile(m.P95), formatQuantile(m.P99))
@@ -146,7 +163,13 @@ func printMethodRow(w io.Writer, m *engine.MethodReport, compression string) {
 		if m.RPSHigh != m.RPSLow {
 			rate = fmt.Sprintf("%d-%d", m.RPSLow, m.RPSHigh)
 		}
-		fmt.Fprintf(w, "  plan: %s rps for %s\n", rate, m.PlannedDuration)
+		if ramp > 0 && m.PlannedDuration > ramp {
+			// PlannedDuration is the stages' sum, the ramp in it; the user set
+			// the duration, the rate is of the part after the ramp.
+			fmt.Fprintf(w, "  plan: %s rps for %s, after a %s ramp\n", rate, m.PlannedDuration-ramp, ramp)
+		} else {
+			fmt.Fprintf(w, "  plan: %s rps for %s\n", rate, m.PlannedDuration)
+		}
 	}
 
 	if m.P999.Defined {

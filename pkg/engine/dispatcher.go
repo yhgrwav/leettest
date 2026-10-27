@@ -115,8 +115,7 @@ type cursor struct {
 func (c *cursor) advance() bool {
 	for c.stage < len(c.call.Stages) {
 		stage := c.call.Stages[c.stage]
-		offset := time.Duration(c.i) * time.Second / time.Duration(stage.TargetRPS)
-		if offset < stage.Duration {
+		if offset, ok := stage.offset(c.i); ok {
 			c.at = c.stageStart.Add(offset)
 
 			return true

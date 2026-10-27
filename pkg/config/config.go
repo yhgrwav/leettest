@@ -35,6 +35,7 @@ var (
 	ErrInvalidRPS          = errors.New("rps must be positive")
 	ErrInvalidDuration     = errors.New("duration must be positive")
 	ErrInvalidWarmup       = errors.New("warmup must not be negative")
+	ErrInvalidRamp         = errors.New("ramp must not be negative")
 	ErrEmptyName           = errors.New("name must not be empty: leave it out to use the service or file name")
 	ErrDuplicateMethod     = errors.New("method appears in more than one call: the report is per method, keep one call for it")
 	ErrFractionalRPS       = errors.New("rps must be a whole number of requests")
@@ -150,6 +151,9 @@ type ConnectionStringTarget struct {
 type ConnectionString string
 
 type Load struct {
+	// Ramp raises every call from 0 to its rps over this long before its
+	// duration starts; 0 is no ramp.
+	Ramp   time.Duration `yaml:"ramp"`
 	Warmup time.Duration `yaml:"warmup"`
 	Calls  []Call        `yaml:"calls"`
 	// Breakpoint searches for the rate the one call's target breaks at,
@@ -231,7 +235,7 @@ func (b Breakpoint) validate() error {
 }
 
 // validateSearch refuses what a search cannot run with: more than one call,
-// a warm-up of its own, the rate or length a search sets per step.
+// a warm-up or a ramp of its own, the rate or length a search sets per step.
 func (l Load) validateSearch() []error {
 	var errs []error
 	if len(l.Calls) > 1 {
@@ -239,6 +243,9 @@ func (l Load) validateSearch() []error {
 	}
 	if l.Warmup != 0 {
 		errs = append(errs, fmt.Errorf("%w: load.warmup with load.breakpoint: each step has its breakpoint.settle", ErrBreakpoint))
+	}
+	if l.Ramp > 0 {
+		errs = append(errs, fmt.Errorf("%w: load.ramp with load.breakpoint: the search sets the rates", ErrBreakpoint))
 	}
 	for i := range l.Calls {
 		call := &l.Calls[i]
@@ -364,6 +371,9 @@ func (l Load) Validate() error {
 
 	if l.Warmup < 0 {
 		errs = append(errs, fmt.Errorf("%w: %s", ErrInvalidWarmup, l.Warmup))
+	}
+	if l.Ramp < 0 {
+		errs = append(errs, fmt.Errorf("%w: %s", ErrInvalidRamp, l.Ramp))
 	}
 	if len(l.Calls) == 0 {
 		errs = append(errs, ErrNoCalls)

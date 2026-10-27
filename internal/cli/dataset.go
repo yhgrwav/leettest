@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/yhgrwav/leettest/pkg/engine"
@@ -63,9 +64,14 @@ func noun(n int, word string) string {
 	return word + "s"
 }
 
+// hasRamp says whether a plan has a stage whose rate moves.
+func hasRamp(stages []engine.Stage) bool {
+	return slices.ContainsFunc(stages, func(s engine.Stage) bool { return s.StartRPS != s.TargetRPS })
+}
+
 // CheckDatasetsFit refuses a run whose plan hands out more requests than a
 // dataset_reuse: false file has records, before anything is sent. The count is
-// the engine's own, warm-up included: the warm-up uses records. A call that
+// the engine's own, warm-up and ramp included: they use records. A call that
 // reuses its file is not checked.
 func CheckDatasetsFit(calls []engine.Call) error {
 	var errs []error
@@ -78,9 +84,13 @@ func CheckDatasetsFit(calls []engine.Call) error {
 
 		need := engine.ScheduledAfter(call.Stages, 0)
 		if have := len(call.Payloads); have < need {
-			errs = append(errs, fmt.Errorf("call %q: dataset %s has %d records, the run hands out %d (warm-up included); "+
+			included := "warm-up"
+			if hasRamp(call.Stages) {
+				included = "ramp and warm-up"
+			}
+			errs = append(errs, fmt.Errorf("call %q: dataset %s has %d records, the run hands out %d (%s included); "+
 				"dataset_reuse: false sends each at most once",
-				displayMethod(call.Method), path.Base(strings.ReplaceAll(call.Dataset.File, `\`, "/")), have, need))
+				displayMethod(call.Method), path.Base(strings.ReplaceAll(call.Dataset.File, `\`, "/")), have, need, included))
 		}
 	}
 

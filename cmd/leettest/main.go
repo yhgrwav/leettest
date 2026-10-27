@@ -368,7 +368,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 	label := cli.ServiceLabel(cfg, flags.configPath)
 
 	if flags.interactive {
-		program := cli.NewProgram(target, label, eng, cfg.Load.Warmup, settings, s, reportOf)
+		program := cli.NewProgram(target, label, eng, cli.ExcludedWindow(cfg), settings, s, reportOf)
 		view.Store(program)
 		runErr = cli.RunLive(program, s, start, abort)
 	} else if runErr = cli.RunPlain(stderr, target, eng, start); runErr != nil &&
@@ -522,7 +522,7 @@ func engineOptions(cfg *config.MasterConfig, sender engine.Sender, maxInFlight i
 		Calls:       calls,
 		Sender:      sender,
 		MaxInFlight: maxInFlight,
-		Warmup:      cfg.Load.Warmup,
+		Warmup:      cli.ExcludedWindow(cfg),
 		WaitFloor:   engine.WaitFloorFor(stepBefore),
 	}
 
@@ -664,7 +664,7 @@ func buildReport(p reportParts) cli.RunReport {
 		Passport:     p.passport,
 		Settings: &cli.RunSettings{
 			MaxInFlight: p.maxInFlight, Connections: p.cfg.App.Connections, Warmup: p.cfg.Load.Warmup,
-			Compression: p.cfg.App.Compression,
+			Ramp: p.cfg.Load.Ramp, Compression: p.cfg.App.Compression,
 		},
 	}
 	// The limits are checked against the run as it ended, the clock step

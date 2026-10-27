@@ -42,6 +42,7 @@ load:
 | `app.proto.import_paths` | Где искать файлы и их импорты, как `protoc -I`. Пути — от каталога файла конфига. Не указано — этот каталог. Стандартным типам (`google/protobuf/…`) путь не нужен |
 | `app.protoset` | Файл набора дескрипторов вместо файлов `.proto`, собранный `protoc --include_imports --descriptor_set_out=FILE`. Путь — от каталога файла конфига. Не вместе с `app.proto`; нет ни того, ни другого — методы берутся через reflection |
 | `load.warmup` | Первые N секунд не попадают в percentiles и в `sent`: холодные кеши их портят. Вызовы прогрева уходят к цели, отчёт печатает их строкой `warm-up N sent (M failed), excluded from stats` — `sent` плюс она равны всем вызовам, которые генератор попытался отправить. Цель получила их все, кроме посчитанных как unreachable и client error; `cut off` и вызовы с тайм-аутом могли дойти до неё не полностью: цель, которая не открывает окно HTTP/2 (flow control), получает только заголовки, и её счётчики могут вызов не увидеть. Входит в `duration`, короче любого вызова |
+| `load.ramp` | Поднять каждый вызов с 0 до его `rps` линейно за это время, перед тем как начнётся его `duration`: прогон идёт `ramp` + `duration`, а `duration` значит то же, что раньше (время на `rps`). Не указан или `0s` — разгона нет. Вызовы разгона не попадают в percentiles и в `sent`, как и прогрева, который начинается, когда разгон кончился; отчёт печатает оба одной строкой `ramp and warm-up N sent, excluded from stats`. Пределы `pass` и доля ошибок считаются только по удержанию: цель, которая падала на разгоне и выправилась, пройдёт, и увидеть это можно только по этой строке. Разгон начинается с одного вызова в момент 0. Не вместе с `load.breakpoint`. (не выпущено) |
 | `load.calls[].method` | Полное имя метода: `пакет.Сервис/Метод` |
 | `load.calls[].rps` | Запросов в секунду для этого метода |
 | `load.calls[].duration` | Сколько его нагружать: `30s`, `5m`, `1h` |
@@ -347,12 +348,13 @@ SIGTERM (`docker stop`, Kubernetes, отмена джоба в CI) сразу о
 | `clock_step_ns` | int | Шаг часов хоста, нс: каждая задержка и ожидание ± он |
 | `started_at` | string | Начало расписания, RFC 3339 UTC, прогрев включён. От него отсчитываются все `_us` и `_s` |
 | `duration_us` | int | Сколько прогон шёл, прогрев включён |
-| `planned_us` | int | Сколько он должен был идти |
-| `warmup_us` | int | Длина прогрева |
+| `planned_us` | int | Сколько он должен был идти, разгон включён |
+| `warmup_us` | int | Окно, которое статистика не считает: разгон и прогрев. Без разгона — длина прогрева; для одного прогрева возьмите `warmup_us` − `settings.ramp_us` |
 | `settings` | object | С чем запущен прогон, как задано, а не как измерено |
 | `settings.max_in_flight` | int; поиск: `int?` | Потолок запросов в полёте: значение `-max-in-flight`, иначе по умолчанию. Поиск: `null` без флага (каждый прогон берёт наименьший потолок, с которым идёт); в его прогонах — потолок этого прогона |
 | `settings.connections` | int | `app.connections` как задано, по умолчанию 1; `connections.open` — сколько открылось |
 | `settings.warmup_us` | int | Прогрев как задан. Поиск: время `settle` |
+| `settings.ramp_us` | int | `load.ramp` как задан, в целых микросекундах; 0 без него. (не выпущено) |
 | `settings.compression` | string? | `app.compression` как задано: `"gzip"`, `null` — не указано |
 | `passport` | object? | Машина и конфиг, с которыми сделан прогон, чтобы различать прогоны. У поиска он один, на верхнем уровне; в его прогонах `breakpoint.runs` его нет |
 | `passport.config_sha256` | string | SHA-256 байтов файла конфига, как прочитаны, 64 шестнадцатеричные цифры |
@@ -367,7 +369,7 @@ SIGTERM (`docker stop`, Kubernetes, отмена джоба в CI) сразу о
 | `aborted` | int | Оборваны нашей остановкой |
 | `not_sent` | int | Таймаут истёк до отправки: в `sent` и `failed` не входят |
 | `not_sent_generator`, `not_sent_stream`, `not_sent_connection` | int | `not_sent` по причине: опоздал генератор, не было свободного стрима, не было готового соединения. В сумме — `not_sent` |
-| `warmup_sent`, `warmup_failed`, `warmup_not_sent` | int | То же для вызовов, запланированных на прогрев |
+| `warmup_sent`, `warmup_failed`, `warmup_not_sent` | int | То же для вызовов, запланированных на исключённое окно (разгон и прогрев) |
 | `cap_hit` | object? | Упор в `-max-in-flight`; `null` — упора не было |
 | `cap_hit.at_us` | int | Когда |
 | `cap_hit.unsent` | int | Сколько вызовов потолок не пустил |
@@ -429,8 +431,8 @@ SIGTERM (`docker stop`, Kubernetes, отмена джоба в CI) сразу о
 | `methods[].sent`, `methods[].failed`, `methods[].aborted`, `methods[].not_sent`, `methods[].not_sent_generator`, `methods[].not_sent_stream`, `methods[].not_sent_connection`, `methods[].warmup_sent`, `methods[].warmup_failed`, `methods[].warmup_not_sent` | int | Доля метода в одноимённых полях прогона |
 | `methods[].rps` | float? | `sent/s`: отправленные, делённые на время отправки; `null` — ни одного вызова |
 | `methods[].timeout_us` | int | Таймаут метода |
-| `methods[].planned_rps_low`, `methods[].planned_rps_high` | int | Наименьший и наибольший плановый темп всего плана |
-| `methods[].planned_duration_us` | int | Сколько метод должен был идти, как задано |
+| `methods[].planned_rps_low`, `methods[].planned_rps_high` | int | Наименьший и наибольший плановый темп измеряемой части плана, после исключённого окна: вызов с разгоном даёт свой `rps` дважды |
+| `methods[].planned_duration_us` | int | Сколько метод должен был идти, как задано, разгон включён |
 | `methods[].request_bytes` | object? | Тело запроса в среднем по измеренным вызовам, ушедшим к цели; `null` без сжатия |
 | `methods[].request_bytes.raw`, `methods[].request_bytes.wire` | float | Байт до сжатия и на проводе (без 5-байтовой рамки) |
 | `methods[].latency` | object | Задержка успешных вызовов, с таймаутами и оборванными как нижними границами |
@@ -476,7 +478,7 @@ SIGTERM (`docker stop`, Kubernetes, отмена джоба в CI) сразу о
 
 | Поле | Тип | Что значит |
 |---|---|---|
-| `methods[].seconds[].warmup` | bool | Секунда в прогреве |
+| `methods[].seconds[].warmup` | bool | Секунда в исключённом окне (разгон и прогрев) |
 | `methods[].seconds[].begun` | int | Вызовы, начатые в эту секунду |
 | `methods[].seconds[].succeeded`, `methods[].seconds[].overload`, `methods[].seconds[].failure`, `methods[].seconds[].client_error`, `methods[].seconds[].bad_response`, `methods[].seconds[].request_error`, `methods[].seconds[].timed_out`, `methods[].seconds[].unreachable`, `methods[].seconds[].cut_off`, `methods[].seconds[].aborted`, `methods[].seconds[].unclassified` | int | Вызовы, завершившиеся в эту секунду, по категориям |
 | `methods[].seconds[].not_sent_generator`, `methods[].seconds[].not_sent_stream`, `methods[].seconds[].not_sent_connection` | int | Таймауты до отправки, завершившиеся в эту секунду, по причинам |
