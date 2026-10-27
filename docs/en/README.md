@@ -94,9 +94,9 @@ the service through gRPC server reflection, so no `.proto` is needed. A service 
 [reference](reference.md). The config, the address, the
 methods and the request body are checked before the start: any error means exit 1 and not a single
 call to the target. To check the config before the load, run
-`leettest -c leettest.yaml -dry-run` (not released): one request per call, the request and the
+`leettest -c leettest.yaml -dry-run`: one request per call, the request and the
 reply on screen, no report. The first `warmup` seconds stay out of the stats. A ramp from zero to `rps` is
-`load.ramp: 30s` (not released, [`examples/ramp.yaml`](../../examples/ramp.yaml)): a run lasts `ramp` + `duration`,
+`load.ramp: 30s` ([`examples/ramp.yaml`](../../examples/ramp.yaml)): a run lasts `ramp` + `duration`,
 the ramp's calls stay out of the stats too (the `pass` limits count the hold), and `warmup`, unlike
 the ramp, counts toward `duration`. Every call of a method goes
 out with the same body: for a write with an idempotency key the repeat path is measured, not
