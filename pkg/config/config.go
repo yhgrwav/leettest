@@ -35,6 +35,7 @@ var (
 	ErrInvalidRPS          = errors.New("rps must be positive")
 	ErrInvalidDuration     = errors.New("duration must be positive")
 	ErrInvalidWarmup       = errors.New("warmup must not be negative")
+	ErrInvalidRamp         = errors.New("ramp must not be negative")
 	ErrEmptyName           = errors.New("name must not be empty: leave it out to use the service or file name")
 	ErrDuplicateMethod     = errors.New("method appears in more than one call: the report is per method, keep one call for it")
 	ErrFractionalRPS       = errors.New("rps must be a whole number of requests")
@@ -150,6 +151,9 @@ type ConnectionStringTarget struct {
 type ConnectionString string
 
 type Load struct {
+	// Ramp raises every call from 0 to its rps over this long before its
+	// duration starts; 0 is no ramp.
+	Ramp   time.Duration `yaml:"ramp"`
 	Warmup time.Duration `yaml:"warmup"`
 	Calls  []Call        `yaml:"calls"`
 	// Breakpoint searches for the rate the one call's target breaks at,

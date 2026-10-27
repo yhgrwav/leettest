@@ -21,3 +21,9 @@ type Stage struct {
 	TargetRPS int
 	Duration  time.Duration
 }
+
+// offset is the moment of tick i from the stage start; false once it is not
+// before Duration. Red-test stub: it ends every stage at once.
+func (Stage) offset(int) (time.Duration, bool) {
+	return 0, false
+}

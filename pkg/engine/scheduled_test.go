@@ -49,6 +49,33 @@ func TestScheduledAfter_CountsTheTicksOfTheMeasuredWindow(t *testing.T) {
 	}
 }
 
+// Ground: contract — the schedule counts the ramp's ticks by the stage's own
+// offsets: 0 to 100 over 1s is 50 ticks, then the hold's 100. A tick of the hold
+// exactly at the warmup's end (1s) is measured. A warmup in the middle of the
+// ramp (500ms) leaves the ticks from 500ms: 13 of the ramp's 50 come before it
+// (N(0.5s) = 12.5), 37 after, and the hold's 100.
+func TestScheduledAfter_CountsTheRamp(t *testing.T) {
+	up := []Stage{
+		{StartRPS: 0, TargetRPS: 100, Duration: time.Second},
+		{StartRPS: 100, TargetRPS: 100, Duration: time.Second},
+	}
+	for _, tc := range []struct {
+		name   string
+		stages []Stage
+		warmup time.Duration
+		want   int
+	}{
+		{"no warmup", up, 0, 150},
+		{"the warmup is the ramp", up, time.Second, 100},
+		{"the warmup in the middle of the ramp", up, 500 * time.Millisecond, 137},
+		{"a ramp down", []Stage{{StartRPS: 900, TargetRPS: 100, Duration: 10 * time.Second}}, 0, 5000},
+	} {
+		if got := ScheduledAfter(tc.stages, tc.warmup); got != tc.want {
+			t.Errorf("%s: %d, want %d", tc.name, got, tc.want)
+		}
+	}
+}
+
 // Sent and Scheduled are of one window: on a sender that answers every call,
 // every scheduled call after the warmup is sent, none of the warmup's is.
 func TestReport_ScheduledIsTheWindowSentCountsIn(t *testing.T) {

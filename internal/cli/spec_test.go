@@ -15,6 +15,7 @@
 package cli_test
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -23,6 +24,7 @@ import (
 
 	"github.com/yhgrwav/leettest/internal/cli"
 	"github.com/yhgrwav/leettest/pkg/config"
+	"github.com/yhgrwav/leettest/pkg/engine"
 )
 
 func TestCallsFromConfig(t *testing.T) {
@@ -59,6 +61,62 @@ func TestCallsFromConfig(t *testing.T) {
 	}
 	if first.Stages[0].Duration != time.Minute {
 		t.Errorf("duration = %s, want 1m", first.Stages[0].Duration)
+	}
+}
+
+// Ground: contract — load.ramp is a stage before the rate (Spec 2): 0 to rps
+// over the ramp, then rps for duration, per call; the window the statistics
+// leave out is the ramp and then the warm-up, 30s + 2s. Without a ramp the
+// call is one stage and the window is the warm-up, as before.
+func TestSpec_ARampComesBeforeTheRate(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		ramp       time.Duration
+		warmup     time.Duration
+		wantStages []engine.Stage
+		wantWindow time.Duration
+	}{
+		{
+			name: "a ramp and a warm-up", ramp: 30 * time.Second, warmup: 2 * time.Second,
+			wantStages: []engine.Stage{
+				{StartRPS: 0, TargetRPS: 800, Duration: 30 * time.Second},
+				{StartRPS: 800, TargetRPS: 800, Duration: 20 * time.Second},
+			},
+			wantWindow: 32 * time.Second,
+		},
+		{
+			name: "a ramp without a warm-up", ramp: 30 * time.Second, warmup: 0,
+			wantStages: []engine.Stage{
+				{StartRPS: 0, TargetRPS: 800, Duration: 30 * time.Second},
+				{StartRPS: 800, TargetRPS: 800, Duration: 20 * time.Second},
+			},
+			wantWindow: 30 * time.Second,
+		},
+		{
+			name: "no ramp", ramp: 0, warmup: 2 * time.Second,
+			wantStages: []engine.Stage{{StartRPS: 800, TargetRPS: 800, Duration: 20 * time.Second}},
+			wantWindow: 2 * time.Second,
+		},
+	} {
+		cfg := &config.MasterConfig{Load: config.Load{
+			Ramp: tc.ramp, Warmup: tc.warmup,
+			Calls: []config.Call{
+				{Method: "a.B/One", RPS: 800, Duration: 20 * time.Second},
+				{Method: "a.B/Two", RPS: 800, Duration: 20 * time.Second},
+			},
+		}}
+		calls, err := cli.CallsFromConfig(cfg)
+		if err != nil {
+			t.Fatalf("%s: calls: %v", tc.name, err)
+		}
+		for _, call := range calls {
+			if !slices.Equal(call.Stages, tc.wantStages) {
+				t.Errorf("%s: %s stages = %+v, want %+v", tc.name, call.Method, call.Stages, tc.wantStages)
+			}
+		}
+		if got := cli.ExcludedWindow(cfg); got != tc.wantWindow {
+			t.Errorf("%s: the excluded window is %s, want %s", tc.name, got, tc.wantWindow)
+		}
 	}
 }
 

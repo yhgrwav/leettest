@@ -74,6 +74,9 @@ type RunSettings struct {
 	// Warmup is the warm-up as the config wrote it; in a search's step the
 	// settle.
 	Warmup time.Duration
+	// Ramp is load.ramp as the config wrote it: the time each call takes to
+	// rise from 0 to its rps before its duration starts; 0 when there is none.
+	Ramp time.Duration
 	// Compression is app.compression: "gzip", or empty for none.
 	Compression string
 }

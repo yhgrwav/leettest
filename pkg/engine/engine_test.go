@@ -85,6 +85,42 @@ func TestEngineKeepsWarmupOutOfLatencies(t *testing.T) {
 	}
 }
 
+// Ground: contract — a ramp followed by its hold, the excluded window set to
+// the ramp (Warmup 1s, which is what the CLI passes as ramp + warm-up): the
+// ramp's 50 calls go to the warm-up counters, the hold's 100 are measured, and
+// the planned rate of the measured part is the hold's, 100 to 100 — not 0 to
+// 100 over the whole plan. The plan is the sum of the stages, 2s.
+func TestEngine_ARampedRunMeasuresTheHold(t *testing.T) {
+	eng, err := New(Options{
+		Calls: []Call{{Method: "a.B/One", Timeout: 100 * time.Millisecond, Stages: []Stage{
+			{StartRPS: 0, TargetRPS: 100, Duration: time.Second},
+			{StartRPS: 100, TargetRPS: 100, Duration: time.Second},
+		}}},
+		Sender:      FakeSender{Delay: time.Millisecond},
+		MaxInFlight: 64,
+		Warmup:      time.Second,
+	})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	if err := eng.Run(context.Background()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	report := eng.Report()
+	if report.WarmupSent != 50 || report.Sent != 100 || report.Scheduled != 100 {
+		t.Errorf("warm-up sent %d, sent %d, scheduled %d; want 50, 100, 100",
+			report.WarmupSent, report.Sent, report.Scheduled)
+	}
+	m := report.Methods[0]
+	if m.RPSLow != 100 || m.RPSHigh != 100 {
+		t.Errorf("planned rate %d-%d, want 100-100: the measured part is the hold", m.RPSLow, m.RPSHigh)
+	}
+	if m.PlannedDuration != 2*time.Second {
+		t.Errorf("planned duration %s, want 2s: the stages' sum, the ramp included", m.PlannedDuration)
+	}
+}
+
 // Ground: contract — cancelling the context is how a library caller stops a run.
 func TestEngineStopsOnCancel(t *testing.T) {
 	eng, err := New(Options{

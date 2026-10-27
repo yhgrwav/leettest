@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/yhgrwav/leettest/pkg/config"
 	"github.com/yhgrwav/leettest/pkg/engine"
@@ -76,6 +77,14 @@ func CallsFromConfig(cfg *config.MasterConfig) ([]engine.Call, error) {
 	}
 
 	return calls, nil
+}
+
+// ExcludedWindow is the time from the start of a run that its statistics leave
+// out: the ramp and then the warm-up. It is the engine's Warmup option and
+// the live view's, never the report's echo of load.warmup. Red-test stub: the
+// warm-up only.
+func ExcludedWindow(cfg *config.MasterConfig) time.Duration {
+	return cfg.Load.Warmup
 }
 
 // datasetCounter is the counter of a dataset call: the file's order, or a
