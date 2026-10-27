@@ -3,7 +3,7 @@
 [Русский](../ru/reference.md) · [English](../en/reference.md) · [Deutsch](../de/reference.md) · [简体中文](reference.md)
 [← 首页](README.md)
 
-> 译自 [docs/ru/reference.md](../ru/reference.md)，对应 d7d1c85，2026-10-21。如有出入，以俄文版为准。
+> 译自 [docs/ru/reference.md](../ru/reference.md)，对应 e4663f1，2026-10-27。如有出入，以俄文版为准。
 > **可能滞后：** 中文版在每次发布前同步，最新内容请看[英文版](../en/reference.md)。
 
 每个配置字段、每个命令行参数，以及工具在启动前检查什么。如何阅读报告见
@@ -45,7 +45,7 @@ load:
 | `app.proto.import_paths` | 在哪里查找这些文件及其 import，与 `protoc -I` 相同。路径从配置文件所在目录算起。省略时为该目录。标准类型（`google/protobuf/…`）不需要路径 |
 | `app.protoset` | 用描述符集文件代替 `.proto` 文件，由 `protoc --include_imports --descriptor_set_out=FILE` 生成。路径从配置文件所在目录算起。不能与 `app.proto` 同时使用；两者都没有时，方法通过 reflection 获取 |
 | `load.warmup` | 前 N 秒不计入百分位和 `sent`：冷缓存会扭曲它们。预热调用确实会到达目标；报告用一行 `warm-up N sent (M failed), excluded from stats` 输出它们——`sent` 加上这一行就是压测机尝试过的全部调用。除计为 unreachable 或 client error 的调用外，目标都收到了；`cut off` 和超时的调用可能没有完整到达：不打开 HTTP/2 窗口（流量控制）的目标只会收到请求头，它的计数器可能看不到这次调用。计入 `duration`，必须短于每个调用 |
-| `load.ramp` | 在此时间内把每个调用从 0 线性提升到它的 `rps`，之后才开始它的 `duration`：运行时长为 `ramp` + `duration`。不写或 `0s` 表示没有爬升。爬升期间的调用和预热一样不计入百分位和 `sent`，预热在爬升结束后才开始。不能与 `load.breakpoint` 同用。未发布 |
+| `load.ramp` | 在此时间内把每个调用从 0 线性提升到它的 `rps`，之后才开始它的 `duration`：运行时长为 `ramp` + `duration`，而 `duration` 的含义和以前一样（以 `rps` 运行的时间）。不写或 `0s` 表示没有爬升。爬升期间的调用和预热一样不计入百分位和 `sent`，预热在爬升结束时才开始；报告把两者打印在同一行：`ramp and warm-up N sent, excluded from stats`。`pass` 限值和错误占比只按保持阶段计算：在爬升中垮掉后又恢复的目标会通过，只有这一行能看出来。爬升从时刻 0 的一次调用开始。不能与 `load.breakpoint` 同用。未发布 |
 | `load.calls[].method` | 方法全名：`package.Service/Method` |
 | `load.calls[].rps` | 该方法每秒的请求数 |
 | `load.calls[].duration` | 施压时长：`30s`、`5m`、`1h` |
@@ -359,8 +359,8 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `clock_step_ns` | int | 主机时钟步长，纳秒：每个延迟和等待都有 ± 这个值的误差 |
 | `started_at` | string | 计划开始时刻，RFC 3339 UTC，包括预热。所有 `_us` 和 `_s` 都从它算起 |
 | `duration_us` | int | 运行实际持续时间，包括预热 |
-| `planned_us` | int | 计划持续时间 |
-| `warmup_us` | int | 预热时长 |
+| `planned_us` | int | 计划持续时间，包括爬升 |
+| `warmup_us` | int | 统计不计入的时间窗口：爬升和预热。没有爬升时就是预热时长；只要预热，取 `warmup_us` − `settings.ramp_us` |
 | `settings` | object | 运行启动时的设置，按配置而非测量值 |
 | `settings.max_in_flight` | int；搜索：`int?` | 在途请求上限：`-max-in-flight` 的值，否则为默认值。搜索：未设该参数时为 `null`（每次运行取其能运行的最小上限）；在其各次运行中为该次运行的上限 |
 | `settings.connections` | int | 按配置的 `app.connections`，默认 1；`connections.open` 是实际打开的数量 |
@@ -380,7 +380,7 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `aborted` | int | 被我们自己的停止截断 |
 | `not_sent` | int | 发送前超时已耗尽：既不在 `sent` 中也不在 `failed` 中 |
 | `not_sent_generator`、`not_sent_stream`、`not_sent_connection` | int | 按原因拆分的 `not_sent`：压测机迟到、没有空闲的流、没有就绪的连接。三者之和等于 `not_sent` |
-| `warmup_sent`、`warmup_failed`、`warmup_not_sent` | int | 预热期间计划的调用的同类数值 |
+| `warmup_sent`、`warmup_failed`、`warmup_not_sent` | int | 在被排除的窗口（爬升和预热）内计划的调用的同类数值 |
 | `cap_hit` | object? | 触及了 `-max-in-flight` 上限；`null`——没有触及 |
 | `cap_hit.at_us` | int | 何时 |
 | `cap_hit.unsent` | int | 被上限拒绝的调用 |
@@ -441,8 +441,8 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `methods[].sent`、`methods[].failed`、`methods[].aborted`、`methods[].not_sent`、`methods[].not_sent_generator`、`methods[].not_sent_stream`、`methods[].not_sent_connection`、`methods[].warmup_sent`、`methods[].warmup_failed`、`methods[].warmup_not_sent` | int | 该方法在运行同名字段中所占的部分 |
 | `methods[].rps` | float? | `sent/s`：已发送调用数除以发送时间；`null`——没有调用 |
 | `methods[].timeout_us` | int | 该方法的超时 |
-| `methods[].planned_rps_low`、`methods[].planned_rps_high` | int | 整个计划中最低和最高的计划速率 |
-| `methods[].planned_duration_us` | int | 该方法计划运行多久，按配置 |
+| `methods[].planned_rps_low`、`methods[].planned_rps_high` | int | 计划中被测量部分（被排除的窗口之后）最低和最高的计划速率：带爬升的调用会给出两次它的 `rps` |
+| `methods[].planned_duration_us` | int | 该方法计划运行多久，按配置，包括爬升 |
 | `methods[].request_bytes` | object? | 已发出的被测调用的请求体平均大小；无压缩时为 `null` |
 | `methods[].request_bytes.raw`, `methods[].request_bytes.wire` | float | 压缩前与线上的字节数（不含 5 字节帧头） |
 | `methods[].latency` | object | 成功调用的延迟，超时和被截断的调用作为下界 |
@@ -488,7 +488,7 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 
 | 字段 | 类型 | 含义 |
 |---|---|---|
-| `methods[].seconds[].warmup` | bool | 该秒处于预热期 |
+| `methods[].seconds[].warmup` | bool | 该秒处于被排除的窗口（爬升和预热）内 |
 | `methods[].seconds[].begun` | int | 在该秒开始的调用 |
 | `methods[].seconds[].succeeded`、`methods[].seconds[].overload`、`methods[].seconds[].failure`、`methods[].seconds[].client_error`、`methods[].seconds[].bad_response`、`methods[].seconds[].request_error`、`methods[].seconds[].timed_out`、`methods[].seconds[].unreachable`、`methods[].seconds[].cut_off`、`methods[].seconds[].aborted`、`methods[].seconds[].unclassified` | int | 在该秒结束的调用，按类别 |
 | `methods[].seconds[].not_sent_generator`、`methods[].seconds[].not_sent_stream`、`methods[].seconds[].not_sent_connection` | int | 在该秒结束的发送前超时，按原因 |

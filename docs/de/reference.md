@@ -3,7 +3,7 @@
 [Русский](../ru/reference.md) · [English](../en/reference.md) · [Deutsch](reference.md) · [简体中文](../zh-CN/reference.md)
 [← Startseite](README.md)
 
-> Übersetzt aus [docs/ru/reference.md](../ru/reference.md) bei d7d1c85, 2026-10-21. Bei
+> Übersetzt aus [docs/ru/reference.md](../ru/reference.md) bei e4663f1, 2026-10-27. Bei
 > Abweichungen gilt die russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/reference.md).
@@ -47,7 +47,7 @@ load:
 | `app.proto.import_paths` | Wo die Dateien und ihre Imports gesucht werden, wie bei `protoc -I`. Pfade gelten ab dem Verzeichnis der Konfigurationsdatei. Weggelassen — dieses Verzeichnis. Für Standardtypen (`google/protobuf/…`) braucht es keinen Pfad |
 | `app.protoset` | Eine Deskriptorsatz-Datei statt `.proto`-Dateien, gebaut mit `protoc --include_imports --descriptor_set_out=FILE`. Der Pfad gilt ab dem Verzeichnis der Konfigurationsdatei. Nicht zusammen mit `app.proto`; ist keines von beiden gesetzt, werden die Methoden über Reflection geholt |
 | `load.warmup` | Die ersten N Sekunden bleiben aus den Perzentilen und aus `sent`: kalte Caches verderben sie. Aufwärm-Aufrufe erreichen das Ziel durchaus; der Bericht gibt sie auf einer Zeile `warm-up N sent (M failed), excluded from stats` aus — `sent` plus diese Zeile ist jeder Aufruf, den der Generator versucht hat. Das Ziel bekam sie alle bis auf die als unreachable oder client error gezählten; `cut off` und abgelaufene haben es vielleicht nicht vollständig erreicht: Ein Ziel, das sein HTTP/2-Fenster nicht öffnet (Flusskontrolle), bekommt nur die Header, und seine Zähler sehen den Aufruf womöglich nicht. Zählt zu `duration`, kürzer als jeder Aufruf |
-| `load.ramp` | Jeden Aufruf in dieser Zeit linear von 0 auf sein `rps` anheben, bevor sein `duration` beginnt: der Lauf dauert `ramp` + `duration`. Fehlt der Schlüssel oder `0s` — kein Anlauf. Die Aufrufe des Anlaufs bleiben aus Perzentilen und `sent`, wie die des Aufwärmens, das erst danach beginnt. Nicht zusammen mit `load.breakpoint`. (nicht veröffentlicht) |
+| `load.ramp` | Jeden Aufruf in dieser Zeit linear von 0 auf sein `rps` anheben, bevor sein `duration` beginnt: der Lauf dauert `ramp` + `duration`, und `duration` bedeutet dasselbe wie vorher (die Zeit auf `rps`). Fehlt der Schlüssel oder `0s` — kein Anlauf. Die Aufrufe des Anlaufs bleiben aus Perzentilen und `sent`, wie die des Aufwärmens, das erst danach beginnt, wenn der Anlauf endet; der Bericht gibt beide in einer Zeile aus, `ramp and warm-up N sent, excluded from stats`. Die `pass`-Grenzen und der Fehleranteil zählen nur die Haltephase: Ein Ziel, das im Anlauf fiel und sich erholte, besteht, und das ist nur an dieser Zeile zu sehen. Der Anlauf beginnt mit einem Aufruf im Moment 0. Nicht zusammen mit `load.breakpoint`. (nicht veröffentlicht) |
 | `load.calls[].method` | Der volle Methodenname: `package.Service/Method` |
 | `load.calls[].rps` | Anfragen pro Sekunde für diese Methode |
 | `load.calls[].duration` | Wie lange sie belastet wird: `30s`, `5m`, `1h` |
@@ -438,8 +438,8 @@ unten den Typ „percentile?" hat.
 | `clock_step_ns` | int | Der Uhrenschritt des Hosts, ns: Jede Latenz und Wartezeit ist ± dieser Wert |
 | `started_at` | string | Beginn des Plans, RFC 3339 UTC, Aufwärmen eingeschlossen. Jedes `_us` und `_s` zählt ab hier |
 | `duration_us` | int | Wie lange der Lauf ging, Aufwärmen eingeschlossen |
-| `planned_us` | int | Wie lange er gehen sollte |
-| `warmup_us` | int | Länge des Aufwärmens |
+| `planned_us` | int | Wie lange er gehen sollte, der Anlauf eingeschlossen |
+| `warmup_us` | int | Das Fenster, das die Statistik nicht zählt: Anlauf und Aufwärmen. Ohne Anlauf — die Länge des Aufwärmens; für das Aufwärmen allein nehmen Sie `warmup_us` − `settings.ramp_us` |
 | `settings` | object | Womit der Lauf gestartet wurde, wie konfiguriert, nicht wie gemessen |
 | `settings.max_in_flight` | int; Suche: `int?` | Die Obergrenze für Anfragen im Flug: der Wert von `-max-in-flight`, sonst der Standard. Suche: `null` ohne die Option (jeder Lauf nimmt die kleinste Grenze, mit der er läuft); in ihren Läufen die Grenze dieses Laufs |
 | `settings.connections` | int | `app.connections` wie konfiguriert, standardmäßig 1; `connections.open` ist, was sich geöffnet hat |
@@ -459,7 +459,7 @@ unten den Typ „percentile?" hat.
 | `aborted` | int | Durch unser eigenes Anhalten abgeschnitten |
 | `not_sent` | int | Das Timeout lief vor dem Senden ab: weder in `sent` noch in `failed` |
 | `not_sent_generator`, `not_sent_stream`, `not_sent_connection` | int | `not_sent` nach Ursache: Der Generator war spät, kein freier Stream, keine bereite Verbindung. Zusammen ergeben sie `not_sent` |
-| `warmup_sent`, `warmup_failed`, `warmup_not_sent` | int | Dasselbe für Aufrufe, die im Aufwärmen geplant waren |
+| `warmup_sent`, `warmup_failed`, `warmup_not_sent` | int | Dasselbe für Aufrufe, die im ausgeschlossenen Fenster geplant waren (Anlauf und Aufwärmen) |
 | `cap_hit` | object? | Die Grenze `-max-in-flight` wurde erreicht; `null` — wurde sie nicht |
 | `cap_hit.at_us` | int | Wann |
 | `cap_hit.unsent` | int | Aufrufe, die die Grenze abgewiesen hat |
@@ -521,8 +521,8 @@ Die übrigen sind einfache Zähler.
 | `methods[].sent`, `methods[].failed`, `methods[].aborted`, `methods[].not_sent`, `methods[].not_sent_generator`, `methods[].not_sent_stream`, `methods[].not_sent_connection`, `methods[].warmup_sent`, `methods[].warmup_failed`, `methods[].warmup_not_sent` | int | Der Anteil der Methode an den gleichnamigen Feldern des Laufs |
 | `methods[].rps` | float? | `sent/s`: gesendete Aufrufe geteilt durch die Sendezeit; `null` — keine Aufrufe |
 | `methods[].timeout_us` | int | Das Timeout der Methode |
-| `methods[].planned_rps_low`, `methods[].planned_rps_high` | int | Niedrigste und höchste geplante Rate des ganzen Plans |
-| `methods[].planned_duration_us` | int | Wie lange die Methode gehen sollte, wie konfiguriert |
+| `methods[].planned_rps_low`, `methods[].planned_rps_high` | int | Niedrigste und höchste geplante Rate des gemessenen Teils des Plans, nach dem ausgeschlossenen Fenster: Ein Aufruf mit Anlauf gibt sein `rps` zweimal |
+| `methods[].planned_duration_us` | int | Wie lange die Methode gehen sollte, wie konfiguriert, der Anlauf eingeschlossen |
 | `methods[].request_bytes` | object? | Der Anfragekörper, Mittel über die gemessenen Aufrufe, die hinausgingen; `null` ohne Kompression |
 | `methods[].request_bytes.raw`, `methods[].request_bytes.wire` | float | Bytes vor der Kompression und auf der Leitung (ohne den 5-Byte-Rahmen) |
 | `methods[].latency` | object | Latenz erfolgreicher Aufrufe, mit Timeouts und abgebrochenen Aufrufen als Untergrenzen |
@@ -569,7 +569,7 @@ etwas geschah. Anders als die Summen enthält sie jeden Aufruf. Zum Abgleich: `�
 
 | Feld | Typ | Bedeutung |
 |---|---|---|
-| `methods[].seconds[].warmup` | bool | Die Sekunde liegt im Aufwärmen |
+| `methods[].seconds[].warmup` | bool | Die Sekunde liegt im ausgeschlossenen Fenster (Anlauf und Aufwärmen) |
 | `methods[].seconds[].begun` | int | In dieser Sekunde begonnene Aufrufe |
 | `methods[].seconds[].succeeded`, `methods[].seconds[].overload`, `methods[].seconds[].failure`, `methods[].seconds[].client_error`, `methods[].seconds[].bad_response`, `methods[].seconds[].request_error`, `methods[].seconds[].timed_out`, `methods[].seconds[].unreachable`, `methods[].seconds[].cut_off`, `methods[].seconds[].aborted`, `methods[].seconds[].unclassified` | int | In dieser Sekunde beendete Aufrufe, nach Kategorie |
 | `methods[].seconds[].not_sent_generator`, `methods[].seconds[].not_sent_stream`, `methods[].seconds[].not_sent_connection` | int | Timeouts vor dem Senden, die in dieser Sekunde endeten, nach Ursache |

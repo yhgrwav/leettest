@@ -15,7 +15,7 @@
 
 ---
 
-> Übersetzt aus [README.md](../../README.md) bei d7d1c85, 2026-10-21. Bei Abweichungen gilt die
+> Übersetzt aus [README.md](../../README.md) bei e4663f1, 2026-10-27. Bei Abweichungen gilt die
 > russische Fassung. Dazu ein Verzeichnis der deutschen Dokumentation, das im Original fehlt.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/README.md).
@@ -96,7 +96,13 @@ Der Methodenname ist der volle, `package.Service/Method`. Das Werkzeug holt das 
 [`examples/proto.yaml`](../../examples/proto.yaml), das Feld `app.proto` / `app.protoset` in der
 [Referenz](reference.md). Konfiguration, Adresse,
 Methoden und Anfrage-Body werden vor dem Start geprüft: Jeder Fehler heißt Exit-Code 1 und kein
-einziger Aufruf ans Ziel. Die ersten `warmup` Sekunden zählen nicht zur Statistik. Jeder Aufruf einer
+einziger Aufruf ans Ziel. Die Konfiguration vor der Last prüfen:
+`leettest -c leettest.yaml -dry-run` (nicht veröffentlicht) — eine Anfrage pro Aufruf, Anfrage und
+Antwort auf dem Bildschirm, kein Bericht. Die ersten `warmup` Sekunden zählen nicht zur Statistik.
+Das Hochfahren von null auf `rps` ist `load.ramp: 30s` (nicht veröffentlicht,
+[`examples/ramp.yaml`](../../examples/ramp.yaml)): Ein Lauf dauert `ramp` + `duration`, auch die
+Aufrufe des Anlaufs bleiben aus der Statistik (die `pass`-Grenzen zählen die Haltephase), und
+`warmup` zählt, anders als der Anlauf, zu `duration`. Jeder Aufruf einer
 Methode geht mit demselben Body raus: Bei einem Schreibvorgang mit Idempotenzschlüssel wird der Weg
 der Wiederholung gemessen, nicht das Anlegen des Datensatzes. Eine andere Anfrage bei jedem Aufruf —
 eine Datei in `dataset`: ein JSON je Zeile, der Reihe nach und im Kreis (`dataset_order: random` —
