@@ -402,6 +402,7 @@ type runFlags struct {
 	fakeJitter     time.Duration
 	fakeFail       float64
 	dryRun         bool
+	yes            bool
 	output         string
 	jsonFile       string
 	interactive    bool
@@ -424,6 +425,7 @@ func parseFlags(args []string, terminal bool, stdout, stderr io.Writer) (runFlag
 		fakeJitter     = flags.Duration("fake-jitter", 10*time.Millisecond, "random spread added to the fake latency, with -fake")
 		fakeFail       = flags.Float64("fake-fail-ratio", 0, "share of fake replies that fail, 0 to 1, with -fake")
 		dryRun         = flags.Bool("dry-run", false, "send one request per call, print the request and the reply, measure nothing")
+		yes            = flags.Bool("yes", false, "answer yes to the question a real-mode run asks; changes nothing with app.mode: local")
 		showVersion    = flags.Bool("version", false, "print the version and exit")
 		output         = flags.String("output", "text", "report format on stdout: text, or json for scripts")
 		jsonFile       = flags.String("json-file", "", "also write the JSON report to this new file")
@@ -471,6 +473,7 @@ func parseFlags(args []string, terminal bool, stdout, stderr io.Writer) (runFlag
 		fakeJitter:     *fakeJitter,
 		fakeFail:       *fakeFail,
 		dryRun:         *dryRun,
+		yes:            *yes,
 		output:         *output,
 		jsonFile:       *jsonFile,
 		interactive:    interactive,

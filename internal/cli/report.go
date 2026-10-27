@@ -79,6 +79,8 @@ type RunSettings struct {
 	Ramp time.Duration
 	// Compression is app.compression: "gzip", or empty for none.
 	Compression string
+	// Mode is app.mode: "local" or "real". Empty prints nothing.
+	Mode string
 }
 
 // ramp is the ramp the run's config set; 0 without settings, which cannot tell

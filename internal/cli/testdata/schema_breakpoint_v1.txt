@@ -7,6 +7,7 @@ methods_source string?
 method string
 started_at string
 settings object
+settings.mode string
 settings.max_in_flight int?
 settings.connections int
 settings.warmup_us int
