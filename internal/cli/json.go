@@ -115,10 +115,11 @@ type JSONReport struct {
 // jsonSettings is a run's configured settings: the cap and the connections
 // as set, the warm-up and the ramp in whole microseconds.
 type jsonSettings struct {
-	MaxInFlight int   `json:"max_in_flight"`
-	Connections int   `json:"connections"`
-	WarmupUS    int64 `json:"warmup_us"`
-	RampUS      int64 `json:"ramp_us"`
+	Mode        string `json:"mode"`
+	MaxInFlight int    `json:"max_in_flight"`
+	Connections int    `json:"connections"`
+	WarmupUS    int64  `json:"warmup_us"`
+	RampUS      int64  `json:"ramp_us"`
 	// Compression is "gzip" or null.
 	Compression *string `json:"compression"`
 }
@@ -130,7 +131,7 @@ func settingsOf(s *RunSettings) jsonSettings {
 		return jsonSettings{}
 	}
 
-	return jsonSettings{MaxInFlight: s.MaxInFlight, Connections: s.Connections, WarmupUS: micros(s.Warmup), RampUS: micros(s.Ramp), Compression: compressionOf(s.Compression)}
+	return jsonSettings{Mode: s.Mode, MaxInFlight: s.MaxInFlight, Connections: s.Connections, WarmupUS: micros(s.Warmup), RampUS: micros(s.Ramp), Compression: compressionOf(s.Compression)}
 }
 
 // compressionOf is the configured compression, null for none.

@@ -43,6 +43,7 @@ load:
 | `app.max_response_size` | Die größte Antwort, die ein Aufruf annimmt: `16MiB`, `512KB`. Die Einheit ist Pflicht (`MB` = 10⁶ Bytes, `MiB` = 2²⁰), unter 2 GiB. Weggelassen — 4 MiB, wie in gRPC. Eine größere Antwort ist eine `bad response`. Ein laufender Aufruf kann bis zum Doppelten des Limits puffern: standardmäßig bis zu 8 MiB je Aufruf |
 | `app.connections` | Wie viele Verbindungen zum Ziel geöffnet werden, eine ganze Zahl von 1 bis 256. Weggelassen — 1. Die Aufrufe nehmen die Verbindungen reihum, der Bericht druckt einen Block `Connections:`, eine Zeile je Verbindung |
 | `app.compression` | Anfragekörper komprimieren: `gzip`. Weggelassen — keine. Der Bericht druckt unter der Methode `bytes: <raw> -> <wire> per call` |
+| `app.mode` | `local` oder `real`, genau so geschrieben (`Real` ist ein Fehler, ebenso ein Schlüssel ohne Wert). Weggelassen — `local`. `real` kennzeichnet einen Lauf gegen ein System, das Menschen nutzen, und verlangt vor dem ersten Aufruf `load.ramp` (einen Anlauf von 0 auf `rps`), sonst Exit 1; mit `load.breakpoint` ist kein Anlauf nötig, weil die Suche keinen annimmt. Auch die Suche ist kein Anlauf: ihr erster Schritt geht sofort auf `breakpoint.from`. Der Bericht druckt den Modus unter `name`, auch bei `local`. Ein Flag dafür gibt es nicht. (nicht veröffentlicht) |
 | `app.proto.files` | `.proto`-Dateien, aus denen die Dienste genommen werden, für einen Dienst ohne Reflection. Pfade gelten ab dem Verzeichnis der Konfigurationsdatei. Jede Datei muss in einem der `import_paths` liegen |
 | `app.proto.import_paths` | Wo die Dateien und ihre Imports gesucht werden, wie bei `protoc -I`. Pfade gelten ab dem Verzeichnis der Konfigurationsdatei. Weggelassen — dieses Verzeichnis. Für Standardtypen (`google/protobuf/…`) braucht es keinen Pfad |
 | `app.protoset` | Eine Deskriptorsatz-Datei statt `.proto`-Dateien, gebaut mit `protoc --include_imports --descriptor_set_out=FILE`. Der Pfad gilt ab dem Verzeichnis der Konfigurationsdatei. Nicht zusammen mit `app.proto`; ist keines von beiden gesetzt, werden die Methoden über Reflection geholt |
@@ -304,6 +305,7 @@ ein Anhalten lässt Datensätze ungesendet.
 | `-max-in-flight` | Grenze für Anfragen, die auf eine Antwort warten. Standard `5000` |
 | `-plain` | Ohne Live-Bildschirm: eine Fortschrittszeile pro Sekunde auf stderr, wie ohne Terminal, und ohne den Dialog beim ersten Start. Der Bericht und die Exit-Codes sind dieselben |
 | `-dry-run` | Die Konfiguration ohne Last prüfen: verbinden, die Methoden prüfen, pro Aufruf eine Anfrage senden und die Anfrage, den Status und die Antwort ausgeben. Keine Statistik, kein Bericht. Einzelheiten im Abschnitt „Prüfen vor der Last“ unten. Nicht zusammen mit `-fake`, `-output`, `-json-file`, `-label`, `-plain` (Exit-Code 1). (nicht veröffentlicht) |
+| `-yes` | Wird angenommen und vorerst ignoriert; reserviert für die Bestätigung eines Laufs mit `app.mode: real`. Mit `app.mode: local` ändert es nichts. (nicht veröffentlicht) |
 | `-fake` | Statt des Dienstes aus der Konfiguration einen eingebauten Platzhalter belasten — um das Werkzeug ohne Dienst anzusehen. Der Bericht ist als `fake target` markiert |
 | `-fake-delay`, `-fake-jitter`, `-fake-fail-ratio` | Das Verhalten des Platzhalters. Nur zusammen mit `-fake` |
 | `-version` | Version ausgeben und beenden. Ein Build aus dem Quellcode gibt den Commit aus |
@@ -441,6 +443,7 @@ unten den Typ „percentile?" hat.
 | `planned_us` | int | Wie lange er gehen sollte, der Anlauf eingeschlossen |
 | `warmup_us` | int | Das Fenster, das die Statistik nicht zählt: Anlauf und Aufwärmen. Ohne Anlauf — die Länge des Aufwärmens; für das Aufwärmen allein nehmen Sie `warmup_us` − `settings.ramp_us` |
 | `settings` | object | Womit der Lauf gestartet wurde, wie konfiguriert, nicht wie gemessen |
+| `settings.mode` | string | Das `app.mode` der Konfiguration: `"local"` oder `"real"`. Nicht das oberste `mode`, das ist die Art des Berichts. (nicht veröffentlicht) |
 | `settings.max_in_flight` | int; Suche: `int?` | Die Obergrenze für Anfragen im Flug: der Wert von `-max-in-flight`, sonst der Standard. Suche: `null` ohne die Option (jeder Lauf nimmt die kleinste Grenze, mit der er läuft); in ihren Läufen die Grenze dieses Laufs |
 | `settings.connections` | int | `app.connections` wie konfiguriert, standardmäßig 1; `connections.open` ist, was sich geöffnet hat |
 | `settings.warmup_us` | int | Das Aufwärmen wie konfiguriert. Suche: die Einschwingzeit `settle` |

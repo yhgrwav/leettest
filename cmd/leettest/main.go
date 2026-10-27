@@ -425,7 +425,7 @@ func parseFlags(args []string, terminal bool, stdout, stderr io.Writer) (runFlag
 		fakeJitter     = flags.Duration("fake-jitter", 10*time.Millisecond, "random spread added to the fake latency, with -fake")
 		fakeFail       = flags.Float64("fake-fail-ratio", 0, "share of fake replies that fail, 0 to 1, with -fake")
 		dryRun         = flags.Bool("dry-run", false, "send one request per call, print the request and the reply, measure nothing")
-		yes            = flags.Bool("yes", false, "answer yes to the question a real-mode run asks; changes nothing with app.mode: local")
+		yes            = flags.Bool("yes", false, "accepted and ignored for now; reserved for the confirmation of a real-mode run")
 		showVersion    = flags.Bool("version", false, "print the version and exit")
 		output         = flags.String("output", "text", "report format on stdout: text, or json for scripts")
 		jsonFile       = flags.String("json-file", "", "also write the JSON report to this new file")
@@ -681,7 +681,7 @@ func buildReport(p reportParts) cli.RunReport {
 		Passport:     p.passport,
 		Settings: &cli.RunSettings{
 			MaxInFlight: p.maxInFlight, Connections: p.cfg.App.Connections, Warmup: p.cfg.Load.Warmup,
-			Ramp: p.cfg.Load.Ramp, Compression: p.cfg.App.Compression,
+			Ramp: p.cfg.Load.Ramp, Compression: p.cfg.App.Compression, Mode: p.cfg.App.Mode,
 		},
 	}
 	// The limits are checked against the run as it ended, the clock step

@@ -125,6 +125,9 @@ func printRunHeader(w io.Writer, target string, run RunReport) {
 		fmt.Fprintf(w, "name: %s\n", run.Name)
 	}
 	if s := run.Settings; s != nil {
+		if s.Mode != "" {
+			fmt.Fprintf(w, "mode: %s\n", s.Mode)
+		}
 		ramp := ""
 		if s.Ramp > 0 {
 			ramp = fmt.Sprintf(", ramp %s", s.Ramp)

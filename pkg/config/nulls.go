@@ -95,6 +95,15 @@ func (v *nullDatasetVisitor) Visit(node ast.Node) ast.Visitor {
 	}
 	match := callDatasetPath.FindStringSubmatch(path)
 	errorsLimit := path == errorsLimitPath
+	if path == "$.app.mode" {
+		if value, resolved := v.unwrap(pair.Value); resolved {
+			if _, null := value.(*ast.NullNode); null {
+				v.errs = append(v.errs, fmt.Errorf("line %d: %w: no value", pair.Key.GetToken().Position.Line, ErrInvalidMode))
+			}
+		}
+
+		return v
+	}
 	if match == nil && !errorsLimit {
 		return v
 	}
