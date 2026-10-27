@@ -252,6 +252,10 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		return err
 	}
 
+	if flags.dryRun {
+		return runDryRun(ctx, stdout, stderr, cfg, sender, grpcSender, flags)
+	}
+
 	// Measure, run, measure: the floor of "waited" is set by the step before
 	// the run, the report prints the larger of the two.
 	stepBefore := clockStep()
@@ -395,6 +399,7 @@ type runFlags struct {
 	fakeDelay      time.Duration
 	fakeJitter     time.Duration
 	fakeFail       float64
+	dryRun         bool
 	output         string
 	jsonFile       string
 	interactive    bool
@@ -416,6 +421,7 @@ func parseFlags(args []string, terminal bool, stdout, stderr io.Writer) (runFlag
 		fakeDelay      = flags.Duration("fake-delay", 25*time.Millisecond, "latency of the fake target, with -fake")
 		fakeJitter     = flags.Duration("fake-jitter", 10*time.Millisecond, "random spread added to the fake latency, with -fake")
 		fakeFail       = flags.Float64("fake-fail-ratio", 0, "share of fake replies that fail, 0 to 1, with -fake")
+		dryRun         = flags.Bool("dry-run", false, "send one request per call, print the request and the reply, measure nothing")
 		showVersion    = flags.Bool("version", false, "print the version and exit")
 		output         = flags.String("output", "text", "report format on stdout: text, or json for scripts")
 		jsonFile       = flags.String("json-file", "", "also write the JSON report to this new file")
@@ -459,6 +465,7 @@ func parseFlags(args []string, terminal bool, stdout, stderr io.Writer) (runFlag
 		fakeDelay:      *fakeDelay,
 		fakeJitter:     *fakeJitter,
 		fakeFail:       *fakeFail,
+		dryRun:         *dryRun,
 		output:         *output,
 		jsonFile:       *jsonFile,
 		interactive:    interactive,
