@@ -291,9 +291,65 @@ not split between machines, and a stop leaves records unsent.
 | `-connect-timeout` | How long to wait for a service that accepted the connection but stays silent. Default `10s`. A refused connection and a wrong address are not waited for |
 | `-max-in-flight` | Cap on requests waiting for a reply. Default `5000` |
 | `-plain` | No live screen: a progress line once a second on stderr, as without a terminal, and no first-run dialog. The report and exit codes are the same |
+| `-dry-run` | Check the config without a load: connect, check the methods, send one request per call and print the request, the status and the reply. No statistics, no report. Details in «Checking before the load» below. Not together with `-fake`, `-output`, `-json-file`, `-label`, `-plain` (exit 1). (not released) |
 | `-fake` | Load a built-in stub instead of the service from the config — to look at the tool without a service. The report is marked `fake target` |
 | `-fake-delay`, `-fake-jitter`, `-fake-fail-ratio` | The stub's behavior. Only together with `-fake` |
 | `-version` | Print the version and exit. A build from source prints the commit |
+
+## Checking before the load
+
+`leettest -c x.yaml -dry-run` (not released) connects and checks the methods as a run does, then
+sends one request per entry of `load.calls`, one after another in the config's order, and prints
+for each the request as it went out, the status and the reply as JSON. No load, no statistics, no
+report: in a second it shows whether the config reaches the service with this data and this
+authorization, before a load that would fill a report with one failure repeated a hundred thousand
+times.
+
+```
+dry run: 2 calls, one request each, nothing measured
+1/2 grpc.health.v1.Health/Check: success, OK, 1.20ms
+  request: {"service":"wallet"}
+  response: {"status":"SERVING"}
+2/2 wallet.Wallet/Transfer: failure, InvalidArgument sent by the target, 800us
+  request (record 1 of 500): {"from":"a-1","amount":"-5"}
+  message: amount must be positive
+metadata: authorization: Bearer ${TOKEN}, x-tenant: acme
+```
+
+- **The first line of a call:** the category's name as in the report, the code, who set it
+  (`sent by the target` or `set by the client`; none for a success), and the time from send to
+  reply. A call that got no status (`unreachable`, `cut_off`) has no time.
+- **`request:` and `response:`** are the bytes decoded with the method's schema, in the field names
+  of the `.proto`, on one line. The request is what went on the wire, so a field at its default
+  is absent. A failed call has `message:` (the status message, only when not empty) instead of
+  `response:`. A reply that does not decode prints `response: N bytes, not decoded: <the error>`,
+  and the call keeps its category. A method that reflection did not know goes out as an empty
+  message, with a warning on stderr as in a run, and prints `request: {}`.
+- **A body or message over 4096 bytes** is cut there and ends `… (N bytes in all)`, N being the
+  length after the secrets are hidden. Control characters of a message are written as `\xNN`.
+- **Data.** A call with a `dataset` sends its first record in file order, whatever `dataset_order`,
+  `dataset_seed` and `dataset_reuse` say, and the block says `record 1 of N`.
+- **Metadata** is one line after the blocks: keys in lower case as they go out, sorted, values as the
+  config wrote them, so `${ENV}` stays unexpanded. None — no line.
+- **Secrets.** The value of every `${NAME}` that the metadata substituted is replaced by `${NAME}`
+  in `message:` and in `response:`: a service that echoes the header back does not put the secret
+  on the screen or into the CI log, and a reply that carries it reads `{"tenant":"${TENANT}"}`,
+  not `acme`. Not caught: a secret inside a `bytes` field, as base64. A secret written in the
+  YAML itself is printed as written, in the metadata line too: to keep one off the screen, take it
+  from the environment with `${ENV}`.
+- **Checks as a run's.** What a run refuses before the network, a dry run refuses with the same
+  text and exit code 1: a dataset too short for the plan, a call over the in-flight cap,
+  a method twice. `-max-in-flight` applies, as do `-c` and `-connect-timeout`. `-fake`, `-fake-delay`,
+  `-fake-jitter`, `-fake-fail-ratio`, `-output`, `-json-file`, `-label` and `-plain` change nothing
+  in a dry run and are refused: `-<name> with -dry-run: …`.
+- **What the config says about the load** — `rps`, `duration`, `load.ramp`, `load.warmup`, `pass`,
+  `load.breakpoint` — is accepted and not used: a `load.breakpoint` config gets its one request per
+  call and no search. Each call's request has its `timeout`.
+- **Exit code.** `0` when every call is `success`. `1` otherwise, with `dry run: 1 of 2 calls did
+  not succeed` on stderr, and also for what stops a run before its start (config, files, an
+  unreachable service). Ctrl+C or SIGTERM cancels the call in flight: the blocks already
+  printed stay, nothing more is sent, `dry run: stopped after K of N calls` on stderr, exit `1`.
+  A CI step reads `1` as "don't start the load".
 
 ## Stopping
 

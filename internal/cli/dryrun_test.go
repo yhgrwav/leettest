@@ -456,6 +456,21 @@ func TestDryRun_ARedactedMessageShowsThePlaceholder(t *testing.T) {
 	}
 }
 
+// The target chooses the message, and a terminal acts on an escape sequence in
+// it and reads a newline as the next line of the block: control characters are
+// written as \xNN, letters of any script stay.
+// Ground: contract — nothing the target sends moves the cursor or forges a line.
+func TestDryRun_ControlCharactersInAMessageAreWrittenOut(t *testing.T) {
+	out := targetSays(codes.Internal, "boom\x1b[2J\nresponse: {} да")
+
+	got := withoutHeader(t, screen(1, nil, nil, done("m/M", healthMethod(), nil, out, time.Millisecond)))
+
+	want := `  message: boom\x1b[2J\x0aresponse: {} да` + "\n"
+	if !strings.Contains(got, want) {
+		t.Errorf("block:\n%s\nwant it to hold %q", got, want)
+	}
+}
+
 // Metadata is one line after the blocks, keys sorted, values as written; none,
 // no line.
 // Ground: contract — RawMetadata is what the config says, ${ENV} unexpanded.
