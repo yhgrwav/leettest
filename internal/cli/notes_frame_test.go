@@ -133,7 +133,7 @@ func TestNotes_EveryHelperSpeaksForTheFrame(t *testing.T) {
 		t.Errorf("%s said nothing", name)
 	}
 
-	check("warmUpNote", warmUpNote(report))
+	check("warmUpNote", warmUpNote(report, 0))
 	check("timedOutNotes", timedOutNotes(report))
 	check("failedCodeNotes", failedCodeNotes(report))
 	check("streamNotes", streamNotes(report))

@@ -16,6 +16,7 @@ settings object
 settings.max_in_flight int
 settings.connections int
 settings.warmup_us int
+settings.ramp_us int
 settings.compression string?
 passport object?
 passport.config_sha256 string

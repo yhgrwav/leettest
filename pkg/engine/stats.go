@@ -230,7 +230,8 @@ type MethodReport struct {
 	// target's moment, not the generator's. Nil when nothing was heard.
 	LastAnswerAt *time.Duration
 	// RPSLow and RPSHigh are the lowest and highest planned rates of the
-	// whole plan.
+	// measured part of the plan: from the end of the excluded window, so a
+	// ramp that fits in it is not in them.
 	RPSLow, RPSHigh int
 	// SilentPlannedLow and SilentPlannedHigh are the planned rates of the
 	// stages in the second SentRPS counts. 0 when there is no silence, or no

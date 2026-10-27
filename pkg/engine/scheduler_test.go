@@ -267,11 +267,6 @@ func TestRunRejectsBadStages(t *testing.T) {
 			stages:  []Stage{{StartRPS: -1, TargetRPS: -1, Duration: time.Second}},
 			wantErr: ErrStageRPS,
 		},
-		{
-			name:    "ramp is not supported yet",
-			stages:  []Stage{{StartRPS: 0, TargetRPS: 500, Duration: time.Second}},
-			wantErr: ErrRampNotYet,
-		},
 	}
 
 	for _, tt := range tests {
@@ -282,6 +277,110 @@ func TestRunRejectsBadStages(t *testing.T) {
 
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("error = %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// Ground: contract — the rule for a stage's rates (Spec 4): both ends are at
+// least 0, the larger is at least 1, so a ramp up from 0 and a ramp down to 0
+// run and a stage idle at both ends does not. validate is asked directly.
+func TestScheduler_ValidateStages(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		stage   Stage
+		wantErr error
+	}{
+		{"start negative", Stage{StartRPS: -1, TargetRPS: 5, Duration: time.Second}, ErrStageRPS},
+		{"target negative", Stage{StartRPS: 5, TargetRPS: -1, Duration: time.Second}, ErrStageRPS},
+		{"both zero", Stage{StartRPS: 0, TargetRPS: 0, Duration: time.Second}, ErrStageRPS},
+		{"a ramp up from zero", Stage{StartRPS: 0, TargetRPS: 100, Duration: time.Second}, nil},
+		{"a ramp down to zero", Stage{StartRPS: 100, TargetRPS: 0, Duration: time.Second}, nil},
+		{"a ramp down", Stage{StartRPS: 900, TargetRPS: 100, Duration: time.Second}, nil},
+		{"a constant stage", Stage{StartRPS: 5, TargetRPS: 5, Duration: time.Second}, nil},
+		{"a ramp of no length", Stage{StartRPS: 0, TargetRPS: 100, Duration: 0}, ErrStageDuration},
+		{"a ramp of negative length", Stage{StartRPS: 0, TargetRPS: 100, Duration: -time.Second}, ErrStageDuration},
+	} {
+		err := NewScheduler(Call{Method: "a.B/C", Stages: []Stage{tc.stage}}).validate()
+		if !errors.Is(err, tc.wantErr) {
+			t.Errorf("%s: validate = %v, want %v", tc.name, err, tc.wantErr)
+		}
+	}
+}
+
+// Ground: contract — a ramp is a stage like the others for a library caller:
+// 0 to 100 over 1s is 50 requests (N = 50 whole, the tick at 1s is the hold's),
+// the k-th at the stage's offset(k) from the first, which is at the start.
+func TestScheduler_ARampRuns(t *testing.T) {
+	stage := Stage{StartRPS: 0, TargetRPS: 100, Duration: time.Second}
+	got, err := collect(context.Background(), t, NewScheduler(Call{Method: "a.B/C", Stages: []Stage{stage}}))
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(got) != 50 {
+		t.Fatalf("got %d requests, want 50", len(got))
+	}
+	for k, req := range got {
+		want, _ := stage.offset(k)
+		if at := req.ScheduledAt.Sub(got[0].ScheduledAt); at != want {
+			t.Fatalf("request %d at %s from the first, want offset(%d) = %s", k, at, k, want)
+		}
+	}
+	for k := 2; k < len(got); k++ {
+		prev := got[k-1].ScheduledAt.Sub(got[k-2].ScheduledAt)
+		if gap := got[k].ScheduledAt.Sub(got[k-1].ScheduledAt); gap > prev {
+			t.Fatalf("gap %d is %s, longer than the gap before it, %s: the ramp slows down", k, gap, prev)
+		}
+	}
+	if first := got[1].ScheduledAt.Sub(got[0].ScheduledAt); first < 100*time.Millisecond {
+		t.Errorf("the first gap is %s: a ramp from 0 starts slow, a tenth of a second at least", first)
+	}
+}
+
+// Ground: boundary — the seam between a ramp and its hold (JMeter's burst at a
+// phase start, upstream П8): the hold's first tick is at exactly the ramp's
+// length, the gap to the last ramp tick is above 0 and no longer than the gap
+// between the last two ramp ticks, and the hold's own gaps are 10ms exactly.
+// A ramp of 1s has 50 ticks, one of 1010ms has 50.5 and so 51.
+func TestScheduler_NoBurstAtTheRampEnd(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		ramp      time.Duration
+		hold      time.Duration
+		rampTicks int
+	}{
+		{"a whole count", time.Second, time.Second, 50},
+		{"half a tick over", 1010 * time.Millisecond, 200 * time.Millisecond, 51},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			call := Call{Method: "a.B/C", Stages: []Stage{
+				{StartRPS: 0, TargetRPS: 100, Duration: tc.ramp},
+				{StartRPS: 100, TargetRPS: 100, Duration: tc.hold},
+			}}
+			got, err := collect(context.Background(), t, NewScheduler(call))
+			if err != nil {
+				t.Fatalf("run: %v", err)
+			}
+			holdTicks := int(tc.hold / (10 * time.Millisecond))
+			if len(got) != tc.rampTicks+holdTicks {
+				t.Fatalf("got %d requests, want %d + %d", len(got), tc.rampTicks, holdTicks)
+			}
+			at := func(k int) time.Duration { return got[k].ScheduledAt.Sub(got[0].ScheduledAt) }
+			if last := at(tc.rampTicks - 1); last >= tc.ramp {
+				t.Errorf("the last ramp tick is at %s, not before the ramp's end %s", last, tc.ramp)
+			}
+			if first := at(tc.rampTicks); first != tc.ramp {
+				t.Errorf("the hold starts at %s, want exactly the ramp's length %s", first, tc.ramp)
+			}
+			seam := at(tc.rampTicks) - at(tc.rampTicks-1)
+			lastGap := at(tc.rampTicks-1) - at(tc.rampTicks-2)
+			if seam <= 0 || seam > lastGap {
+				t.Errorf("the gap over the seam is %s, want above 0 and at most the last ramp gap %s", seam, lastGap)
+			}
+			for k := tc.rampTicks + 1; k < len(got); k++ {
+				if gap := at(k) - at(k-1); gap != 10*time.Millisecond {
+					t.Errorf("hold gap %d is %s, want 10ms", k, gap)
+				}
 			}
 		})
 	}

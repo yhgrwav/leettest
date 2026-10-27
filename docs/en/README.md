@@ -93,7 +93,10 @@ the service through gRPC server reflection, so no `.proto` is needed. A service 
 [`examples/proto.yaml`](../../examples/proto.yaml), the `app.proto` / `app.protoset` field in the
 [reference](reference.md). The config, the address, the
 methods and the request body are checked before the start: any error means exit 1 and not a single
-call to the target. The first `warmup` seconds stay out of the stats. Every call of a method goes
+call to the target. The first `warmup` seconds stay out of the stats. A ramp from zero to `rps` is
+`load.ramp: 30s` (not released, [`examples/ramp.yaml`](../../examples/ramp.yaml)): a run lasts `ramp` + `duration`,
+the ramp's calls stay out of the stats too (the `pass` limits count the hold), and `warmup`, unlike
+the ramp, counts toward `duration`. Every call of a method goes
 out with the same body: for a write with an idempotency key the repeat path is measured, not
 creating the record. A different request for each call: a file in `dataset`, one
 JSON per line, in order, round and round (`dataset_order: random` — in a random one, the seed in
