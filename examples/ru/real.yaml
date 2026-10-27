@@ -1,0 +1,20 @@
+# Прогон по настоящей системе (не выпущено): app.mode: real требует разгон, так что первая
+# секунда никогда не идёт на полной нагрузке. Без load.ramp конфиг отклоняется до первого
+# вызова. Отчёт печатает режим под именем. На эталонном стенде, из корня репозитория:
+#   go run ./test/stand/cmd/stand -delay 20ms
+#   leettest -c examples/ru/real.yaml
+
+app:
+  target:
+    ip: 127.0.0.1
+    port: 50051
+  tls: false
+  mode: real
+
+load:
+  ramp: 30s
+  warmup: 5s
+  calls:
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 800
+      duration: 1m

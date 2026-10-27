@@ -106,7 +106,7 @@ func TestRun_TheReportEchoesTheDefaults(t *testing.T) {
 	if got := js["name"]; got != "wallet" {
 		t.Fatalf("JSON name = %v, want wallet", got)
 	}
-	if !strings.Contains(text, "\nname: wallet\nsettings: warm-up 0s, max in flight 5000, connections 1\nsent ") {
+	if !strings.Contains(text, "\nname: wallet\nmode: local\nsettings: warm-up 0s, max in flight 5000, connections 1\nsent ") {
 		t.Errorf("the text report lacks the name and settings lines right before the sent line:\n%s", text)
 	}
 	for key, want := range map[string]float64{"max_in_flight": 5000, "connections": 1, "warmup_us": 0} {
@@ -130,7 +130,7 @@ func TestRun_TheReportEchoesWhatWasSet(t *testing.T) {
 	cfg := writeEchoConfig(t, "  connections: 4\n", "  warmup: 1250ms\n")
 	text, js := echoRun(t, 20*time.Second, "-max-in-flight", "1234", "-c", cfg)
 
-	if !strings.Contains(text, "\nname: wallet\nsettings: warm-up 1.25s, max in flight 1234, connections 4\nsent ") {
+	if !strings.Contains(text, "\nname: wallet\nmode: local\nsettings: warm-up 1.25s, max in flight 1234, connections 4\nsent ") {
 		t.Errorf("the text report lacks the settings as set:\n%s", text)
 	}
 	for key, want := range map[string]float64{"max_in_flight": 1234, "connections": 4, "warmup_us": 1250000} {
@@ -153,7 +153,7 @@ func TestRun_ASearchEchoesItsOwnSettings(t *testing.T) {
 
 	text, js := echoRun(t, 60*time.Second, "-c", cfg)
 
-	if !strings.Contains(text, "\nname: wallet\nsettings: settle 50ms, hold 300ms, max in flight per step, connections 3\n\n  kind") {
+	if !strings.Contains(text, "\nname: wallet\nmode: local\nsettings: settle 50ms, hold 300ms, max in flight per step, connections 3\n\n  kind") {
 		t.Errorf("the search's text lacks the name and settings above the runs:\n%s", text)
 	}
 	settings, _ := js["settings"].(map[string]any)

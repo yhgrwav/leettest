@@ -41,6 +41,7 @@ load:
 | `app.max_response_size` | 一次调用接受的最大应答：`16MiB`、`512KB`。单位必填（`MB` = 10⁶ 字节，`MiB` = 2²⁰），小于 2 GiB。省略时为 4 MiB，与 gRPC 相同。更大的应答算作 `bad response`。在途的调用最多可能缓冲上限的两倍：默认每个最多 8 MiB |
 | `app.connections` | 向目标打开多少条连接，1 到 256 的整数。省略时为 1。调用在这些连接间轮流进行，报告打印一个 `Connections:` 块，每条连接一行 |
 | `app.compression` | 压缩请求体：`gzip`。省略时不压缩。报告在方法下打印 `bytes: <raw> -> <wire> per call` |
+| `app.mode` | `local` 或 `real`，必须原样书写（`Real` 是错误，没有值的键也是）。省略时为 `local`。`real` 表示对有人在使用的系统施压，并且在发出第一个调用之前要求有 `load.ramp`（从 0 爬升到 `rps`），否则退出码为 1；配合 `load.breakpoint` 时不要求爬升，因为搜索不接受它。搜索本身也不是爬升：它的第一步直接跳到 `breakpoint.from`。报告在 `name` 下打印该模式，`local` 也一样。没有对应的命令行参数。（未发布） |
 | `app.proto.files` | 提供服务定义的 `.proto` 文件，用于没有 reflection 的服务。路径从配置文件所在目录算起。每个文件必须位于某个 `import_paths` 之内 |
 | `app.proto.import_paths` | 在哪里查找这些文件及其 import，与 `protoc -I` 相同。路径从配置文件所在目录算起。省略时为该目录。标准类型（`google/protobuf/…`）不需要路径 |
 | `app.protoset` | 用描述符集文件代替 `.proto` 文件，由 `protoc --include_imports --descriptor_set_out=FILE` 生成。路径从配置文件所在目录算起。不能与 `app.proto` 同时使用；两者都没有时，方法通过 reflection 获取 |
@@ -258,6 +259,7 @@ seed 在启动时选取，每个调用各有一个。
 | `-max-in-flight` | 等待应答的请求数上限。默认 `5000` |
 | `-plain` | 不用实时屏幕：每秒一行进度输出到 stderr，与没有终端时相同，并且没有首次运行的对话。报告和退出码不变 |
 | `-dry-run` | 不加压地检查配置：建立连接、检查方法、每个调用发送一个请求，并打印请求、状态和响应。没有统计，没有报告。详见下面的“压测前检查”一节。不能与 `-fake`、`-output`、`-json-file`、`-label`、`-plain` 一起使用（退出码 1）。（未发布） |
+| `-yes` | 目前只接受、不起作用；预留给 `app.mode: real` 运行的确认。与 `app.mode: local` 一起使用时不改变任何行为。（未发布） |
 | `-fake` | 用内置的桩代替配置中的服务施压——无需服务即可查看工具。报告会标记为 `fake target` |
 | `-fake-delay`、`-fake-jitter`、`-fake-fail-ratio` | 桩的行为。只能与 `-fake` 一起使用 |
 | `-version` | 输出版本并退出。从源码构建时输出提交哈希 |
@@ -362,6 +364,7 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `planned_us` | int | 计划持续时间，包括爬升 |
 | `warmup_us` | int | 统计不计入的时间窗口：爬升和预热。没有爬升时就是预热时长；只要预热，取 `warmup_us` − `settings.ramp_us` |
 | `settings` | object | 运行启动时的设置，按配置而非测量值 |
+| `settings.mode` | string | 配置中的 `app.mode`：`"local"` 或 `"real"`。不是顶层的 `mode`，后者是报告的种类。（未发布） |
 | `settings.max_in_flight` | int；搜索：`int?` | 在途请求上限：`-max-in-flight` 的值，否则为默认值。搜索：未设该参数时为 `null`（每次运行取其能运行的最小上限）；在其各次运行中为该次运行的上限 |
 | `settings.connections` | int | 按配置的 `app.connections`，默认 1；`connections.open` 是实际打开的数量 |
 | `settings.warmup_us` | int | 按配置的预热。搜索：`settle` 时长 |

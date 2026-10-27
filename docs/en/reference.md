@@ -41,6 +41,7 @@ load:
 | `app.max_response_size` | The largest reply a call accepts: `16MiB`, `512KB`. The unit is required (`MB` = 10⁶ bytes, `MiB` = 2²⁰), below 2 GiB. Left out — 4 MiB, as in gRPC. A larger reply is a `bad response`. A call in flight may buffer up to twice the limit: by default up to 8 MiB each |
 | `app.connections` | How many connections to open to the target, a whole number from 1 to 256. Left out — 1. Calls take the connections in turn, and the report prints a `Connections:` block, a row per connection |
 | `app.compression` | Compress request bodies: `gzip`. Left out — none. The report prints `bytes: <raw> -> <wire> per call` under the method |
+| `app.mode` | `local` or `real`, written exactly so (`Real` is an error, so is a key with no value). Left out — `local`. `real` marks a run against a system that serves users and needs `load.ramp` (a ramp from 0 to `rps`) before it sends a call, otherwise exit 1; with `load.breakpoint` it asks no ramp, because a search does not take one. The search is not a ramp either: its first step goes straight to `breakpoint.from`. The report prints the mode under `name`, for `local` too. There is no flag for it. (not released) |
 | `app.proto.files` | The `.proto` files whose services to load, for a service without reflection. Paths are relative to the config file's directory. Each file must lie under one of `import_paths` |
 | `app.proto.import_paths` | Where to look for the files and their imports, as `protoc -I`. Paths are relative to the config file's directory. Left out — that directory. The well-known types (`google/protobuf/…`) need no path |
 | `app.protoset` | A descriptor set file instead of `.proto` files, built with `protoc --include_imports --descriptor_set_out=FILE`. The path is relative to the config file's directory. Not together with `app.proto`; neither of them — methods come from reflection |
@@ -292,6 +293,7 @@ not split between machines, and a stop leaves records unsent.
 | `-max-in-flight` | Cap on requests waiting for a reply. Default `5000` |
 | `-plain` | No live screen: a progress line once a second on stderr, as without a terminal, and no first-run dialog. The report and exit codes are the same |
 | `-dry-run` | Check the config without a load: connect, check the methods, send one request per call and print the request, the status and the reply. No statistics, no report. Details in «Checking before the load» below. Not together with `-fake`, `-output`, `-json-file`, `-label`, `-plain` (exit 1). (not released) |
+| `-yes` | Accepted and ignored for now; reserved for the confirmation of a run with `app.mode: real`. Changes nothing with `app.mode: local`. (not released) |
 | `-fake` | Load a built-in stub instead of the service from the config — to look at the tool without a service. The report is marked `fake target` |
 | `-fake-delay`, `-fake-jitter`, `-fake-fail-ratio` | The stub's behavior. Only together with `-fake` |
 | `-version` | Print the version and exit. A build from source prints the commit |
@@ -419,6 +421,7 @@ measured calls only. The first column is the field's full path.
 | `planned_us` | int | How long it was meant to go, the ramp included |
 | `warmup_us` | int | The window the statistics leave out: the ramp and the warm-up. Without a ramp, the warm-up length; for the warm-up alone take `warmup_us` − `settings.ramp_us` |
 | `settings` | object | What the run was started with, as configured, not as measured |
+| `settings.mode` | string | The `app.mode` of the config: `"local"` or `"real"`. Not the top-level `mode`, which is the kind of report. (not released) |
 | `settings.max_in_flight` | int; search: `int?` | The in-flight cap: the `-max-in-flight` value, else the default. A search: `null` without the flag (each run takes the smallest cap it can run with); in its runs, that run's cap |
 | `settings.connections` | int | `app.connections` as configured, 1 by default; `connections.open` is what opened |
 | `settings.warmup_us` | int | The warm-up as configured. A search: the settle |

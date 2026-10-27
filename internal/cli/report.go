@@ -79,6 +79,8 @@ type RunSettings struct {
 	Ramp time.Duration
 	// Compression is app.compression: "gzip", or empty for none.
 	Compression string
+	// Mode is app.mode: "local" or "real". Empty prints nothing.
+	Mode string
 }
 
 // ramp is the ramp the run's config set; 0 without settings, which cannot tell
@@ -123,6 +125,9 @@ func printRunHeader(w io.Writer, target string, run RunReport) {
 		fmt.Fprintf(w, "name: %s\n", run.Name)
 	}
 	if s := run.Settings; s != nil {
+		if s.Mode != "" {
+			fmt.Fprintf(w, "mode: %s\n", s.Mode)
+		}
 		ramp := ""
 		if s.Ramp > 0 {
 			ramp = fmt.Sprintf(", ramp %s", s.Ramp)

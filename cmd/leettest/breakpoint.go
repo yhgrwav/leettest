@@ -319,7 +319,7 @@ func newBreakpointRun(s searchSetup, method string, started time.Time, plan brea
 		StopReason: reason,
 		Target:     s.target, Name: cli.ServiceLabel(s.cfg, s.configPath), Version: versionString(version, info), Method: method,
 		StartedAt: started, Plan: plan, Result: res, Runs: aligned(res.Steps, runs, searchSettings(s, s.maxInFlight, plan.Settle)),
-		MethodsSource: s.source, Connections: s.cfg.App.Connections,
+		MethodsSource: s.source, Connections: s.cfg.App.Connections, Mode: s.cfg.App.Mode,
 		Compression: s.cfg.App.Compression, Passport: s.passport,
 	}
 	if b := s.cfg.Load.Breakpoint; b != nil && b.RawPass != nil {
@@ -351,7 +351,7 @@ func printSearchReport(stdout io.Writer, s searchSetup, report cli.BreakpointRun
 // searchSettings are what a step of the search is started with: the cap, the
 // configured connections and the settle as its warm-up.
 func searchSettings(s searchSetup, maxInFlight int, settle time.Duration) *cli.RunSettings {
-	return &cli.RunSettings{MaxInFlight: maxInFlight, Connections: s.cfg.App.Connections, Warmup: settle, Compression: s.cfg.App.Compression}
+	return &cli.RunSettings{MaxInFlight: maxInFlight, Connections: s.cfg.App.Connections, Warmup: settle, Compression: s.cfg.App.Compression, Mode: s.cfg.App.Mode}
 }
 
 // screenSettings are the screen's settings, set up on first use as for a

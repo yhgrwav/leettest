@@ -1,0 +1,20 @@
+# A run against a real system (not released yet): app.mode: real asks for a ramp, so the first
+# second is never the full load. Without load.ramp the config is refused before any call. The
+# report prints the mode under the name. Against the reference stand, from the repository root:
+#   go run ./test/stand/cmd/stand -delay 20ms
+#   leettest -c examples/real.yaml
+
+app:
+  target:
+    ip: 127.0.0.1
+    port: 50051
+  tls: false
+  mode: real
+
+load:
+  ramp: 30s
+  warmup: 5s
+  calls:
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 800
+      duration: 1m

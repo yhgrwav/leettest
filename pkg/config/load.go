@@ -97,6 +97,13 @@ func (m *MasterConfig) resolve() error {
 	if err := m.App.resolveConnections(); err != nil {
 		return err
 	}
+	if m.App.RawMode == nil {
+		m.App.Mode = ModeLocal
+	} else if v := *m.App.RawMode; v == ModeLocal || v == ModeReal {
+		m.App.Mode = v
+	} else {
+		return fmt.Errorf("%w: %s", ErrInvalidMode, v)
+	}
 	if err := m.App.resolveCompression(); err != nil {
 		return err
 	}
@@ -133,6 +140,9 @@ func (m *MasterConfig) Validate() error {
 	}
 	if err := m.App.validateProto(); err != nil {
 		errs = append(errs, err)
+	}
+	if m.App.Mode == ModeReal && m.Load.Breakpoint == nil && m.Load.Ramp == 0 {
+		errs = append(errs, ErrRealNeedsRamp)
 	}
 	if err := m.Load.Validate(); err != nil {
 		errs = append(errs, err)

@@ -63,6 +63,8 @@ type BreakpointRun struct {
 	Connections int
 	// Compression is app.compression: "gzip", or empty for none.
 	Compression string
+	// Mode is app.mode: "local" or "real". Empty prints nothing.
+	Mode string
 	// Passport is the config and the machine of the search; nil prints no
 	// machine line and leaves the passport out of the JSON.
 	Passport *Passport
@@ -281,6 +283,9 @@ func PrintBreakpoint(w io.Writer, run BreakpointRun) {
 	if run.Name != "" {
 		fmt.Fprintf(w, "name: %s\n", run.Name)
 	}
+	if run.Mode != "" {
+		fmt.Fprintf(w, "mode: %s\n", run.Mode)
+	}
 	fmt.Fprintf(w, "settings: settle %s, hold %s, max in flight %s, connections %d%s\n\n",
 		run.Plan.Settle, run.Plan.Hold, searchCap(run.Plan), run.Connections, compressionSuffix(run.Compression))
 
@@ -375,9 +380,10 @@ type BreakpointReport struct {
 // flag is not set and each step takes the smallest it can run with; the
 // settle as warmup_us.
 type jsonSearch struct {
-	MaxInFlight *int  `json:"max_in_flight"`
-	Connections int   `json:"connections"`
-	WarmupUS    int64 `json:"warmup_us"`
+	Mode        string `json:"mode"`
+	MaxInFlight *int   `json:"max_in_flight"`
+	Connections int    `json:"connections"`
+	WarmupUS    int64  `json:"warmup_us"`
 	// Compression is "gzip" or null.
 	Compression *string `json:"compression"`
 }
@@ -471,7 +477,7 @@ func NewBreakpointReport(run BreakpointRun) BreakpointReport {
 		})
 	}
 
-	settings := jsonSearch{Connections: run.Connections, WarmupUS: micros(run.Plan.Settle), Compression: compressionOf(run.Compression)}
+	settings := jsonSearch{Mode: run.Mode, Connections: run.Connections, WarmupUS: micros(run.Plan.Settle), Compression: compressionOf(run.Compression)}
 	if run.Plan.MaxInFlight > 0 {
 		settings.MaxInFlight = &run.Plan.MaxInFlight
 	}

@@ -60,7 +60,7 @@ func TestRun_ARampedRunOnTheFakeTarget(t *testing.T) {
 
 	sentNote := fmt.Sprintf("ramp and warm-up %d sent, excluded from stats", int(fieldNumber(t, js, "warmup_sent")))
 	for _, want := range []string{
-		"\nname: wallet\nsettings: warm-up 200ms, ramp 1s, max in flight 5000, connections 1\nsent ",
+		"\nname: wallet\nmode: local\nsettings: warm-up 200ms, ramp 1s, max in flight 5000, connections 1\nsent ",
 		"\n  plan: 50 rps for 2s, after a 1s ramp\n",
 		sentNote,
 	} {

@@ -74,6 +74,16 @@ var (
 	ErrProtoSource = errors.New("invalid proto source")
 	// ErrInvalidLabel is a label that breaks the rules of CheckLabel or is not a string.
 	ErrInvalidLabel = errors.New("invalid label")
+	// ErrInvalidMode is app.mode with a value but local or real, or with none.
+	ErrInvalidMode = errors.New("app.mode must be local or real, or left out")
+	// ErrRealNeedsRamp is app.mode: real without load.ramp.
+	ErrRealNeedsRamp = errors.New("app.mode: real needs load.ramp (a ramp from 0 to rps), e.g. load.ramp: 30s")
+)
+
+// The values of app.mode. Left out, a config is local.
+const (
+	ModeLocal = "local"
+	ModeReal  = "real"
 )
 
 type MasterConfig struct {
@@ -133,6 +143,10 @@ type App struct {
 	Proto       *ProtoSource `yaml:"proto"`
 	RawProtoset *string      `yaml:"protoset"`
 	Protoset    string       `yaml:"-"`
+	// RawMode is app.mode as written, nil when it was left out. Mode is
+	// ModeLocal or ModeReal once the config is read.
+	RawMode *string `yaml:"mode"`
+	Mode    string  `yaml:"-"`
 }
 
 // ProtoSource is app.proto: entry files, and where their imports are looked

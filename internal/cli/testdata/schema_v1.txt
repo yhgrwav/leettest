@@ -13,6 +13,7 @@ duration_us int
 planned_us int
 warmup_us int
 settings object
+settings.mode string
 settings.max_in_flight int
 settings.connections int
 settings.warmup_us int
