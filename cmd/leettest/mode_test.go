@@ -135,6 +135,7 @@ func TestRun_DryRunInRealAsksNoConfirmation(t *testing.T) {
 		target := startReflectingTarget(t)
 		cfg := dryConfig(t, target.addr, "  mode: real\n", dryCall(unaryCallMethod, ""))
 		setRamp(t, cfg, "30s")
+		setStop(t, cfg, "5%")
 
 		res := runCLI(t.Context(), t, 5*time.Second, append([]string{"-c", cfg, "-dry-run"}, extra...)...)
 
@@ -165,7 +166,7 @@ func TestRun_TheReportTellsTheMode(t *testing.T) {
 	}{
 		{"left out", "", "", "local"},
 		{"local", "  mode: local\n", "", "local"},
-		{"real", "  mode: real\n", "  ramp: 1s\n", "real"},
+		{"real", "  mode: real\n", "  ramp: 1s\n  stop_on_errors: 5%\n", "real"},
 	} {
 		cfg := writeEchoConfig(t, tc.mode, tc.ramp)
 		text, js := echoRun(t, 30*time.Second, "-c", cfg)

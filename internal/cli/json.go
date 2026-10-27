@@ -77,6 +77,11 @@ type JSONReport struct {
 	// TailWaitCause is the client-side wait that set the tail: generator, stream
 	// or connection; null without that verdict.
 	TailWaitCause *string `json:"tail_wait_cause"`
+	// StopReason is who ended the run before its end of its own accord:
+	// "error_spike" when load.stop_on_errors did; null otherwise. Stop says
+	// where and on what numbers, and is null with it.
+	StopReason *string   `json:"stop_reason"`
+	Stop       *jsonStop `json:"stop"`
 	// ClockStepNS is the host clock step: every latency and wait is +/- it.
 	ClockStepNS int64  `json:"clock_step_ns"`
 	StartedAt   string `json:"started_at"`

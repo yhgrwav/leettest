@@ -25,6 +25,7 @@ import (
 	"github.com/yhgrwav/leettest/pkg/descriptor"
 	"github.com/yhgrwav/leettest/pkg/engine"
 	"github.com/yhgrwav/leettest/pkg/metrics"
+	"github.com/yhgrwav/leettest/pkg/spike"
 	"github.com/yhgrwav/leettest/pkg/threshold"
 )
 
@@ -61,6 +62,9 @@ type RunReport struct {
 	// Thresholds are the verdicts on the limits the config set; nil when it
 	// set none, which prints no block and writes null.
 	Thresholds []threshold.Result
+	// Stop is the moment load.stop_on_errors ended the run; nil when it did
+	// not.
+	Stop *spike.Trip
 }
 
 // RunSettings echoes what a run was started with, as configured: the
@@ -81,6 +85,9 @@ type RunSettings struct {
 	Compression string
 	// Mode is app.mode: "local" or "real". Empty prints nothing.
 	Mode string
+	// StopOnErrors is load.stop_on_errors as written; empty when left out,
+	// which prints nothing.
+	StopOnErrors string
 }
 
 // ramp is the ramp the run's config set; 0 without settings, which cannot tell
