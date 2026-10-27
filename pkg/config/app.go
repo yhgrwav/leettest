@@ -41,6 +41,34 @@ var notInHTTP2 = map[string]bool{
 // envRef is ${NAME}; "$${" before it writes a literal "${" instead.
 var envRef = regexp.MustCompile(`\$?\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 
+// expandEnvRefs replaces every ${NAME} of value by fn(NAME) and every "$${"
+// by a literal "${": the one place that knows the grammar.
+func expandEnvRefs(value string, fn func(name string) string) string {
+	return envRef.ReplaceAllStringFunc(value, func(ref string) string {
+		if strings.HasPrefix(ref, "$$") {
+			return ref[1:]
+		}
+
+		return fn(envRef.FindStringSubmatch(ref)[1])
+	})
+}
+
+// SubstitutedEnvNames are the variables a metadata value reads, in the order
+// they appear: the ${NAME} that metadata resolution replaces, not the
+// "$${NAME}" it leaves as text. A caller that must tell what was substituted
+// asks here, so that it cannot disagree with the loader.
+func SubstitutedEnvNames(value string) []string {
+	var names []string
+
+	expandEnvRefs(value, func(name string) string {
+		names = append(names, name)
+
+		return ""
+	})
+
+	return names
+}
+
 // resolveMetadata lowercases keys and fills ${NAME}. Errors name the key and
 // the variable, never the value: it may be a secret.
 func (a *App) resolveMetadata() error {
@@ -80,13 +108,7 @@ func (a *App) resolveMetadata() error {
 
 		var problems []error
 
-		resolved := envRef.ReplaceAllStringFunc(value, func(ref string) string {
-			if strings.HasPrefix(ref, "$$") {
-				return ref[1:]
-			}
-
-			name := envRef.FindStringSubmatch(ref)[1]
-
+		resolved := expandEnvRefs(value, func(name string) string {
 			v, ok := os.LookupEnv(name)
 			switch {
 			case !ok:

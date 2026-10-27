@@ -144,7 +144,9 @@ func printError(w io.Writer, err error) {
 //	0   the plan ran to its end and the report is complete, and every limit
 //	    in pass: held
 //	1   no report as asked: the run never started (bad flags, bad config,
-//	    no connection), or the -json-file write failed
+//	    no connection), or the -json-file write failed; for -dry-run also a
+//	    call that did not succeed, and a stop in the middle (nothing is
+//	    measured, so no other code applies)
 //	2   the run is invalid: its numbers do not describe the target, or a
 //	    limit in pass: cannot be decided from them
 //	3   the run stopped before its planned end; the report covers less
@@ -285,7 +287,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 	if grpcSender != nil {
 		defer func() { _ = grpcSender.Close() }()
 
-		unchecked, source, err = connectAndCheckMethods(ctx, stderr, grpcSender, cfg, calls, flags.connectTimeout)
+		unchecked, source, _, err = connectAndCheckMethods(ctx, stderr, grpcSender, cfg, calls, flags.connectTimeout)
 		if err != nil {
 			return err
 		}
@@ -449,6 +451,9 @@ func parseFlags(args []string, terminal bool, stdout, stderr io.Writer) (runFlag
 	if *output != "text" && *output != "json" {
 		return runFlags{}, false, fmt.Errorf("-output %q: want text or json", *output)
 	}
+	if err := checkDryRunFlags(flags, *dryRun); err != nil {
+		return runFlags{}, false, err
+	}
 	if err := checkFakeFlags(flags, *fake); err != nil {
 		return runFlags{}, false, err
 	}
@@ -546,31 +551,33 @@ func engineOptions(cfg *config.MasterConfig, sender engine.Sender, maxInFlight i
 
 // connectAndCheckMethods connects to the target and checks every method before
 // the run, so an unreachable target or a body that does not fit is an error
-// rather than a report full of failures.
+// rather than a report full of failures. methods are the ones it resolved, one
+// per call, nil for an unchecked one.
 func connectAndCheckMethods(ctx context.Context, stderr io.Writer, sender *grpcsender.Sender,
 	cfg *config.MasterConfig, calls []engine.Call, timeout time.Duration,
-) ([]cli.Unchecked, *cli.MethodsSource, error) {
+) ([]cli.Unchecked, *cli.MethodsSource, []*descriptor.Method, error) {
 	var (
 		unchecked []cli.Unchecked
 		source    *cli.MethodsSource
+		methods   []*descriptor.Method
 	)
 
 	// Files are read before the connection: a mistake in them does not
 	// wait for the network, and no reflection call is made for them.
 	files, fileSource, err := cli.FileResolver(cfg)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	source = fileSource
 	if files != nil {
-		if unchecked, err = cli.AttachData(ctx, files, cfg, calls); err != nil {
-			return nil, nil, err
+		if unchecked, methods, err = cli.AttachMethods(ctx, files, cfg, calls); err != nil {
+			return nil, nil, nil, err
 		}
 	}
 
 	if err := connect(ctx, stderr, sender, &cfg.App, timeout); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	if files == nil {
@@ -578,11 +585,11 @@ func connectAndCheckMethods(ctx context.Context, stderr io.Writer, sender *grpcs
 		source = cli.ReflectionSource()
 		dataCtx, cancelData := context.WithTimeout(ctx, timeout)
 		var dataErr error
-		unchecked, dataErr = cli.AttachData(dataCtx, descriptor.NewReflectionResolver(sender.Conn()), cfg, calls)
+		unchecked, methods, dataErr = cli.AttachMethods(dataCtx, descriptor.NewReflectionResolver(sender.Conn()), cfg, calls)
 		cancelData()
 
 		if dataErr != nil {
-			return nil, nil, dataErr
+			return nil, nil, nil, dataErr
 		}
 	}
 	for _, m := range unchecked {
@@ -590,7 +597,7 @@ func connectAndCheckMethods(ctx context.Context, stderr io.Writer, sender *grpcs
 			"empty message\n", m.Method, m.Err)
 	}
 
-	return unchecked, source, nil
+	return unchecked, source, methods, nil
 }
 
 // runBreakpointSearch runs a search with what run prepared, each step's engine

@@ -373,7 +373,7 @@ func TestRun_DryRunRefusesFlagsThatChangeNothing(t *testing.T) {
 		})
 	}
 
-	for _, args := range [][]string{{"-connect-timeout", "5s"}, {"-max-in-flight", "100"}} {
+	for _, args := range [][]string{{"-connect-timeout", "5s"}, {"-max-in-flight", "1000"}} {
 		t.Run("accepts "+args[0], func(t *testing.T) {
 			target := startReflectingTarget(t)
 			cfg := dryConfig(t, target.addr, "", dryCall(checkMethod, ""))
@@ -417,7 +417,7 @@ func TestRun_DryRunOnASearchConfig(t *testing.T) {
 // sent, the stderr says how far it got, and the exit is 1 (no report as asked).
 // K is the number of blocks printed, and this call printed none; neither the
 // verdict line nor the metadata line comes.
-// Ground: signal — Ctrl+C during a dry run (stops, not a SIGTERM), the call in flight blocks 5 s.
+// Ground: contract — Ctrl+C during a dry run (stops, not a SIGTERM) ends the loop; the call in flight blocks 5 s.
 func TestRun_DryRunStopsOnCtrlC(t *testing.T) {
 	target := startSlowTarget(t, 5*time.Second)
 	cfg := dryConfig(t, target.addr, "  metadata:\n    x-tenant: acme\n", dryCall(checkMethod, "")+dryCall(unaryCallMethod, ""))
@@ -441,10 +441,20 @@ func TestRun_DryRunStopsOnCtrlC(t *testing.T) {
 		}
 	}
 
+	// The reader of stops lives only until run returns: a run that returned
+	// before the press must fail the test, not hang it.
 	pressed := time.Now()
-	stops <- struct{}{}
 
 	var err error
+
+	select {
+	case stops <- struct{}{}:
+	case err = <-done:
+		t.Fatalf("run returned before Ctrl+C: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("Ctrl+C was not taken within a second")
+	}
+
 	select {
 	case err = <-done:
 	case <-time.After(time.Second):

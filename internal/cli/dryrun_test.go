@@ -176,6 +176,11 @@ func TestDryRun_NamesWhoSetTheCode(t *testing.T) {
 			"1/1 m/M: request_error, NotFound sent by the target, 5.00ms\n  request: {}\n  message: no such wallet\n",
 		},
 		{
+			"a status with no message has no message line",
+			targetSays(codes.NotFound, ""), 5 * time.Millisecond,
+			"1/1 m/M: request_error, NotFound sent by the target, 5.00ms\n  request: {}\n",
+		},
+		{
 			"our own deadline",
 			engine.Outcome{
 				Category: engine.CategoryTimeout, Code: "DeadlineExceeded",
@@ -255,6 +260,19 @@ func TestDryRun_LatencyEndsAtDoneAtOrWhenSendReturned(t *testing.T) {
 	})
 }
 
+// The header says "1 call, one request" for a single call, not "1 calls, one
+// request each".
+// Ground: contract — the first line of the screen.
+func TestDryRun_TheHeaderOfOneCallIsInTheSingular(t *testing.T) {
+	var out bytes.Buffer
+
+	(&cli.DryRunPrinter{W: &out, Total: 1}).Header()
+
+	if got, want := out.String(), "dry run: 1 call, one request, nothing measured\n"; got != want {
+		t.Errorf("header %q, want %q", got, want)
+	}
+}
+
 // A reply with nothing in it is a reply: braces, not a missing line.
 // Ground: boundary — a body of 0 bytes decodes to the message with every field at its default.
 func TestDryRun_ASuccessfulEmptyReplyPrintsBraces(t *testing.T) {
@@ -290,7 +308,7 @@ func TestDryRun_AnUncheckedMethodSaysItWasNotChecked(t *testing.T) {
 // would have counted it a success. dynamicpb refuses invalid UTF-8 in a proto3
 // string, and protojson an Any of a type nobody knows; confirmed by a run of
 // both before this test was written.
-// Ground: boundary — a target not written in Go may send invalid UTF-8 or an Any the files lack.
+// Ground: signal google.golang.org/protobuf v1.36.12 — the text of its errors (UTF-8, the type name); a target not written in Go may send invalid UTF-8 or an Any the files lack.
 func TestDryRun_AReplyThatDoesNotDecodeKeepsItsCategory(t *testing.T) {
 	mix := mixMethod(t)
 
@@ -413,8 +431,11 @@ func TestDryRun_SecretsAreReplacedBeforeTheCut(t *testing.T) {
 	if strings.Contains(got, "s3c") {
 		t.Errorf("the first letters of the secret reached the screen: %q", tail(got, 80))
 	}
-	if !strings.Contains(got, "bytes in all)") {
-		t.Errorf("the body was not cut at all: %q", tail(got, 80))
+
+	// The JSON is 9 + 4084 + 6 + 500 + 2 = 4601 bytes; the placeholder is 9
+	// longer than the secret, and the number is of the text that was cut.
+	if !strings.HasSuffix(got, "… (4610 bytes in all)\n") {
+		t.Errorf("the body was not cut as 4610 bytes: %q", tail(got, 80))
 	}
 }
 
@@ -456,7 +477,7 @@ func TestDryRun_MetadataIsOneSortedLineOrNone(t *testing.T) {
 }
 
 // K of a stop is the number of printed blocks.
-// Ground: signal — Ctrl+C in the middle of the loop says "stopped after K of N calls".
+// Ground: contract — K in "stopped after K of N calls" is what the screen shows.
 func TestDryRun_PrintedCountsTheBlocksOnScreen(t *testing.T) {
 	var out bytes.Buffer
 	p := &cli.DryRunPrinter{W: &out, Total: 3}
@@ -481,7 +502,7 @@ func TestDryRun_PrintedCountsTheBlocksOnScreen(t *testing.T) {
 
 // One pass over the text, longest value first: no order of the variables, and
 // no value inside an inserted ${NAME}, can leave a piece of a secret.
-// Ground: concurrency — Go randomises map order, so the loop builds the redactor many times.
+// Ground: contract — the replacement does not depend on the order of the variables (Go randomises map order, so the loop builds the redactor many times).
 func TestDryRunRedactor_ALongerValueWinsOverItsSubstring(t *testing.T) {
 	lookup := func(name string) (string, bool) {
 		return map[string]string{"TOKEN": "ab1cd", "SHARD": "1", "LT_A": "xyz12345", "LT_B": "LT_A"}[name], true
@@ -502,6 +523,20 @@ func TestDryRunRedactor_ALongerValueWinsOverItsSubstring(t *testing.T) {
 		}, func(name string) (string, bool) { return map[string]string{"TOKEN": "ab1cd", "PRE": "ab"}[name], true })
 		if got, want := redact("Bearer ab1cd"), "Bearer ${TOKEN}"; got != want {
 			t.Fatalf("redact = %q, want %q", got, want)
+		}
+
+		// Occurrences that overlap without one holding the other: the leftmost
+		// match is not the longest, and cutting at it would leave 1cd of a token.
+		redact = cli.DryRunRedactor(map[string]string{
+			"authorization": "Bearer ${TOKEN}", "x-shard": "${SHARD}",
+		}, func(name string) (string, bool) {
+			return map[string]string{"TOKEN": "ab1cd", "SHARD": "xab"}[name], true
+		})
+		if got, want := redact("xab1cd"), "${TOKEN}"; got != want {
+			t.Fatalf("redact = %q, want %q", got, want)
+		}
+		if got := redact("xab1cd"); strings.Contains(got, "1cd") {
+			t.Fatalf("a piece of the token is left: %q", got)
 		}
 
 		// A value that is the name of another variable must not eat the
