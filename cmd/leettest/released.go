@@ -18,7 +18,7 @@ package main
 // and to this list together: TestFlagNames_AreTheHelp compares it with -help.
 func flagNames() []string {
 	return []string{
-		"c", "connect-timeout", "fake", "fake-delay", "fake-fail-ratio", "fake-jitter",
+		"c", "connect-timeout", "dry-run", "fake", "fake-delay", "fake-fail-ratio", "fake-jitter",
 		"json-file", "label", "max-in-flight", "output", "plain", "version",
 	}
 }

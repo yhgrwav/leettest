@@ -303,9 +303,73 @@ ein Anhalten lässt Datensätze ungesendet.
 | `-connect-timeout` | Wie lange auf einen Dienst gewartet wird, der die Verbindung angenommen hat, aber schweigt. Standard `10s`. Auf eine abgelehnte Verbindung und eine falsche Adresse wird nicht gewartet |
 | `-max-in-flight` | Grenze für Anfragen, die auf eine Antwort warten. Standard `5000` |
 | `-plain` | Ohne Live-Bildschirm: eine Fortschrittszeile pro Sekunde auf stderr, wie ohne Terminal, und ohne den Dialog beim ersten Start. Der Bericht und die Exit-Codes sind dieselben |
+| `-dry-run` | Die Konfiguration ohne Last prüfen: verbinden, die Methoden prüfen, pro Aufruf eine Anfrage senden und die Anfrage, den Status und die Antwort ausgeben. Keine Statistik, kein Bericht. Einzelheiten im Abschnitt „Prüfen vor der Last“ unten. Nicht zusammen mit `-fake`, `-output`, `-json-file`, `-label`, `-plain` (Exit-Code 1). (nicht veröffentlicht) |
 | `-fake` | Statt des Dienstes aus der Konfiguration einen eingebauten Platzhalter belasten — um das Werkzeug ohne Dienst anzusehen. Der Bericht ist als `fake target` markiert |
 | `-fake-delay`, `-fake-jitter`, `-fake-fail-ratio` | Das Verhalten des Platzhalters. Nur zusammen mit `-fake` |
 | `-version` | Version ausgeben und beenden. Ein Build aus dem Quellcode gibt den Commit aus |
+
+## Prüfen vor der Last
+
+`leettest -c x.yaml -dry-run` (nicht veröffentlicht) verbindet sich und prüft die Methoden wie ein
+Lauf, sendet dann pro Eintrag von `load.calls` eine Anfrage, nacheinander in der Reihenfolge der
+Konfiguration, und gibt für jeden die Anfrage so, wie sie hinausging, den Status und die Antwort
+als JSON aus. Keine Last, keine Statistik, kein Bericht: in einer Sekunde zeigt sich, ob die
+Konfiguration mit diesen Daten und dieser Autorisierung den Dienst erreicht, bevor eine Last einen
+Bericht mit einem hunderttausendfach wiederholten Fehler füllt.
+
+```
+dry run: 2 calls, one request each, nothing measured
+1/2 grpc.health.v1.Health/Check: success, OK, 1.20ms
+  request: {"service":"wallet"}
+  response: {"status":"SERVING"}
+2/2 wallet.Wallet/Transfer: failure, InvalidArgument sent by the target, 800us
+  request (record 1 of 500): {"from":"a-1","amount":"-5"}
+  message: amount must be positive
+metadata: authorization: Bearer ${TOKEN}, x-tenant: acme
+```
+
+- **Die erste Zeile eines Aufrufs:** der Name der Kategorie wie im Bericht, der Code, wer ihn
+  gesetzt hat (`sent by the target` oder `set by the client`; bei Erfolg nichts) und die Zeit vom
+  Senden bis zur Antwort. Ein Aufruf, zu dem kein Status kam (`unreachable`, `cut_off`), hat keine
+  Zeit.
+- **`request:` und `response:`** sind die Bytes, mit dem Schema der Methode gelesen, in den
+  Feldnamen der `.proto`, in einer Zeile. Die Anfrage ist das, was über die Leitung ging, ein Feld
+  mit seinem Standardwert fehlt also. Ein fehlgeschlagener Aufruf hat statt `response:` die Zeile
+  `message:` (die Statusmeldung, nur wenn sie nicht leer ist). Eine Antwort, die sich nicht lesen
+  lässt, steht als `response: N bytes, not decoded: <Fehler>`, die Kategorie des Aufrufs bleibt.
+  Eine Methode, die die Reflection nicht kannte, geht als leere Nachricht hinaus, mit einer Warnung
+  auf stderr wie im Lauf, und gibt `request: {}` aus.
+- **Ein Body oder eine Meldung über 4096 Bytes** wird dort abgeschnitten und endet mit
+  `… (N bytes in all)`, N ist die Länge, nachdem die Geheimnisse verborgen sind. Steuerzeichen
+  einer Meldung werden als `\xNN` geschrieben.
+- **Daten.** Ein Aufruf mit `dataset` sendet den ersten Datensatz der Datei, was auch
+  `dataset_order`, `dataset_seed` und `dataset_reuse` sagen; der Block nennt `record 1 of N`.
+- **Metadaten** sind eine Zeile nach den Blöcken: Schlüssel klein geschrieben, wie sie hinausgehen,
+  sortiert, Werte so, wie die Konfiguration sie schreibt, also bleibt `${ENV}` unaufgelöst. Keine
+  Metadaten — keine Zeile.
+- **Geheimnisse.** Der Wert jeder `${NAME}`, die in die Metadaten eingesetzt wurde, wird in
+  `message:` und in `response:` durch `${NAME}` ersetzt: Ein Dienst, der den Header zurückspiegelt,
+  bringt das Geheimnis weder auf den Bildschirm noch ins CI-Log, und eine Antwort, die es trägt,
+  liest sich `{"tenant":"${TENANT}"}` statt `acme`. Nicht erfasst: ein Geheimnis in einem
+  `bytes`-Feld als Base64. Ein Geheimnis, das im YAML selbst steht, wird so gedruckt, wie es steht,
+  auch in der Metadatenzeile: Um es vom Bildschirm fernzuhalten, nehmen Sie es mit `${ENV}` aus der
+  Umgebung.
+- **Prüfungen wie beim Lauf.** Was ein Lauf vor dem Netz ablehnt, lehnt ein Dry Run mit demselben
+  Text und Exit-Code 1 ab: eine Datei, die für den Plan zu kurz ist, ein Aufruf über der Grenze der
+  Anfragen im Flug, eine Methode doppelt. `-max-in-flight` gilt, ebenso `-c` und
+  `-connect-timeout`. `-fake`, `-fake-delay`, `-fake-jitter`, `-fake-fail-ratio`, `-output`,
+  `-json-file`, `-label` und `-plain` ändern im Dry Run nichts und werden abgelehnt:
+  `-<Name> with -dry-run: …`.
+- **Was die Konfiguration über die Last sagt** — `rps`, `duration`, `load.ramp`, `load.warmup`,
+  `pass`, `load.breakpoint` — wird angenommen und nicht verwendet: Eine Konfiguration mit
+  `load.breakpoint` bekommt ihre eine Anfrage pro Aufruf und keine Suche. Für die Anfrage jedes
+  Aufrufs gilt sein `timeout`.
+- **Exit-Code.** `0`, wenn jeder Aufruf `success` ist. Sonst `1` und auf stderr `dry run: 1 of 2
+  calls did not succeed`; dieselbe `1` gilt für alles, was einen Lauf vor dem Start stoppt
+  (Konfiguration, Dateien, ein nicht erreichbarer Dienst). Ctrl+C oder SIGTERM brechen den Aufruf
+  im Flug ab: Die schon gedruckten Blöcke bleiben, nichts wird mehr gesendet, auf stderr
+  `dry run: stopped after K of N calls`, Exit `1`. Ein CI-Schritt liest `1` als „die Last nicht
+  starten“.
 
 ## Anhalten
 

@@ -112,6 +112,10 @@ type Unchecked struct {
 	Err    error
 }
 
+// ErrCredentialsRejected is a method check the target refused as
+// Unauthenticated while the config sent metadata.
+var ErrCredentialsRejected = errors.New("target rejected credentials")
+
 // AttachData resolves every method the run will call and fills in the payload
 // of the calls that have data. It runs once, before the load: a method the
 // target does not serve, or a body that does not fit its message, is a config
@@ -120,20 +124,33 @@ type Unchecked struct {
 // it needs no schema to run.
 //
 // calls are the engine calls built from cfg, in the same order.
-// ErrCredentialsRejected is a method check the target refused as
-// Unauthenticated while the config sent metadata.
-var ErrCredentialsRejected = errors.New("target rejected credentials")
-
 func AttachData(
 	ctx context.Context, resolver descriptor.Resolver, cfg *config.MasterConfig,
 	calls []engine.Call,
 ) (unchecked []Unchecked, err error) {
+	unchecked, _, err = AttachMethods(ctx, resolver, cfg, calls)
+
+	return unchecked, err
+}
+
+// AttachMethods is AttachData that also hands out what it resolved: the method
+// of each call, in the order of calls, nil for one that could not be resolved
+// (the ones in unchecked).
+func AttachMethods(
+	ctx context.Context, resolver descriptor.Resolver, cfg *config.MasterConfig,
+	calls []engine.Call,
+) (unchecked []Unchecked, methods []*descriptor.Method, err error) {
 	var errs []error
+
+	methods = make([]*descriptor.Method, len(cfg.Load.Calls))
 
 	for i := range cfg.Load.Calls {
 		call := &cfg.Load.Calls[i]
 
 		method, resolveErr := resolver.Resolve(ctx, call.Method)
+		if resolveErr == nil {
+			methods[i] = method
+		}
 
 		switch {
 
@@ -205,7 +222,7 @@ func AttachData(
 		calls[i].Payload = body
 	}
 
-	return unchecked, errors.Join(errs...)
+	return unchecked, methods, errors.Join(errs...)
 }
 
 // withProtoNames adds the .proto name of a field protojson names by its JSON
