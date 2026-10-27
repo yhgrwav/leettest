@@ -2,7 +2,7 @@
 
 [← 返回文档](README.md)
 
-> 译自 [docs/ru/roadmap.md](../ru/roadmap.md)，对应 c726cb6，2026-10-14。如有出入，以俄文版为准。
+> 译自 [docs/ru/roadmap.md](../ru/roadmap.md)，对应 e4663f1，2026-10-27。如有出入，以俄文版为准。
 > **可能滞后：** 中文版在每次发布前同步，最新内容请看[英文版](../en/roadmap.md)。
 
 > **缺少某项功能？[提交 issue](https://github.com/yhgrwav/leettest/issues/new/choose)**——
@@ -13,7 +13,6 @@
 
 ## 之后
 
-- **爬坡**：从零逐步升到目标 RPS。
 - **[调用串联](chaining.md)**：把一个方法响应中的字段填进另一个方法的请求。
 - **长时间运行中刷新 token。**
 - **导出指标**到 Prometheus。

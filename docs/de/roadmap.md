@@ -2,7 +2,7 @@
 
 [← Zur Übersicht](README.md)
 
-> Übersetzt aus [docs/ru/roadmap.md](../ru/roadmap.md) bei c726cb6, 2026-10-14. Bei Abweichungen gilt die
+> Übersetzt aus [docs/ru/roadmap.md](../ru/roadmap.md) bei e4663f1, 2026-10-27. Bei Abweichungen gilt die
 > russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/roadmap.md).
@@ -16,7 +16,6 @@ Das sind Pläne, keine zugesagten Termine. Was heute funktioniert, steht im [REA
 
 ## Später
 
-- **Hochfahren** von null auf die Ziel-RPS.
 - **[Verkettung von Aufrufen](chaining.md)**: ein Feld aus der Antwort einer Methode in die Anfrage
   einer anderen.
 - **Token-Erneuerung** während eines langen Laufs.
