@@ -137,8 +137,21 @@ func TestRun_AnErrorSpikeStopsTheRunAndSaysWhy(t *testing.T) {
 	if got := jsonAt(t, js, "outcome"); got != "incomplete" {
 		t.Errorf("outcome = %v, want incomplete", got)
 	}
-	if got := jsonAt(t, js, "stop", "method"); got != checkMethod {
-		t.Errorf("stop.method = %v, want %q", got, checkMethod)
+	// Ground: contract — stop.method is written exactly as methods[].method, so
+	// a reader matches the two with no rule to learn (the brain's answer to the
+	// leading slash); the text line names the method as the report's rows do.
+	stopped := jsonAt(t, js, "stop", "method")
+	matched := false
+
+	methods, _ := jsonAt(t, js, "methods").([]any)
+	for _, row := range methods {
+		if m, ok := row.(map[string]any); ok && m["method"] == stopped {
+			matched = true
+		}
+	}
+
+	if !matched || !strings.HasSuffix(fmt.Sprint(stopped), checkMethod) {
+		t.Errorf("stop.method = %v, want the method of a methods[] row, ending in %q: %v", stopped, checkMethod, methods)
 	}
 	if got := jsonAt(t, js, "stop", "limit"); got != "5%" {
 		t.Errorf("stop.limit = %v, want 5%%", got)

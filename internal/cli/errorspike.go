@@ -78,7 +78,7 @@ func stopJSON(t *errstop.Trip) *jsonStop {
 	}
 
 	return &jsonStop{
-		Method: displayMethod(t.Method), Failed: t.Failed, Total: t.Total, Limit: t.Limit.Text,
+		Method: t.Method, Failed: t.Failed, Total: t.Total, Limit: t.Limit.Text,
 		AtUS: micros(t.At), InFlight: t.InFlight,
 	}
 }

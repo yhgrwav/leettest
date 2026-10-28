@@ -362,7 +362,7 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `clock_step_ns` | int | 主机时钟步长，纳秒：每个延迟和等待都有 ± 这个值的误差 |
 | `stop_reason` | string? | 由 `load.stop_on_errors` 停止运行时为 `error_spike`；否则为 `null`。（未发布） |
 | `stop` | object? | `load.stop_on_errors` 在何处、依据哪些数字停止了运行；没有停止则为 `null`。（未发布） |
-| `stop.method` | string | 失败调用占比超过限值的方法，写法同配置，不带开头的 `/`。（未发布） |
+| `stop.method` | string | 失败调用占比超过限值的方法，写法与 `methods[].method` 完全相同，包括开头的 `/`。（未发布） |
 | `stop.failed` | int | 它在最近 5 秒内的失败调用数。（未发布） |
 | `stop.total` | int | 它在同样这几秒内的调用数（失败和成功）。（未发布） |
 | `stop.limit` | string | 按配置书写的限值：`"5%"`。（未发布） |

@@ -419,7 +419,7 @@ measured calls only. The first column is the field's full path.
 | `clock_step_ns` | int | The host clock step, ns: every latency and wait is ± it |
 | `stop_reason` | string? | `error_spike` when `load.stop_on_errors` stopped the run; otherwise `null`. (not released) |
 | `stop` | object? | Where and on which numbers `load.stop_on_errors` stopped the run; `null` when it did not. (not released) |
-| `stop.method` | string | The method whose share of failed calls passed the limit, as the config names it, without the leading `/`. (not released) |
+| `stop.method` | string | The method whose share of failed calls passed the limit, written exactly as in `methods[].method`, leading `/` included. (not released) |
 | `stop.failed` | int | Its failed calls over the last 5 seconds. (not released) |
 | `stop.total` | int | Its calls over the same seconds (failed and successful). (not released) |
 | `stop.limit` | string | The limit as written in the config: `"5%"`. (not released) |

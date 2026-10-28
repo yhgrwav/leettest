@@ -441,7 +441,7 @@ unten den Typ „percentile?" hat.
 | `clock_step_ns` | int | Der Uhrenschritt des Hosts, ns: Jede Latenz und Wartezeit ist ± dieser Wert |
 | `stop_reason` | string? | `error_spike`, wenn `load.stop_on_errors` den Lauf gestoppt hat; sonst `null`. (nicht veröffentlicht) |
 | `stop` | object? | Wo und auf welchen Zahlen `load.stop_on_errors` den Lauf gestoppt hat; `null`, wenn nicht. (nicht veröffentlicht) |
-| `stop.method` | string | Die Methode, deren Anteil fehlgeschlagener Aufrufe die Grenze überschritten hat, wie die Konfiguration sie nennt, ohne führendes `/`. (nicht veröffentlicht) |
+| `stop.method` | string | Die Methode, deren Anteil fehlgeschlagener Aufrufe die Grenze überschritten hat, genau so geschrieben wie in `methods[].method`, mit dem führenden `/`. (nicht veröffentlicht) |
 | `stop.failed` | int | Ihre fehlgeschlagenen Aufrufe in den letzten 5 Sekunden. (nicht veröffentlicht) |
 | `stop.total` | int | Ihre Aufrufe in denselben Sekunden (fehlgeschlagene und erfolgreiche). (nicht veröffentlicht) |
 | `stop.limit` | string | Die Grenze, wie in der Konfiguration geschrieben: `"5%"`. (nicht veröffentlicht) |
