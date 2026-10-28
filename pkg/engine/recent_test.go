@@ -205,17 +205,20 @@ func TestRecent_TheEdgesOfTheTimeline(t *testing.T) {
 		stats.Record(finishing(start, "a", 0, 59*time.Minute+58*time.Second, CategoryServerFault))
 		stats.Record(finishing(start, "a", 0, 59*time.Minute+59*time.Second, CategorySuccess))
 
-		// Two hours in the reserve is an hour: the last whole seconds of it are
-		// not 5 s before «now», and nothing past the end exists to be read.
-		got := recentOf(t, stats, start, 2*time.Hour, 5)
-
-		for _, r := range got {
-			if r.Total > 2 || r.Failed > r.Total {
-				t.Errorf("read beyond what was recorded: %+v", r)
-			}
+		// Record does not clamp: a call past the reserve is left outside whole.
+		// So Recent does not either. The five seconds before «now» two hours in
+		// lie wholly past an hour's reserve and hold nothing: a stale window
+		// must neither stop a run nor tell it that all is well.
+		if got := recentOf(t, stats, start, 2*time.Hour, 5); len(got) != 0 {
+			t.Errorf("now two hours in on an hour reserve: %+v, want nothing: the window lies past what was reserved", got)
 		}
-		if len(got) != 1 || got[0].Method != "a" || got[0].Total == 0 {
-			t.Errorf("now two hours in on an hour reserve: %+v, want the method with the last seconds it holds", got)
+
+		// A window that reaches into the reserve reads the seconds in it and no
+		// more: the reserve is 3601 seconds, now is 3603 s in, the window is
+		// seconds 3598..3602 and the two calls are in 3598 and 3599.
+		got := recentFor(t, recentOf(t, stats, start, 3603*time.Second, 5), "a")
+		if got.Failed != 1 || got.Total != 2 {
+			t.Errorf("a window half past the reserve: failed %d of %d, want 1 of 2", got.Failed, got.Total)
 		}
 	})
 

@@ -42,6 +42,7 @@ import (
 	"github.com/yhgrwav/leettest/pkg/config"
 	"github.com/yhgrwav/leettest/pkg/descriptor"
 	"github.com/yhgrwav/leettest/pkg/engine"
+	"github.com/yhgrwav/leettest/pkg/errstop"
 	"github.com/yhgrwav/leettest/pkg/grpcsender"
 	"github.com/yhgrwav/leettest/pkg/threshold"
 )
@@ -352,10 +353,23 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 	cores := cli.AvailableCPU()
 	meter := cli.NewCPUMeter(cli.ProcessCPU, time.Now, time.Second)
 
+	// A watch is made only for a limit that can trip; without one nothing runs
+	// beside the engine.
+	var tripped atomic.Pointer[errstop.Trip]
+	watch := errstop.New(eng, cfg.Load.StopOnErrors, func(t errstop.Trip) {
+		tripped.Store(&t)
+		if !flags.interactive {
+			fmt.Fprintln(stderr, cli.StopLine(t))
+		}
+		eng.Stop()
+	})
+
 	var stepAfter atomic.Int64
 	start := func() error {
 		stopMeter := meter.Start()
+		stopWatch := startWatch(ctx, watch)
 		err := eng.Run(ctx)
+		stopWatch()
 		stopMeter()
 		stepAfter.Store(int64(clockStep()))
 
@@ -366,7 +380,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		return buildReport(reportParts{
 			eng: eng, stepBefore: stepBefore, stepAfter: &stepAfter, meter: meter, cores: cores,
 			cfg: cfg, configPath: flags.configPath, passport: passport, maxInFlight: flags.maxInFlight,
-			unchecked: unchecked, source: source,
+			unchecked: unchecked, source: source, tripped: &tripped,
 		})
 	}
 
@@ -380,6 +394,12 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 	} else if runErr = cli.RunPlain(stderr, target, eng, start); runErr != nil &&
 		!errors.Is(runErr, context.Canceled) && !errors.Is(runErr, engine.ErrInFlightCapExceeded) {
 		return runErr
+	}
+
+	// The live screen held the terminal while the watch tripped: the line goes
+	// out once it is closed.
+	if t := tripped.Load(); t != nil && flags.interactive {
+		fmt.Fprintln(stderr, cli.StopLine(*t))
 	}
 
 	report := reportOf()
@@ -662,6 +682,30 @@ type reportParts struct {
 	maxInFlight int
 	unchecked   []cli.Unchecked
 	source      *cli.MethodsSource
+	// tripped is where the stop watch left its trip; nil pointer inside until
+	// it trips.
+	tripped *atomic.Pointer[errstop.Trip]
+}
+
+// startWatch runs the watch beside the engine, none when there is none, and
+// returns what ends it and waits for it.
+func startWatch(ctx context.Context, watch *errstop.Watch) (stop func()) {
+	if watch == nil {
+		return func() {}
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+		watch.Run(ctx)
+	}()
+
+	return func() {
+		cancel()
+		<-done
+	}
 }
 
 // buildReport is one report for the final screen and for stdout.
@@ -682,7 +726,11 @@ func buildReport(p reportParts) cli.RunReport {
 		Settings: &cli.RunSettings{
 			MaxInFlight: p.maxInFlight, Connections: p.cfg.App.Connections, Warmup: p.cfg.Load.Warmup,
 			Ramp: p.cfg.Load.Ramp, Compression: p.cfg.App.Compression, Mode: p.cfg.App.Mode,
+			StopOnErrors: p.cfg.Load.StopOnErrors.Text,
 		},
+	}
+	if p.tripped != nil {
+		run.Stop = p.tripped.Load()
 	}
 	// The limits are checked against the run as it ended, the clock step
 	// included: it can make the run invalid.

@@ -139,7 +139,7 @@ func settingsOf(s *RunSettings) jsonSettings {
 		return jsonSettings{}
 	}
 
-	return jsonSettings{Mode: s.Mode, MaxInFlight: s.MaxInFlight, Connections: s.Connections, WarmupUS: micros(s.Warmup), RampUS: micros(s.Ramp), Compression: compressionOf(s.Compression)}
+	return jsonSettings{Mode: s.Mode, MaxInFlight: s.MaxInFlight, Connections: s.Connections, WarmupUS: micros(s.Warmup), RampUS: micros(s.Ramp), Compression: compressionOf(s.Compression), StopOnErrors: writtenLimit(s.StopOnErrors)}
 }
 
 // compressionOf is the configured compression, null for none.
@@ -456,6 +456,8 @@ func jsonRunFacts(run JSONRun) JSONReport {
 		WarmupSent:        r.WarmupSent,
 		WarmupFailed:      r.WarmupFailed,
 		WarmupNotSent:     r.WarmupNotSent,
+		StopReason:        stopReasonJSON(run.Run.Stop),
+		Stop:              stopJSON(run.Run.Stop),
 		TailWaitCause:     tailWaitCause(*r),
 		ClockStepNS:       int64(run.Run.ClockStep),
 		ClientWaits: jsonClientWaits{

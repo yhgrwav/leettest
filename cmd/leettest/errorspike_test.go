@@ -124,7 +124,8 @@ func TestRun_AnErrorSpikeStopsTheRunAndSaysWhy(t *testing.T) {
 		if !strings.Contains(got, "stopped at ") || !strings.Contains(got, "over stop_on_errors 5%") {
 			t.Errorf("%s has no stop line:\n%s", name, got)
 		}
-		if !strings.Contains(got, checkMethod+" failed 100%") {
+		// share.Format tells a share to a tenth: 100.0%, as the report tells all.
+		if !strings.Contains(got, checkMethod+" failed 100.0%") {
 			t.Errorf("%s does not name the method and its share:\n%s", name, got)
 		}
 	}

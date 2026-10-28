@@ -235,6 +235,29 @@ func (b *Breakpoint) resolveErrorsLimit() error {
 	return nil
 }
 
+// resolveStopOnErrors reads stop_on_errors by the grammar of errors_limit and
+// refuses what is not a percent above 0, and the key beside a search.
+func (l *Load) resolveStopOnErrors() error {
+	if l.RawStopOnErrors == nil {
+		return nil
+	}
+	if l.Breakpoint != nil {
+		return ErrStopWithSearch
+	}
+
+	limit, err := percentLimit(l.RawStopOnErrors, "load.stop_on_errors")
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidStopOnErrors, err)
+	}
+	if limit.Thousandths <= 0 {
+		return fmt.Errorf("%w: load.stop_on_errors %s stops the run on the first failure of two; write a share above 0, or 100%% to turn it off",
+			ErrInvalidStopOnErrors, limit.Text)
+	}
+	l.StopOnErrors = limit
+
+	return nil
+}
+
 // validate refuses a section breakpoint.Plan.Rates refuses, named by the key
 // its check reads first.
 func (b Breakpoint) validate() error {
