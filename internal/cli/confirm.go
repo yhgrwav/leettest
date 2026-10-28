@@ -15,9 +15,12 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"strings"
 	"time"
 )
 
@@ -43,13 +46,55 @@ type RealPlan struct {
 
 // ConfirmText is the line that tells what the run will do, without the
 // question.
-func ConfirmText(RealPlan) string {
-	return ""
+func ConfirmText(p RealPlan) string {
+	if p.Search {
+		return fmt.Sprintf("real mode: %s, search from %d to %d rps until it breaks, duration not promised",
+			p.Target, p.From, p.To)
+	}
+
+	return fmt.Sprintf("real mode: %s, planned peak %d rps, planned duration %s, ramp %s included",
+		p.Target, p.PeakRPS, p.Duration, p.Ramp)
 }
 
 // Confirm prints the plan and the question to w and reads one answer line from
 // in. It returns nil for y or yes in any case, ErrNotConfirmed for anything
-// else and for the end of input, and ctx's error when ctx is done first.
-func Confirm(context.Context, io.Reader, io.Writer, RealPlan) error {
+// else and for the end of input, and an error wrapping ctx's when ctx is done
+// first, a ready answer included: a cancelled run is never started. The read
+// is not waited for after a cancel; its goroutine ends with the process.
+func Confirm(ctx context.Context, in io.Reader, w io.Writer, plan RealPlan) error {
+	fmt.Fprintf(w, "%s\nStart? [y/N] ", ConfirmText(plan))
+
+	if err := cancelledBeforeAnything(ctx); err != nil {
+		return err
+	}
+
+	answer := make(chan string, 1)
+
+	go func() {
+		line, _ := bufio.NewReader(in).ReadString('\n')
+		answer <- line
+	}()
+
+	select {
+	case <-ctx.Done():
+		return cancelledBeforeAnything(ctx)
+	case line := <-answer:
+		if err := cancelledBeforeAnything(ctx); err != nil {
+			return err
+		}
+
+		if reply := strings.ToLower(strings.TrimSpace(line)); reply == "y" || reply == "yes" {
+			return nil
+		}
+
+		return ErrNotConfirmed
+	}
+}
+
+func cancelledBeforeAnything(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("cancelled: nothing was sent: %w", err)
+	}
+
 	return nil
 }

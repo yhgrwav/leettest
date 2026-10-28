@@ -115,19 +115,42 @@ func TestConfirm_TheRefusalSaysNothingWasSent(t *testing.T) {
 // Ground: signal — a context that is already cancelled wins over a «y» that
 // is already waiting: a run is never started after a Ctrl+C because both the
 // answer and the cancel were ready. The check is repeated: an implementation
-// that picks at random between the two ready branches fails some of them.
+// that picks at random between the two ready branches fails some of them. A
+// run that is cancelled before the question reads nothing at all: the input is
+// not touched, which a late read (a goroutine started anyway) would show.
 func TestConfirm_ACancelledContextBeatsAWaitingYes(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
+	read := make(chan struct{}, 1)
+
 	for i := range 200 {
-		err := Confirm(ctx, strings.NewReader("y\n"), io.Discard, aRunPlan)
+		in := readFunc(func(p []byte) (int, error) {
+			select {
+			case read <- struct{}{}:
+			default:
+			}
+
+			return copy(p, "y\n"), nil
+		})
+
+		err := Confirm(ctx, in, io.Discard, aRunPlan)
 
 		if !errors.Is(err, context.Canceled) || errors.Is(err, ErrNotConfirmed) {
 			t.Fatalf("round %d: err = %v, want context.Canceled and not ErrNotConfirmed", i, err)
 		}
 	}
+
+	select {
+	case <-read:
+		t.Error("the input was read for a run that was already cancelled")
+	case <-time.After(100 * time.Millisecond):
+	}
 }
+
+type readFunc func([]byte) (int, error)
+
+func (f readFunc) Read(p []byte) (int, error) { return f(p) }
 
 // Ground: signal — an answer that never comes does not hold the process once
 // the run is cancelled (Ctrl+C, SIGTERM): Confirm returns the context's error
