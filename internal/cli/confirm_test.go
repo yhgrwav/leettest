@@ -152,6 +152,50 @@ type readFunc func([]byte) (int, error)
 
 func (f readFunc) Read(p []byte) (int, error) { return f(p) }
 
+// Ground: contract — a terminal does not end the line on Ctrl+C, so the
+// message that follows a cancelled question would be glued to «^C» and to the
+// prompt. A cancel ends the line itself; an answer, which the user ends with
+// Enter, adds nothing. Both ways of cancelling are covered: before the read
+// and while it waits.
+func TestConfirm_ACancelEndsTheQuestionsLine(t *testing.T) {
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	var before bytes.Buffer
+	_ = Confirm(cancelled, strings.NewReader("y\n"), &before, aRunPlan)
+
+	in, out := io.Pipe()
+	t.Cleanup(func() { _ = out.Close() })
+
+	var (
+		waiting bytes.Buffer
+		ctx, c2 = context.WithCancel(t.Context())
+		done    = make(chan struct{})
+	)
+
+	go func() {
+		defer close(done)
+		_ = Confirm(ctx, in, &waiting, aRunPlan)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	c2()
+	<-done
+
+	for name, got := range map[string]string{"before the read": before.String(), "while waiting": waiting.String()} {
+		if !strings.HasSuffix(got, "Start? [y/N] \n") {
+			t.Errorf("%s: the output ends %q, want the prompt and then a line end", name, got)
+		}
+	}
+
+	var answered bytes.Buffer
+	_ = Confirm(t.Context(), strings.NewReader("n\n"), &answered, aRunPlan)
+
+	if strings.HasSuffix(answered.String(), "\n") {
+		t.Errorf("an answered question adds a line end: %q", answered.String())
+	}
+}
+
 // Ground: signal — an answer that never comes does not hold the process once
 // the run is cancelled (Ctrl+C, SIGTERM): Confirm returns the context's error
 // at once and not ErrNotConfirmed, so the caller ends the way a cancelled
