@@ -97,10 +97,10 @@ Der Methodenname ist der volle, `package.Service/Method`. Das Werkzeug holt das 
 [Referenz](reference.md). Konfiguration, Adresse,
 Methoden und Anfrage-Body werden vor dem Start geprüft: Jeder Fehler heißt Exit-Code 1 und kein
 einziger Aufruf ans Ziel. Die Konfiguration vor der Last prüfen:
-`leettest -c leettest.yaml -dry-run` (nicht veröffentlicht) — eine Anfrage pro Aufruf, Anfrage und
+`leettest -c leettest.yaml -dry-run` — eine Anfrage pro Aufruf, Anfrage und
 Antwort auf dem Bildschirm, kein Bericht. Die ersten `warmup` Sekunden zählen nicht zur Statistik.
-Das Hochfahren von null auf `rps` ist `load.ramp: 30s` (nicht veröffentlicht,
-[`examples/ramp.yaml`](../../examples/ramp.yaml)): Ein Lauf dauert `ramp` + `duration`, auch die
+Das Hochfahren von null auf `rps` ist `load.ramp: 30s`
+([`examples/ramp.yaml`](../../examples/ramp.yaml)): Ein Lauf dauert `ramp` + `duration`, auch die
 Aufrufe des Anlaufs bleiben aus der Statistik (die `pass`-Grenzen zählen die Haltephase), und
 `warmup` zählt, anders als der Anlauf, zu `duration`. Jeder Aufruf einer
 Methode geht mit demselben Body raus: Bei einem Schreibvorgang mit Idempotenzschlüssel wird der Weg
