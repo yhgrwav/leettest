@@ -22,34 +22,23 @@ import (
 )
 
 // tripBox is where the stop watch leaves its trip. The watch ticks on its own
-// goroutine and may decide a moment after the run is over; such a decision
-// must not say a run that finished by itself was stopped.
+// goroutine and may decide while the last calls are drained, or a moment after
+// the run is over; such a decision must not say a run that finished by itself
+// was stopped.
 type tripBox struct {
-	trip  atomic.Pointer[errstop.Trip]
-	ended atomic.Bool
+	trip atomic.Pointer[errstop.Trip]
 }
 
-// Trip keeps t and reports whether the watch should go on to print its line
-// and stop the engine. After End it keeps nothing and says no.
-func (b *tripBox) Trip(t errstop.Trip) bool {
-	if b.ended.Load() {
-		return false
-	}
-
+// Trip keeps t.
+func (b *tripBox) Trip(t errstop.Trip) {
 	b.trip.Store(&t)
-
-	return true
-}
-
-// End is called the moment the engine's Run returns.
-func (b *tripBox) End() {
-	b.ended.Store(true)
 }
 
 // Of is the trip the report may tell of: the watch's, when it cut the run
 // short. The engine marks a report incomplete only when the stop reached the
-// dispatcher; a trip that came with the last calls already out, or between
-// End and the watch being cancelled, stopped nothing.
+// dispatcher; a trip that came with the last calls already out, or after Run
+// returned, stopped nothing. It is the one place that decides, so the stop
+// line, the text report, the JSON and the exit code agree.
 func (b *tripBox) Of(report engine.Report) *errstop.Trip {
 	if !report.Incomplete {
 		return nil

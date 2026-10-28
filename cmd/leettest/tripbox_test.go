@@ -24,36 +24,15 @@ import (
 
 var aTrip = errstop.Trip{Method: "/svc/Method", Failed: 5, Total: 5, At: 3 * time.Second}
 
-// Ground: contract — a watch that decides after the run is over is not a stop:
-// the run finished by itself and the report must not say otherwise. Trip is
-// told so and the report has no stop, whatever the engine's report holds.
-func TestTripBox_ATripAfterTheRunEndedIsNotAStop(t *testing.T) {
-	for _, incomplete := range []bool{false, true} {
-		var box tripBox
-
-		box.End()
-
-		if box.Trip(aTrip) {
-			t.Errorf("incomplete=%v: Trip after End says to print the line and stop the engine", incomplete)
-		}
-
-		if got := box.Of(engine.Report{Incomplete: incomplete}); got != nil {
-			t.Errorf("incomplete=%v: a trip after the run ended is in the report: %+v", incomplete, got)
-		}
-	}
-}
-
-// Ground: contract — a trip during the run is a stop when it cut the plan
-// short, and only then: the engine marks the report incomplete when its
-// dispatcher was stopped, and a stop that came while the last calls were
-// already out changes nothing, so the report that is complete says nothing of
-// one.
-func TestTripBox_ATripDuringTheRunIsAStopOnlyWhenThePlanWasCut(t *testing.T) {
+// Ground: contract — a trip is a stop when it cut the plan short, and only
+// then: the engine marks the report incomplete when its dispatcher was
+// stopped, and a trip that came while the last calls were already out, or after
+// Run returned, changes nothing, so the report that is complete says nothing of
+// one. The check is the box's alone: the stop line is told from what it gives.
+func TestTripBox_ATripIsAStopOnlyWhenThePlanWasCut(t *testing.T) {
 	var box tripBox
 
-	if !box.Trip(aTrip) {
-		t.Fatal("Trip during the run says not to print the line and stop the engine")
-	}
+	box.Trip(aTrip)
 
 	got := box.Of(engine.Report{Incomplete: true})
 	if got == nil || got.Method != aTrip.Method || got.Failed != aTrip.Failed || got.At != aTrip.At {
