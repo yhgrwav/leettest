@@ -25,7 +25,7 @@ LeetTest 建立在一条原则上：压测结果只有在可以毫无保留地�
 | 没有 reflection 的服务：schema 来自 `.proto` 或 protoset | 🟢 [3] | 🟢 [15] | 🟢 [21] | 🟢 |
 | 一次运行中多个方法，各有自己的 RPS | 🔴 一个方法 [1] | 🟡 脚本中的场景 [10] | 🟡 线程组 [22] | 🟢 |
 | 无需自己写代码即可描述负载 | 🟢 标志、JSON、TOML [2] | 🔴 JavaScript [10] | 🟢 `.jmx` 计划 [28] | 🟢 YAML |
-| 加压到目标 RPS，然后保持平稳负载 | 🟢 [7] | 🟢 [16] | 🟡 实验性 [23] | 🔴 [roadmap](roadmap.md#之后) |
+| 加压到目标 RPS，然后保持平稳负载 | 🟢 [7] | 🟢 [16] | 🟡 实验性 [23] | 🟢 |
 | 用于 CI 的阈值和退出码 | 🔴 [8] | 🟢 [17] | 🔴 [20][26] | 🟢 |
 | 响应字段进入下一个请求 | 🔴 [9] | 🟡 脚本 [18] | 🟢 后置处理器 [27] | 🔴 [roadmap](roadmap.md#之后) |
 | 寻找目标崩溃时的负载 | 🔴 [8] | 🟡 脚本 [19] | 🔴 [20] | 🟢 分阶梯 |
@@ -70,8 +70,8 @@ go run ./test/compare-perf -runs 3 -duration 20s
 `-plan` 只打印全部设置和命令，不运行任何东西。
 
 默认的 open model、计入生成器延迟、寻找失效点，这几行是 ghz、k6、JMeter 都没有 🟢 的地方。
-LeetTest 目前还没有：加压到目标 RPS、调用串联；
-顺序见 [roadmap](roadmap.md)。用于 CI 的阈值（`pass`）和无 reflection 运行（`.proto`、protoset）已经有了。
+LeetTest 目前还没有：调用串联；
+顺序见 [roadmap](roadmap.md)。加压到目标 RPS（`load.ramp`）、用于 CI 的阈值（`pass`）和无 reflection 运行（`.proto`、protoset）已经有了。
 
 ## 复现生产的负载
 
