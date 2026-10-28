@@ -355,9 +355,11 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 
 	// A watch is made only for a limit that can trip; without one nothing runs
 	// beside the engine.
-	var tripped atomic.Pointer[errstop.Trip]
+	var tripped tripBox
 	watch := errstop.New(eng, cfg.Load.StopOnErrors, func(t errstop.Trip) {
-		tripped.Store(&t)
+		if !tripped.Trip(t) {
+			return
+		}
 		if !flags.interactive {
 			fmt.Fprintln(stderr, cli.StopLine(t))
 		}
@@ -369,6 +371,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		stopMeter := meter.Start()
 		stopWatch := startWatch(ctx, watch)
 		err := eng.Run(ctx)
+		tripped.End()
 		stopWatch()
 		stopMeter()
 		stepAfter.Store(int64(clockStep()))
@@ -398,11 +401,12 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 
 	// The live screen held the terminal while the watch tripped: the line goes
 	// out once it is closed.
-	if t := tripped.Load(); t != nil && flags.interactive {
-		fmt.Fprintln(stderr, cli.StopLine(*t))
+	report := reportOf()
+
+	if flags.interactive && report.Stop != nil {
+		fmt.Fprintln(stderr, cli.StopLine(*report.Stop))
 	}
 
-	report := reportOf()
 	result := runResult(report, runErr)
 
 	if err := writeReport(stdout, s, label, target, flags.output, flags.jsonFile, report, result); err != nil {
@@ -684,7 +688,7 @@ type reportParts struct {
 	source      *cli.MethodsSource
 	// tripped is where the stop watch left its trip; nil pointer inside until
 	// it trips.
-	tripped *atomic.Pointer[errstop.Trip]
+	tripped *tripBox
 }
 
 // startWatch runs the watch beside the engine, none when there is none, and
@@ -730,7 +734,7 @@ func buildReport(p reportParts) cli.RunReport {
 		},
 	}
 	if p.tripped != nil {
-		run.Stop = p.tripped.Load()
+		run.Stop = p.tripped.Of(report)
 	}
 	// The limits are checked against the run as it ended, the clock step
 	// included: it can make the run invalid.
