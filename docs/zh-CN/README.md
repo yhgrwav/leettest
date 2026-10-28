@@ -88,9 +88,9 @@ leettest -c leettest.yaml
 因此不需要 `.proto`。没有 reflection 的服务（自 v0.3 起）：结构来自 `.proto` 文件或 protoset——
 [`examples/proto.yaml`](../../examples/proto.yaml)，字段 `app.proto` / `app.protoset` 见
 [参考手册](reference.md)。配置、地址、方法和请求体都在启动前检查：任何错误都意味着退出码 1，且不会向
-目标发出任何调用。压测前检查配置：`leettest -c leettest.yaml -dry-run`（未发布）——每个调用发送一个请求，
+目标发出任何调用。压测前检查配置：`leettest -c leettest.yaml -dry-run`——每个调用发送一个请求，
 请求和响应显示在屏幕上，没有报告。前 `warmup` 秒不计入统计。从零爬升到 `rps` 用 `load.ramp: 30s`
-（未发布，[`examples/ramp.yaml`](../../examples/ramp.yaml)）：运行时长为 `ramp` + `duration`，爬升期间的调用同样不计入统计
+（[`examples/ramp.yaml`](../../examples/ramp.yaml)）：运行时长为 `ramp` + `duration`，爬升期间的调用同样不计入统计
 （`pass` 限值只按保持阶段计算），而 `warmup` 与爬升不同，计入 `duration`。一个方法的每次调用都使用同一个请求体：对于带幂等键的
 写操作，测到的是重复请求的路径，而不是创建记录。每次调用使用不同的请求：用 `dataset` 指定文件，
 每行一个 JSON，按顺序循环使用（`dataset_order: random` 则按随机顺序，报告中的 seed 可复现该顺序）。所有字段、TLS、请求头、请求体和命令行参数都在

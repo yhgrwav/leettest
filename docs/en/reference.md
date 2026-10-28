@@ -46,7 +46,7 @@ load:
 | `app.proto.import_paths` | Where to look for the files and their imports, as `protoc -I`. Paths are relative to the config file's directory. Left out — that directory. The well-known types (`google/protobuf/…`) need no path |
 | `app.protoset` | A descriptor set file instead of `.proto` files, built with `protoc --include_imports --descriptor_set_out=FILE`. The path is relative to the config file's directory. Not together with `app.proto`; neither of them — methods come from reflection |
 | `load.warmup` | The first N seconds stay out of the percentiles and of `sent`: cold caches spoil them. Warm-up calls do reach the target; the report prints them on a line `warm-up N sent (M failed), excluded from stats` — `sent` plus that line is every call the generator attempted. The target got all of them except those counted as unreachable or client error; `cut off` and timed-out ones may not have fully reached it: a target that does not open its HTTP/2 window (flow control) gets the headers only, and its counters may not see the call. Counts toward `duration`, shorter than any call |
-| `load.ramp` | Raise every call from 0 to its `rps`, linearly, over this long before its `duration` starts: the run lasts `ramp` + `duration`, and `duration` keeps its meaning (time at `rps`). Left out or `0s` — none. The ramp's calls stay out of the percentiles and of `sent`, like the warm-up's, which starts when the ramp ends; the report prints both on one line, `ramp and warm-up N sent, excluded from stats`. The limits in `pass` and the error share count the hold only: a target that fails during the ramp and recovers passes, and only that line shows it. The ramp begins with one call at moment 0. Not together with `load.breakpoint`. (not released) |
+| `load.ramp` | Raise every call from 0 to its `rps`, linearly, over this long before its `duration` starts: the run lasts `ramp` + `duration`, and `duration` keeps its meaning (time at `rps`). Left out or `0s` — none. The ramp's calls stay out of the percentiles and of `sent`, like the warm-up's, which starts when the ramp ends; the report prints both on one line, `ramp and warm-up N sent, excluded from stats`. The limits in `pass` and the error share count the hold only: a target that fails during the ramp and recovers passes, and only that line shows it. The ramp begins with one call at moment 0. Not together with `load.breakpoint`. |
 | `load.calls[].method` | The full method name: `package.Service/Method` |
 | `load.calls[].rps` | Requests per second for this method |
 | `load.calls[].duration` | How long to load it: `30s`, `5m`, `1h` |
@@ -292,7 +292,7 @@ not split between machines, and a stop leaves records unsent.
 | `-connect-timeout` | How long to wait for a service that accepted the connection but stays silent. Default `10s`. A refused connection and a wrong address are not waited for |
 | `-max-in-flight` | Cap on requests waiting for a reply. Default `5000` |
 | `-plain` | No live screen: a progress line once a second on stderr, as without a terminal, and no first-run dialog. The report and exit codes are the same |
-| `-dry-run` | Check the config without a load: connect, check the methods, send one request per call and print the request, the status and the reply. No statistics, no report. Details in «Checking before the load» below. Not together with `-fake`, `-output`, `-json-file`, `-label`, `-plain` (exit 1). (not released) |
+| `-dry-run` | Check the config without a load: connect, check the methods, send one request per call and print the request, the status and the reply. No statistics, no report. Details in «Checking before the load» below. Not together with `-fake`, `-output`, `-json-file`, `-label`, `-plain` (exit 1). |
 | `-yes` | Accepted and ignored for now; reserved for the confirmation of a run with `app.mode: real`. Changes nothing with `app.mode: local`. (not released) |
 | `-fake` | Load a built-in stub instead of the service from the config — to look at the tool without a service. The report is marked `fake target` |
 | `-fake-delay`, `-fake-jitter`, `-fake-fail-ratio` | The stub's behavior. Only together with `-fake` |
@@ -300,7 +300,7 @@ not split between machines, and a stop leaves records unsent.
 
 ## Checking before the load
 
-`leettest -c x.yaml -dry-run` (not released) connects and checks the methods as a run does, then
+`leettest -c x.yaml -dry-run` connects and checks the methods as a run does, then
 sends one request per entry of `load.calls`, one after another in the config's order, and prints
 for each the request as it went out, the status and the reply as JSON. No load, no statistics, no
 report: in a second it shows whether the config reaches the service with this data and this
@@ -425,7 +425,7 @@ measured calls only. The first column is the field's full path.
 | `settings.max_in_flight` | int; search: `int?` | The in-flight cap: the `-max-in-flight` value, else the default. A search: `null` without the flag (each run takes the smallest cap it can run with); in its runs, that run's cap |
 | `settings.connections` | int | `app.connections` as configured, 1 by default; `connections.open` is what opened |
 | `settings.warmup_us` | int | The warm-up as configured. A search: the settle |
-| `settings.ramp_us` | int | `load.ramp` as configured, in whole microseconds; 0 without one. (not released) |
+| `settings.ramp_us` | int | `load.ramp` as configured, in whole microseconds; 0 without one. |
 | `settings.compression` | string? | `app.compression` as configured: `"gzip"`, `null` — left out |
 | `passport` | object? | The machine and the config the run was made with, for telling runs apart. A search has it once at the top level, its runs in `breakpoint.runs` do not |
 | `passport.config_sha256` | string | SHA-256 of the config file's bytes as read, 64 hex digits |

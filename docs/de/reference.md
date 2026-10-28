@@ -48,7 +48,7 @@ load:
 | `app.proto.import_paths` | Wo die Dateien und ihre Imports gesucht werden, wie bei `protoc -I`. Pfade gelten ab dem Verzeichnis der Konfigurationsdatei. Weggelassen — dieses Verzeichnis. Für Standardtypen (`google/protobuf/…`) braucht es keinen Pfad |
 | `app.protoset` | Eine Deskriptorsatz-Datei statt `.proto`-Dateien, gebaut mit `protoc --include_imports --descriptor_set_out=FILE`. Der Pfad gilt ab dem Verzeichnis der Konfigurationsdatei. Nicht zusammen mit `app.proto`; ist keines von beiden gesetzt, werden die Methoden über Reflection geholt |
 | `load.warmup` | Die ersten N Sekunden bleiben aus den Perzentilen und aus `sent`: kalte Caches verderben sie. Aufwärm-Aufrufe erreichen das Ziel durchaus; der Bericht gibt sie auf einer Zeile `warm-up N sent (M failed), excluded from stats` aus — `sent` plus diese Zeile ist jeder Aufruf, den der Generator versucht hat. Das Ziel bekam sie alle bis auf die als unreachable oder client error gezählten; `cut off` und abgelaufene haben es vielleicht nicht vollständig erreicht: Ein Ziel, das sein HTTP/2-Fenster nicht öffnet (Flusskontrolle), bekommt nur die Header, und seine Zähler sehen den Aufruf womöglich nicht. Zählt zu `duration`, kürzer als jeder Aufruf |
-| `load.ramp` | Jeden Aufruf in dieser Zeit linear von 0 auf sein `rps` anheben, bevor sein `duration` beginnt: der Lauf dauert `ramp` + `duration`, und `duration` bedeutet dasselbe wie vorher (die Zeit auf `rps`). Fehlt der Schlüssel oder `0s` — kein Anlauf. Die Aufrufe des Anlaufs bleiben aus Perzentilen und `sent`, wie die des Aufwärmens, das erst danach beginnt, wenn der Anlauf endet; der Bericht gibt beide in einer Zeile aus, `ramp and warm-up N sent, excluded from stats`. Die `pass`-Grenzen und der Fehleranteil zählen nur die Haltephase: Ein Ziel, das im Anlauf fiel und sich erholte, besteht, und das ist nur an dieser Zeile zu sehen. Der Anlauf beginnt mit einem Aufruf im Moment 0. Nicht zusammen mit `load.breakpoint`. (nicht veröffentlicht) |
+| `load.ramp` | Jeden Aufruf in dieser Zeit linear von 0 auf sein `rps` anheben, bevor sein `duration` beginnt: der Lauf dauert `ramp` + `duration`, und `duration` bedeutet dasselbe wie vorher (die Zeit auf `rps`). Fehlt der Schlüssel oder `0s` — kein Anlauf. Die Aufrufe des Anlaufs bleiben aus Perzentilen und `sent`, wie die des Aufwärmens, das erst danach beginnt, wenn der Anlauf endet; der Bericht gibt beide in einer Zeile aus, `ramp and warm-up N sent, excluded from stats`. Die `pass`-Grenzen und der Fehleranteil zählen nur die Haltephase: Ein Ziel, das im Anlauf fiel und sich erholte, besteht, und das ist nur an dieser Zeile zu sehen. Der Anlauf beginnt mit einem Aufruf im Moment 0. Nicht zusammen mit `load.breakpoint`. |
 | `load.calls[].method` | Der volle Methodenname: `package.Service/Method` |
 | `load.calls[].rps` | Anfragen pro Sekunde für diese Methode |
 | `load.calls[].duration` | Wie lange sie belastet wird: `30s`, `5m`, `1h` |
@@ -304,7 +304,7 @@ ein Anhalten lässt Datensätze ungesendet.
 | `-connect-timeout` | Wie lange auf einen Dienst gewartet wird, der die Verbindung angenommen hat, aber schweigt. Standard `10s`. Auf eine abgelehnte Verbindung und eine falsche Adresse wird nicht gewartet |
 | `-max-in-flight` | Grenze für Anfragen, die auf eine Antwort warten. Standard `5000` |
 | `-plain` | Ohne Live-Bildschirm: eine Fortschrittszeile pro Sekunde auf stderr, wie ohne Terminal, und ohne den Dialog beim ersten Start. Der Bericht und die Exit-Codes sind dieselben |
-| `-dry-run` | Die Konfiguration ohne Last prüfen: verbinden, die Methoden prüfen, pro Aufruf eine Anfrage senden und die Anfrage, den Status und die Antwort ausgeben. Keine Statistik, kein Bericht. Einzelheiten im Abschnitt „Prüfen vor der Last“ unten. Nicht zusammen mit `-fake`, `-output`, `-json-file`, `-label`, `-plain` (Exit-Code 1). (nicht veröffentlicht) |
+| `-dry-run` | Die Konfiguration ohne Last prüfen: verbinden, die Methoden prüfen, pro Aufruf eine Anfrage senden und die Anfrage, den Status und die Antwort ausgeben. Keine Statistik, kein Bericht. Einzelheiten im Abschnitt „Prüfen vor der Last“ unten. Nicht zusammen mit `-fake`, `-output`, `-json-file`, `-label`, `-plain` (Exit-Code 1). |
 | `-yes` | Wird angenommen und vorerst ignoriert; reserviert für die Bestätigung eines Laufs mit `app.mode: real`. Mit `app.mode: local` ändert es nichts. (nicht veröffentlicht) |
 | `-fake` | Statt des Dienstes aus der Konfiguration einen eingebauten Platzhalter belasten — um das Werkzeug ohne Dienst anzusehen. Der Bericht ist als `fake target` markiert |
 | `-fake-delay`, `-fake-jitter`, `-fake-fail-ratio` | Das Verhalten des Platzhalters. Nur zusammen mit `-fake` |
@@ -312,7 +312,7 @@ ein Anhalten lässt Datensätze ungesendet.
 
 ## Prüfen vor der Last
 
-`leettest -c x.yaml -dry-run` (nicht veröffentlicht) verbindet sich und prüft die Methoden wie ein
+`leettest -c x.yaml -dry-run` verbindet sich und prüft die Methoden wie ein
 Lauf, sendet dann pro Eintrag von `load.calls` eine Anfrage, nacheinander in der Reihenfolge der
 Konfiguration, und gibt für jeden die Anfrage so, wie sie hinausging, den Status und die Antwort
 als JSON aus. Keine Last, keine Statistik, kein Bericht: in einer Sekunde zeigt sich, ob die
@@ -447,7 +447,7 @@ unten den Typ „percentile?" hat.
 | `settings.max_in_flight` | int; Suche: `int?` | Die Obergrenze für Anfragen im Flug: der Wert von `-max-in-flight`, sonst der Standard. Suche: `null` ohne die Option (jeder Lauf nimmt die kleinste Grenze, mit der er läuft); in ihren Läufen die Grenze dieses Laufs |
 | `settings.connections` | int | `app.connections` wie konfiguriert, standardmäßig 1; `connections.open` ist, was sich geöffnet hat |
 | `settings.warmup_us` | int | Das Aufwärmen wie konfiguriert. Suche: die Einschwingzeit `settle` |
-| `settings.ramp_us` | int | `load.ramp` wie konfiguriert, in ganzen Mikrosekunden; 0 ohne Anlauf. (nicht veröffentlicht) |
+| `settings.ramp_us` | int | `load.ramp` wie konfiguriert, in ganzen Mikrosekunden; 0 ohne Anlauf. |
 | `settings.compression` | string? | `app.compression` wie konfiguriert: `"gzip"`, `null` — weggelassen |
 | `passport` | object? | Die Maschine und die Konfiguration, mit denen der Lauf gemacht wurde, um Läufe zu unterscheiden. Eine Suche hat ihn einmal auf oberster Ebene, ihre Läufe in `breakpoint.runs` nicht |
 | `passport.config_sha256` | string | SHA-256 der Bytes der Konfigurationsdatei, wie gelesen, 64 Hexziffern |
