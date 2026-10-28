@@ -330,16 +330,23 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		exitNow()
 	}
 
+	// The first cause of a stop is the one the report names: the person's
+	// stop is noted before it acts, so a watch that decides while the calls are
+	// drained is not told as the run's stop.
+	var tripped tripBox
+
 	s := cli.NewStopper(
 		// Each message goes out before its action: once the action lets run
 		// return, nothing may write to stderr any more.
 		func() {
+			tripped.Other()
 			if !flags.interactive {
 				fmt.Fprintln(stderr, "stopping: no new requests; waiting for those in flight. Ctrl+C again to cut them off")
 			}
 			eng.Stop()
 		},
 		func() {
+			tripped.Other()
 			if !flags.interactive {
 				fmt.Fprint(stderr, "aborting: requests in flight are cut off and counted as aborted")
 				if !terminated.Load() {
@@ -362,10 +369,10 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 
 	// A watch is made only for a limit that can trip; without one nothing runs
 	// beside the engine.
-	var tripped tripBox
 	watch := errstop.New(eng, cfg.Load.StopOnErrors, func(t errstop.Trip) {
-		tripped.Trip(t)
-		eng.Stop()
+		if tripped.Trip(t) {
+			eng.Stop()
+		}
 	})
 
 	var stepAfter atomic.Int64
