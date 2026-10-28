@@ -16,6 +16,7 @@ package engine
 
 import (
 	"fmt"
+	"math"
 	"slices"
 	"sync"
 	"testing"
@@ -252,7 +253,9 @@ func TestRecent_TheEdgesOfTheTimeline(t *testing.T) {
 		}
 	})
 
-	for _, seconds := range []int{0, -1, -1 << 30} {
+	// math.MinInt is where to-seconds overflows to a negative from and, without
+	// the guard on seconds, a window of "less than nothing" would read the run.
+	for _, seconds := range []int{0, -1, -1 << 30, math.MinInt} {
 		t.Run(fmt.Sprintf("seconds %d", seconds), func(t *testing.T) {
 			stats := reserved(start, 0)
 			stats.Record(finishing(start, "a", 0, time.Second, CategoryServerFault))
