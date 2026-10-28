@@ -171,6 +171,9 @@ func TestRun_AnErrorSpikeStopsTheRunAndSaysWhy(t *testing.T) {
 	if n := fieldNumber(t, js, "stop", "in_flight"); n < 0 {
 		t.Errorf("stop.in_flight = %v, want a count", n)
 	}
+	if n := strings.Count(res.stderr, "stopped at "); n != 1 {
+		t.Errorf("stderr has %d stop lines, want one:\n%s", n, res.stderr)
+	}
 	line := stopLineOf(t, res.stderr)
 	if m := inFlightInTheLine.FindStringSubmatch(line); m == nil || !strings.HasSuffix(line, " in flight") {
 		t.Errorf("the stop line does not end with «; N in flight»: %q", line)
@@ -229,6 +232,40 @@ func TestRun_AHangingStandIsStoppedWithinTheTimeoutAndTheWindow(t *testing.T) {
 	}
 	if n, _ := strconv.Atoi(m[1]); n <= 0 || float64(n) != inJSON {
 		t.Errorf("the line says %s in flight and the JSON %v, want the same positive number", m[1], inJSON)
+	}
+}
+
+// Ground: contract — stderr and the report never disagree about a stop. A stand
+// that hangs a call for longer than the plan lasts lets the whole plan go out
+// (4 s) and only then fills the window with timeouts (the first at 5 s, seen by
+// the monitor a check or two later, about 7 s; the last call ends at 9 s): the
+// monitor sees the spike while the last calls are drained, which stops nothing
+// — the plan was sent whole. The run is not a stopped one: no «stopped at» on
+// stderr or in the report, stop_reason and stop null, not an incomplete run.
+func TestRun_ASpikeInTheDrainIsNotAStopOnStderrEither(t *testing.T) {
+	target := startSlowTarget(t, 30*time.Second)
+	cfg := spikeConfig(t, target.addr, "5%", "5s", "4s")
+	path := newJSONPath(t)
+
+	res := runCLI(t.Context(), t, 60*time.Second, "-json-file", path, "-c", cfg)
+
+	if errors.Is(res.err, ErrIncomplete) {
+		t.Fatalf("err = %v: a plan sent whole is an incomplete run\nstderr:\n%s", res.err, res.stderr)
+	}
+	for name, got := range map[string]string{"stderr": res.stderr, "the report": res.stdout} {
+		if strings.Contains(got, "stopped at ") {
+			t.Errorf("%s says a run that sent its whole plan was stopped:\n%s", name, got)
+		}
+	}
+
+	js := decodeOnly(t, string(readFile(t, path)))
+	for _, key := range []string{"stop_reason", "stop"} {
+		if got, ok := js[key]; !ok || got != nil {
+			t.Errorf("%s = %v (present %v), want null", key, got, ok)
+		}
+	}
+	if got := jsonAt(t, js, "outcome"); got == "incomplete" {
+		t.Errorf("outcome = %v, want a finished run", got)
 	}
 }
 

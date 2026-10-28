@@ -357,12 +357,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 	// beside the engine.
 	var tripped tripBox
 	watch := errstop.New(eng, cfg.Load.StopOnErrors, func(t errstop.Trip) {
-		if !tripped.Trip(t) {
-			return
-		}
-		if !flags.interactive {
-			fmt.Fprintln(stderr, cli.StopLine(t))
-		}
+		tripped.Trip(t)
 		eng.Stop()
 	})
 
@@ -371,7 +366,6 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		stopMeter := meter.Start()
 		stopWatch := startWatch(ctx, watch)
 		err := eng.Run(ctx)
-		tripped.End()
 		stopWatch()
 		stopMeter()
 		stepAfter.Store(int64(clockStep()))
@@ -399,11 +393,12 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		return runErr
 	}
 
-	// The live screen held the terminal while the watch tripped: the line goes
-	// out once it is closed.
+	// The line is told from the report, once the run is over, in both modes: a
+	// trip the report does not count (the plan was already sent whole) has no
+	// line, so stderr and the report never disagree.
 	report := reportOf()
 
-	if flags.interactive && report.Stop != nil {
+	if report.Stop != nil {
 		fmt.Fprintln(stderr, cli.StopLine(*report.Stop))
 	}
 
