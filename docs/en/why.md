@@ -26,7 +26,7 @@ gRPC plugin: JMeter itself does not do gRPC [20][21].
 | A service without reflection: schema from `.proto` or protoset | 🟢 [3] | 🟢 [15] | 🟢 [21] | 🟢 |
 | Several methods, each at its own RPS, in one run | 🔴 one method [1] | 🟡 scenarios in a script [10] | 🟡 thread groups [22] | 🟢 |
 | Load described without code of your own | 🟢 flags, JSON, TOML [2] | 🔴 JavaScript [10] | 🟢 `.jmx` plan [28] | 🟢 YAML |
-| Ramp-up to a target RPS, then steady load | 🟢 [7] | 🟢 [16] | 🟡 experimental [23] | 🔴 [roadmap](roadmap.md#later) |
+| Ramp-up to a target RPS, then steady load | 🟢 [7] | 🟢 [16] | 🟡 experimental [23] | 🟢 |
 | Thresholds and an exit code for CI | 🔴 [8] | 🟢 [17] | 🔴 [20][26] | 🟢 |
 | A response field goes into the next request | 🔴 [9] | 🟡 script [18] | 🟢 post-processors [27] | 🔴 [roadmap](roadmap.md#later) |
 | Finding the load at which the target breaks | 🔴 [8] | 🟡 script [19] | 🔴 [20] | 🟢 steps |
@@ -75,9 +75,9 @@ At the end it prints the tables and saves them to `test/compare-perf/out/summary
 takes up to three hours. `-plan` prints every setting and command without running anything.
 
 The open model by default, counting the generator's lag and breakpoint search are the rows
-where none of ghz, k6 and JMeter has a 🟢. LeetTest does not yet have ramp-up to a target RPS or call
-chaining; the order is in the [roadmap](roadmap.md). CI thresholds (`pass`) and running without
-reflection (`.proto`, protoset) are there.
+where none of ghz, k6 and JMeter has a 🟢. LeetTest does not yet have call
+chaining; the order is in the [roadmap](roadmap.md). Ramp-up to a target RPS (`load.ramp`), CI
+thresholds (`pass`) and running without reflection (`.proto`, protoset) are there.
 
 ## Load that mirrors production
 

@@ -32,10 +32,12 @@ config load.calls[].method
 config load.calls[].pass
 config load.calls[].rps
 config load.calls[].timeout
+config load.ramp
 config load.warmup
 config name
 flag c
 flag connect-timeout
+flag dry-run
 flag fake
 flag fake-delay
 flag fake-fail-ratio
@@ -327,6 +329,7 @@ json settings
 json settings.compression
 json settings.connections
 json settings.max_in_flight
+json settings.ramp_us
 json settings.warmup_us
 json start_lag
 json start_lag.max
