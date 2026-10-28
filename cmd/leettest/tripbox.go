@@ -25,22 +25,35 @@ import (
 // goroutine and may decide a moment after the run is over; such a decision
 // must not say a run that finished by itself was stopped.
 type tripBox struct {
-	trip atomic.Pointer[errstop.Trip]
+	trip  atomic.Pointer[errstop.Trip]
+	ended atomic.Bool
 }
 
 // Trip keeps t and reports whether the watch should go on to print its line
-// and stop the engine.
+// and stop the engine. After End it keeps nothing and says no.
 func (b *tripBox) Trip(t errstop.Trip) bool {
+	if b.ended.Load() {
+		return false
+	}
+
 	b.trip.Store(&t)
 
 	return true
 }
 
 // End is called the moment the engine's Run returns.
-func (b *tripBox) End() {}
+func (b *tripBox) End() {
+	b.ended.Store(true)
+}
 
 // Of is the trip the report may tell of: the watch's, when it cut the run
-// short.
+// short. The engine marks a report incomplete only when the stop reached the
+// dispatcher; a trip that came with the last calls already out, or between
+// End and the watch being cancelled, stopped nothing.
 func (b *tripBox) Of(report engine.Report) *errstop.Trip {
+	if !report.Incomplete {
+		return nil
+	}
+
 	return b.trip.Load()
 }
