@@ -280,8 +280,8 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 	// The question comes after the cheap refusals above and before the first
 	// call to the target, the connection included. terminal is stderr's, taken
 	// before the writer was wrapped.
-	if err = confirmReal(ctx, stderr, cfg, calls, target, flags.yes, terminal && stdinIsTerminal()); err != nil {
-		return err
+	if confirmErr := confirmReal(ctx, stderr, cfg, calls, target, flags.yes, terminal && stdinIsTerminal()); confirmErr != nil {
+		return confirmErr
 	}
 
 	// Methods nothing could be checked against: named again with the report,
