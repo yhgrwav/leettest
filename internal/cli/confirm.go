@@ -64,7 +64,11 @@ func ConfirmText(p RealPlan) string {
 func Confirm(ctx context.Context, in io.Reader, w io.Writer, plan RealPlan) error {
 	fmt.Fprintf(w, "%s\nStart? [y/N] ", ConfirmText(plan))
 
+	// A terminal does not end the line on Ctrl+C: the line is ended here, so
+	// that the message that follows does not stick to the prompt and the «^C».
 	if err := cancelledBeforeAnything(ctx); err != nil {
+		fmt.Fprintln(w)
+
 		return err
 	}
 
@@ -77,6 +81,8 @@ func Confirm(ctx context.Context, in io.Reader, w io.Writer, plan RealPlan) erro
 
 	select {
 	case <-ctx.Done():
+		fmt.Fprintln(w)
+
 		return cancelledBeforeAnything(ctx)
 	case line := <-answer:
 		if err := cancelledBeforeAnything(ctx); err != nil {
