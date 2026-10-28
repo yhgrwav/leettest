@@ -30,6 +30,12 @@ func Interactive() bool {
 	return isatty.IsTerminal(os.Stderr.Fd()) || isatty.IsCygwinTerminal(os.Stderr.Fd())
 }
 
+// StdinInteractive reports whether stdin is a terminal a person types on,
+// the Git Bash (cygwin) pty included.
+func StdinInteractive() bool {
+	return isatty.IsTerminal(os.Stdin.Fd()) || isatty.IsCygwinTerminal(os.Stdin.Fd())
+}
+
 // RunPlain executes the run without the live view, printing progress lines
 // instead. It is used when stderr is not a terminal.
 func RunPlain(w io.Writer, target string, eng *engine.Engine, run func() error) error {
