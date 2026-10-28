@@ -1,4 +1,4 @@
-# A run against a real system (not released yet): app.mode: real asks for a ramp, so the first
+# A run against a real system: app.mode: real asks for a ramp, so the first
 # second is never the full load. Without load.ramp the config is refused before any call. The
 # report prints the mode under the name. The run prints its plan and asks "Start? [y/N]" on a
 # terminal; off a terminal (CI, a script) it needs -yes. Against the reference stand, from the

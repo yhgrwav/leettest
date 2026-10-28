@@ -41,13 +41,13 @@ load:
 | `app.max_response_size` | 一次调用接受的最大应答：`16MiB`、`512KB`。单位必填（`MB` = 10⁶ 字节，`MiB` = 2²⁰），小于 2 GiB。省略时为 4 MiB，与 gRPC 相同。更大的应答算作 `bad response`。在途的调用最多可能缓冲上限的两倍：默认每个最多 8 MiB |
 | `app.connections` | 向目标打开多少条连接，1 到 256 的整数。省略时为 1。调用在这些连接间轮流进行，报告打印一个 `Connections:` 块，每条连接一行 |
 | `app.compression` | 压缩请求体：`gzip`。省略时不压缩。报告在方法下打印 `bytes: <raw> -> <wire> per call` |
-| `app.mode` | `local` 或 `real`，必须原样书写（`Real` 是错误，没有值的键也是）。省略时为 `local`。`real` 表示对有人在使用的系统施压，并且在发出第一个调用之前要求有 `load.ramp`（从 0 爬升到 `rps`），否则退出码为 1；配合 `load.breakpoint` 时不要求爬升，因为搜索不接受它。搜索本身也不是爬升：它的第一步直接跳到 `breakpoint.from`。报告在 `name` 下打印该模式，`local` 也一样。没有对应的命令行参数。还要求有 `load.stop_on_errors`（搜索除外）。（未发布） |
+| `app.mode` | `local` 或 `real`，必须原样书写（`Real` 是错误，没有值的键也是）。省略时为 `local`。`real` 表示对有人在使用的系统施压，并且在发出第一个调用之前要求有 `load.ramp`（从 0 爬升到 `rps`），否则退出码为 1；配合 `load.breakpoint` 时不要求爬升，因为搜索不接受它。搜索本身也不是爬升：它的第一步直接跳到 `breakpoint.from`。报告在 `name` 下打印该模式，`local` 也一样。没有对应的命令行参数，但 `real` 运行在第一次调用之前会询问（见 `-yes`）。还要求有 `load.stop_on_errors`（搜索除外）。 |
 | `app.proto.files` | 提供服务定义的 `.proto` 文件，用于没有 reflection 的服务。路径从配置文件所在目录算起。每个文件必须位于某个 `import_paths` 之内 |
 | `app.proto.import_paths` | 在哪里查找这些文件及其 import，与 `protoc -I` 相同。路径从配置文件所在目录算起。省略时为该目录。标准类型（`google/protobuf/…`）不需要路径 |
 | `app.protoset` | 用描述符集文件代替 `.proto` 文件，由 `protoc --include_imports --descriptor_set_out=FILE` 生成。路径从配置文件所在目录算起。不能与 `app.proto` 同时使用；两者都没有时，方法通过 reflection 获取 |
 | `load.warmup` | 前 N 秒不计入百分位和 `sent`：冷缓存会扭曲它们。预热调用确实会到达目标；报告用一行 `warm-up N sent (M failed), excluded from stats` 输出它们——`sent` 加上这一行就是压测机尝试过的全部调用。除计为 unreachable 或 client error 的调用外，目标都收到了；`cut off` 和超时的调用可能没有完整到达：不打开 HTTP/2 窗口（流量控制）的目标只会收到请求头，它的计数器可能看不到这次调用。计入 `duration`，必须短于每个调用 |
 | `load.ramp` | 在此时间内把每个调用从 0 线性提升到它的 `rps`，之后才开始它的 `duration`：运行时长为 `ramp` + `duration`，而 `duration` 的含义和以前一样（以 `rps` 运行的时间）。不写或 `0s` 表示没有爬升。爬升期间的调用和预热一样不计入百分位和 `sent`，预热在爬升结束时才开始；报告把两者打印在同一行：`ramp and warm-up N sent, excluded from stats`。`pass` 限值和错误占比只按保持阶段计算：在爬升中垮掉后又恢复的目标会通过，只有这一行能看出来。爬升从时刻 0 的一次调用开始。不能与 `load.breakpoint` 同用。 |
-| `load.stop_on_errors` | 形如 `5%` 或 `0.5%` 的百分数，小数点后最多三位，不超过 `100%` 且大于 0（`0%` 是错误）。当某个方法在最近 5 个完整秒内失败调用的占比严格高于该限值，并且失败调用至少有两个时，运行停止；各方法分别判断，停止行会写出方法名。失败指除 `success` 和 `aborted` 之外的任何类别；没有发出的调用不计入。窗口按调用结束所在的秒计算，每秒检查一次，当前这一秒不在窗口内，爬升和预热在内。卡死的目标最早在第一个以超时结束的调用之后才能被发现，大约是 `timeout` 加 5 秒窗口。停止是软停止，和 Ctrl-C 一样：退出码 3，`incomplete`；它优先于 `pass`（此时 `pass` 为 `unknown/incomplete`），而 `pass` 和 `stop_on_errors` 相互独立。`100%` 表示关闭：报告打印 `stop_on_errors: off (100%)`，该键通过校验但什么也不停止。省略则完全不观察。`app.mode: real` 必须有它（搜索除外）；与 `load.breakpoint` 同用是错误，搜索有自己的 `breakpoint.errors_limit`。（未发布） |
+| `load.stop_on_errors` | 形如 `5%` 或 `0.5%` 的百分数，小数点后最多三位，不超过 `100%` 且大于 0（`0%` 是错误）。当某个方法在最近 5 个完整秒内失败调用的占比严格高于该限值，并且失败调用至少有两个时，运行停止；各方法分别判断，停止行会写出方法名。失败指除 `success` 和 `aborted` 之外的任何类别；没有发出的调用不计入。窗口按调用结束所在的秒计算，每秒检查一次，当前这一秒不在窗口内，爬升和预热在内。卡死的目标最早在第一个以超时结束的调用之后才能被发现，大约是 `timeout` 加 5 秒窗口。停止是软停止，和 Ctrl-C 一样：退出码 3，`incomplete`；它优先于 `pass`（此时 `pass` 为 `unknown/incomplete`），而 `pass` 和 `stop_on_errors` 相互独立。`100%` 表示关闭：报告打印 `stop_on_errors: off (100%)`，该键通过校验但什么也不停止。省略则完全不观察。`app.mode: real` 必须有它（搜索除外）；与 `load.breakpoint` 同用是错误，搜索有自己的 `breakpoint.errors_limit`。 |
 | `load.calls[].method` | 方法全名：`package.Service/Method` |
 | `load.calls[].rps` | 该方法每秒的请求数 |
 | `load.calls[].duration` | 施压时长：`30s`、`5m`、`1h` |
@@ -260,7 +260,7 @@ seed 在启动时选取，每个调用各有一个。
 | `-max-in-flight` | 等待应答的请求数上限。默认 `5000` |
 | `-plain` | 不用实时屏幕：每秒一行进度输出到 stderr，与没有终端时相同，并且没有首次运行的对话。报告和退出码不变 |
 | `-dry-run` | 不加压地检查配置：建立连接、检查方法、每个调用发送一个请求，并打印请求、状态和响应。没有统计，没有报告。详见下面的“压测前检查”一节。不能与 `-fake`、`-output`、`-json-file`、`-label`、`-plain` 一起使用（退出码 1）。 |
-| `-yes` | 不经提问直接启动 `app.mode: real` 的运行。这类运行会在 stderr 打印计划（目标、计划峰值、含爬坡在内的计划时长；搜索则为区间），并在终端上（stdin 与 stderr 都是终端）于第一次调用之前（含建立连接）询问 `Start? [y/N]`：只有 `y` 或 `yes` 才会启动；其他任何回答或输入结束都以退出码 1 结束且不发送任何请求，在提问时按 Ctrl-C 同样如此。没有终端时，`real` 运行必须加 `-yes`（否则退出码 1）。`-dry-run` 从不询问；`-fake` 与真实目标一样会询问。加了 `-yes` 仍会打印计划行。对 `app.mode: local` 不起作用，它从不询问。（未发布） |
+| `-yes` | 不经提问直接启动 `app.mode: real` 的运行。这类运行会在 stderr 打印计划（目标、计划峰值、含爬坡在内的计划时长；搜索则为区间），并在终端上（stdin 与 stderr 都是终端）于第一次调用之前（含建立连接）询问 `Start? [y/N]`：只有 `y` 或 `yes` 才会启动；其他任何回答或输入结束都以退出码 1 结束且不发送任何请求，在提问时按 Ctrl-C 同样如此。没有终端时，`real` 运行必须加 `-yes`（否则退出码 1）。`-dry-run` 从不询问；`-fake` 与真实目标一样会询问。加了 `-yes` 仍会打印计划行。对 `app.mode: local` 不起作用，它从不询问。 |
 | `-fake` | 用内置的桩代替配置中的服务施压——无需服务即可查看工具。报告会标记为 `fake target` |
 | `-fake-delay`、`-fake-jitter`、`-fake-fail-ratio` | 桩的行为。只能与 `-fake` 一起使用 |
 | `-version` | 输出版本并退出。从源码构建时输出提交哈希 |
@@ -360,25 +360,25 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `invalid_reasons` | []string | 运行无效的原因：`in_flight_cap`、`nothing_measured`、`clock_step`、`thresholds_undecided`（某个 `pass` 限值无法判定，且原因不是运行被停止或已经无效）。为空——有效 |
 | `tail_wait_cause` | string? | 决定尾部的客户端侧等待：`generator`、`stream`、`connection`；`null`——没有结论 |
 | `clock_step_ns` | int | 主机时钟步长，纳秒：每个延迟和等待都有 ± 这个值的误差 |
-| `stop_reason` | string? | 由 `load.stop_on_errors` 停止运行时为 `error_spike`；否则为 `null`。（未发布） |
-| `stop` | object? | `load.stop_on_errors` 在何处、依据哪些数字停止了运行；没有停止则为 `null`。（未发布） |
-| `stop.method` | string | 失败调用占比超过限值的方法，写法与 `methods[].method` 完全相同，包括开头的 `/`。（未发布） |
-| `stop.failed` | int | 它在最近 5 秒内的失败调用数。（未发布） |
-| `stop.total` | int | 它在同样这几秒内的调用数（失败和成功）。（未发布） |
-| `stop.limit` | string | 按配置书写的限值：`"5%"`。（未发布） |
-| `stop.at_us` | int | 从运行开始到停止所经过的时间，单位为整微秒。（未发布） |
-| `stop.in_flight` | int | 此刻在途的调用数（已开始、未结束）：目标卡死时，这是窗口看不到的数字。（未发布） |
+| `stop_reason` | string? | 由 `load.stop_on_errors` 停止运行时为 `error_spike`；否则为 `null`。 |
+| `stop` | object? | `load.stop_on_errors` 在何处、依据哪些数字停止了运行；没有停止则为 `null`。 |
+| `stop.method` | string | 失败调用占比超过限值的方法，写法与 `methods[].method` 完全相同，包括开头的 `/`。 |
+| `stop.failed` | int | 它在最近 5 秒内的失败调用数。 |
+| `stop.total` | int | 它在同样这几秒内的调用数（失败和成功）。 |
+| `stop.limit` | string | 按配置书写的限值：`"5%"`。 |
+| `stop.at_us` | int | 从运行开始到停止所经过的时间，单位为整微秒。 |
+| `stop.in_flight` | int | 此刻在途的调用数（已开始、未结束）：目标卡死时，这是窗口看不到的数字。 |
 | `started_at` | string | 计划开始时刻，RFC 3339 UTC，包括预热。所有 `_us` 和 `_s` 都从它算起 |
 | `duration_us` | int | 运行实际持续时间，包括预热 |
 | `planned_us` | int | 计划持续时间，包括爬升 |
 | `warmup_us` | int | 统计不计入的时间窗口：爬升和预热。没有爬升时就是预热时长；只要预热，取 `warmup_us` − `settings.ramp_us` |
 | `settings` | object | 运行启动时的设置，按配置而非测量值 |
-| `settings.mode` | string | 配置中的 `app.mode`：`"local"` 或 `"real"`。不是顶层的 `mode`，后者是报告的种类。（未发布） |
+| `settings.mode` | string | 配置中的 `app.mode`：`"local"` 或 `"real"`。不是顶层的 `mode`，后者是报告的种类。 |
 | `settings.max_in_flight` | int；搜索：`int?` | 在途请求上限：`-max-in-flight` 的值，否则为默认值。搜索：未设该参数时为 `null`（每次运行取其能运行的最小上限）；在其各次运行中为该次运行的上限 |
 | `settings.connections` | int | 按配置的 `app.connections`，默认 1；`connections.open` 是实际打开的数量 |
 | `settings.warmup_us` | int | 按配置的预热。搜索：`settle` 时长 |
 | `settings.ramp_us` | int | 按配置的 `load.ramp`，单位为整微秒；没有爬升时为 0。 |
-| `settings.stop_on_errors` | string? | 按配置书写的 `load.stop_on_errors`：`"5%"`，`"100%"` 保持 `"100%"`；`null` 表示省略。（未发布） |
+| `settings.stop_on_errors` | string? | 按配置书写的 `load.stop_on_errors`：`"5%"`，`"100%"` 保持 `"100%"`；`null` 表示省略。 |
 | `settings.compression` | string? | 按配置的 `app.compression`：`"gzip"`，`null` 表示省略 |
 | `passport` | object? | 这次运行所用的机器和配置，用于区分不同的运行。搜索只在顶层有一个，`breakpoint.runs` 中的各次运行没有 |
 | `passport.config_sha256` | string | 配置文件读入时字节的 SHA-256，64 位十六进制 |
