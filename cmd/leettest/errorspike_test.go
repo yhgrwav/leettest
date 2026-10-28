@@ -171,6 +171,9 @@ func TestRun_AnErrorSpikeStopsTheRunAndSaysWhy(t *testing.T) {
 	if n := fieldNumber(t, js, "stop", "in_flight"); n < 0 {
 		t.Errorf("stop.in_flight = %v, want a count", n)
 	}
+	if n := strings.Count(res.stderr, "stopped at "); n != 1 {
+		t.Errorf("stderr has %d stop lines, want one:\n%s", n, res.stderr)
+	}
 	line := stopLineOf(t, res.stderr)
 	if m := inFlightInTheLine.FindStringSubmatch(line); m == nil || !strings.HasSuffix(line, " in flight") {
 		t.Errorf("the stop line does not end with «; N in flight»: %q", line)
