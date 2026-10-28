@@ -169,7 +169,7 @@ func TestRun_TheReportTellsTheMode(t *testing.T) {
 		{"real", "  mode: real\n", "  ramp: 1s\n  stop_on_errors: 5%\n", "real"},
 	} {
 		cfg := writeEchoConfig(t, tc.mode, tc.ramp)
-		text, js := echoRun(t, 30*time.Second, "-c", cfg)
+		text, js := echoRun(t, 30*time.Second, "-c", cfg, "-yes")
 
 		if want := "\nname: wallet\nmode: " + tc.want + "\nsettings: "; !strings.Contains(text, want) {
 			t.Errorf("%s: the text report lacks %q:\n%s", tc.name, want, text)
@@ -192,7 +192,7 @@ func TestRun_ASearchTellsTheMode(t *testing.T) {
 		withName(t, cfg, "name: wallet\n")
 		setMode(t, cfg, mode)
 
-		text, js := echoRun(t, 60*time.Second, "-c", cfg)
+		text, js := echoRun(t, 60*time.Second, "-c", cfg, "-yes")
 
 		if want := "\nname: wallet\nmode: " + mode + "\nsettings: settle "; !strings.Contains(text, want) {
 			t.Errorf("%s: the search's text lacks %q:\n%s", mode, want, text)
