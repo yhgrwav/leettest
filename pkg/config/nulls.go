@@ -104,6 +104,16 @@ func (v *nullDatasetVisitor) Visit(node ast.Node) ast.Visitor {
 
 		return v
 	}
+	if path == "$.load.stop_on_errors" {
+		if value, resolved := v.unwrap(pair.Value); resolved {
+			if _, null := value.(*ast.NullNode); null {
+				v.errs = append(v.errs, fmt.Errorf("line %d: %w: has no value: write a percent such as 5%%, or leave the key out",
+					pair.Key.GetToken().Position.Line, ErrInvalidStopOnErrors))
+			}
+		}
+
+		return v
+	}
 	if match == nil && !errorsLimit {
 		return v
 	}

@@ -31,6 +31,7 @@ app:
     port: 50051
 MODE
 load:
+  stop_on_errors: 5%
 RAMP  calls:
     - method: wallet.v1.WalletService/GetBalance
       rps: 800

@@ -24,6 +24,7 @@ import (
 
 	"github.com/yhgrwav/leettest/pkg/descriptor"
 	"github.com/yhgrwav/leettest/pkg/engine"
+	"github.com/yhgrwav/leettest/pkg/errstop"
 	"github.com/yhgrwav/leettest/pkg/metrics"
 	"github.com/yhgrwav/leettest/pkg/threshold"
 )
@@ -61,6 +62,9 @@ type RunReport struct {
 	// Thresholds are the verdicts on the limits the config set; nil when it
 	// set none, which prints no block and writes null.
 	Thresholds []threshold.Result
+	// Stop is the moment load.stop_on_errors ended the run; nil when it did
+	// not.
+	Stop *errstop.Trip
 }
 
 // RunSettings echoes what a run was started with, as configured: the
@@ -81,6 +85,9 @@ type RunSettings struct {
 	Compression string
 	// Mode is app.mode: "local" or "real". Empty prints nothing.
 	Mode string
+	// StopOnErrors is load.stop_on_errors as written; empty when left out,
+	// which prints nothing.
+	StopOnErrors string
 }
 
 // ramp is the ramp the run's config set; 0 without settings, which cannot tell
@@ -133,6 +140,9 @@ func printRunHeader(w io.Writer, target string, run RunReport) {
 			ramp = fmt.Sprintf(", ramp %s", s.Ramp)
 		}
 		fmt.Fprintf(w, "settings: warm-up %s%s, max in flight %d, connections %d%s\n", s.Warmup, ramp, s.MaxInFlight, s.Connections, compressionSuffix(s.Compression))
+		if line := stopLimitLine(s.StopOnErrors); line != "" {
+			fmt.Fprintln(w, line)
+		}
 	}
 	fmt.Fprintf(w, "sent %d, failed %d", report.Sent, report.Failed)
 	if report.NotSent > 0 {

@@ -7,6 +7,14 @@ methods_source string?
 outcome string
 invalid_reasons []string
 tail_wait_cause string?
+stop_reason string?
+stop object?
+stop.method string
+stop.failed int
+stop.total int
+stop.limit string
+stop.at_us int
+stop.in_flight int
 clock_step_ns int
 started_at string
 duration_us int
@@ -19,6 +27,7 @@ settings.connections int
 settings.warmup_us int
 settings.ramp_us int
 settings.compression string?
+settings.stop_on_errors string?
 passport object?
 passport.config_sha256 string
 passport.os string
