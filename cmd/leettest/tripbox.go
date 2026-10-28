@@ -34,6 +34,10 @@ func (b *tripBox) Trip(t errstop.Trip) {
 	b.trip.Store(&t)
 }
 
+// Other is called when something else than the watch stops the run (Ctrl-C,
+// SIGTERM). Stub: does nothing yet.
+func (b *tripBox) Other() {}
+
 // Of is the trip the report may tell of: the watch's, when it cut the run
 // short. The engine marks a report incomplete only when the stop reached the
 // dispatcher; a trip that came with the last calls already out, or after Run
