@@ -27,6 +27,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/yhgrwav/leettest/internal/cli"
 )
 
 const (
@@ -332,6 +334,31 @@ func TestRun_ASearchInRealNeedsYesOffATerminal(t *testing.T) {
 	}
 }
 
+// Ground: contract — -yes in a search starts it without a question and still
+// prints the search's line, as a run does: the log says what range was started.
+// The input is not read, on a terminal or off it.
+func TestRun_YesInASearchPrintsItsLineAndDoesNotAsk(t *testing.T) {
+	for _, terminal := range []bool{false, true} {
+		addr := closedPort(t)
+		cfg := writeSearch(t, addr, checkMethod)
+		setMode(t, cfg, "real")
+		in := withTerminals(t, terminal, terminal, strings.NewReader("n\n"))
+
+		res := runCLI(t.Context(), t, 60*time.Second, "-plain", "-yes", "-c", cfg)
+
+		want := "real mode: " + addr + ", search from 50 to 80 rps until it breaks, duration not promised"
+		if !strings.Contains(res.stderr, want) {
+			t.Errorf("terminal %v: stderr lacks %q:\n%s", terminal, want, res.stderr)
+		}
+		if strings.Contains(res.stderr, askText) {
+			t.Errorf("terminal %v: -yes asked:\n%s", terminal, res.stderr)
+		}
+		if in.reads.Load() != 0 {
+			t.Errorf("terminal %v: -yes read the input", terminal)
+		}
+	}
+}
+
 // Ground: contract — the question is for real alone: a run in local, or with
 // the mode left out, asks nothing on a terminal and never reads the input, with
 // -yes or without it. (Green on the stub: guards the requirement that the
@@ -447,6 +474,9 @@ func TestRun_ASignalAtTheQuestionEndsBeforeAnythingIsSent(t *testing.T) {
 		case err := <-done:
 			if got := exitCode(err); got != 1 || !errors.Is(err, context.Canceled) {
 				t.Errorf("%s: exit %d, err %v: want 1 through context.Canceled", name, got, err)
+			}
+			if err == nil || !strings.Contains(err.Error(), "nothing was sent") || errors.Is(err, cli.ErrNotConfirmed) {
+				t.Errorf("%s: err = %v, want «nothing was sent» and not ErrNotConfirmed", name, err)
 			}
 		case <-time.After(3 * time.Second):
 			t.Fatalf("%s: the command is still waiting for an answer after the signal", name)

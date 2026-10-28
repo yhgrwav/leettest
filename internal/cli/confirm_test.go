@@ -112,6 +112,23 @@ func TestConfirm_TheRefusalSaysNothingWasSent(t *testing.T) {
 	}
 }
 
+// Ground: signal — a context that is already cancelled wins over a «y» that
+// is already waiting: a run is never started after a Ctrl+C because both the
+// answer and the cancel were ready. The check is repeated: an implementation
+// that picks at random between the two ready branches fails some of them.
+func TestConfirm_ACancelledContextBeatsAWaitingYes(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	for i := range 200 {
+		err := Confirm(ctx, strings.NewReader("y\n"), io.Discard, aRunPlan)
+
+		if !errors.Is(err, context.Canceled) || errors.Is(err, ErrNotConfirmed) {
+			t.Fatalf("round %d: err = %v, want context.Canceled and not ErrNotConfirmed", i, err)
+		}
+	}
+}
+
 // Ground: signal — an answer that never comes does not hold the process once
 // the run is cancelled (Ctrl+C, SIGTERM): Confirm returns the context's error
 // at once and not ErrNotConfirmed, so the caller ends the way a cancelled
@@ -132,6 +149,9 @@ func TestConfirm_ACancelEndsAQuestionNobodyAnswers(t *testing.T) {
 	case err := <-done:
 		if !errors.Is(err, context.Canceled) || errors.Is(err, ErrNotConfirmed) {
 			t.Errorf("err = %v, want context.Canceled and not ErrNotConfirmed", err)
+		}
+		if err == nil || !strings.Contains(err.Error(), "nothing was sent") {
+			t.Errorf("err = %v, want a cancel that says nothing was sent", err)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("Confirm is still waiting for an answer after the cancel")
