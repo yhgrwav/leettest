@@ -78,6 +78,14 @@ var (
 	ErrInvalidMode = errors.New("app.mode must be local or real, or left out")
 	// ErrRealNeedsRamp is app.mode: real without load.ramp.
 	ErrRealNeedsRamp = errors.New("app.mode: real needs load.ramp (a ramp from 0 to rps), e.g. load.ramp: 30s")
+	// ErrInvalidStopOnErrors is a load.stop_on_errors that is not a percent
+	// above 0 and up to 100, or has no value.
+	ErrInvalidStopOnErrors = errors.New("invalid load.stop_on_errors")
+	// ErrStopWithSearch is load.stop_on_errors beside load.breakpoint: the
+	// search has its own limit, breakpoint.errors_limit.
+	ErrStopWithSearch = errors.New("load.stop_on_errors and load.breakpoint do not go together: the search stops by breakpoint.errors_limit")
+	// ErrRealNeedsStop is app.mode: real without load.stop_on_errors.
+	ErrRealNeedsStop = errors.New("app.mode: real needs load.stop_on_errors (the run stops when failures pass this share), e.g. load.stop_on_errors: 5%")
 )
 
 // The values of app.mode. Left out, a config is local.
@@ -173,6 +181,12 @@ type Load struct {
 	// Breakpoint searches for the rate the one call's target breaks at,
 	// instead of loading the calls at their rps; nil runs them as configured.
 	Breakpoint *Breakpoint `yaml:"breakpoint"`
+	// RawStopOnErrors is stop_on_errors as written, nil when left out (a key
+	// written with no value is refused before). StopOnErrors is it read; zero
+	// when left out; 100% is kept as written (100000 thousandths) and the
+	// watch for it is not made.
+	RawStopOnErrors any           `yaml:"stop_on_errors"`
+	StopOnErrors    share.Percent `yaml:"-"`
 }
 
 // Breakpoint is the search's profile: rates from From to To, each step Factor
@@ -217,6 +231,29 @@ func (b *Breakpoint) resolveErrorsLimit() error {
 		return fmt.Errorf("%w: %w", ErrBreakpoint, err)
 	}
 	b.ErrorsLimit = limit
+
+	return nil
+}
+
+// resolveStopOnErrors reads stop_on_errors by the grammar of errors_limit and
+// refuses what is not a percent above 0, and the key beside a search.
+func (l *Load) resolveStopOnErrors() error {
+	if l.RawStopOnErrors == nil {
+		return nil
+	}
+	if l.Breakpoint != nil {
+		return ErrStopWithSearch
+	}
+
+	limit, err := percentLimit(l.RawStopOnErrors, "load.stop_on_errors")
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidStopOnErrors, err)
+	}
+	if limit.Thousandths <= 0 {
+		return fmt.Errorf("%w: load.stop_on_errors %s stops the run on the first failure of two; write a share above 0, or 100%% to turn it off",
+			ErrInvalidStopOnErrors, limit.Text)
+	}
+	l.StopOnErrors = limit
 
 	return nil
 }

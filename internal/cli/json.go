@@ -77,6 +77,11 @@ type JSONReport struct {
 	// TailWaitCause is the client-side wait that set the tail: generator, stream
 	// or connection; null without that verdict.
 	TailWaitCause *string `json:"tail_wait_cause"`
+	// StopReason is who ended the run before its end of its own accord:
+	// "error_spike" when load.stop_on_errors did; null otherwise. Stop says
+	// where and on what numbers, and is null with it.
+	StopReason *string   `json:"stop_reason"`
+	Stop       *jsonStop `json:"stop"`
 	// ClockStepNS is the host clock step: every latency and wait is +/- it.
 	ClockStepNS int64  `json:"clock_step_ns"`
 	StartedAt   string `json:"started_at"`
@@ -122,6 +127,9 @@ type jsonSettings struct {
 	RampUS      int64  `json:"ramp_us"`
 	// Compression is "gzip" or null.
 	Compression *string `json:"compression"`
+	// StopOnErrors is load.stop_on_errors as written in the config ("5%",
+	// "100%"), null when left out.
+	StopOnErrors *string `json:"stop_on_errors"`
 }
 
 // settingsOf is the echo as JSON has it; nil, which nobody told, gives zeros
@@ -131,7 +139,7 @@ func settingsOf(s *RunSettings) jsonSettings {
 		return jsonSettings{}
 	}
 
-	return jsonSettings{Mode: s.Mode, MaxInFlight: s.MaxInFlight, Connections: s.Connections, WarmupUS: micros(s.Warmup), RampUS: micros(s.Ramp), Compression: compressionOf(s.Compression)}
+	return jsonSettings{Mode: s.Mode, MaxInFlight: s.MaxInFlight, Connections: s.Connections, WarmupUS: micros(s.Warmup), RampUS: micros(s.Ramp), Compression: compressionOf(s.Compression), StopOnErrors: writtenLimit(s.StopOnErrors)}
 }
 
 // compressionOf is the configured compression, null for none.
@@ -448,6 +456,8 @@ func jsonRunFacts(run JSONRun) JSONReport {
 		WarmupSent:        r.WarmupSent,
 		WarmupFailed:      r.WarmupFailed,
 		WarmupNotSent:     r.WarmupNotSent,
+		StopReason:        stopReasonJSON(run.Run.Stop),
+		Stop:              stopJSON(run.Run.Stop),
 		TailWaitCause:     tailWaitCause(*r),
 		ClockStepNS:       int64(run.Run.ClockStep),
 		ClientWaits: jsonClientWaits{

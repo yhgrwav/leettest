@@ -120,6 +120,10 @@ func (m *MasterConfig) resolve() error {
 		}
 	}
 
+	if err := m.Load.resolveStopOnErrors(); err != nil {
+		return err
+	}
+
 	address, err := m.App.Target.CreateConnectionString()
 	if err != nil {
 		return err
@@ -143,6 +147,9 @@ func (m *MasterConfig) Validate() error {
 	}
 	if m.App.Mode == ModeReal && m.Load.Breakpoint == nil && m.Load.Ramp == 0 {
 		errs = append(errs, ErrRealNeedsRamp)
+	}
+	if m.App.Mode == ModeReal && m.Load.Breakpoint == nil && m.Load.StopOnErrors.Thousandths == 0 {
+		errs = append(errs, ErrRealNeedsStop)
 	}
 	if err := m.Load.Validate(); err != nil {
 		errs = append(errs, err)

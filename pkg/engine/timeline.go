@@ -72,8 +72,13 @@ type second struct {
 	// within their timeout. Silence is the target's, so it is on this axis.
 	sentOut, heardOut, silentOut int64
 
-	notSentGenerator, notSentStream, notSentConnection  int64
-	unanswered, cutOff, aborted, unknown                int64
+	notSentGenerator, notSentStream, notSentConnection int64
+	unanswered, cutOff, aborted, unknown               int64
+	// unknownNotSent is an unsent call whose cause nobody set. It is
+	// «Unclassified» in the export, like unknown, but kept apart so that
+	// Recent can count the unclassified call that went out and leave this
+	// one, which says nothing of the target, out.
+	unknownNotSent                                      int64
 	lagCalls, observedCalls                             int64
 	lagSum, lagMax, observedLag, transportWait, service time.Duration
 }
@@ -185,7 +190,7 @@ func (t *timeline) record(start time.Time, r Result) {
 		case BlockedOnConnection:
 			s.notSentConnection++
 		default:
-			s.unknown++
+			s.unknownNotSent++
 		}
 	case CategoryServerFault:
 		s.failure++
@@ -236,7 +241,7 @@ func (t *timeline) export() []Second {
 		s := &t.secs[i]
 		inFlight += s.begun - s.succeeded - s.overload - s.failure - s.clientError - s.badResponse - s.timedOut -
 			s.requestFailed - s.notSentGenerator -
-			s.notSentStream - s.notSentConnection - s.unanswered - s.cutOff - s.aborted - s.unknown
+			s.notSentStream - s.notSentConnection - s.unanswered - s.cutOff - s.aborted - s.unknown - s.unknownNotSent
 		out[i] = Second{
 			Begun:             int(s.begun),
 			Succeeded:         int(s.succeeded),
@@ -252,7 +257,7 @@ func (t *timeline) export() []Second {
 			Unanswered:        int(s.unanswered),
 			CutOff:            int(s.cutOff),
 			Aborted:           int(s.aborted),
-			Unclassified:      int(s.unknown),
+			Unclassified:      int(s.unknown + s.unknownNotSent),
 			InFlight:          int(inFlight),
 			LagSum:            s.lagSum,
 			LagMax:            s.lagMax,
@@ -265,6 +270,26 @@ func (t *timeline) export() []Second {
 	}
 
 	return out
+}
+
+// recent adds up the calls that finished in the whole seconds [from, to) of
+// the timeline, clamped to the reserved span: a second past it holds nothing,
+// because record leaves such a call out whole. failed is every call that went
+// out and was not a success or our own abort; calls that never went out are in
+// neither count.
+func (t *timeline) recent(from, to int) (failed, total int) {
+	from, to = max(from, 0), min(to, len(t.secs))
+
+	for i := from; i < to; i++ {
+		s := &t.secs[i]
+		bad := s.overload + s.failure + s.clientError + s.badResponse + s.timedOut + s.requestFailed +
+			s.unanswered + s.cutOff + s.unknown
+
+		failed += int(bad)
+		total += int(bad + s.succeeded)
+	}
+
+	return failed, total
 }
 
 // silentFrom is the first second, by send, from which to the end the target

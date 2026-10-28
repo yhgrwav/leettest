@@ -400,6 +400,7 @@ func invalidMeasurementNote(totals noteTotals) []string {
 // CPU the process used and the host clock.
 func runNotes(run RunReport) []string {
 	notes := reportNotesAfter(run.Report, run.MaxResponse, run.ramp())
+	notes = append(notes, stopNotes(run)...)
 	notes = append(notes, connectionNotes(run.Target, run.Connections)...)
 
 	if line := cpuNote(run.GeneratorCPU); line != "" {

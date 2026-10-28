@@ -13,6 +13,9 @@ app:
 
 load:
   ramp: 30s
+  # The run is stopped when a method's failures pass this share of its calls
+  # over the last 5 seconds (and are at least 2); real asks for it.
+  stop_on_errors: 5%
   warmup: 5s
   calls:
     - method: wallet.v1.WalletService/GetBalance

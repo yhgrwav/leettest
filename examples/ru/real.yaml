@@ -13,6 +13,9 @@ app:
 
 load:
   ramp: 30s
+  # Прогон останавливается, когда ошибки метода за последние 5 секунд превысят эту долю его
+  # вызовов (и их не меньше 2); real её требует.
+  stop_on_errors: 5%
   warmup: 5s
   calls:
     - method: wallet.v1.WalletService/GetBalance
