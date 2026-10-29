@@ -30,6 +30,13 @@ import (
 // badReplyDelay is how long the gzip stand waits before its reply.
 const badReplyDelay = 20 * time.Millisecond
 
+// badReplyFloor is the least latency a test asks of the stand's delay: half of
+// it. SentAt is taken after the transport accepted the request, by which time
+// the stand may already be sleeping, so DoneAt−SentAt can fall short of the
+// delay by the client goroutine's lateness (19.48ms of 20 in #358). It is
+// still far from the zero a sender stamping DoneAt as SentAt would give.
+const badReplyFloor = badReplyDelay / 2
+
 func replyHeaders(fr *http2.Framer, stream uint32, extra ...[2]string) {
 	var block bytes.Buffer
 	enc := hpack.NewEncoder(&block)
@@ -91,7 +98,7 @@ func TestSend_ABodyTheClientCannotDecompressIsABadResponse(t *testing.T) {
 	if out.CodeFromTarget {
 		t.Errorf("CodeFromTarget = true: the target said OK, the client set %s", out.Code)
 	}
-	if out.SentAt.IsZero() || out.DoneAt.Sub(out.SentAt) < badReplyDelay {
-		t.Errorf("SentAt %v, DoneAt %v: want at least the stand's %v, a bad response has a real latency", out.SentAt, out.DoneAt, badReplyDelay)
+	if out.SentAt.IsZero() || out.DoneAt.Sub(out.SentAt) < badReplyFloor {
+		t.Errorf("SentAt %v, DoneAt %v: want at least %v of the stand's %v, a bad response has a real latency", out.SentAt, out.DoneAt, badReplyFloor, badReplyDelay)
 	}
 }

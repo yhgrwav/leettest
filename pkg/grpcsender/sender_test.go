@@ -529,8 +529,10 @@ func TestSend_TimestampsComeFromTheTransport(t *testing.T) {
 	if !out.DoneAt.After(out.SentAt) {
 		t.Errorf("DoneAt %v is not after SentAt %v", out.DoneAt, out.SentAt)
 	}
-	if service := out.DoneAt.Sub(out.SentAt); service < serverDelay {
-		t.Errorf("service time = %v, want at least the server's %v", service, serverDelay)
+	// Half the delay, not all of it: SentAt is taken after the transport
+	// accepted the request, and the server may already be sleeping by then (#358).
+	if service := out.DoneAt.Sub(out.SentAt); service < serverDelay/2 {
+		t.Errorf("service time = %v, want at least half of the server's %v", service, serverDelay)
 	}
 }
 
