@@ -27,8 +27,8 @@ Windows 也受支持，但测量效果更差：它的时钟步长约 0.5 ms，�
 curl -fsSL https://raw.githubusercontent.com/yhgrwav/leettest/main/install.sh | sh
 ```
 
-脚本会把最新发布版安装到 `~/.local/bin` 并校验校验和。如果该目录不在 `PATH` 中，脚本会打印一行
-`export PATH=...`：在当前终端运行它，想长期生效就把它写进 shell 配置文件。`LEETTEST_INSTALL_DIR`
+脚本会把最新发布版安装到 `~/.local/bin` 并校验校验和。如果该目录不在 `PATH` 中，脚本会打印一行导出
+`PATH` 的命令：在当前终端运行它，想长期生效就把它写进 shell 配置文件。`LEETTEST_INSTALL_DIR`
 指定其他目录，`LEETTEST_VERSION` 指定其他版本；变量写在 `sh` 之前，而不是 `curl` 之前：
 
 ```sh

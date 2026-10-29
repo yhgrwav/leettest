@@ -55,7 +55,11 @@ go install github.com/yhgrwav/leettest/cmd/leettest@latest
 ```
 
 Prüfen: `leettest -version`. Wird der Befehl nach `go install` nicht gefunden —
-`export PATH="$PATH:$(go env GOPATH)/bin"`.
+nehmen Sie das Verzeichnis in den `PATH` auf:
+
+```sh
+export PATH="$PATH:$(go env GOPATH)/bin"
+```
 
 **Wo man es ausführt:** unter Linux neben dem Ziel — im selben Netz, im selben Cluster oder auf einem
 CI-Runner. Alles zwischen Generator und Ziel landet in der Latenz. Mehr in der

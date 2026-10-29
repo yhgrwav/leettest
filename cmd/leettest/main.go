@@ -205,6 +205,8 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 	defer abort()
 
 	var stopper atomic.Pointer[cli.Stopper]
+	// After the report a press ends the metrics linger, not the run.
+	var lingerPress atomic.Pointer[metricsExport]
 	// SIGTERM comes from an orchestrator, not a keyboard: no Ctrl+C hint then.
 	var terminated atomic.Bool
 
@@ -217,14 +219,18 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 			case <-finished:
 				return
 			case <-stops:
-				if s := stopper.Load(); s != nil {
+				if e := lingerPress.Load(); e != nil {
+					e.press()
+				} else if s := stopper.Load(); s != nil {
 					s.Press()
 				} else {
 					abort()
 				}
 			case <-aborts:
 				terminated.Store(true)
-				if s := stopper.Load(); s != nil {
+				if e := lingerPress.Load(); e != nil {
+					e.press()
+				} else if s := stopper.Load(); s != nil {
 					s.Abort()
 				} else {
 					abort()
@@ -251,6 +257,11 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 	}
 
 	sender, grpcSender, target, err := buildSender(cfg, flags.fake, flags.fakeDelay, flags.fakeJitter, flags.fakeFail)
+	if err != nil {
+		return err
+	}
+
+	expSettings, err := resolveExportSettings(cfg, flags)
 	if err != nil {
 		return err
 	}
@@ -282,6 +293,15 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 	// before the writer was wrapped.
 	if confirmErr := confirmReal(ctx, stderr, cfg, calls, target, flags.yes, terminal && stdinIsTerminal()); confirmErr != nil {
 		return confirmErr
+	}
+
+	var exp *metricsExport
+	if expSettings.on {
+		exp, err = openMetricsExport(expSettings, stderr)
+		if err != nil {
+			return err
+		}
+		defer exp.close()
 	}
 
 	// Methods nothing could be checked against: named again with the report,
@@ -319,6 +339,10 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 	eng, err := engine.New(opts)
 	if err != nil {
 		return err
+	}
+
+	if exp != nil {
+		exp.setEngine(eng)
 	}
 
 	settings, err := loadSettings(flags.interactive, stderr)
@@ -386,6 +410,9 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		stopMeter := meter.Start()
 		stopWatch := startWatch(ctx, watch)
 		err := eng.Run(ctx)
+		if exp != nil {
+			exp.finish()
+		}
 		stopWatch()
 		stopMeter()
 		stepAfter.Store(int64(clockStep()))
@@ -423,8 +450,17 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 
 	result := runResult(report, runErr)
 
+	if exp != nil && expSettings.linger > 0 {
+		lingerPress.Store(exp)
+		defer lingerPress.Store(nil)
+	}
+
 	if err := writeReport(stdout, s, label, target, flags.output, flags.jsonFile, report, result); err != nil {
 		return err
+	}
+
+	if exp != nil && expSettings.linger > 0 {
+		exp.serveFinal(ctx, stderr, expSettings.linger)
 	}
 
 	return result
@@ -446,6 +482,8 @@ type runFlags struct {
 	interactive    bool
 	flagLabels     map[string]string
 	flagSet        *flag.FlagSet
+	// metricsListen is -metrics-listen, empty when it was not given.
+	metricsListen string
 }
 
 // parseFlags reads the command line and checks it before anything else. done
@@ -468,6 +506,7 @@ func parseFlags(args []string, terminal bool, stdout, stderr io.Writer) (runFlag
 		output         = flags.String("output", "text", "report format on stdout: text, or json for scripts")
 		jsonFile       = flags.String("json-file", "", "also write the JSON report to this new file")
 		plain          = flags.Bool("plain", false, "no live screen: progress lines on stderr, as when stderr is not a terminal")
+		metricsListen  = flags.String("metrics-listen", "", "serve Prometheus metrics on this host:port during the run; overrides export.prometheus.listen and turns the export on")
 		labelArgs      labelFlags
 	)
 	flags.Var(&labelArgs, "label", "a key=value label for the report, repeatable; wins over the config's labels")
@@ -517,6 +556,7 @@ func parseFlags(args []string, terminal bool, stdout, stderr io.Writer) (runFlag
 		interactive:    interactive,
 		flagLabels:     flagLabels,
 		flagSet:        flags,
+		metricsListen:  *metricsListen,
 	}, false, nil
 }
 
