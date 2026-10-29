@@ -20,5 +20,6 @@ load:
     - method: wallet.v1.WalletService/GetBalance
       rps: 50
       duration: 10s
+      templates: true               # {{seq}} and {{uuid}} in data: a new value in each request
       data:                         # the request body, checked against the .proto before the run
-        wallet_id: w-42
+        wallet_id: "w-{{seq}}-{{uuid}}"  # quote it: the request number and a fresh uuid

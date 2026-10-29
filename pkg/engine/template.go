@@ -33,6 +33,16 @@ type Template struct {
 	Build func(seq uint64) []byte
 }
 
+// body is the body of the call's next request: seq is the requests handed out
+// so far plus one. No Build is a template that only counts, with an empty body.
+func (t *Template) body() []byte {
+	if t.Build == nil {
+		return nil
+	}
+
+	return t.Build(uint64(t.Counter.Handed()) + 1)
+}
+
 // NewTemplate is a template with a counter at zero.
 func NewTemplate(placeholders []string, limit uint64, build func(seq uint64) []byte) *Template {
 	return &Template{Placeholders: placeholders, Max: limit, Counter: NewRecordCounter(), Build: build}

@@ -491,6 +491,7 @@ func (c Call) Validate() error {
 		errs = append(errs, ErrDataAndDataset)
 	}
 	errs = append(errs, c.validateDatasetOrder()...)
+	errs = append(errs, c.validateTemplates()...)
 
 	return errors.Join(errs...)
 }

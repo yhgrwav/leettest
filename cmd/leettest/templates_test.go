@@ -129,7 +129,7 @@ func TestRun_TemplatesInTheJSON(t *testing.T) {
 		got := jsonAt(t, m, "templates")
 
 		switch name {
-		case unaryCallMethod:
+		case "/" + unaryCallMethod:
 			obj, ok := got.(map[string]any)
 			if !ok {
 				t.Errorf("%v: templates = %v, want an object", name, got)
@@ -148,7 +148,7 @@ func TestRun_TemplatesInTheJSON(t *testing.T) {
 			if obj["last_seq"] != 10.0 || obj["last_seq"] != sent+warm || obj["last_seq"].(float64) <= sent {
 				t.Errorf("%v: last_seq = %v, sent %v, warm-up %v; want 10 = sent + warm-up, more than sent", name, obj["last_seq"], sent, warm)
 			}
-		case checkMethod:
+		case "/" + checkMethod:
 			if got != nil {
 				t.Errorf("%v: templates = %v, want null", name, got)
 			}
@@ -381,7 +381,7 @@ func TestRun_TemplateConfigErrorsAreRefusedBeforeTheFirstRequest(t *testing.T) {
 		{
 			"templates with a dataset",
 			"      templates: true\n      dataset: '" + dataset + "'\n",
-			[]string{"templates work with data only"},
+			[]string{"templates work with `data` only"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

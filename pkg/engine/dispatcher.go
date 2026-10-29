@@ -81,6 +81,12 @@ func (d *Dispatcher) Run(ctx context.Context, out chan<- Request) error {
 			return &DatasetExhaustedError{Method: c.call.Method, File: c.call.Dataset.File}
 		}
 
+		if c.call.Template != nil {
+			if err := c.call.seqOverflow(); err != nil {
+				return err
+			}
+		}
+
 		select {
 		case <-ctx.Done():
 			return ctx.Err()

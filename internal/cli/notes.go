@@ -50,6 +50,7 @@ func reportNotesAfter(report engine.Report, maxResponse string, ramp time.Durati
 	notes = append(notes, rowNotes(report, totals, maxResponse)...)
 	notes = append(notes, capHitNote(report)...)
 	notes = append(notes, incompleteNote(report)...)
+	notes = append(notes, seqOverflowNote(report)...)
 	if v := streamVerdict(report); v != "" {
 		notes = append(notes, v)
 	}

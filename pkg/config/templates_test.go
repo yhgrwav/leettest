@@ -167,7 +167,7 @@ func TestParse_TemplatesUnknownBracesAreAnError(t *testing.T) {
 func TestParse_TemplatesTakeTextAroundPlaceholders(t *testing.T) {
 	for _, text := range []string{
 		"{{uuid}}", "{{seq}}", "order-{{seq}}", "{{uuid}}-{{seq}}", "a }} b {{seq}}", "}}{{seq}}",
-		"{seq}", "{uuid}", "a { b } c {{seq}}", "{{seq}}}}", "$ {{seq}}",
+		"{seq} {{seq}}", "{uuid} {{uuid}}", "a { b } c {{seq}}", "{{seq}}}}", "$ {{seq}}",
 	} {
 		t.Run(text, func(t *testing.T) {
 			if _, err := parseTemplated(t, templated("        note: \""+text+"\"\n")); err != nil {

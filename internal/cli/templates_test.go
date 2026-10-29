@@ -338,7 +338,7 @@ func TestAttachMethods_TemplateTwoUuidsInOneBodyAreTwoValues(t *testing.T) {
 	}
 
 	parts := regexp.MustCompile(`^([0-9a-f-]{36})-([0-9a-f-]{36})-1$`).FindStringSubmatch(note)
-	if parts == nil || !uuidV4.MatchString(parts[1]) || !uuidV4.MatchString(parts[2]) {
+	if len(parts) < 3 || !uuidV4.MatchString(parts[1]) || !uuidV4.MatchString(parts[2]) {
 		t.Fatalf("note = %q, want <uuid>-<uuid>-1", note)
 	}
 

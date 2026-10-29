@@ -108,6 +108,10 @@ func (s *Scheduler) runStage(ctx context.Context, out chan<- Request, stage Stag
 			return err
 		}
 
+		if err := s.Call.seqOverflow(); err != nil {
+			return err
+		}
+
 		// Built before the select, so a record is taken from S before the
 		// request leaves; S moves only after it has.
 		select {
