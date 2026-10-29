@@ -15,12 +15,18 @@
 package main
 
 import (
+	"errors"
+	"fmt"
+	"os"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/yhgrwav/leettest/internal/cli"
+	"github.com/yhgrwav/leettest/pkg/engine"
 )
 
 // templatedData is the data of a UnaryCall: a number of the request in an int32
@@ -78,13 +84,34 @@ func TestRun_TemplatesReachTheTargetOneSeqAndOneUuidPerRequest(t *testing.T) {
 	}
 }
 
-// Ground: contract (brief point 7) — the JSON names the placeholders used,
-// sorted; a call without templates has null, the key present.
+// withWarmup is the config at path with a warm-up in its load.
+func withWarmup(t *testing.T, path, warmup string) {
+	t.Helper()
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+
+	changed := strings.Replace(string(data), "load:\n", "load:\n  warmup: "+warmup+"\n", 1)
+	if changed == string(data) {
+		t.Fatal("the config has no load: line to put the warm-up under")
+	}
+	if err := os.WriteFile(path, []byte(changed), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+}
+
+// Ground: contract (brief point 7, reviewer T4) — the JSON names the
+// placeholders used, sorted, and the last seq handed out, which is more than
+// the counted requests by the warm-up's; a call without templates has null,
+// the key present.
 func TestRun_TemplatesInTheJSON(t *testing.T) {
 	target := startReflectingTarget(t)
 	cfg := dataConfig(t, target.addr,
-		"    - method: "+unaryCallMethod+"\n      rps: 10\n      duration: 300ms\n"+templatedData+
+		"    - method: "+unaryCallMethod+"\n      rps: 20\n      duration: 500ms\n"+templatedData+
 			"    - method: "+checkMethod+"\n      rps: 10\n      duration: 300ms\n")
+	withWarmup(t, cfg, "200ms")
 
 	res := runCLI(t.Context(), t, 10*time.Second, "-output", "json", "-c", cfg)
 	if res.err != nil {
@@ -103,9 +130,23 @@ func TestRun_TemplatesInTheJSON(t *testing.T) {
 
 		switch name {
 		case unaryCallMethod:
-			list, _ := got.([]any)
-			if len(list) != 2 || list[0] != "seq" || list[1] != "uuid" {
-				t.Errorf("%v: templates = %v, want [seq uuid]", name, got)
+			obj, ok := got.(map[string]any)
+			if !ok {
+				t.Errorf("%v: templates = %v, want an object", name, got)
+
+				continue
+			}
+			if list, _ := obj["placeholders"].([]any); len(list) != 2 || list[0] != "seq" || list[1] != "uuid" {
+				t.Errorf("%v: placeholders = %v, want [seq uuid]", name, obj["placeholders"])
+			}
+
+			sent, warm := jsonAt(t, m, "sent").(float64), jsonAt(t, m, "warmup_sent").(float64)
+			if warm == 0 {
+				t.Errorf("%v: no warm-up request went out: the test needs some", name)
+			}
+			// 20 rps for 500 ms hand out 10 requests, the warm-up's among them.
+			if obj["last_seq"] != 10.0 || obj["last_seq"] != sent+warm || obj["last_seq"].(float64) <= sent {
+				t.Errorf("%v: last_seq = %v, sent %v, warm-up %v; want 10 = sent + warm-up, more than sent", name, obj["last_seq"], sent, warm)
 			}
 		case checkMethod:
 			if got != nil {
@@ -182,6 +223,94 @@ func TestRun_ASearchGoesOnCountingThroughItsSteps(t *testing.T) {
 	}
 	if want := "last seq " + strconv.Itoa(len(sizes)) + ", ramp and warm-up counted)"; strings.Count(res.stdout, want) != 1 {
 		t.Errorf("stdout lacks %q exactly once:\n%s", want, res.stdout)
+	}
+}
+
+// A run the guard stopped is a soft stop, like Stop or an exhausted file: the
+// report is printed, the exit code is 3, and the error of the guard is not what
+// the command returns instead of it.
+// Ground: contract (reviewer T1) — exit 3 and a report, not exit 1 and nothing.
+// Mutation: the guard stops the run, the command returns its error, the report is lost.
+func TestRunResult_ASeqOverflowIsASoftStop(t *testing.T) {
+	run := cli.RunReport{Report: engine.Report{
+		Incomplete:  true,
+		SeqOverflow: &engine.SeqOverflow{Method: "/pkg.S/M", Limit: 2147483647},
+	}}
+	runErr := fmt.Errorf("%w: /pkg.S/M, limit 2147483647", engine.ErrSeqOverflow)
+
+	err := runResult(run, runErr)
+	if !errors.Is(err, ErrIncomplete) {
+		t.Fatalf("runResult = %v, want ErrIncomplete", err)
+	}
+	if got := exitCode(err); got != 3 {
+		t.Errorf("exit code %d, want 3", got)
+	}
+}
+
+// Ground: contract (reviewer T2) — the plan is checked against the field
+// before the first request: a config that hands out more than int32 holds is
+// exit 1 and the target sees nothing. The message names the method, the limit
+// and how many requests the plan hands out (1e6 rps for 3 h).
+// Mutation: CheckTemplatesFit is not called; seq wraps in int32.
+func TestRun_APlanPastTheFieldIsRefusedBeforeTheFirstRequest(t *testing.T) {
+	target := startReflectingTarget(t)
+	cfg := dataConfig(t, target.addr,
+		"    - method: "+unaryCallMethod+"\n      rps: 1000000\n      duration: 3h\n      timeout: 100ms\n"+
+			"      templates: true\n      data:\n        response_size: '{{seq}}'\n")
+
+	res := runCLI(t.Context(), t, 10*time.Second, "-max-in-flight", "5000000", "-c", cfg)
+
+	if got := exitCode(res.err); got != 1 {
+		t.Fatalf("exit code %d, want 1\nerr %v\nstderr:\n%s", got, res.err, res.stderr)
+	}
+
+	all := res.err.Error() + res.stderr
+	for _, want := range []string{strings.TrimPrefix(unaryCallMethod, "/"), "2147483647", "10800000000"} {
+		if !strings.Contains(all, want) {
+			t.Errorf("the error lacks %q (method, limit, requests the plan hands out):\n%s", want, all)
+		}
+	}
+	if n := len(target.recorder.allSimple()); n != 0 {
+		t.Errorf("the target saw %d requests of a refused plan", n)
+	}
+}
+
+// -fake has no schema: the numbers are counted and no body is built, as with a
+// dataset; the syntax of the placeholders is still checked, because that needs
+// no schema.
+// Ground: contract (reviewer T5) — what -fake promises of templates.
+// Mutation: -fake builds a body; -fake skips the syntax check.
+func TestRun_FakeCountsTemplatesAndBuildsNothing(t *testing.T) {
+	cfg := writeConfigWith(t, closedPort(t), checkMethod, plaintext,
+		"      templates: true\n      data:\n        service: 'wallet-{{uuid}}-{{seq}}'\n")
+
+	res := runCLI(t.Context(), t, 10*time.Second, "-fake", "-c", cfg)
+	if res.err != nil {
+		t.Fatalf("run: %v\nstderr:\n%s", res.err, res.stderr)
+	}
+	// 50 rps for 300 ms: 15 requests.
+	if want := "  data: templated, seq uuid (last seq 15, ramp and warm-up counted)\n"; !strings.Contains(res.stdout, want) {
+		t.Errorf("stdout lacks %q:\n%s", want, res.stdout)
+	}
+
+	res = runCLI(t.Context(), t, 10*time.Second, "-fake", "-output", "json", "-c", cfg)
+	if res.err != nil {
+		t.Fatalf("json run: %v", res.err)
+	}
+	obj, ok := jsonAt(t, decodeOnly(t, res.stdout), "methods").([]any)[0].(map[string]any)["templates"].(map[string]any)
+	if !ok || obj["last_seq"] != 15.0 {
+		t.Errorf("templates = %v, want an object with last_seq 15", obj)
+	}
+
+	bad := writeConfigWith(t, closedPort(t), checkMethod, plaintext,
+		"      templates: true\n      data:\n        service: 'wallet-{{nope}}'\n")
+
+	res = runCLI(t.Context(), t, 10*time.Second, "-fake", "-c", bad)
+	if got := exitCode(res.err); got != 1 {
+		t.Fatalf("a wrong placeholder under -fake: exit code %d, want 1\nerr %v", got, res.err)
+	}
+	if all := res.err.Error() + res.stderr; !strings.Contains(all, "{{nope}}") {
+		t.Errorf("the error does not name the placeholder:\n%s", all)
 	}
 }
 

@@ -266,6 +266,12 @@ func TestEngine_TemplateReportsTheLastSeqWarmupIncluded(t *testing.T) {
 	if m.Templates.LastSeq != 20 {
 		t.Fatalf("LastSeq = %d, want 20: warm-up requests count", m.Templates.LastSeq)
 	}
+	if m.Templates.LastSeq <= uint64(m.Sent) {
+		t.Fatalf("LastSeq = %d, Sent = %d: the last seq must pass the counted requests by the warm-up's", m.Templates.LastSeq, m.Sent)
+	}
+	if want := uint64(m.Sent + m.WarmupSent); m.Templates.LastSeq != want {
+		t.Fatalf("LastSeq = %d, want Sent + WarmupSent = %d", m.Templates.LastSeq, want)
+	}
 	if !slices.Equal(m.Templates.Placeholders, []string{"seq"}) {
 		t.Fatalf("Placeholders = %q, want [seq]", m.Templates.Placeholders)
 	}
@@ -279,6 +285,28 @@ func TestEngine_PlainCallHasNoTemplatesInTheReport(t *testing.T) {
 
 	if m.Templates != nil {
 		t.Fatalf("Templates = %+v on a call without templates", m.Templates)
+	}
+}
+
+// Ground: contract (reviewer T5) — a template with no Build is what -fake runs
+// with: the seq is counted and reported, the body is empty, nothing panics.
+// Mutation: -fake builds a body; a nil Build is called.
+func TestEngine_TemplateWithoutBuildCountsAndSendsAnEmptyBody(t *testing.T) {
+	tpl := NewTemplate([]string{"seq", "uuid"}, 0, nil)
+	sender := &payloadSender{}
+
+	report := runEngine(t, templateCall("a.B/One", tpl, atRate(200, 6)), 0, sender)
+
+	if m := report.Methods[0]; m.Templates == nil || m.Templates.LastSeq != 6 {
+		t.Fatalf("Templates = %+v, want LastSeq 6: the numbers are counted without a body", m.Templates)
+	}
+	for _, p := range sender.payloads() {
+		if p != "" {
+			t.Fatalf("the sender saw body %q, want an empty one", p)
+		}
+	}
+	if n := len(sender.payloads()); n != 6 {
+		t.Fatalf("the sender saw %d requests, want 6", n)
 	}
 }
 
@@ -360,6 +388,51 @@ func TestEngine_TemplateOverflowStopsTheRunBeforeTheFirstSeqThatDoesNotFit(t *te
 	}
 	if top := tpl.top.Load(); top > 3 {
 		t.Fatalf("Build was asked for seq %d, above the limit 3", top)
+	}
+}
+
+// Ground: contract (reviewer T1) — a run the guard stopped has a report: what
+// went out is counted, the run is incomplete, and the cause is named, so the
+// person who sees exit 3 sees why. The error is still the run's.
+// Mutation: the guard stops the run and the report says nothing of it.
+func TestEngine_TemplateOverflowLeavesAnIncompleteReportOfWhatWasSent(t *testing.T) {
+	tpl := newCountingTemplate(3)
+	sender := &payloadSender{}
+
+	eng, err := New(Options{
+		Calls:       []Call{templateCall("a.B/One", tpl.Template, atRate(200, 5))},
+		Sender:      sender,
+		MaxInFlight: 64,
+	})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	if runErr := eng.Run(t.Context()); !errors.Is(runErr, ErrSeqOverflow) {
+		t.Fatalf("run error = %v, want ErrSeqOverflow", runErr)
+	}
+
+	report := eng.Report()
+	if !report.Incomplete {
+		t.Error("Incomplete = false: the run ended before its plan")
+	}
+	if got := report.SeqOverflow; got == nil || got.Method != "a.B/One" || got.Limit != 3 {
+		t.Errorf("SeqOverflow = %+v, want the call a.B/One and the limit 3", got)
+	}
+	if m := report.Methods[0]; m.Sent != 3 {
+		t.Errorf("Sent = %d, want 3: the requests that went out are counted", m.Sent)
+	} else if m.Templates == nil || m.Templates.LastSeq != 3 {
+		t.Errorf("Templates = %+v, want LastSeq 3", m.Templates)
+	}
+}
+
+// Ground: contract — a run that ended in full has no overflow in its report.
+func TestEngine_TemplateFittingRunHasNoSeqOverflow(t *testing.T) {
+	tpl := newCountingTemplate(5)
+
+	report := runEngine(t, templateCall("a.B/One", tpl.Template, atRate(200, 5)), 0, &payloadSender{})
+
+	if report.SeqOverflow != nil || report.Incomplete {
+		t.Fatalf("SeqOverflow = %+v, Incomplete = %v, want neither for a run that fit", report.SeqOverflow, report.Incomplete)
 	}
 }
 

@@ -119,6 +119,7 @@ func orderMessage(t *testing.T) protoreflect.MessageDescriptor {
 					field("items", 20, msg, repeated, ".leettest.test.Child"),
 					field("attrs", 21, msg, repeated, ".leettest.test.Order.AttrsEntry"),
 					one("s64", 22, s64), one("f64", 23, f64), one("sf64", 24, sf64),
+					one("ref", 25, str),
 				},
 				NestedType: []*descriptorpb.DescriptorProto{{
 					Name:    proto.String("AttrsEntry"),
@@ -293,6 +294,72 @@ func TestAttachMethods_TemplatePlaceholdersInStringsAtAnyDepth(t *testing.T) {
 	}
 	if got := attrs.Get(protoreflect.ValueOfString("k2").MapKey()).String(); got != "x" {
 		t.Errorf("attrs[k2] = %q, want x", got)
+	}
+}
+
+// Ground: contract (reviewer T3) — what a whole "{{seq}}" is follows the field
+// by its descriptor: a number in a number field, the text "7" in a string field
+// (a request id, a tag), not a refusal and not a number.
+// Mutation: a whole "{{seq}}" is taken for a number whatever the field is.
+func TestAttachMethods_TemplateWholeSeqInAStringFieldIsText(t *testing.T) {
+	tpl := attachedOrder(t, map[string]any{
+		"ref":   "{{seq}}",
+		"count": "{{seq}}",
+		"tags":  []any{"{{seq}}"},
+		"attrs": map[string]any{"k": "{{seq}}"},
+	})
+
+	msg := decodeOrder(t, tpl.Build(7))
+
+	if got := fieldOf(msg, "ref").String(); got != "7" {
+		t.Errorf("ref = %q, want the text 7", got)
+	}
+	if got := fieldOf(msg, "count").Int(); got != 7 {
+		t.Errorf("count = %d, want the number 7", got)
+	}
+	if tags := fieldOf(msg, "tags").List(); tags.Len() != 1 || tags.Get(0).String() != "7" {
+		t.Errorf("tags = %v, want [7]", tags)
+	}
+	if got := fieldOf(msg, "attrs").Map().Get(protoreflect.ValueOfString("k").MapKey()).String(); got != "7" {
+		t.Errorf("attrs[k] = %q, want the text 7", got)
+	}
+}
+
+// Ground: contract (reviewer T6) — a {{uuid}} is one value where it stands: two
+// of them in one body are two uuids, the same seq notwithstanding.
+// Mutation: one uuid per request, written to every place.
+func TestAttachMethods_TemplateTwoUuidsInOneBodyAreTwoValues(t *testing.T) {
+	tpl := attachedOrder(t, map[string]any{"id": "{{uuid}}", "note": "{{uuid}}-{{uuid}}-{{seq}}"})
+
+	msg := decodeOrder(t, tpl.Build(1))
+	id, note := fieldOf(msg, "id").String(), fieldOf(msg, "note").String()
+	if !uuidV4.MatchString(id) {
+		t.Fatalf("id = %q, not a uuid", id)
+	}
+
+	parts := regexp.MustCompile(`^([0-9a-f-]{36})-([0-9a-f-]{36})-1$`).FindStringSubmatch(note)
+	if parts == nil || !uuidV4.MatchString(parts[1]) || !uuidV4.MatchString(parts[2]) {
+		t.Fatalf("note = %q, want <uuid>-<uuid>-1", note)
+	}
+
+	seen := map[string]bool{}
+	for _, u := range []string{id, parts[1], parts[2]} {
+		seen[u] = true
+	}
+	if len(seen) != 3 {
+		t.Errorf("3 places for a uuid, %d distinct values: %s %s %s", len(seen), id, parts[1], parts[2])
+	}
+
+	all := map[string]bool{}
+	for range 1000 {
+		m := decodeOrder(t, tpl.Build(1))
+		all[fieldOf(m, "id").String()] = true
+		for _, u := range regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f-]{27}`).FindAllString(fieldOf(m, "note").String(), -1) {
+			all[u] = true
+		}
+	}
+	if len(all) != 3000 {
+		t.Errorf("1000 builds of 3 uuids give %d distinct values, want 3000", len(all))
 	}
 }
 
@@ -472,13 +539,22 @@ func TestAttachMethods_TemplateMaxIsThatOfTheNarrowestNumberField(t *testing.T) 
 	}
 }
 
+// textFields are the names of the string fields of Order (and the map that
+// holds strings): a whole "{{seq}}" in one is the text "7", not the number.
+var textFields = map[string]bool{"id": true, "note": true, "ref": true, "tags": true, "name": true, "attrs": true}
+
 // substituted is data with every placeholder written out by plain string
 // replacement, the naive path of the spec: a whole "{{seq}}" becomes a number
-// (it is for a number field), any other string takes the text.
+// in a number field and the text in a string field (reviewer T3), any other
+// string takes the text.
 func substituted(v any, seq uint64, uuid string) any {
+	return substitutedIn(v, seq, uuid, false)
+}
+
+func substitutedIn(v any, seq uint64, uuid string, text bool) any {
 	switch x := v.(type) {
 	case string:
-		if x == "{{seq}}" {
+		if x == "{{seq}}" && !text {
 			return int64(seq)
 		}
 
@@ -486,14 +562,14 @@ func substituted(v any, seq uint64, uuid string) any {
 	case []any:
 		out := make([]any, len(x))
 		for i := range x {
-			out[i] = substituted(x[i], seq, uuid)
+			out[i] = substitutedIn(x[i], seq, uuid, text)
 		}
 
 		return out
 	case map[string]any:
 		out := make(map[string]any, len(x))
 		for k, e := range x {
-			out[k] = substituted(e, seq, uuid)
+			out[k] = substitutedIn(e, seq, uuid, text || textFields[k])
 		}
 
 		return out
@@ -512,9 +588,10 @@ func TestAttachMethods_TemplateBuildEqualsTheNaivePath(t *testing.T) {
 		"count": "{{seq}}",
 		"big":   "{{seq}}",
 		"child": map[string]any{"name": "c-{{seq}}", "n": "{{seq}}"},
-		"tags":  []any{"t-{{seq}}", "plain"},
+		"tags":  []any{"t-{{seq}}", "plain", "{{seq}}"},
 		"items": []any{map[string]any{"name": "i-{{seq}}"}, map[string]any{"name": "j", "n": 5}},
-		"attrs": map[string]any{"k": "v-{{seq}}", "k2": "x"},
+		"attrs": map[string]any{"k": "v-{{seq}}", "k2": "x", "k3": "{{seq}}"},
+		"ref":   "{{seq}}",
 	}
 	tpl := attachedOrder(t, data)
 	desc := orderMessage(t)
@@ -719,8 +796,9 @@ func TestReport_TemplatesLineStandsUnderItsOwnMethod(t *testing.T) {
 	}
 }
 
-// Ground: contract (brief point 7) — methods[].templates is the placeholders
-// used, sorted, or null; the key is always there; schema_version stays 1.
+// Ground: contract (brief point 7, reviewer T4) — methods[].templates is an
+// object, the placeholders used (sorted) and the last seq handed out, or null;
+// the key is always there; schema_version stays 1.
 func TestJSON_Templates(t *testing.T) {
 	out := writeJSON(t, jsonRun(engine.Report{Methods: []engine.MethodReport{
 		{Method: "/pkg.S/Templated", Sent: 1, Templates: &engine.TemplatesReport{Placeholders: []string{"seq", "uuid"}, LastSeq: 5}},
@@ -729,14 +807,77 @@ func TestJSON_Templates(t *testing.T) {
 
 	methods := field(t, out, "methods").([]any)
 
-	got, ok := field(t, methods[0], "templates").([]any)
-	if !ok || len(got) != 2 || got[0] != "seq" || got[1] != "uuid" {
-		t.Errorf("templated: templates = %v, want [seq uuid]", field(t, methods[0], "templates"))
+	got, ok := field(t, methods[0], "templates").(map[string]any)
+	if !ok {
+		t.Fatalf("templated: templates = %v, want an object", field(t, methods[0], "templates"))
+	}
+	if list, _ := got["placeholders"].([]any); len(list) != 2 || list[0] != "seq" || list[1] != "uuid" {
+		t.Errorf("templated: placeholders = %v, want [seq uuid]", got["placeholders"])
+	}
+	if got["last_seq"] != 5.0 {
+		t.Errorf("templated: last_seq = %v, want 5", got["last_seq"])
+	}
+	if len(got) != 2 {
+		t.Errorf("templated: templates = %v, want only placeholders and last_seq", got)
 	}
 	if v := field(t, methods[1], "templates"); v != nil {
 		t.Errorf("plain: templates = %v, want null", v)
 	}
 	if v := field(t, out, "schema_version"); v != 1.0 {
 		t.Errorf("schema_version = %v, want 1: a field was added, not changed", v)
+	}
+}
+
+func overflowedRun() RunReport {
+	run := reportWith(engine.MethodReport{
+		Method: "/pkg.S/Templated", Templates: &engine.TemplatesReport{Placeholders: []string{"seq"}, LastSeq: 2147483647},
+	})
+	run.Incomplete = true
+	run.SeqOverflow = &engine.SeqOverflow{Method: "/pkg.S/Templated", Limit: 2147483647}
+
+	return run
+}
+
+// Ground: contract (reviewer T1) — the person who sees exit 3 sees why: the
+// report names the call, the limit and what that means for the numbers.
+// Mutation: the report is printed without the cause of the stop.
+func TestReport_SeqOverflowNamesTheCallAndTheLimit(t *testing.T) {
+	var out strings.Builder
+	PrintReport(&out, "localhost:50051", overflowedRun())
+
+	for _, want := range []string{"pkg.S/Templated", "2147483647", "{{seq}}", "incomplete"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("the report lacks %q:\n%s", want, out.String())
+		}
+	}
+}
+
+// Ground: contract (reviewer T1) — the JSON says the same: stop_reason
+// "seq_overflow" and an object with the call and the limit; null when it did
+// not happen.
+func TestJSON_SeqOverflow(t *testing.T) {
+	run := overflowedRun()
+
+	out := writeJSON(t, JSONRun{
+		Target: "localhost:50051", Version: "v0.0.0-test", Outcome: OutcomeComplete,
+		StartedAt: jsonRun(engine.Report{}).StartedAt, Run: run,
+	})
+
+	if got := field(t, out, "stop_reason"); got != "seq_overflow" {
+		t.Errorf("stop_reason = %v, want seq_overflow", got)
+	}
+	if got := field(t, out, "seq_overflow", "method"); got != "/pkg.S/Templated" {
+		t.Errorf("seq_overflow.method = %v, want /pkg.S/Templated", got)
+	}
+	if got := field(t, out, "seq_overflow", "limit"); got != 2147483647.0 {
+		t.Errorf("seq_overflow.limit = %v, want 2147483647", got)
+	}
+
+	plain := writeJSON(t, jsonRun(engine.Report{}))
+	if got := field(t, plain, "seq_overflow"); got != nil {
+		t.Errorf("a run that fit: seq_overflow = %v, want null", got)
+	}
+	if got := field(t, plain, "stop_reason"); got != nil {
+		t.Errorf("a run that fit: stop_reason = %v, want null", got)
 	}
 }
