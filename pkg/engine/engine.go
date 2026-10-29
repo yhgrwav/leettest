@@ -55,13 +55,11 @@ type Call struct {
 
 // payload is the body of the call's next request: the record at S mod n, where
 // S is the number of requests the call has handed out so far. Reading S moves
-// nothing, so building a request does not use up its record.
+// nothing, so building a request does not use up its record. A templated call
+// does not come here (Scheduler.newRequest): the body check stays small enough
+// to be inlined, as it was before templates (BenchmarkNewRequest_Plain).
 func (c *Call) payload() []byte {
 	if c.Dataset == nil || len(c.Payloads) == 0 {
-		if c.Template != nil {
-			return c.Template.body()
-		}
-
 		return c.Payload
 	}
 
@@ -78,8 +76,6 @@ func (c *Call) payload() []byte {
 func (c *Call) handedOut() {
 	if c.Dataset != nil {
 		c.Dataset.Counter.add()
-	} else if c.Template != nil {
-		c.Template.Counter.add()
 	}
 }
 

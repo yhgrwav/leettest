@@ -97,6 +97,10 @@ func (d *Dispatcher) Run(ctx context.Context, out chan<- Request) error {
 		// never handed out used no record.
 		c.call.handedOut()
 
+		if c.call.Template != nil {
+			c.call.Template.handedOut()
+		}
+
 		c.i++
 		if c.advance() {
 			heap.Fix(&queue, 0)

@@ -43,6 +43,9 @@ func (t *Template) body() []byte {
 	return t.Build(uint64(t.Counter.Handed()) + 1)
 }
 
+// handedOut counts one request of the call as handed to a worker.
+func (t *Template) handedOut() { t.Counter.add() }
+
 // NewTemplate is a template with a counter at zero.
 func NewTemplate(placeholders []string, limit uint64, build func(seq uint64) []byte) *Template {
 	return &Template{Placeholders: placeholders, Max: limit, Counter: NewRecordCounter(), Build: build}

@@ -45,7 +45,7 @@ var uuidV4 = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-
 // orderMessage is a request with a field of every type a placeholder may meet:
 // strings at every depth, numbers of every width, and the types that take no
 // placeholder.
-func orderMessage(t *testing.T) protoreflect.MessageDescriptor {
+func orderMessage(t testing.TB) protoreflect.MessageDescriptor {
 	t.Helper()
 
 	const (
@@ -154,7 +154,7 @@ func orderCall(templates *bool, data map[string]any) config.Call {
 
 // attachOrder attaches data of the Order method as the run does and returns the
 // engine call and the error.
-func attachOrder(t *testing.T, call config.Call) (engine.Call, error) {
+func attachOrder(t testing.TB, call config.Call) (engine.Call, error) {
 	t.Helper()
 
 	cfg, calls := loadOf(call)
@@ -166,7 +166,7 @@ func attachOrder(t *testing.T, call config.Call) (engine.Call, error) {
 }
 
 // attachedOrder is attachOrder for a call that must be accepted and has a template.
-func attachedOrder(t *testing.T, data map[string]any) *engine.Template {
+func attachedOrder(t testing.TB, data map[string]any) *engine.Template {
 	t.Helper()
 
 	call, err := attachOrder(t, orderCall(templatesOn(), data))
@@ -469,6 +469,33 @@ func TestAttachMethods_TemplatesOffNumberPlaceholderIsARequestDataError(t *testi
 	}
 }
 
+// -fake has no schema: CallsFromConfig leaves a template that counts and has no
+// Build, so no body is made under -fake.
+// Ground: contract (reviewer T5) — -fake counts and does not build.
+// Mutation: -fake builds the body.
+func TestCallsFromConfig_ATemplateWithoutASchemaCountsAndBuildsNothing(t *testing.T) {
+	cfg := &config.MasterConfig{Load: config.Load{Calls: []config.Call{{
+		Method: orderMethod, RPS: 10, Duration: time.Second,
+		Data: map[string]any{"id": "{{uuid}}", "note": "n-{{seq}}"}, Templates: templatesOn(),
+	}}}}
+
+	calls, err := CallsFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("calls: %v", err)
+	}
+
+	tpl := calls[0].Template
+	if tpl == nil {
+		t.Fatal("the call has no template")
+	}
+	if tpl.Build != nil {
+		t.Errorf("Build is set: a call with no schema builds a body")
+	}
+	if !slices.Equal(tpl.Placeholders, []string{"seq", "uuid"}) {
+		t.Errorf("placeholders = %v, want [seq uuid]", tpl.Placeholders)
+	}
+}
+
 // Ground: contract — what the engine call carries: the placeholders the data
 // uses, sorted; a counter of its own; no ready body (the body is made per request).
 func TestAttachMethods_TemplateCallCarriesPlaceholdersAndCounter(t *testing.T) {
@@ -617,6 +644,51 @@ func TestAttachMethods_TemplateBuildEqualsTheNaivePath(t *testing.T) {
 			t.Fatalf("seq %d: built %x, the naive path gives %x", seq, got, want)
 		}
 	}
+}
+
+// benchBody is the nested, repeated and map body of the reference test, cut
+// down to what a real config carries: a few strings with a seq and a uuid.
+var benchBody = map[string]any{
+	"id":    "{{uuid}}",
+	"note":  "n-{{seq}}",
+	"count": "{{seq}}",
+	"child": map[string]any{"name": "c-{{seq}}", "n": "{{seq}}"},
+	"tags":  []any{"t-{{seq}}", "plain"},
+}
+
+// The build of one request, the fast path of the run against the naive one the
+// reference test compares it with (substitute, RequestBody, Marshal). The gain
+// of the fast path is the number in the report.
+func BenchmarkTemplateBuild(b *testing.B) {
+	tpl := attachedOrder(b, benchBody)
+
+	b.Run("fast", func(b *testing.B) {
+		b.ReportAllocs()
+
+		var seq uint64
+
+		for b.Loop() {
+			seq++
+			_ = tpl.Build(seq)
+		}
+	})
+
+	b.Run("naive", func(b *testing.B) {
+		desc := orderMessage(b)
+		uuid := "0f8fad5b-d9cb-469f-a165-70867728950e"
+
+		b.ReportAllocs()
+
+		var seq uint64
+
+		for b.Loop() {
+			seq++
+
+			if _, err := RequestBody(desc, substituted(benchBody, seq, uuid)); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }
 
 func orderStages(rps int, d time.Duration) []engine.Stage {
