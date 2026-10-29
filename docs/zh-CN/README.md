@@ -15,7 +15,7 @@
 
 ---
 
-> 译自 [README.md](../../README.md)，对应 e4663f1，2026-10-27。如有出入，以俄文版为准。
+> 译自 [README.md](../../README.md)，对应 4c1eb2e，2026-10-29。如有出入，以俄文版为准。
 > 另附中文文档目录，俄文原文中没有。
 > **可能滞后：** 中文版在每次发布前同步，最新内容请看[英文版](../en/README.md)。
 
@@ -493,6 +493,10 @@ leettest compare -max-p99-rise 20% -output json before.json after.json
 [提交 issue](https://github.com/yhgrwav/leettest/issues/new/choose)。
 
 **[参考手册 →](reference.md)**——每个配置字段和命令行参数。
+
+**[Prometheus 指标 →](reference.md#prometheus-指标)**（未发布）——运行在加压期间提供 `/metrics`，
+Prometheus 把它和服务自身的指标放在一起抓取。没有默认地址，`15s` 的 `linger` 会拖延退出：请阅读该
+节中的警告。
 
 | 问题 | |
 |---|---|

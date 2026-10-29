@@ -3,7 +3,7 @@
 [Русский](../ru/reference.md) · [English](../en/reference.md) · [Deutsch](reference.md) · [简体中文](../zh-CN/reference.md)
 [← Startseite](README.md)
 
-> Übersetzt aus [docs/ru/reference.md](../ru/reference.md) bei e4663f1, 2026-10-27. Bei
+> Übersetzt aus [docs/ru/reference.md](../ru/reference.md) bei 4c1eb2e, 2026-10-29. Bei
 > Abweichungen gilt die russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/reference.md).
@@ -63,6 +63,8 @@ load:
 | `load.calls[].pass` | Die Grenzen, die ein Lauf einhalten muss, um zu bestehen: `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, siehe [unten](#grenzen-pass). Weggelassen — keine Grenzen |
 | `load.breakpoint.pass` | Die Grenze einer Bruchpunkt-Suche: `held_rps`, siehe [unten](#grenzen-pass). Weggelassen — keine Grenze |
 | `load.breakpoint.errors_limit` | Ein Prozentwert wie `1%` oder `0.5%`, bis zu drei Stellen nach dem Punkt, höchstens `100%`. Eine Stufe der Suche bricht, wenn mehr als dieser Anteil der Aufrufe fehlschlug; genau so viel wird gehalten. Weggelassen — `1%` |
+| `export.prometheus.listen` | Das `host:port`, auf dem der Lauf `/metrics` ausliefert, solange die Last läuft, siehe [unten](#prometheus-metriken); Port `0` nimmt einen freien, die gewählte Adresse steht auf stderr. Kein Standard: Die Adresse kommt von diesem Schlüssel oder von `-metrics-listen`, und `export.prometheus` ohne beides ist ein Fehler. Ein Beispiel ist `127.0.0.1:9464`. **`:9464` öffnet den Port auf allen Interfaces ohne Passwort**, und der Body enthält Methodennamen und Ihre `labels`. Ein Schlüssel ohne Wert ist ein Fehler. Nicht zusammen mit `load.breakpoint` und `-dry-run`. (nicht veröffentlicht) |
+| `export.prometheus.linger` | Wie lange der Endpunkt nach dem Ende des Laufs die Endwerte weiter ausliefert, damit der letzte Scrape sie sieht. Weggelassen — `15s`; `0` — nicht halten. **`15s` verzögert das Ende jedes Laufs, setzen Sie in CI `0`.** Ein Schlüssel ohne Wert ist ein Fehler. Nur zusammen mit `export.prometheus.listen` oder `-metrics-listen`. (nicht veröffentlicht) |
 
 Die Konfiguration wird streng gelesen: Ein Tippfehler in einem Feldnamen ist ein Fehler mit der
 Zeilennummer, ein falscher Wert ein Fehler mit Nummer und Methode des Aufrufs, kein Lauf mit leerer
@@ -352,6 +354,7 @@ ein Anhalten lässt Datensätze ungesendet.
 | `-output` | Berichtsformat auf stdout: `text` (Standard) oder `json` für Skripte und CI |
 | `-json-file` | Pfad einer neuen Datei: der JSON-Bericht (dasselbe Objekt wie bei `-output json`) wird hineingeschrieben, stdout bleibt, wie `-output` es sagt. Eine vorhandene Datei oder ein fehlendes Verzeichnis ist Exit 1 vor dem Start. Ein Lauf ohne Bericht hinterlässt keine Datei. Ein fehlgeschlagenes Schreiben ist Exit 1 |
 | `-label` | Ein Label `key=value` für den Pass des Berichts; mehrfach angebbar. Es gewinnt gegen denselben Schlüssel in `labels` der Konfiguration. Ein doppelt angegebener Schlüssel oder einer, der die Regeln für Schlüssel und Wert verletzt, ist Exit 1 vor dem Start |
+| `-metrics-listen` | `host:port`: `/metrics` auf dieser Adresse ausliefern, solange die Last läuft; gewinnt gegen `export.prometheus.listen` und schaltet den Export von selbst ein, Details [unten](#prometheus-metriken). Port `0` nimmt einen freien. **`:9464` öffnet den Port auf allen Interfaces ohne Passwort**; ein sicheres Beispiel ist `127.0.0.1:9464`. Nicht zusammen mit `-dry-run` und `load.breakpoint`. (nicht veröffentlicht) |
 | `-connect-timeout` | Wie lange auf einen Dienst gewartet wird, der die Verbindung angenommen hat, aber schweigt. Standard `10s`. Auf eine abgelehnte Verbindung und eine falsche Adresse wird nicht gewartet |
 | `-max-in-flight` | Grenze für Anfragen, die auf eine Antwort warten. Standard `5000` |
 | `-plain` | Ohne Live-Bildschirm: eine Fortschrittszeile pro Sekunde auf stderr, wie ohne Terminal, und ohne den Dialog beim ersten Start. Der Bericht und die Exit-Codes sind dieselben |
@@ -360,6 +363,50 @@ ein Anhalten lässt Datensätze ungesendet.
 | `-fake` | Statt des Dienstes aus der Konfiguration einen eingebauten Platzhalter belasten — um das Werkzeug ohne Dienst anzusehen. Der Bericht ist als `fake target` markiert |
 | `-fake-delay`, `-fake-jitter`, `-fake-fail-ratio` | Das Verhalten des Platzhalters. Nur zusammen mit `-fake` |
 | `-version` | Version ausgeben und beenden. Ein Build aus dem Quellcode gibt den Commit aus |
+
+## Prometheus-Metriken
+
+(nicht veröffentlicht) Ein Lauf mit `export.prometheus.listen` oder `-metrics-listen` liefert
+`/metrics` (Textformat 0.0.4) auf dieser Adresse aus, solange die Last läuft; andere Pfade gibt es
+nicht. Die Adresse wird belegt, bevor der Dienst angesprochen wird, ein belegter Port ist also ein
+Fehler vor dem Start. Die Werte werden höchstens einmal pro Sekunde neu berechnet; nach dem Ende
+des Laufs werden sie noch einmal berechnet, die Endwerte, und der Endpunkt hält sie für `linger`.
+Ein Beispiel ist [`examples/ru/export.yaml`](../../examples/ru/export.yaml) (die Kommentare sind
+russisch; die englische Fassung ist [`examples/export.yaml`](../../examples/export.yaml)).
+
+| Serie | Typ | Labels | Was es ist |
+|---|---|---|---|
+| `leettest_planned_rps` | gauge | `method` | Die geplante Rate der Methode in diesem Moment, Aufrufe pro Sekunde; `0` nach dem Ende des Plans |
+| `leettest_calls_total` | counter | `method`, `category` | Gemessene Aufrufe in allen 11 Kategorien des Berichts. Das Aufwärmen ist nicht enthalten. Ein Aufruf zählt, wenn er abgeschlossen ist |
+| `leettest_latency_seconds` | histogram | `method`, `le` | Latenz nur der erfolgreichen Aufrufe, ab dem geplanten Moment. Das Aufwärmen ist nicht enthalten |
+| `leettest_censored_total` | counter | `method`, `category` | `timed_out` und `aborted`: keine Antwort, die Latenz ist nur eine untere Schranke, im Histogramm sind sie nicht. Dieselben Aufrufe stehen auch in `leettest_calls_total` |
+| `leettest_excluded_total` | counter | `method`, `category` | `unreachable`, `cut_off`, `client_error`, `unclassified`: keine brauchbare Latenz, im Histogramm sind sie nicht. Dieselben Aufrufe stehen auch in `leettest_calls_total` |
+| `leettest_not_sent_total` | counter | `method`, `cause` | Aufrufe, die den Generator nie verlassen haben, nach der Ursache auf der Client-Seite: `generator`, `connection`, `stream` |
+| `leettest_in_flight` | gauge | — | Aufrufe, die jetzt unterwegs sind, alle Methoden |
+| `leettest_warmup_sent_total` | counter | `method` | Während des Aufwärmens gesendet. In keinem anderen Zähler sind diese Aufrufe |
+| `leettest_warmup` | gauge | — | `1`, solange der Lauf im Aufwärmen ist, sonst `0` |
+
+Die `labels` der Konfiguration und `-label` kommen an jede Serie. Ein Label-Name muss ein
+Prometheus-Label-Name sein: `[a-zA-Z_][a-zA-Z0-9_]*`, nicht mit `__` beginnen und nicht `method`,
+`category`, `cause` oder `le` sein; sonst ist es ein Fehler vor dem Start. Der Bericht nimmt auch
+Schlüssel mit `.` und `-` an, der Export nicht.
+
+**Was man im Kopf behalten sollte.**
+
+- Es gibt keine Standardadresse. `127.0.0.1:9464` hört nur dieser Rechner; `:9464` hören alle
+  Interfaces, und ohne Passwort: Der Body enthält Methodennamen und Ihre Labels.
+- `linger` ist standardmäßig `15s` und verzögert das Ende jedes Laufs. Setzen Sie in CI `linger: 0`.
+- Ist das `scrape_interval` von Prometheus länger als `linger`, kann der letzte Scrape das Fenster
+  verpassen. Setzen Sie `linger` nicht kleiner als das Scrape-Intervall.
+- Strg-C oder SIGTERM während `linger` beendet es. Der Exit-Code bleibt der des Laufs.
+- Die Histogramm-Buckets sind fest: 1, 2,5 und 5 pro Dekade, von 100 µs bis 60 s, plus `+Inf`.
+  `histogram_quantile` interpoliert innerhalb eines Buckets und unterscheidet unter 100 µs nichts:
+  Auf einem Stand ohne Verzögerung (Windows, Loopback) fielen 5,3 % der erfolgreichen Aufrufe in
+  den untersten Bucket; unter Linux wird die Zahl eine andere sein, aber bei einem schnellen Ziel
+  kann ein spürbarer Anteil dort landen. Nehmen Sie die Zahlen für eine Schlussfolgerung aus dem
+  p99 des Berichts, er ist aus HDR berechnet und hängt nicht von den Buckets ab; Grafana zeigt die
+  Form der Verteilung. Eine Beispielabfrage:
+  `histogram_quantile(0.99, sum by (le, method) (rate(leettest_latency_seconds_bucket[30s])))`.
 
 ## Prüfen vor der Last
 
