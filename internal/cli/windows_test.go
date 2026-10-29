@@ -15,6 +15,7 @@
 package cli
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 	"testing"
@@ -400,6 +401,33 @@ func TestWindowsJSON_NothingButTheWindowsChangesWithThem(t *testing.T) {
 	}
 	if fmt.Sprint(with) != fmt.Sprint(without) {
 		t.Errorf("JSON differs beyond the windows:\nwith:    %v\nwithout: %v", with, without)
+	}
+}
+
+// Ground: contract (A5, T8) — compare_runs reads the totals of a report file;
+// windows put there as garbage change neither its text nor its verdicts.
+// Green on the stub: the file type already carries the field and a code that
+// started to read it is what this one is for.
+func TestWindowsJSON_CompareRunsDoesNotReadTheWindows(t *testing.T) {
+	garbage := []jsonWindow{
+		{StartUS: 0, WidthUS: 1_000_000, Sent: 999_999, Failed: 999_999, P99US: new(int64(9_999_999_999)), P99Bound: true},
+		{StartUS: 1_000_000, WidthUS: 1_000_000},
+	}
+
+	compared := func(windows []jsonWindow) (string, Comparison) {
+		base, now := crBase().file(t, "base.json"), crNew().file(t, "new.json")
+		now.Report.Methods[0].Windows = windows
+
+		var out bytes.Buffer
+		c := CompareRuns(&out, base, now, crLimit(t, "-max-p99-rise", "10%"), crLimit(t, "-max-errors-rise", "10%"))
+
+		return out.String(), c
+	}
+
+	wantOut, wantResult := compared(nil)
+	gotOut, gotResult := compared(garbage)
+	if gotOut != wantOut || gotResult != wantResult {
+		t.Errorf("windows changed the comparison:\nwith:    %s %+v\nwithout: %s %+v", gotOut, gotResult, wantOut, wantResult)
 	}
 }
 
