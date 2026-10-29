@@ -3,7 +3,7 @@
 [Русский](../ru/reference.md) · [English](../en/reference.md) · [Deutsch](../de/reference.md) · [简体中文](reference.md)
 [← 首页](README.md)
 
-> 译自 [docs/ru/reference.md](../ru/reference.md)，对应 e4663f1，2026-10-27。如有出入，以俄文版为准。
+> 译自 [docs/ru/reference.md](../ru/reference.md)，对应 4c1eb2e，2026-10-29。如有出入，以俄文版为准。
 > **可能滞后：** 中文版在每次发布前同步，最新内容请看[英文版](../en/reference.md)。
 
 每个配置字段、每个命令行参数，以及工具在启动前检查什么。如何阅读报告见
@@ -61,6 +61,8 @@ load:
 | `load.calls[].pass` | 运行要通过必须满足的限值：`p50`、`p90`、`p95`、`p99`、`p999`、`errors`，见[下文](#pass-限值)。省略时没有限值 |
 | `load.breakpoint.pass` | 崩溃点搜索的限值：`held_rps`，见[下文](#pass-限值)。省略时没有限值 |
 | `load.breakpoint.errors_limit` | 形如 `1%` 或 `0.5%` 的百分数，小数点后最多三位，不超过 `100%`。失败调用占比超过它时，搜索的这一级就崩溃；恰好等于它则算撑住。省略时为 `1%` |
+| `export.prometheus.listen` | 运行在加压期间提供 `/metrics` 的 `host:port`，见[下文](#prometheus-指标)；端口 `0` 取一个空闲端口，选中的地址会打印到 stderr。没有默认值：地址来自这个键或 `-metrics-listen`，只写 `export.prometheus` 而两者皆无是错误。示例：`127.0.0.1:9464`。**`:9464` 会在所有网卡上开放端口且没有密码**，响应体中有方法名和你的 `labels`。写了键却没有值是错误。不能与 `load.breakpoint` 和 `-dry-run` 同用。（未发布） |
+| `export.prometheus.linger` | 运行结束后，端点继续提供最终数值多久，好让最后一次抓取看到它们。省略时为 `15s`；`0` 表示不保留。**`15s` 会拖延每次运行的退出，在 CI 中请设为 `0`。** 写了键却没有值是错误。只能与 `export.prometheus.listen` 或 `-metrics-listen` 一起使用。（未发布） |
 
 配置严格解析：字段名拼写错误会报错并给出行号，取值错误会报错并给出调用的序号和方法，而不是以空负载
 运行。`rps` 是整数：`10.5` 会被拒绝，而不是悄悄取整为十。`warmup` 必须短于每个调用，否则该调用
@@ -297,6 +299,7 @@ seed 在启动时选取，每个调用各有一个。
 | `-output` | stdout 上的报告格式：`text`（默认）或供脚本和 CI 使用的 `json` |
 | `-json-file` | 新文件的路径：JSON 报告（与 `-output json` 输出的对象相同）写入该文件，stdout 仍按 `-output` 的设定。文件已存在或目录不存在，则在开始前退出码 1。没有报告的运行不留下文件。写入失败为退出码 1 |
 | `-label` | 给报告“护照”的 `key=value` 标签；可重复使用。与配置 `labels` 中的同名键冲突时以它为准。同一个键给两次，或违反键、值规则，都在开始前退出码 1 |
+| `-metrics-listen` | `host:port`：在加压期间于该地址提供 `/metrics`；优先于 `export.prometheus.listen`，并自动开启导出，详见[下文](#prometheus-指标)。端口 `0` 取一个空闲端口。**`:9464` 会在所有网卡上开放端口且没有密码**；安全的示例是 `127.0.0.1:9464`。不能与 `-dry-run` 和 `load.breakpoint` 同用。（未发布） |
 | `-connect-timeout` | 服务接受了连接却不应答时等待多久。默认 `10s`。连接被拒绝和地址错误不会等待 |
 | `-max-in-flight` | 等待应答的请求数上限。默认 `5000` |
 | `-plain` | 不用实时屏幕：每秒一行进度输出到 stderr，与没有终端时相同，并且没有首次运行的对话。报告和退出码不变 |
@@ -305,6 +308,45 @@ seed 在启动时选取，每个调用各有一个。
 | `-fake` | 用内置的桩代替配置中的服务施压——无需服务即可查看工具。报告会标记为 `fake target` |
 | `-fake-delay`、`-fake-jitter`、`-fake-fail-ratio` | 桩的行为。只能与 `-fake` 一起使用 |
 | `-version` | 输出版本并退出。从源码构建时输出提交哈希 |
+
+## Prometheus 指标
+
+（未发布）带有 `export.prometheus.listen` 或 `-metrics-listen` 的运行，会在加压期间于该地址提供
+`/metrics`（文本格式 0.0.4），没有其他路径。地址在询问服务之前就被占用，所以端口被占用时在开始前
+报错。数值每秒最多重新计算一次；运行结束后再计算一次，即最终数值，端点在 `linger` 期间保持它。示例
+见 [`examples/ru/export.yaml`](../../examples/ru/export.yaml)（注释为俄文；英文版是
+[`examples/export.yaml`](../../examples/export.yaml)）。
+
+| 序列 | 类型 | 标签 | 含义 |
+|---|---|---|---|
+| `leettest_planned_rps` | gauge | `method` | 该方法此刻的计划速率，每秒调用数；计划结束后为 `0` |
+| `leettest_calls_total` | counter | `method`, `category` | 报告全部 11 个类别的已测量调用。不含预热。调用在完成时计数 |
+| `leettest_latency_seconds` | histogram | `method`, `le` | 仅成功调用的延迟，从计划时刻算起。不含预热 |
+| `leettest_censored_total` | counter | `method`, `category` | `timed_out` 和 `aborted`：没有应答，延迟只是下界，不在直方图中。这些调用同样计入 `leettest_calls_total` |
+| `leettest_excluded_total` | counter | `method`, `category` | `unreachable`、`cut_off`、`client_error`、`unclassified`：没有可用的延迟，不在直方图中。这些调用同样计入 `leettest_calls_total` |
+| `leettest_not_sent_total` | counter | `method`, `cause` | 未离开生成器的调用，按客户端一侧的原因分：`generator`、`connection`、`stream` |
+| `leettest_in_flight` | gauge | — | 此刻在途的调用，所有方法合计 |
+| `leettest_warmup_sent_total` | counter | `method` | 预热期间发出的调用。这些调用不在任何其他计数器中 |
+| `leettest_warmup` | gauge | — | 运行处于预热时为 `1`，否则为 `0` |
+
+配置的 `labels` 和 `-label` 会加到每个序列上。标签名必须是合法的 Prometheus 标签名：
+`[a-zA-Z_][a-zA-Z0-9_]*`，不能以 `__` 开头，也不能是 `method`、`category`、`cause`、`le`；否则在
+开始前报错。报告也接受含 `.` 和 `-` 的键，导出不接受。
+
+**需要记住的几点。**
+
+- 没有默认地址。`127.0.0.1:9464` 只有本机能连；`:9464` 所有网卡都能连，且没有密码：响应体中有
+  方法名和你的标签。
+- `linger` 默认为 `15s`，会拖延每次运行的退出。在 CI 中请设 `linger: 0`。
+- 如果 Prometheus 的 `scrape_interval` 比 `linger` 长，最后一次抓取可能落在窗口之外。请把 `linger`
+  设得不小于抓取间隔。
+- 在 `linger` 期间按 Ctrl-C 或收到 SIGTERM 会结束它。退出码仍是运行本身的退出码。
+- 直方图的桶是固定的：每个数量级取 1、2.5、5，从 100 µs 到 60 s，再加 `+Inf`。
+  `histogram_quantile` 在桶内插值，低于 100 µs 的差别它分辨不出：在零延迟的测试台上（Windows，
+  回环），5.3% 的成功调用落进了最低的桶；在 Linux 上数字会不同，但对很快的目标，可能有可观的比例
+  落在那里。下结论用的数字请取报告的 p99，它由 HDR 算出，与桶无关；Grafana 显示的是分布的形状。
+  查询示例：
+  `histogram_quantile(0.99, sum by (le, method) (rate(leettest_latency_seconds_bucket[30s])))`。
 
 ## 压测前检查
 

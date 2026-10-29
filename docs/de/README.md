@@ -15,7 +15,7 @@
 
 ---
 
-> Übersetzt aus [README.md](../../README.md) bei e4663f1, 2026-10-27. Bei Abweichungen gilt die
+> Übersetzt aus [README.md](../../README.md) bei 4c1eb2e, 2026-10-29. Bei Abweichungen gilt die
 > russische Fassung. Dazu ein Verzeichnis der deutschen Dokumentation, das im Original fehlt.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/README.md).
@@ -581,6 +581,11 @@ Für das Produkt gibt es einen Plan — **[roadmap](roadmap.md)**. Fehlt Ihnen e
 [eröffnen Sie ein Issue](https://github.com/yhgrwav/leettest/issues/new/choose).
 
 **[Referenz →](reference.md)** — jedes Konfigurationsfeld und Flag.
+
+**[Prometheus-Metriken →](reference.md#prometheus-metriken)** (nicht veröffentlicht) — der Lauf
+liefert `/metrics` aus, solange die Last läuft, und Prometheus scrapt es neben den eigenen Metriken
+des Dienstes. Es gibt keine Standardadresse, und ein `linger` von 15 s verzögert das Ende: Lesen Sie
+die Warnungen in diesem Abschnitt.
 
 | Frage | |
 |---|---|
