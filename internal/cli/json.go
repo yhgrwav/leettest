@@ -359,6 +359,21 @@ type jsonMethod struct {
 	Dataset               *jsonDataset      `json:"dataset"`
 	Templates             *jsonTemplates    `json:"templates"`
 	Seconds               []jsonSecond      `json:"seconds"`
+	Windows               []jsonWindow      `json:"windows"`
+}
+
+// jsonWindow is one time window of a method, counted from the end of the
+// warm-up. P50US and P99US are null in a window without observations;
+// P99Bound is true when the window's p99 is a lower bound (a censored
+// observation reaches it). The numbers are display only.
+type jsonWindow struct {
+	StartUS  int64  `json:"start_us"`
+	WidthUS  int64  `json:"width_us"`
+	Sent     int    `json:"sent"`
+	Failed   int    `json:"failed"`
+	P50US    *int64 `json:"p50_us"`
+	P99US    *int64 `json:"p99_us"`
+	P99Bound bool   `json:"p99_bound"`
 }
 
 // jsonSecond counts each category under its Category.Name, but for success.
@@ -629,6 +644,8 @@ func jsonMethodOf(m *engine.MethodReport, warmup time.Duration) jsonMethod {
 		FailureCodes: make([]jsonCode, 0, len(m.FailureCodes)),
 		SilentFromS:  m.SilentFrom,
 		Seconds:      make([]jsonSecond, 0, len(m.Seconds)),
+		// Stub: the windows are not copied until they are implemented.
+		Windows: make([]jsonWindow, 0),
 	}
 	// The rate belongs to a silence: none without one.
 	if m.SilentFrom != nil {

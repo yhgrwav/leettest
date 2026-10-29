@@ -230,6 +230,9 @@ type Options struct {
 	Warmup      time.Duration
 	// WaitFloor replaces StreamWaitFloor when set: see WaitFloorFor.
 	WaitFloor time.Duration
+	// Windows asks for the report's time windows over the measured part of the
+	// run. Off, a run holds none: a step of a breakpoint search leaves it off.
+	Windows bool
 }
 
 type Engine struct {

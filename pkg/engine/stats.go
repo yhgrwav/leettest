@@ -216,6 +216,13 @@ type MethodReport struct {
 	// could not be placed on it; InvalidLag, calls begun before their schedule.
 	OutsideTimeline int
 	InvalidLag      int
+	// Windows is the measured part of the run cut into slices, see Window; nil
+	// when the run did not ask for them (Options.Windows) or nothing was
+	// covered. Display only: no total, threshold or verdict reads it.
+	Windows []Window
+	// OutsideWindows counts measured calls scheduled outside every window. A
+	// call is never moved into the nearest one; a normal run has none.
+	OutsideWindows int
 	// TimedOut counts calls that went out and got no answer within their
 	// timeout; UnsentTimedOut, timeouts of calls that never went out, which
 	// say nothing about the target.

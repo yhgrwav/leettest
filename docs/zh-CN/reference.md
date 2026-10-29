@@ -540,6 +540,7 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `methods[].templates.placeholders` | []string | `data` 用到的占位符，已排序：`seq`、`uuid`。（未发布） |
 | `methods[].templates.last_seq` | int | 该调用在进程内交给发送方的请求数，爬坡和预热计入在内：即最后一个的序号。搜索中统计整个搜索。（未发布） |
 | `methods[].seconds` | []object | 按秒的时间线，见下文 |
+| `methods[].windows` | []object | 运行的测量部分，最多分为 60 个窗口，见下文；运行没有窗口时为 `[]`（崩溃点搜索的一步，或没有测到任何内容）。（未发布） |
 
 ### 秒：`methods[].seconds[]`
 
@@ -556,6 +557,21 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `methods[].seconds[].lag_calls`、`methods[].seconds[].lag_sum_us`、`methods[].seconds[].lag_max_us` | int | 对计划在该秒的调用：数量、启动延迟之和与最大值 |
 | `methods[].seconds[].observed_calls` | int | 其中成功的调用 |
 | `methods[].seconds[].observed_lag_sum_us`、`methods[].seconds[].transport_wait_sum_us`、`methods[].seconds[].service_time_sum_us` | int | 对成功的调用：启动延迟之和、发送前等待（连接和流）之和、从发送到应答的时间之和。三者相加即为它们的延迟 |
+
+### 窗口：`methods[].windows[]`
+
+窗口把运行的测量部分（从预热结束算起）切成每段 `max(1 秒, 测量部分 / 60)`（向上取整）的片段。
+调用属于其计划时间所在的窗口，无论它何时结束。仅用于显示：总数、阈值和结论都不读取它们，
+窗口的 p50 和 p99 只有两位有效数字，因此不与整体值按最后一位比较。
+
+| 字段 | 类型 | 含义 |
+|---|---|---|
+| `methods[].windows[].start_us` | int | 窗口起点，距预热结束的微秒数。（未发布） |
+| `methods[].windows[].width_us` | int | 窗口覆盖的运行时长：计划宽度，提前停止的运行的最后一个窗口则更短。（未发布） |
+| `methods[].windows[].sent` | int | 计划在该窗口内且已发出的调用，定义与方法的 `sent` 相同。（未发布） |
+| `methods[].windows[].failed` | int | 其中失败的调用，定义与方法的 `failed` 相同。（未发布） |
+| `methods[].windows[].p50_us`、`methods[].windows[].p99_us` | int? | 窗口延迟的百分位，单位微秒；没有观测的窗口为 `null`。（未发布） |
+| `methods[].windows[].p99_bound` | bool | 窗口的 p99 是下界：有未完成的调用达到了它。（未发布） |
 
 ### 崩溃点搜索：`mode: "breakpoint"`
 
