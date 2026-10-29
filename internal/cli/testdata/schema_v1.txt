@@ -295,6 +295,14 @@ methods[].seconds[].observed_calls int
 methods[].seconds[].observed_lag_sum_us int
 methods[].seconds[].transport_wait_sum_us int
 methods[].seconds[].service_time_sum_us int
+methods[].windows []object
+methods[].windows[].start_us int
+methods[].windows[].width_us int
+methods[].windows[].sent int
+methods[].windows[].failed int
+methods[].windows[].p50_us int?
+methods[].windows[].p99_us int?
+methods[].windows[].p99_bound bool
 unchecked []object
 unchecked[].method string
 unchecked[].reason string

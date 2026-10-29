@@ -605,6 +605,7 @@ The rest are plain counters.
 | `methods[].templates.placeholders` | []string | The placeholders `data` uses, sorted: `seq`, `uuid`. (not released) |
 | `methods[].templates.last_seq` | int | How many of the call's requests were handed to the sender in the process, the ramp and the warm-up included: the number of the last. In a search it counts the whole search. (not released) |
 | `methods[].seconds` | []object | The per-second timeline, see below |
+| `methods[].windows` | []object | The measured part of the run in at most 60 windows, see below; `[]` when the run has none (a breakpoint-search step, or nothing measured). (not released) |
 
 ### Second: `methods[].seconds[]`
 
@@ -622,6 +623,22 @@ of the method.
 | `methods[].seconds[].lag_calls`, `methods[].seconds[].lag_sum_us`, `methods[].seconds[].lag_max_us` | int | Over calls scheduled in this second: how many, sum and maximum of the start lag |
 | `methods[].seconds[].observed_calls` | int | Of them, the successful ones |
 | `methods[].seconds[].observed_lag_sum_us`, `methods[].seconds[].transport_wait_sum_us`, `methods[].seconds[].service_time_sum_us` | int | Over the successful ones: sum of start lag, of the wait before sending (connection and stream), of the time from sending to the answer. Together — their latencies |
+
+### Window: `methods[].windows[]`
+
+The windows cut the measured part of the run, counted from the end of the warm-up, into slices of
+`max(1 s, measured / 60)` rounded up. A call belongs to the window of its scheduled time, whenever
+it finished. For display only: no total, threshold or verdict reads them, and their p50 and p99
+have two significant digits, so they are not compared with the run's own by the last digit.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `methods[].windows[].start_us` | int | Start of the window in microseconds from the end of the warm-up. (not released) |
+| `methods[].windows[].width_us` | int | The span of the run the window covers: the planned width, less for the last window of a run that stopped early. (not released) |
+| `methods[].windows[].sent` | int | Calls scheduled in the window that went out, defined as the method's `sent`. (not released) |
+| `methods[].windows[].failed` | int | Of them, the failed ones, defined as the method's `failed`. (not released) |
+| `methods[].windows[].p50_us`, `methods[].windows[].p99_us` | int? | Percentiles of the window's latency in microseconds; `null` in a window with no observations. (not released) |
+| `methods[].windows[].p99_bound` | bool | The window's p99 is a lower bound: a call that did not finish reaches it. (not released) |
 
 ### Breaking-point search: `mode: "breakpoint"`
 

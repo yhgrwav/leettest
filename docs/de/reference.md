@@ -629,6 +629,7 @@ Die übrigen sind einfache Zähler.
 | `methods[].templates.placeholders` | []string | Die Platzhalter, die `data` benutzt, sortiert: `seq`, `uuid`. (nicht veröffentlicht) |
 | `methods[].templates.last_seq` | int | Wie viele Anfragen des Aufrufs im Prozess an den Sender übergeben wurden, Anlauf und Aufwärmen eingeschlossen: die Nummer der letzten. In einer Suche zählt es die ganze Suche. (nicht veröffentlicht) |
 | `methods[].seconds` | []object | Die Zeitleiste pro Sekunde, siehe unten |
+| `methods[].windows` | []object | Der gemessene Teil des Laufs in höchstens 60 Fenstern, siehe unten; `[]`, wenn der Lauf keine hat (ein Schritt der Bruchpunkt-Suche oder nichts gemessen). (nicht veröffentlicht) |
 
 ### Sekunde: `methods[].seconds[]`
 
@@ -646,6 +647,23 @@ etwas geschah. Anders als die Summen enthält sie jeden Aufruf. Zum Abgleich: `�
 | `methods[].seconds[].lag_calls`, `methods[].seconds[].lag_sum_us`, `methods[].seconds[].lag_max_us` | int | Über die in dieser Sekunde geplanten Aufrufe: Anzahl, Summe und Maximum der Startverspätung |
 | `methods[].seconds[].observed_calls` | int | Davon die erfolgreichen |
 | `methods[].seconds[].observed_lag_sum_us`, `methods[].seconds[].transport_wait_sum_us`, `methods[].seconds[].service_time_sum_us` | int | Über die erfolgreichen: Summe der Startverspätung, der Wartezeit vor dem Senden (Verbindung und Stream), der Zeit vom Senden bis zur Antwort. Zusammen — ihre Latenzen |
+
+### Fenster: `methods[].windows[]`
+
+Die Fenster schneiden den gemessenen Teil des Laufs, ab dem Ende des Aufwärmens, in Stücke von
+`max(1 s, gemessen / 60)`, aufgerundet. Ein Aufruf gehört zum Fenster seiner geplanten Zeit, wann
+immer er endete. Nur zur Anzeige: weder Summe noch Schwelle noch Urteil lesen sie, und ihr p50 und
+p99 haben zwei signifikante Stellen, sie werden also nicht an der letzten Stelle mit den
+Gesamtwerten verglichen.
+
+| Feld | Typ | Bedeutung |
+|---|---|---|
+| `methods[].windows[].start_us` | int | Beginn des Fensters in Mikrosekunden ab dem Ende des Aufwärmens. (nicht veröffentlicht) |
+| `methods[].windows[].width_us` | int | Die vom Fenster abgedeckte Laufzeit: die geplante Breite, weniger beim letzten Fenster eines früher beendeten Laufs. (nicht veröffentlicht) |
+| `methods[].windows[].sent` | int | Im Fenster geplante Aufrufe, die rausgingen, definiert wie `sent` der Methode. (nicht veröffentlicht) |
+| `methods[].windows[].failed` | int | Davon die fehlgeschlagenen, definiert wie `failed` der Methode. (nicht veröffentlicht) |
+| `methods[].windows[].p50_us`, `methods[].windows[].p99_us` | int? | Perzentile der Latenz des Fensters in Mikrosekunden; `null` in einem Fenster ohne Beobachtungen. (nicht veröffentlicht) |
+| `methods[].windows[].p99_bound` | bool | Das p99 des Fensters ist eine Untergrenze: ein nicht beendeter Aufruf erreicht es. (nicht veröffentlicht) |
 
 ### Suche nach dem Bruchpunkt: `mode: "breakpoint"`
 

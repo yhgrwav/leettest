@@ -577,6 +577,7 @@ func engineOptions(cfg *config.MasterConfig, sender engine.Sender, maxInFlight i
 		MaxInFlight: maxInFlight,
 		Warmup:      cli.ExcludedWindow(cfg),
 		WaitFloor:   engine.WaitFloorFor(stepBefore),
+		Windows:     cfg.Load.Breakpoint == nil,
 	}
 
 	// A config error does not wait for the network: checked before connecting.

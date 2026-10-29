@@ -216,6 +216,13 @@ type MethodReport struct {
 	// could not be placed on it; InvalidLag, calls begun before their schedule.
 	OutsideTimeline int
 	InvalidLag      int
+	// Windows is the measured part of the run cut into slices, see Window; nil
+	// when the run did not ask for them (Options.Windows) or nothing was
+	// covered. Display only: no total, threshold or verdict reads it.
+	Windows []Window
+	// OutsideWindows counts measured calls scheduled outside every window. A
+	// call is never moved into the nearest one; a normal run has none.
+	OutsideWindows int
 	// TimedOut counts calls that went out and got no answer within their
 	// timeout; UnsentTimedOut, timeouts of calls that never went out, which
 	// say nothing about the target.
@@ -399,6 +406,16 @@ type Stats struct {
 	aborted                                 int
 	reserve                                 int
 	byMethod                                map[string]*methodStats
+	// windowWidth and windowCount are the shared axis of the windows; 0 when
+	// nobody asked for them. windowPlans is where each method's own measured
+	// plan ends, absent for a method that keeps the whole measured part.
+	windowWidth time.Duration
+	windowCount int
+	windowPlans map[string]time.Duration
+	// windowMeasured is the planned measured part the windows were cut for;
+	// planDone says the schedule walked all of it.
+	windowMeasured time.Duration
+	planDone       bool
 	// startLag is how late calls began against their schedule, startLagMax
 	// its exact maximum; lateCancelMax how far past its deadline a timeout
 	// returned.
@@ -508,6 +525,10 @@ type methodStats struct {
 	// lastAnswer is the latest send among the calls the target was heard on,
 	// as an offset from the start of the run; -1 until one is.
 	lastAnswer time.Duration
+	// windows is nil when windows are off; outsideWindows counts measured
+	// calls scheduled outside every window.
+	windows        []window
+	outsideWindows int
 }
 
 // heard reports whether anything of the target's came back for r: the
@@ -547,7 +568,7 @@ func (s *Stats) Reserve(span time.Duration, methods ...string) {
 }
 
 func (s *Stats) newMethod() *methodStats {
-	return &methodStats{
+	method := &methodStats{
 		latency:     metrics.NewLatencies(),
 		served:      metrics.NewLatencies(),
 		overload:    metrics.NewUncensoredLatencies(),
@@ -557,6 +578,9 @@ func (s *Stats) newMethod() *methodStats {
 		lastAnswer:  -1,
 		timeline:    newTimeline(s.reserve),
 	}
+	s.allocateWindows(method)
+
+	return method
 }
 
 func (s *Stats) Start(at time.Time, warmup time.Duration) {
@@ -714,6 +738,21 @@ func (s *Stats) Record(r Result) {
 		}
 	}
 
+	var win *window
+	if s.windowWidth > 0 {
+		at := r.ScheduledAt.Sub(s.startedAt.Add(s.warmup))
+		index := int(at / s.windowWidth)
+		if at < 0 || index >= len(method.windows) {
+			method.outsideWindows++
+		} else {
+			win = &method.windows[index]
+			win.sent++
+			if failed {
+				win.failed++
+			}
+		}
+	}
+
 	if stream {
 		s.streamWait.Record(r.StreamWait)
 
@@ -776,6 +815,9 @@ func (s *Stats) Record(r Result) {
 	if r.Category == CategoryTimeout || r.Category == CategoryAborted {
 		threshold := r.CensorThreshold()
 		method.latency.RecordCensored(threshold)
+		if win != nil {
+			win.latency.RecordCensored(threshold)
+		}
 		method.served.RecordCensored(max(0, threshold-clientWait))
 		if link != nil {
 			link.latency.RecordCensored(threshold)
@@ -800,6 +842,9 @@ func (s *Stats) Record(r Result) {
 	switch r.Category {
 	case CategorySuccess:
 		method.latency.Record(r.Latency())
+		if win != nil {
+			win.latency.Record(r.Latency())
+		}
 		method.served.Record(max(0, r.Latency()-clientWait))
 		if link != nil {
 			link.latency.Record(r.Latency())
@@ -996,6 +1041,7 @@ func (s *Stats) Report() Report {
 	late, stream, connection := s.notSentGenerator, s.notSentStream, s.notSentConnection
 	waited := s.waited
 	timelines := make(map[string]MethodReport, len(s.byMethod))
+	windowViews := s.windowViewsLocked()
 	for name, method := range s.byMethod {
 		entry := MethodReport{
 			Seconds:           method.timeline.export(),
@@ -1120,6 +1166,8 @@ func (s *Stats) Report() Report {
 			SilentFrom:        timelines[v.name].SilentFrom,
 			SentRPS:           timelines[v.name].SentRPS,
 			LastAnswerAt:      timelines[v.name].LastAnswerAt,
+			Windows:           windowsOfView(windowViews[v.name]),
+			OutsideWindows:    windowViews[v.name].outside,
 		}
 		if measured > 0 {
 			entry.RPS = float64(v.sent) / measured.Seconds()
