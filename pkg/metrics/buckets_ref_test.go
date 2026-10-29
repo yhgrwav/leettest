@@ -120,6 +120,11 @@ func TestBufferCumulative_EqualsTheDistributionReference(t *testing.T) {
 // walk must not depend on the 19 edges.
 func TestBufferCumulative_EqualsTheReferenceForOtherBounds(t *testing.T) {
 	b := filled(func(l *Latencies) {
+		// Every nanosecond to 9000, so bounds on the lowest value of a
+		// sub-bucket (2048, 4096, 4100) meet observations in it.
+		for v := time.Duration(0); v <= 9000; v++ {
+			l.Record(v)
+		}
 		rng := rand.New(rand.NewPCG(3, 4))
 		for range 5000 {
 			l.Record(time.Duration(rng.Int64N(int64(2 * time.Second))))
@@ -129,7 +134,7 @@ func TestBufferCumulative_EqualsTheReferenceForOtherBounds(t *testing.T) {
 	for _, bounds := range [][]time.Duration{
 		nil,
 		{0},
-		{2047, 2048, 2049, 4095, 4096, 4097},
+		{2047, 2048, 2049, 4095, 4096, 4097, 4100, 8192, 8200},
 		{time.Nanosecond, time.Microsecond, time.Millisecond, time.Hour, 2 * time.Hour},
 	} {
 		wantCounts, wantTotal, wantSum := referenceCumulative(b, bounds)
