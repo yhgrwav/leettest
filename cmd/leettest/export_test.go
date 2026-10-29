@@ -621,13 +621,15 @@ func TestExportRun_NoSecretAndNoTargetAddressInTheBody(t *testing.T) {
 	}
 }
 
-// Ground: Т10 (reviewer's В8) — a scrape storm changes neither the report nor
-// the load: the same run with a storm of scrapes and without gives the same
-// planned calls (sent plus not sent), and the bodies served in the storm are at
-// most one per second, however many scrapes came (the render cache).
+// Ground: Т10 (reviewer's В8, К3, К4) — a scrape storm changes neither the report
+// nor the load: the same run with a storm of scrapes and without gives the same
+// sent and the same not sent (a generator the storm slowed would turn sent calls
+// into not_sent{generator} and leave their sum alone), and the bodies served in
+// the storm are at most one per second, however many scrapes came (the render
+// cache).
 func TestExportRun_AScrapeStormDoesNotChangeTheReportAndRendersOncePerSecond(t *testing.T) {
-	plan := func(report map[string]any) float64 {
-		return jsonAt(t, report, "sent").(float64) + jsonAt(t, report, "not_sent").(float64)
+	counts := func(report map[string]any) (sent, notSent float64) {
+		return jsonAt(t, report, "sent").(float64), jsonAt(t, report, "not_sent").(float64)
 	}
 	args := func(section string) []string {
 		return []string{"-fake", "-fake-delay", "1ms", "-output", "json", "-c", writeExportConfig(t, 50, "3s", "0s", "", section)}
@@ -635,7 +637,7 @@ func TestExportRun_AScrapeStormDoesNotChangeTheReportAndRendersOncePerSecond(t *
 
 	quiet := startLive(t, args(exportSection("30s"))...)
 	quiet.addr(t)
-	quietPlan := plan(quiet.report(t))
+	quietSent, quietNotSent := counts(quiet.report(t))
 	press(t, quiet.stops)
 	if err := quiet.wait(t, 10*time.Second); err != nil {
 		t.Fatalf("quiet run = %v", err)
@@ -681,16 +683,26 @@ func TestExportRun_AScrapeStormDoesNotChangeTheReportAndRendersOncePerSecond(t *
 	// 2.5 s hold three renders at one a second; a fourth is the final one when the
 	// run ends inside the storm on a slow machine.
 	if distinct > 4 {
-		t.Errorf("%d different bodies from %d scrapes in 2.5s, want at most 4 (one render a second)", distinct, scrapes)
+		mu.Lock()
+		heads := make([]string, 0, len(bodies))
+		for b := range bodies {
+			heads = append(heads, fmt.Sprintf("%q", b[:min(len(b), 80)]))
+		}
+		mu.Unlock()
+		t.Errorf("%d different bodies from %d scrapes in 2.5s, want at most 4 (one render a second); the first 80 bytes of each:\n%s",
+			distinct, scrapes, strings.Join(heads, "\n"))
 	}
 
-	loudPlan := plan(loud.report(t))
+	loudSent, loudNotSent := counts(loud.report(t))
 	press(t, loud.stops)
 	if err := loud.wait(t, 10*time.Second); err != nil {
 		t.Fatalf("loud run = %v", err)
 	}
-	if loudPlan != quietPlan {
-		t.Errorf("the run under the storm planned %v calls (sent + not sent), the quiet one %v", loudPlan, quietPlan)
+	if loudNotSent != quietNotSent {
+		t.Errorf("the run under the storm did not send %v calls, the quiet one %v", loudNotSent, quietNotSent)
+	}
+	if loudSent != quietSent {
+		t.Errorf("the run under the storm sent %v calls, the quiet one %v", loudSent, quietSent)
 	}
 }
 
@@ -731,6 +743,8 @@ func TestExportRun_RefusalsBeforeTheRunAreExitOne(t *testing.T) {
 		{"a label named category", []string{"-fake", "-c", withLabels("  category: x\n")}, "category"},
 		{"a label named cause", []string{"-fake", "-c", withLabels("  cause: x\n")}, "cause"},
 		{"a label named le", []string{"-fake", "-c", withLabels("  le: x\n")}, "le"},
+		{"a search beside the flag", []string{"-fake", "-metrics-listen", closedPort(t), "-c", search}, "breakpoint"},
+		{"dry-run beside the flag", []string{"-dry-run", "-metrics-listen", closedPort(t), "-c", writeExportConfig(t, 10, "300ms", "0s", "", "")}, "dry-run"},
 		{"a flag label with a dot", []string{"-fake", "-label", "commit.sha=abc", "-c", writeExportConfig(t, 10, "300ms", "0s", "", exportSection("0s"))}, "commit.sha"},
 		{"a flag label named method", []string{"-fake", "-label", "method=abc", "-c", writeExportConfig(t, 10, "300ms", "0s", "", exportSection("0s"))}, "method"},
 	}
@@ -754,6 +768,37 @@ func TestExportRun_RefusalsBeforeTheRunAreExitOne(t *testing.T) {
 			if strings.Contains(res.stderr, "metrics: listening") {
 				t.Errorf("the endpoint was opened before the refusal:\n%s", res.stderr)
 			}
+		})
+	}
+}
+
+// Ground: Т11 (reviewer's К1, К2, Б2) — a refusal comes before the port is
+// opened: after the command ended with the flag beside a search or a dry run,
+// the address is still free to take.
+func TestExportRun_AFlagRefusalLeavesThePortFree(t *testing.T) {
+	search := writeSearch(t, closedPort(t), checkMethod)
+	plain := writeExportConfig(t, 10, "300ms", "0s", "", "")
+
+	for _, tc := range []struct {
+		name, want string
+		args       []string
+	}{
+		{"a search", "breakpoint", []string{"-fake", "-c", search}},
+		{"dry-run", "dry-run", []string{"-dry-run", "-c", plain}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			addr := closedPort(t)
+
+			res := runCLI(t.Context(), t, 20*time.Second, append([]string{"-metrics-listen", addr}, tc.args...)...)
+			if res.err == nil || !strings.Contains(res.err.Error(), tc.want) {
+				t.Fatalf("run = %v with %s beside the flag, want an error naming %q", res.err, tc.name, tc.want)
+			}
+
+			lis, err := new(net.ListenConfig).Listen(t.Context(), "tcp", addr)
+			if err != nil {
+				t.Fatalf("%s is taken after the refusal: %v", addr, err)
+			}
+			_ = lis.Close()
 		})
 	}
 }
