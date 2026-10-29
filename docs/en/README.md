@@ -139,8 +139,8 @@ At the end — a report per method: sent, failed, `sent/s`, p50/p90/p95/p99.
   from the end of the warm-up, in at most 12 rows; JSON holds up to 60 windows. A call belongs to
   the row of its planned moment, whenever it finished. A row shows `sent/s`, the share failed, p50
   and p99 to two significant digits, so a row's p50 may differ from the table's p50 in the last
-  digit. A row with no calls says `no calls`: in the middle of a plan it is silence of the target
-  or the generator, not a blank. With a `ramp` the first rows are the ramp: a low `sent/s` there
+  digit. A `no calls` row means no call went out in that window. If the rate is below one call
+  per window, that is the plan, not a failure: compare with the method's `plan:`. With a `ramp` the first rows are the ramp: a low `sent/s` there
   is the plan, not a failure; look for the row where p99 or the failed share climbs before the
   rate has reached its plateau.
 - Under a method with a `dataset` stands a `data:` line: how many requests of the
