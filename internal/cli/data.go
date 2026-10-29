@@ -50,6 +50,17 @@ func RequestBody(desc protoreflect.MessageDescriptor, data any) ([]byte, error) 
 // requestBody is RequestBody reading with opts: the types of the method's own
 // files, where an Any may name them.
 func requestBody(opts protojson.UnmarshalOptions, desc protoreflect.MessageDescriptor, data any) ([]byte, error) {
+	msg, err := requestMessage(opts, desc, data)
+	if err != nil {
+		return nil, err
+	}
+
+	// Deterministic, so every run of the same config sends the same bytes.
+	return proto.MarshalOptions{Deterministic: true}.Marshal(msg)
+}
+
+// requestMessage is the message data makes, before it is written to the wire.
+func requestMessage(opts protojson.UnmarshalOptions, desc protoreflect.MessageDescriptor, data any) (*dynamicpb.Message, error) {
 	msg := dynamicpb.NewMessage(desc)
 
 	if data != nil {
@@ -64,8 +75,7 @@ func requestBody(opts protojson.UnmarshalOptions, desc protoreflect.MessageDescr
 		}
 	}
 
-	// Deterministic, so every run of the same config sends the same bytes.
-	return proto.MarshalOptions{Deterministic: true}.Marshal(msg)
+	return msg, nil
 }
 
 // recordBody builds one record of a dataset, the JSON of a line as written,
@@ -209,6 +219,19 @@ func AttachMethods(
 		}
 
 		if call.Data == nil {
+			continue
+		}
+
+		if call.TemplatesOn() {
+			tpl, err := buildTemplate(method, call)
+			if err != nil {
+				errs = append(errs, err)
+
+				continue
+			}
+			// The body is made per request; the call holds none.
+			calls[i].Template = tpl
+
 			continue
 		}
 

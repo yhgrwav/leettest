@@ -44,7 +44,10 @@ type Call struct {
 	Payloads [][]byte
 	// Dataset is set for a call whose Payloads are a file's records: what the
 	// report says of them. A pointer, so that the Call stays small to copy.
-	Dataset      *DatasetRef
+	Dataset *DatasetRef
+	// Template is set for a call whose body is made per request; Payload and
+	// Payloads are not used with it.
+	Template     *Template
 	Timeout      time.Duration
 	Stages       []Stage
 	KeepResponse bool
@@ -52,7 +55,9 @@ type Call struct {
 
 // payload is the body of the call's next request: the record at S mod n, where
 // S is the number of requests the call has handed out so far. Reading S moves
-// nothing, so building a request does not use up its record.
+// nothing, so building a request does not use up its record. A templated call
+// does not come here (Scheduler.newRequest): the body check stays small enough
+// to be inlined, as it was before templates (BenchmarkNewRequest_Plain).
 func (c *Call) payload() []byte {
 	if c.Dataset == nil || len(c.Payloads) == 0 {
 		return c.Payload
@@ -80,6 +85,31 @@ func (c *Call) handedOut() {
 func (c *Call) spent() bool {
 	return c.Dataset != nil && c.Dataset.Once && len(c.Payloads) > 0 && c.Dataset.Counter.Handed() >= len(c.Payloads)
 }
+
+// seqOverflow is the error of a templated call whose next request would carry
+// a seq above the largest its field holds; nil otherwise. The seq is never
+// built, so it cannot wrap.
+func (c *Call) seqOverflow() error {
+	if c.Template == nil || c.Template.Max == 0 || uint64(c.Template.Counter.Handed())+1 <= c.Template.Max {
+		return nil
+	}
+
+	return &SeqOverflowError{Method: c.Method, Limit: c.Template.Max}
+}
+
+// SeqOverflowError is what the dispatcher and the scheduler return when the
+// next request of a templated call would carry a seq above Limit. Run turns it
+// into an end of the run with a report; it is ErrSeqOverflow.
+type SeqOverflowError struct {
+	Method string
+	Limit  uint64
+}
+
+func (e *SeqOverflowError) Error() string {
+	return fmt.Sprintf("%s: %s: the largest seq the field holds is %d", e.Method, ErrSeqOverflow, e.Limit)
+}
+
+func (e *SeqOverflowError) Unwrap() error { return ErrSeqOverflow }
 
 // DatasetExhaustedError is what the dispatcher returns when a Once call has no
 // record left for a tick; Run turns it into a gentle end of the run.
@@ -114,8 +144,17 @@ func counted(call Call) Call {
 		ref.Counter = NewRecordCounter()
 		call.Dataset = &ref
 	}
+	if call.Template != nil && call.Template.Counter == nil {
+		tpl := *call.Template
+		tpl.Counter = NewRecordCounter()
+		call.Template = &tpl
+	}
 
 	return call
+}
+
+func (c *Call) needsCounter() bool {
+	return (c.Dataset != nil && c.Dataset.Counter == nil) || (c.Template != nil && c.Template.Counter == nil)
 }
 
 // countedCalls is calls with every dataset call counted; calls itself when
@@ -124,7 +163,7 @@ func countedCalls(calls []Call) []Call {
 	var out []Call
 
 	for i, call := range calls {
-		if call.Dataset == nil || call.Dataset.Counter != nil {
+		if !call.needsCounter() {
 			continue
 		}
 		if out == nil {
@@ -208,6 +247,9 @@ type Engine struct {
 	incomplete atomic.Bool
 	// exhausted is the dataset that ran out and ended the run, if one did.
 	exhausted atomic.Pointer[DatasetExhausted]
+	// seqOverflow is the templated call whose seq reached its field's limit
+	// and ended the run, if one did.
+	seqOverflow atomic.Pointer[SeqOverflow]
 	// capHit is set when the run ended on the in-flight cap.
 	capHit atomic.Pointer[InFlightCapError]
 	// startedAt is when Run started, for the moment of a cap hit.
@@ -356,6 +398,7 @@ func (e *Engine) Report() Report {
 	report := e.stats.Report()
 	report.Incomplete = e.incomplete.Load()
 	report.DatasetExhausted = e.exhausted.Load()
+	report.SeqOverflow = e.seqOverflow.Load()
 	report.Planned = e.plannedDuration()
 	for _, call := range e.opts.Calls {
 		report.Scheduled += ScheduledAfter(call.Stages, e.opts.Warmup)
@@ -382,6 +425,9 @@ func (e *Engine) Report() Report {
 			}
 			if call.Dataset != nil {
 				m.Dataset = e.datasetReport(call)
+			}
+			if call.Template != nil {
+				m.Templates = e.templatesReport(call)
 			}
 			m.RPSLow, m.RPSHigh = ratesOver(call.Stages, e.opts.Warmup, math.MaxInt64)
 			if m.SilentFrom != nil {
@@ -415,13 +461,27 @@ func (e *Engine) datasetReport(call Call) *DatasetReport {
 	return report
 }
 
-// noteHanded keeps each dataset call's S at the end of the run.
+// templatesReport is how call used its templates: its seq at the end of this
+// run, as for a dataset's S.
+func (e *Engine) templatesReport(call Call) *TemplatesReport {
+	n := call.Template.Counter.Handed()
+	if ended := e.handed.Load(); ended != nil {
+		n = (*ended)[call.Method]
+	}
+
+	return &TemplatesReport{Placeholders: call.Template.Placeholders, LastSeq: uint64(n)}
+}
+
+// noteHanded keeps each dataset and templated call's count at the end of the run.
 func (e *Engine) noteHanded() {
 	ended := make(map[string]int)
 
 	for _, call := range e.opts.Calls {
-		if call.Dataset != nil {
+		switch {
+		case call.Dataset != nil:
 			ended[call.Method] = call.Dataset.Counter.Handed()
+		case call.Template != nil:
+			ended[call.Method] = call.Template.Counter.Handed()
 		}
 	}
 
@@ -589,6 +649,18 @@ func (e *Engine) Run(ctx context.Context) error {
 		defer schedulers.Done()
 
 		err := dispatcher.Run(scheduleCtx, requests)
+		if over := (*SeqOverflowError)(nil); errors.As(err, &over) {
+			// The next seq does not fit its field: the plan is cut short, calls
+			// in flight finish, and the run still reports what went out.
+			e.seqOverflow.Store(&SeqOverflow{Method: over.Method, Limit: over.Limit})
+			e.incomplete.Store(true)
+			stopScheduling()
+			scheduleMu.Lock()
+			scheduleErr = err
+			scheduleMu.Unlock()
+
+			return
+		}
 		if spent := (*DatasetExhaustedError)(nil); errors.As(err, &spent) {
 			// A file ran out: the plan is cut short like a Stop, calls in flight finish.
 			e.exhausted.Store(&DatasetExhausted{Method: spent.Method, File: spent.File})

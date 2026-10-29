@@ -24,7 +24,7 @@ import (
 	"github.com/goccy/go-yaml/parser"
 )
 
-var callDatasetPath = regexp.MustCompile(`^\$\.load\.calls\[\d+\]\.(dataset|dataset_order|dataset_seed|dataset_reuse)$`)
+var callDatasetPath = regexp.MustCompile(`^\$\.load\.calls\[\d+\]\.(dataset|dataset_order|dataset_seed|dataset_reuse|templates)$`)
 
 // passPath matches a pass section of a call or of the search and, when the
 // match has a key, a limit inside it.
@@ -40,6 +40,7 @@ var emptyKeyErrors = map[string]error{
 	"dataset_order": ErrDatasetOrder,
 	"dataset_seed":  ErrDatasetSeed,
 	"dataset_reuse": ErrDatasetReuse,
+	"templates":     ErrTemplatesValue,
 }
 
 // checkTree runs the checks the decoder cannot make. An anchor name defined

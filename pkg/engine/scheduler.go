@@ -108,6 +108,12 @@ func (s *Scheduler) runStage(ctx context.Context, out chan<- Request, stage Stag
 			return err
 		}
 
+		if s.Call.Template != nil {
+			if err := s.Call.seqOverflow(); err != nil {
+				return err
+			}
+		}
+
 		// Built before the select, so a record is taken from S before the
 		// request leaves; S moves only after it has.
 		select {
@@ -116,15 +122,23 @@ func (s *Scheduler) runStage(ctx context.Context, out chan<- Request, stage Stag
 		case out <- s.newRequest(scheduledAt):
 		}
 		s.Call.handedOut()
+
+		if s.Call.Template != nil {
+			s.Call.Template.handedOut()
+		}
 	}
 }
 
 func (s *Scheduler) newRequest(scheduledAt time.Time) Request {
 	req := Request{
 		Method:       s.Call.Method,
-		Payload:      s.Call.payload(),
 		ScheduledAt:  scheduledAt,
 		KeepResponse: s.Call.KeepResponse,
+	}
+	if s.Call.Template != nil {
+		req.Payload = s.Call.Template.body()
+	} else {
+		req.Payload = s.Call.payload()
 	}
 
 	if s.Call.Timeout > 0 {

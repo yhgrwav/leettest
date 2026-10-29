@@ -82,6 +82,9 @@ type JSONReport struct {
 	// where and on what numbers, and is null with it.
 	StopReason *string   `json:"stop_reason"`
 	Stop       *jsonStop `json:"stop"`
+	// SeqOverflow is set with stop_reason "seq_overflow": the call and the
+	// largest seq its field holds; null otherwise.
+	SeqOverflow *jsonSeqOverflow `json:"seq_overflow"`
 	// ClockStepNS is the host clock step: every latency and wait is +/- it.
 	ClockStepNS int64  `json:"clock_step_ns"`
 	StartedAt   string `json:"started_at"`
@@ -294,6 +297,21 @@ type jsonDataset struct {
 	Reuse bool `json:"reuse"`
 }
 
+// jsonTemplates is how a call used its templates: the placeholders its data
+// has (sorted) and the requests of the call handed to workers in the process,
+// ramp and warm-up included.
+type jsonTemplates struct {
+	Placeholders []string `json:"placeholders"`
+	LastSeq      uint64   `json:"last_seq"`
+}
+
+// jsonSeqOverflow is the call whose seq reached the limit of its field and
+// ended the run, and that limit.
+type jsonSeqOverflow struct {
+	Method string `json:"method"`
+	Limit  uint64 `json:"limit"`
+}
+
 type jsonMethod struct {
 	Method string `json:"method"`
 	// InvalidReason says the method measured nothing about load: request_error,
@@ -339,6 +357,7 @@ type jsonMethod struct {
 	SilentPlannedRPSHigh  *int              `json:"silent_planned_rps_high"`
 	LastAnswerAtUS        *int64            `json:"last_answer_at_us"`
 	Dataset               *jsonDataset      `json:"dataset"`
+	Templates             *jsonTemplates    `json:"templates"`
 	Seconds               []jsonSecond      `json:"seconds"`
 }
 
@@ -456,8 +475,9 @@ func jsonRunFacts(run JSONRun) JSONReport {
 		WarmupSent:        r.WarmupSent,
 		WarmupFailed:      r.WarmupFailed,
 		WarmupNotSent:     r.WarmupNotSent,
-		StopReason:        stopReasonJSON(run.Run.Stop),
+		StopReason:        stopReasonJSON(run.Run),
 		Stop:              stopJSON(run.Run.Stop),
+		SeqOverflow:       seqOverflowJSON(r.SeqOverflow),
 		TailWaitCause:     tailWaitCause(*r),
 		ClockStepNS:       int64(run.Run.ClockStep),
 		ClientWaits: jsonClientWaits{
@@ -633,6 +653,9 @@ func jsonMethodOf(m *engine.MethodReport, warmup time.Duration) jsonMethod {
 		if d.Random {
 			out.Dataset.Order, out.Dataset.Seed = "random", &d.Seed
 		}
+	}
+	if t := m.Templates; t != nil {
+		out.Templates = &jsonTemplates{Placeholders: append([]string{}, t.Placeholders...), LastSeq: t.LastSeq}
 	}
 	for _, c := range m.FailureCodes {
 		name, ok := canonicalCodes[c.Code]

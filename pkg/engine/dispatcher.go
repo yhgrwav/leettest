@@ -81,6 +81,12 @@ func (d *Dispatcher) Run(ctx context.Context, out chan<- Request) error {
 			return &DatasetExhaustedError{Method: c.call.Method, File: c.call.Dataset.File}
 		}
 
+		if c.call.Template != nil {
+			if err := c.call.seqOverflow(); err != nil {
+				return err
+			}
+		}
+
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -90,6 +96,10 @@ func (d *Dispatcher) Run(ctx context.Context, out chan<- Request) error {
 		// stage. It moves once the request has left, so a request built and
 		// never handed out used no record.
 		c.call.handedOut()
+
+		if c.call.Template != nil {
+			c.call.Template.handedOut()
+		}
 
 		c.i++
 		if c.advance() {

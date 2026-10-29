@@ -57,6 +57,7 @@ load:
 | `load.calls[].dataset_order` | `file`（省略时）或 `random`：文件中请求的顺序。需要 `dataset` |
 | `load.calls[].dataset_seed` | 0 到 9007199254740991 的整数，固定随机顺序。需要 `dataset_order: random`。省略时自行选取并在报告中输出 |
 | `load.calls[].dataset_reuse` | `true`（省略时）或 `false`：为 `false` 时，整个进程中没有任何一条记录会发出两次。需要 `dataset` |
+| `load.calls[].templates` | `true` 或 `false`（省略时为 `false`；写了键却没有值是错误）：在 `data` 中启用占位符 `{{uuid}}` 和 `{{seq}}`，见[下文](#会变化的请求模板)。至少需要一个占位符，不能与 `dataset` 同用。（未发布） |
 | `load.calls[].pass` | 运行要通过必须满足的限值：`p50`、`p90`、`p95`、`p99`、`p999`、`errors`，见[下文](#pass-限值)。省略时没有限值 |
 | `load.breakpoint.pass` | 崩溃点搜索的限值：`held_rps`，见[下文](#pass-限值)。省略时没有限值 |
 | `load.breakpoint.errors_limit` | 形如 `1%` 或 `0.5%` 的百分数，小数点后最多三位，不超过 `100%`。失败调用占比超过它时，搜索的这一级就崩溃；恰好等于它则算撑住。省略时为 `1%` |
@@ -194,7 +195,8 @@ DNS 解析为 M 个地址的名字在启动前解析一次，第 i 条连接使�
 
 **每个方法一个请求体。** 一个方法的每次调用都使用同一份 `data`。对于带幂等键的写操作，这意味着
 第一次调用创建记录，之后每次调用都走重复请求的路径：目标返回它已保存的应答。测到的是这条路径，
-而不是创建记录。
+而不是创建记录。要让每个请求带新的键，用 `templates: true` 和 `{{uuid}}`（见[下文](#会变化的请求模板)）；
+每次换一组字段，用 [dataset](#每次调用不同的请求dataset)。
 
 取值规则是 protobuf 的标准 JSON 规则（`protojson`）：
 
@@ -212,6 +214,45 @@ DNS 解析为 M 个地址的名字在启动前解析一次，第 i 条连接使�
 `data` 的方法无法启动——错误会明确说明。不带 `data` 的方法没有 reflection 也能运行：没有东西可以
 用来检查它，并会有警告说明——运行前在 stderr 输出，并在报告中再写一行。警告会说明为什么无法检查：
 reflection 已关闭、拒绝了请求，或根本没有应答。
+
+## 会变化的请求：模板
+
+```yaml
+    - method: orders.v1.OrderService/Create
+      rps: 500
+      duration: 1m
+      templates: true
+      data:
+        order_id: "{{seq}}"                # int64 字段：请求的序号
+        idempotency_key: "key-{{uuid}}"    # 字符串：每个请求一个新的 uuid
+        comment: "load-{{seq}}"
+```
+
+`templates: true` 在 `data` 中启用两个占位符：`{{uuid}}` 是随机的 4 版 uuid，小写，36 个字符；
+`{{seq}}` 是该调用的请求序号，从 1 开始。其他任何 `{{...}}`（`{{nope}}`，或带空格的 `{{ uuid }}`）
+都是配置错误，并给出字段路径。没有 `templates: true` 时，花括号按文本原样发出。写了
+`templates: true` 却一个占位符都没有，同样是错误。请求体按每个请求构建，在它的计划时刻之后；
+构建所花的时间计入启动延迟。
+
+- **占位符要加引号。** `'{{seq}}'` 是字符串；不加引号时，YAML 把 `{{` 读作映射的开头，
+  这是 YAML 解析错误。
+- **字符串**接受文本中任意位置、任意深度的占位符（嵌套消息、`repeated`、`map` 的值）。同一个请求体
+  里的两个 `{{uuid}}` 是两个不同的值；`{{seq}}` 在一个请求里处处相同。字符串字段里只有 `"{{seq}}"` 的值是文本。
+- **数字**只接受带引号的整个 `"{{seq}}"`；`int64` 精确送达。数字里放 `{{uuid}}` 是错误。
+- **其余都是错误**，给出方法和路径 `data.<字段>`：`bool`、枚举、`bytes`、`float`/`double`、
+  消息字段、well-known 类型（`google.protobuf.*`）、`map` 的键。
+- **`seq` 每次运行都从 1 开始**，`-dry-run` 也是（它发送第 1 号请求）。它统计交给发送方的请求，
+  爬坡和预热也算在内；搜索中计数贯穿所有步骤。要跨运行唯一的键，用 `{{uuid}}`，不要用 `{{seq}}`。
+- **32 位字段**（`int32`、`sint32`、`sfixed32` 最大 2147483647；`uint32`、`fixed32` 最大 4294967295）
+  不会悄悄回绕：计划发出的请求数超过字段所能容纳时，在第一个请求之前就被拒绝（退出码 1，
+  信息中给出方法、上限和请求数）。若序号仍然到达上限（搜索的某一步），该请求不会被构建，
+  运行像 Ctrl-C 一样平稳结束（退出码 3，`stop_reason: seq_overflow`），报告照常打印。
+  请把 `{{seq}}` 放进 64 位数字或字符串。
+- **`-fake`** 只计数，不构建请求体（空消息，不报错）；占位符的语法在那里同样会检查。
+
+方法行下面，报告会写 `data: templated, seq uuid (last seq 7, ramp and warm-up counted)`。
+在 JSON 中它是 `methods[].templates`，一个**对象** `{"placeholders": ["seq", "uuid"], "last_seq": 7}`，
+而不是列表；`null`——该调用没有模板。
 
 ## 每次调用不同的请求：dataset
 
@@ -360,7 +401,7 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `invalid_reasons` | []string | 运行无效的原因：`in_flight_cap`、`nothing_measured`、`clock_step`、`thresholds_undecided`（某个 `pass` 限值无法判定，且原因不是运行被停止或已经无效）。为空——有效 |
 | `tail_wait_cause` | string? | 决定尾部的客户端侧等待：`generator`、`stream`、`connection`；`null`——没有结论 |
 | `clock_step_ns` | int | 主机时钟步长，纳秒：每个延迟和等待都有 ± 这个值的误差 |
-| `stop_reason` | string? | 由 `load.stop_on_errors` 停止运行时为 `error_spike`；否则为 `null`。（未发布） |
+| `stop_reason` | string? | 由 `load.stop_on_errors` 停止运行时为 `error_spike`；`{{seq}}` 放不进字段而运行平稳结束（退出码 3）时为 `seq_overflow`；否则为 `null`。（未发布） |
 | `stop` | object? | `load.stop_on_errors` 在何处、依据哪些数字停止了运行；没有停止则为 `null`。（未发布） |
 | `stop.method` | string | 失败调用占比超过限值的方法，写法与 `methods[].method` 完全相同，包括开头的 `/`。（未发布） |
 | `stop.failed` | int | 它在最近 5 秒内的失败调用数。（未发布） |
@@ -368,6 +409,9 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `stop.limit` | string | 按配置书写的限值：`"5%"`。（未发布） |
 | `stop.at_us` | int | 从运行开始到停止所经过的时间，单位为整微秒。（未发布） |
 | `stop.in_flight` | int | 此刻在途的调用数（已开始、未结束）：目标卡死时，这是窗口看不到的数字。（未发布） |
+| `seq_overflow` | object? | `{{seq}}` 放不进字段而运行停止的位置；没有发生时为 `null`。（未发布） |
+| `seq_overflow.method` | string | 字段溢出的方法，写法同 `methods[].method`，含开头的 `/`。（未发布） |
+| `seq_overflow.limit` | int | 该方法最窄的字段所能容纳的最大 `seq`。（未发布） |
 | `started_at` | string | 计划开始时刻，RFC 3339 UTC，包括预热。所有 `_us` 和 `_s` 都从它算起 |
 | `duration_us` | int | 运行实际持续时间，包括预热 |
 | `planned_us` | int | 计划持续时间，包括爬升 |
@@ -492,6 +536,9 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `methods[].dataset.order` | string | `file` 或 `random`：请求发出的顺序 |
 | `methods[].dataset.seed` | int? | 随机顺序的 seed，0 到 9007199254740991；文件顺序为 `null` |
 | `methods[].dataset.reuse` | bool | `false`——该调用每条记录最多发送一次（`dataset_reuse: false`）；否则为 `true` |
+| `methods[].templates` | object? | 该调用的模板（`templates: true`）；`null`——没有。是对象，不是列表。（未发布） |
+| `methods[].templates.placeholders` | []string | `data` 用到的占位符，已排序：`seq`、`uuid`。（未发布） |
+| `methods[].templates.last_seq` | int | 该调用在进程内交给发送方的请求数，爬坡和预热计入在内：即最后一个的序号。搜索中统计整个搜索。（未发布） |
 | `methods[].seconds` | []object | 按秒的时间线，见下文 |
 
 ### 秒：`methods[].seconds[]`
@@ -524,7 +571,7 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `breakpoint.broke_rps` | int? | 目标崩溃或运行上限使搜索停下的最低速率；`null` — 未崩溃 |
 | `breakpoint.errors_limit` | string | 搜索使用的错误上限，百分数：默认 `"1%"`。某一级超过它即崩溃；`100%` — 错误不会使某一级崩溃 |
 | `breakpoint.why` | string? | 结束搜索的那次运行的原因，来自封闭列表：`errors`、`p99_limit`、`p99_vs_base`、`connection`、`no_recovery`、`generator`、`in_flight_cap`、`stream_limit`、`stream_wait`、`client_errors`、`clock_step`、`request_errors`；`null` — 没有原因。`client_errors`：上限只被客户端一侧的错误突破，目标自己的错误在上限之内；结果为 `run_limit` |
-| `breakpoint.stop_reason` | string? | 谁结束了搜索：`dataset_exhausted`（`dataset_reuse: false` 的文件用完了）、`requested`（用户停止）；`null`——搜索自行结束 |
+| `breakpoint.stop_reason` | string? | 谁结束了搜索：`dataset_exhausted`（`dataset_reuse: false` 的文件用完了）、`seq_overflow`（`{{seq}}` 放不进字段；仅在比最近一次发布更新的构建中）、`requested`（用户停止）；`null`——搜索自行结束 |
 | `breakpoint.notes` | []string | 搜索的说明，面向人的 ASCII 文本；不要解析 |
 | `breakpoint.runs` | []object | 按顺序列出所有运行 |
 | `breakpoint.runs[].kind` | string | `step`、`repeat` 或 `probe` |

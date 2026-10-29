@@ -128,6 +128,15 @@ type DatasetExhausted struct {
 	File string
 }
 
+// SeqOverflow says which call's seq reached the limit of its field and so
+// ended the run.
+type SeqOverflow struct {
+	// Method is the call's gRPC path as in Call.Method.
+	Method string
+	// Limit is the largest seq the field can hold.
+	Limit uint64
+}
+
 type MethodReport struct {
 	Method string
 	Sent   int
@@ -144,6 +153,8 @@ type MethodReport struct {
 	Max  metrics.Quantile
 	// Dataset is nil for a call without a dataset.
 	Dataset *DatasetReport
+	// Templates is nil for a call without templates.
+	Templates *TemplatesReport
 	// P99WithoutClientWaits is P99 of the same calls with each one's
 	// client-side waits taken out — start lag, the wait for a connection and
 	// for a stream: the time the target had them. After a resolver wait
@@ -364,6 +375,9 @@ type Report struct {
 	// DatasetExhausted is set when a call with Once needed a record and its
 	// file had none left: the run ended gently there. Nil otherwise.
 	DatasetExhausted *DatasetExhausted
+	// SeqOverflow is set when a templated call's seq reached the limit of its
+	// field and the run was stopped there. Nil otherwise.
+	SeqOverflow *SeqOverflow
 }
 
 type Stats struct {

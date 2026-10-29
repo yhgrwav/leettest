@@ -20,5 +20,6 @@ load:
     - method: wallet.v1.WalletService/GetBalance
       rps: 50
       duration: 10s
+      templates: true               # {{seq}} и {{uuid}} в data: в каждом запросе новое значение
       data:                         # тело запроса: до прогона проверяется по .proto
-        wallet_id: w-42
+        wallet_id: "w-{{seq}}-{{uuid}}"  # в кавычках: номер запроса и свежий uuid

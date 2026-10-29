@@ -301,6 +301,12 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		}
 	}
 
+	// Past the schema: the field a {{seq}} goes into says how many requests fit.
+	// -fake has no schema and no limit.
+	if fitErr := cli.CheckTemplatesFit(firstRuns(cfg, calls)); fitErr != nil {
+		return fitErr
+	}
+
 	if search {
 		return runBreakpointSearch(ctx, abort, &stopper, flags.flagSet, flags.fake, flags.connectTimeout, searchSetup{
 			cfg: cfg, configPath: flags.configPath, target: target, sender: sender, calls: calls,
@@ -402,8 +408,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		program := cli.NewProgram(target, label, eng, cli.ExcludedWindow(cfg), settings, s, reportOf)
 		view.Store(program)
 		runErr = cli.RunLive(program, s, start, abort)
-	} else if runErr = cli.RunPlain(stderr, target, eng, start); runErr != nil &&
-		!errors.Is(runErr, context.Canceled) && !errors.Is(runErr, engine.ErrInFlightCapExceeded) {
+	} else if runErr = cli.RunPlain(stderr, target, eng, start); runErr != nil && !endsWithReport(runErr) {
 		return runErr
 	}
 
@@ -985,7 +990,7 @@ func (l *lockedWriter) Write(p []byte) (int, error) {
 // decided by them: a missed limit is ErrThresholdsFailed, one that could not
 // be decided ErrInvalidRun.
 func runResult(run cli.RunReport, runErr error) error {
-	if runErr != nil && !errors.Is(runErr, context.Canceled) && !errors.Is(runErr, engine.ErrInFlightCapExceeded) {
+	if runErr != nil && !endsWithReport(runErr) {
 		return runErr
 	}
 
@@ -998,6 +1003,13 @@ func runResult(run cli.RunReport, runErr error) error {
 	}
 
 	return limitsResult(run.Thresholds)
+}
+
+// endsWithReport says the run's error is a way it ends, not a failure: a stop,
+// a cap hit, or a seq the guard would not hand out. The report is printed.
+func endsWithReport(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, engine.ErrInFlightCapExceeded) ||
+		errors.Is(err, engine.ErrSeqOverflow)
 }
 
 // runState is how the run ended, which decides whether its limits are
