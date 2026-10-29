@@ -5,4 +5,3 @@
 # A branch enters only with the `stress-timing` target in its own Makefile and
 # `stressplan timing`: its timing job runs them (red «No rule» otherwise).
 main
-release/v0.5
