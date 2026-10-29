@@ -359,6 +359,21 @@ type jsonMethod struct {
 	Dataset               *jsonDataset      `json:"dataset"`
 	Templates             *jsonTemplates    `json:"templates"`
 	Seconds               []jsonSecond      `json:"seconds"`
+	Windows               []jsonWindow      `json:"windows"`
+}
+
+// jsonWindow is one time window of a method, counted from the end of the
+// warm-up. P50US and P99US are null in a window without observations;
+// P99Bound is true when the window's p99 is a lower bound (a censored
+// observation reaches it). The numbers are display only.
+type jsonWindow struct {
+	StartUS  int64  `json:"start_us"`
+	WidthUS  int64  `json:"width_us"`
+	Sent     int    `json:"sent"`
+	Failed   int    `json:"failed"`
+	P50US    *int64 `json:"p50_us"`
+	P99US    *int64 `json:"p99_us"`
+	P99Bound bool   `json:"p99_bound"`
 }
 
 // jsonSecond counts each category under its Category.Name, but for success.
@@ -629,6 +644,7 @@ func jsonMethodOf(m *engine.MethodReport, warmup time.Duration) jsonMethod {
 		FailureCodes: make([]jsonCode, 0, len(m.FailureCodes)),
 		SilentFromS:  m.SilentFrom,
 		Seconds:      make([]jsonSecond, 0, len(m.Seconds)),
+		Windows:      make([]jsonWindow, 0, len(m.Windows)),
 	}
 	// The rate belongs to a silence: none without one.
 	if m.SilentFrom != nil {
@@ -678,8 +694,26 @@ func jsonMethodOf(m *engine.MethodReport, warmup time.Duration) jsonMethod {
 			TransportWaitSumUS: micros(s.TransportWaitSum), ServiceTimeSumUS: micros(s.ServiceTimeSum),
 		})
 	}
+	for _, w := range m.Windows {
+		out.Windows = append(out.Windows, jsonWindow{
+			StartUS: micros(w.Start), WidthUS: micros(w.Width), Sent: w.Sent, Failed: w.Failed,
+			P50US: windowQuantileUS(w.P50), P99US: windowQuantileUS(w.P99),
+			P99Bound: w.P99.Defined && !w.P99.Exact,
+		})
+	}
 
 	return out
+}
+
+// windowQuantileUS is a quantile's value in microseconds, null when the window
+// has no observations for it.
+func windowQuantileUS(q metrics.Quantile) *int64 {
+	if !q.Defined {
+		return nil
+	}
+	us := micros(q.Value)
+
+	return &us
 }
 
 // WriteJSON writes the report as one JSON object and a newline.
