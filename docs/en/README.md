@@ -140,9 +140,9 @@ At the end — a report per method: sent, failed, `sent/s`, p50/p90/p95/p99.
   the row of its planned moment, whenever it finished. A row shows `sent/s`, the share failed, p50
   and p99 to two significant digits, so a row's p50 may differ from the table's p50 in the last
   digit. A `no calls` row means no call went out in that window. If the rate is below one call
-  per window, that is the plan, not a failure: compare with the method's `plan:`. With a `ramp` the first rows are the ramp: a low `sent/s` there
-  is the plan, not a failure; look for the row where p99 or the failed share climbs before the
-  rate has reached its plateau.
+  per window, that is the plan, not a failure: compare with the method's `plan:`. With a `ramp`
+  the first rows are the ramp: a low `sent/s` there is the plan, not a failure; look for the row
+  where p99 or the failed share climbs before the rate has reached its plateau.
 - Under a method with a `dataset` stands a `data:` line: how many requests of the
   file were used and how many times the most used one went out. It does not mean the target saw
   that many distinct requests.
