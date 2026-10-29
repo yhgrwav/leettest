@@ -50,8 +50,8 @@ type BreakpointRun struct {
 	StartedAt time.Time
 	Plan      breakpoint.Plan
 	Result    breakpoint.Result
-	// StopReason is who ended the search: StopDatasetExhausted, StopRequested,
-	// or "" when nobody did.
+	// StopReason is who ended the search: StopDatasetExhausted, StopSeqOverflow,
+	// StopRequested, or "" when nobody did.
 	StopReason string
 	// MethodsSource is where the method came from; nil when none was resolved
 	// (-fake).
@@ -267,14 +267,22 @@ func PrintBreakpoint(w io.Writer, run BreakpointRun) {
 	if line := exhaustedLine(run); line != "" {
 		why = line
 	}
+	if line := overflowLine(run); line != "" {
+		why = line
+	}
 	fmt.Fprintf(w, "  %s\n", head)
 	if why != "" {
 		fmt.Fprintf(w, "  %s\n", why)
 	}
 	// S is cumulative, so the last run's report holds the count of the search.
 	if len(res.Steps) > 0 {
-		if last := res.Steps[len(res.Steps)-1].Report; len(last.Methods) > 0 && last.Methods[0].Dataset != nil {
-			fmt.Fprintln(w, datasetLine(last.Methods[0].Dataset))
+		if last := res.Steps[len(res.Steps)-1].Report; len(last.Methods) > 0 {
+			if last.Methods[0].Dataset != nil {
+				fmt.Fprintln(w, datasetLine(last.Methods[0].Dataset))
+			}
+			if last.Methods[0].Templates != nil {
+				fmt.Fprintln(w, templatesLine(last.Methods[0].Templates))
+			}
 		}
 	}
 	fmt.Fprintln(w)
@@ -336,6 +344,19 @@ func exhaustedLine(run BreakpointRun) string {
 	ex := last.Report.DatasetExhausted
 
 	return fmt.Sprintf("dataset %s (call %s) ran out at %d rps", path.Base(strings.ReplaceAll(ex.File, `\`, "/")), displayMethod(ex.Method), last.RPS)
+}
+
+// overflowLine says which call ended the search by a {{seq}} its field could
+// not hold, at which rate; empty when the search was not ended by one.
+func overflowLine(run BreakpointRun) string {
+	last, ok := lastWhy(run.Result)
+	if !ok || run.StopReason != StopSeqOverflow || run.Result.Outcome != breakpoint.Stopped || last.Report.SeqOverflow == nil {
+		return ""
+	}
+
+	o := last.Report.SeqOverflow
+
+	return fmt.Sprintf("{{seq}} of %s outgrew its field (limit %d) at %d rps", displayMethod(o.Method), o.Limit, last.RPS)
 }
 
 // searchNotes are the search's notes, the same in the text and in JSON, and,

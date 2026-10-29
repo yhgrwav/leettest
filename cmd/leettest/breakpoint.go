@@ -280,8 +280,15 @@ func (r *searchRunner) step(_ context.Context, rps int, settle, hold time.Durati
 		r.stopSearch()
 	}
 
+	if rp.SeqOverflow != nil {
+		// Like a file that ran out: the step is not judged, the search ends as stopped.
+		r.stopFor(cli.StopSeqOverflow)
+		r.stopSearch()
+	}
+
 	switch {
-	case runErr != nil && !errors.Is(runErr, context.Canceled) && !errors.Is(runErr, engine.ErrInFlightCapExceeded):
+	case runErr != nil && !errors.Is(runErr, context.Canceled) && !errors.Is(runErr, engine.ErrInFlightCapExceeded) &&
+		!errors.Is(runErr, engine.ErrSeqOverflow):
 		return rp, runErr
 	case rp.RequestRejected:
 		return rp, breakpoint.ErrRequestErrors

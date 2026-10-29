@@ -59,6 +59,7 @@ load:
 | `load.calls[].dataset_order` | `file` (weggelassen) oder `random`: die Reihenfolge der Anfragen aus der Datei. Braucht `dataset` |
 | `load.calls[].dataset_seed` | Eine ganze Zahl von 0 bis 9007199254740991, legt eine zufällige Reihenfolge fest. Braucht `dataset_order: random`. Weggelassen — wird selbst gewählt und im Bericht ausgegeben |
 | `load.calls[].dataset_reuse` | `true` (weggelassen) oder `false`: bei `false` geht kein Datensatz im ganzen Prozess zweimal raus. Braucht `dataset` |
+| `load.calls[].templates` | `true` oder `false` (weggelassen — `false`; ein Schlüssel ohne Wert ist ein Fehler): schaltet die Platzhalter `{{uuid}}` und `{{seq}}` in `data` ein, siehe [unten](#eine-anfrage-die-sich-ändert-templates). Braucht mindestens einen Platzhalter, nicht zusammen mit `dataset`. (nicht veröffentlicht) |
 | `load.calls[].pass` | Die Grenzen, die ein Lauf einhalten muss, um zu bestehen: `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, siehe [unten](#grenzen-pass). Weggelassen — keine Grenzen |
 | `load.breakpoint.pass` | Die Grenze einer Bruchpunkt-Suche: `held_rps`, siehe [unten](#grenzen-pass). Weggelassen — keine Grenze |
 | `load.breakpoint.errors_limit` | Ein Prozentwert wie `1%` oder `0.5%`, bis zu drei Stellen nach dem Punkt, höchstens `100%`. Eine Stufe der Suche bricht, wenn mehr als dieser Anteil der Aufrufe fehlschlug; genau so viel wird gehalten. Weggelassen — `1%` |
@@ -228,7 +229,9 @@ Nachricht raus, und eine solche Methode braucht keine Reflection.
 **Ein Body je Methode.** Jeder Aufruf einer Methode geht mit demselben `data` raus. Bei einem
 Schreibvorgang mit Idempotenzschlüssel heißt das: Der erste Aufruf legt den Datensatz an, und jeder
 spätere nimmt den Weg der Wiederholung: Das Ziel gibt die bereits gespeicherte Antwort zurück.
-Gemessen wird dieser Weg, nicht das Anlegen des Datensatzes.
+Gemessen wird dieser Weg, nicht das Anlegen des Datensatzes. Ein neuer Schlüssel in jeder Anfrage
+ist `templates: true` mit `{{uuid}}` (siehe [unten](#eine-anfrage-die-sich-ändert-templates)); jedes
+Mal ein anderer Satz Felder ist ein [dataset](#bei-jedem-aufruf-eine-andere-anfrage-dataset).
 
 Die Regeln für Werte sind die Standard-JSON-Regeln für Protobuf (`protojson`):
 
@@ -249,6 +252,53 @@ aus, startet eine Methode mit `data` nicht — der Fehler sagt das deutlich. Ein
 funktioniert auch ohne Reflection: Es gibt nichts, womit man sie prüfen könnte, und eine Warnung
 sagt das — vor dem Lauf auf stderr und noch einmal als Zeile im Bericht. Die Warnung sagt, warum die
 Prüfung nicht möglich war: Reflection ist aus, sie hat abgelehnt oder gar nicht geantwortet.
+
+## Eine Anfrage, die sich ändert: Templates
+
+```yaml
+    - method: orders.v1.OrderService/Create
+      rps: 500
+      duration: 1m
+      templates: true
+      data:
+        order_id: "{{seq}}"                # ein int64-Feld: die Nummer der Anfrage
+        idempotency_key: "key-{{uuid}}"    # ein String: in jeder Anfrage eine neue uuid
+        comment: "load-{{seq}}"
+```
+
+`templates: true` schaltet in `data` zwei Platzhalter ein: `{{uuid}}` ist eine zufällige uuid der
+Version 4, Kleinbuchstaben, 36 Zeichen; `{{seq}}` ist die Nummer der Anfrage dieses Aufrufs, ab 1.
+Jedes andere `{{...}}` (`{{nope}}`, `{{ uuid }}` mit Leerzeichen) ist ein Konfigurationsfehler mit
+dem Pfad des Feldes. Ohne `templates: true` gehen die Klammern als Text raus. `templates: true`
+ganz ohne Platzhalter ist ebenfalls ein Fehler. Der Body wird für jede Anfrage gebaut, nach ihrem
+Zeitpunkt im Plan; die Bauzeit zählt als Startverzug.
+
+- **Den Platzhalter in Anführungszeichen schreiben.** `'{{seq}}'` ist ein String; ohne
+  Anführungszeichen liest YAML `{{` als Beginn einer Map, und das ist ein YAML-Parsefehler.
+- **Ein String** nimmt Platzhalter an beliebiger Stelle des Textes und in jeder Tiefe (verschachtelte
+  Nachricht, `repeated`, Wert einer `map`). Zwei `{{uuid}}` in einem Body sind zwei verschiedene
+  Werte; `{{seq}}` ist in einer Anfrage überall dasselbe. Ein nur aus `"{{seq}}"` bestehender Wert in
+  einem String-Feld ist Text.
+- **Eine Zahl** nimmt nur ein ganzes `"{{seq}}"` in Anführungszeichen; `int64` kommt exakt an.
+  `{{uuid}}` in einer Zahl ist ein Fehler.
+- **Alles andere ist ein Fehler** mit Methode und Pfad `data.<Feld>`: `bool`, Enum, `bytes`,
+  `float`/`double`, ein Nachrichtenfeld, die Well-known-Typen (`google.protobuf.*`), ein `map`-Schlüssel.
+- **`seq` beginnt in jedem Lauf bei 1** und in `-dry-run` (er sendet Anfrage Nummer 1). Er zählt die
+  an den Sender übergebenen Anfragen, Anlauf und Aufwärmen eingeschlossen; in einer Suche läuft die
+  Zählung durch alle Schritte. Für einen Schlüssel, der über Läufe hinweg eindeutig ist, nimm
+  `{{uuid}}`, nicht `{{seq}}`.
+- **Ein 32-Bit-Feld** (`int32`, `sint32`, `sfixed32` bis 2147483647; `uint32`, `fixed32` bis
+  4294967295) läuft nie stumm über: Ein Plan, der mehr Anfragen vergibt, als das Feld fasst, wird vor
+  der ersten Anfrage abgelehnt (Exit 1; die Meldung nennt Methode, Grenze und Zahl der Anfragen).
+  Erreicht die Nummer die Grenze doch (ein Suchschritt), wird die Anfrage nicht gebaut und der Lauf
+  endet sanft wie bei Ctrl-C (Exit 3, `stop_reason: seq_overflow`); der Bericht wird gedruckt.
+  `{{seq}}` gehört in eine 64-Bit-Zahl oder einen String.
+- **`-fake`** zählt die Nummern und baut keinen Body (leere Nachricht, kein Fehler); die Syntax der
+  Platzhalter wird auch dort geprüft.
+
+Unter der Methodenzeile schreibt der Bericht `data: templated, seq uuid (last seq 7, ramp and warm-up counted)`.
+In JSON ist das `methods[].templates`, ein **Objekt** `{"placeholders": ["seq", "uuid"], "last_seq": 7}`
+und keine Liste; `null` — der Aufruf hat keine Templates.
 
 ## Bei jedem Aufruf eine andere Anfrage: dataset
 
@@ -439,7 +489,7 @@ unten den Typ „percentile?" hat.
 | `invalid_reasons` | []string | Warum der Lauf ungültig ist: `in_flight_cap`, `nothing_measured`, `clock_step`, `thresholds_undecided` (eine `pass`-Grenze lässt sich nicht entscheiden, und nicht, weil der Lauf angehalten oder schon ungültig war). Leer — gültig |
 | `tail_wait_cause` | string? | Die Wartezeit auf Client-Seite, die das Ende der Verteilung bestimmt hat: `generator`, `stream`, `connection`; `null` — kein Urteil |
 | `clock_step_ns` | int | Der Uhrenschritt des Hosts, ns: Jede Latenz und Wartezeit ist ± dieser Wert |
-| `stop_reason` | string? | `error_spike`, wenn `load.stop_on_errors` den Lauf gestoppt hat; sonst `null`. (nicht veröffentlicht) |
+| `stop_reason` | string? | `error_spike`, wenn `load.stop_on_errors` den Lauf gestoppt hat; `seq_overflow`, wenn ein `{{seq}}` nicht in sein Feld passte und der Lauf sanft endete (Exit 3); sonst `null`. (nicht veröffentlicht) |
 | `stop` | object? | Wo und auf welchen Zahlen `load.stop_on_errors` den Lauf gestoppt hat; `null`, wenn nicht. (nicht veröffentlicht) |
 | `stop.method` | string | Die Methode, deren Anteil fehlgeschlagener Aufrufe die Grenze überschritten hat, genau so geschrieben wie in `methods[].method`, mit dem führenden `/`. (nicht veröffentlicht) |
 | `stop.failed` | int | Ihre fehlgeschlagenen Aufrufe in den letzten 5 Sekunden. (nicht veröffentlicht) |
@@ -447,6 +497,9 @@ unten den Typ „percentile?" hat.
 | `stop.limit` | string | Die Grenze, wie in der Konfiguration geschrieben: `"5%"`. (nicht veröffentlicht) |
 | `stop.at_us` | int | Die Zeit vom Start des Laufs bis zum Stopp, in ganzen Mikrosekunden. (nicht veröffentlicht) |
 | `stop.in_flight` | int | Die Aufrufe im Flug in diesem Moment (begonnen, nicht beendet): bei einem hängenden Ziel das, was das Fenster nicht zeigt. (nicht veröffentlicht) |
+| `seq_overflow` | object? | Wo ein `{{seq}}` nicht in sein Feld passte und der Lauf anhielt; `null`, wenn das nicht geschah. (nicht veröffentlicht) |
+| `seq_overflow.method` | string | Die Methode, deren Feld überlief, geschrieben wie in `methods[].method`, mit führendem `/`. (nicht veröffentlicht) |
+| `seq_overflow.limit` | int | Das größte `seq`, das das schmalste Feld der Methode fasst. (nicht veröffentlicht) |
 | `started_at` | string | Beginn des Plans, RFC 3339 UTC, Aufwärmen eingeschlossen. Jedes `_us` und `_s` zählt ab hier |
 | `duration_us` | int | Wie lange der Lauf ging, Aufwärmen eingeschlossen |
 | `planned_us` | int | Wie lange er gehen sollte, der Anlauf eingeschlossen |
@@ -572,6 +625,9 @@ Die übrigen sind einfache Zähler.
 | `methods[].dataset.order` | string | `file` oder `random`: in welcher Reihenfolge die Anfragen rausgingen |
 | `methods[].dataset.seed` | int? | Seed einer zufälligen Reihenfolge, 0 bis 9007199254740991; `null` bei der Reihenfolge der Datei |
 | `methods[].dataset.reuse` | bool | `false` — der Aufruf sendet jeden Datensatz höchstens einmal (`dataset_reuse: false`); sonst `true` |
+| `methods[].templates` | object? | Die Templates des Aufrufs (`templates: true`); `null` — er hat keine. Ein Objekt, keine Liste. (nicht veröffentlicht) |
+| `methods[].templates.placeholders` | []string | Die Platzhalter, die `data` benutzt, sortiert: `seq`, `uuid`. (nicht veröffentlicht) |
+| `methods[].templates.last_seq` | int | Wie viele Anfragen des Aufrufs im Prozess an den Sender übergeben wurden, Anlauf und Aufwärmen eingeschlossen: die Nummer der letzten. In einer Suche zählt es die ganze Suche. (nicht veröffentlicht) |
 | `methods[].seconds` | []object | Die Zeitleiste pro Sekunde, siehe unten |
 
 ### Sekunde: `methods[].seconds[]`
@@ -606,7 +662,7 @@ obersten Ebene. Jeder Lauf liegt mit seinem vollständigen Bericht in `breakpoin
 | `breakpoint.broke_rps` | int? | Die niedrigste Rate, bei der das Ziel brach oder ein Lauflimit die Suche stoppte; `null` — es brach nicht |
 | `breakpoint.errors_limit` | string | Die Fehlergrenze der Suche als Prozent: standardmäßig `"1%"`. Eine Stufe brach darüber; `100%` — Fehler brechen keine Stufe |
 | `breakpoint.why` | string? | Ursache des Laufs, der die Suche beendet hat, aus einer geschlossenen Liste: `errors`, `p99_limit`, `p99_vs_base`, `connection`, `no_recovery`, `generator`, `in_flight_cap`, `stream_limit`, `stream_wait`, `client_errors`, `clock_step`, `request_errors`; `null` — keine Ursache. `client_errors`: die Grenze wurde nur durch Fehler auf der Seite des Clients überschritten, die eigenen Fehler des Ziels liegen innerhalb davon; das Ergebnis ist `run_limit` |
-| `breakpoint.stop_reason` | string? | Wer die Suche beendet hat: `dataset_exhausted` (eine Datei mit `dataset_reuse: false` war aufgebraucht), `requested` (vom Nutzer gestoppt); `null` — die Suche endete von selbst |
+| `breakpoint.stop_reason` | string? | Wer die Suche beendet hat: `dataset_exhausted` (eine Datei mit `dataset_reuse: false` war aufgebraucht), `seq_overflow` (ein `{{seq}}` passte nicht in sein Feld; nur in Builds, die neuer sind als das letzte Release), `requested` (vom Nutzer gestoppt); `null` — die Suche endete von selbst |
 | `breakpoint.notes` | []string | Hinweise der Suche, Text für Menschen in ASCII; nicht auswerten |
 | `breakpoint.runs` | []object | Alle Läufe der Reihe nach |
 | `breakpoint.runs[].kind` | string | `step`, `repeat` oder `probe` |

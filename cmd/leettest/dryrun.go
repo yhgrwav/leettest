@@ -74,6 +74,10 @@ func runDryRun(ctx context.Context, stdout, stderr io.Writer, cfg *config.Master
 		return err
 	}
 
+	if fitErr := cli.CheckTemplatesFit(firstRuns(cfg, calls)); fitErr != nil {
+		return fitErr
+	}
+
 	printer := &cli.DryRunPrinter{
 		W: stdout, Total: len(calls), Redact: cli.DryRunRedactor(cfg.App.RawMetadata, os.LookupEnv),
 	}
@@ -134,6 +138,11 @@ func dryRunCall(cfgCall *config.Call, call *engine.Call) cli.DryRunCall {
 
 	if call.Dataset != nil && len(call.Payloads) > 0 {
 		out.Request, out.Record, out.Records = call.Payloads[0], 1, len(call.Payloads)
+	}
+
+	// The first request of a run is number 1; the dry run counts nothing.
+	if call.Template != nil && call.Template.Build != nil {
+		out.Request = call.Template.Build(1)
 	}
 
 	return out

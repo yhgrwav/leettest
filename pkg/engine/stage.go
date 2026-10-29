@@ -52,6 +52,38 @@ func (s Stage) offset(i int) (time.Duration, bool) {
 	return s.rampOffset(i)
 }
 
+// Ticks is how many requests the stage places: the count offset walks, told
+// by arithmetic, so a stage of hours costs no more than one of a second. A
+// constant stage places ceil(D·rps / 1s) (tick i is before D iff i·1s < D·rps),
+// a ramp ceil(D·(a+b) / 2s) (rampHasTick), both in 128 bits. A count past
+// uint64 is math.MaxUint64.
+func (s Stage) Ticks() uint64 {
+	if s.Duration <= 0 || s.StartRPS < 0 || s.TargetRPS < 0 {
+		return 0
+	}
+
+	if s.StartRPS == s.TargetRPS {
+		return ceilDiv128(uint64(s.Duration), uint64(s.TargetRPS), uint64(time.Second))
+	}
+
+	return ceilDiv128(uint64(s.Duration), uint64(s.StartRPS)+uint64(s.TargetRPS), 2*uint64(time.Second))
+}
+
+// ceilDiv128 is ceil(x·y / d) for d > 0, saturating at math.MaxUint64.
+func ceilDiv128(x, y, d uint64) uint64 {
+	hi, lo := bits.Mul64(x, y)
+
+	lo, carry := bits.Add64(lo, d-1, 0)
+	hi, _ = bits.Add64(hi, 0, carry)
+	if hi >= d {
+		return math.MaxUint64
+	}
+
+	q, _ := bits.Div64(hi, lo, d)
+
+	return q
+}
+
 func (s Stage) rampOffset(i int) (time.Duration, bool) {
 	if !s.rampHasTick(i) {
 		return 0, false

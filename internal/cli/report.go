@@ -201,6 +201,9 @@ func printMethodRow(w io.Writer, m *engine.MethodReport, compression string, ram
 	if m.Dataset != nil {
 		fmt.Fprintln(w, datasetLine(m.Dataset))
 	}
+	if m.Templates != nil {
+		fmt.Fprintln(w, templatesLine(m.Templates))
+	}
 
 	printAnswerRows(w, m)
 }

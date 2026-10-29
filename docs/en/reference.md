@@ -57,6 +57,7 @@ load:
 | `load.calls[].dataset_order` | `file` (left out) or `random`: the order of the dataset's requests. Needs `dataset` |
 | `load.calls[].dataset_seed` | A whole number from 0 to 9007199254740991 that fixes a random order. Needs `dataset_order: random`. Left out — one is drawn and the report prints it |
 | `load.calls[].dataset_reuse` | `true` (left out) or `false`: with `false` no record goes out twice, in the whole process. Needs `dataset` |
+| `load.calls[].templates` | `true` or `false` (left out — `false`; a key with no value is an error): turns on the `{{uuid}}` and `{{seq}}` placeholders in `data`, see [below](#a-request-that-changes-templates). Needs at least one placeholder, not together with `dataset`. (not released) |
 | `load.calls[].pass` | The limits a run must meet to pass: `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, see [below](#pass-limits). Left out — no limits |
 | `load.breakpoint.pass` | A breaking-point search's limit: `held_rps`, see [below](#pass-limits). Left out — no limit |
 | `load.breakpoint.errors_limit` | A percent such as `1%` or `0.5%`, up to three digits after the point, at most `100%`. A search step breaks when more than this share of its calls failed; exactly that much holds. Left out — `1%` |
@@ -219,7 +220,9 @@ a method needs no reflection.
 **One body per method.** Every call of a method goes out with the same `data`. For a write with an
 idempotency key this means the first call creates the record and every later one takes the repeat
 path: the target returns the answer it already stored. That path is what gets measured, not
-creating the record.
+creating the record. A new key in every request is `templates: true` and `{{uuid}}` (see
+[below](#a-request-that-changes-templates)); a different set of fields each time is a
+[dataset](#a-different-request-each-call-a-dataset).
 
 Value rules are the standard JSON rules for protobuf (`protojson`):
 
@@ -240,6 +243,51 @@ with `data` will not start — the error says so plainly. A method without `data
 reflection too: there is nothing to check it with, and a warning says so — before the run on
 stderr and once more as a line in the report. The warning says why the check was not possible:
 reflection is off, it refused, or it did not answer at all.
+
+## A request that changes: templates
+
+```yaml
+    - method: orders.v1.OrderService/Create
+      rps: 500
+      duration: 1m
+      templates: true
+      data:
+        order_id: "{{seq}}"                # an int64 field: the number of the request
+        idempotency_key: "key-{{uuid}}"    # a string: a new uuid in each request
+        comment: "load-{{seq}}"
+```
+
+`templates: true` turns on two placeholders in `data`: `{{uuid}}` is a random version-4 uuid, lower
+case, 36 characters; `{{seq}}` is the number of this call's request, from 1. Any other `{{...}}`
+(`{{nope}}`, `{{ uuid }}` with spaces) is a config error with the field's path. Without
+`templates: true` the braces go out as text. `templates: true` with no placeholder at all is an
+error too. The body is built for each request, after its moment in the schedule; the time to build
+it counts as start lag.
+
+- **Quote the placeholder.** `'{{seq}}'` is a string; unquoted, YAML reads `{{` as the start of a
+  mapping, and that is a YAML parse error.
+- **A string** takes placeholders anywhere in its text and at any depth (a nested message,
+  `repeated`, a `map` value). Two `{{uuid}}` in one body are two different values; `{{seq}}` is
+  the same everywhere in one request. A string that is only `"{{seq}}"` in a string field is text.
+- **A number** takes only a whole `"{{seq}}"` in quotes; `int64` arrives exactly. `{{uuid}}` in a
+  number is an error.
+- **Anything else is an error** with the method and the path `data.<field>`: `bool`, enum, `bytes`,
+  `float`/`double`, a message field, the well-known types (`google.protobuf.*`), a `map` key.
+- **`seq` starts at 1 in every run** and in `-dry-run` (it sends request number 1). It counts the
+  requests handed to the sender, the ramp and the warm-up included; in a search the count goes on
+  through every step. For a key that is unique across runs use `{{uuid}}`, not `{{seq}}`.
+- **A 32-bit field** (`int32`, `sint32`, `sfixed32` up to 2147483647; `uint32`, `fixed32` up to
+  4294967295) never wraps silently: a plan that hands out more requests than the field holds is
+  refused before the first request (exit 1; the message names the method, the limit and the number
+  of requests). If the number still reaches the limit (a search step), the request is not built and
+  the run ends softly, like Ctrl-C (exit 3, `stop_reason: seq_overflow`), and the report is
+  printed. Put `{{seq}}` into a 64-bit number or a string.
+- **`-fake`** counts the numbers and builds no body (an empty message, no error); the syntax of
+  the placeholders is checked there too.
+
+Under the method's row the report says `data: templated, seq uuid (last seq 7, ramp and warm-up counted)`.
+In JSON this is `methods[].templates`, an **object** `{"placeholders": ["seq", "uuid"], "last_seq": 7}`
+and not a list; `null` — the call has no templates.
 
 ## A different request each call: a dataset
 
@@ -417,7 +465,7 @@ measured calls only. The first column is the field's full path.
 | `invalid_reasons` | []string | Why the run is invalid: `in_flight_cap`, `nothing_measured`, `clock_step`, `thresholds_undecided` (a `pass` limit cannot be decided, and not because the run was stopped or already invalid). Empty — valid |
 | `tail_wait_cause` | string? | The client-side wait that set the tail: `generator`, `stream`, `connection`; `null` — no verdict |
 | `clock_step_ns` | int | The host clock step, ns: every latency and wait is ± it |
-| `stop_reason` | string? | `error_spike` when `load.stop_on_errors` stopped the run; otherwise `null`. (not released) |
+| `stop_reason` | string? | `error_spike` when `load.stop_on_errors` stopped the run; `seq_overflow` when a `{{seq}}` did not fit its field and the run ended softly (exit 3); otherwise `null`. (not released) |
 | `stop` | object? | Where and on which numbers `load.stop_on_errors` stopped the run; `null` when it did not. (not released) |
 | `stop.method` | string | The method whose share of failed calls passed the limit, written exactly as in `methods[].method`, leading `/` included. (not released) |
 | `stop.failed` | int | Its failed calls over the last 5 seconds. (not released) |
@@ -425,6 +473,9 @@ measured calls only. The first column is the field's full path.
 | `stop.limit` | string | The limit as written in the config: `"5%"`. (not released) |
 | `stop.at_us` | int | The time from the start of the run to the stop, in whole microseconds. (not released) |
 | `stop.in_flight` | int | The calls in flight at that moment (begun, not finished): on a hanging target, what the window cannot show. (not released) |
+| `seq_overflow` | object? | Where a `{{seq}}` did not fit its field and the run stopped; `null` when that did not happen. (not released) |
+| `seq_overflow.method` | string | The method whose field overflowed, written as in `methods[].method`, leading `/` included. (not released) |
+| `seq_overflow.limit` | int | The largest `seq` the method's narrowest field holds. (not released) |
 | `started_at` | string | Start of the schedule, RFC 3339 UTC, warm-up included. Every `_us` and `_s` counts from it |
 | `duration_us` | int | How long the run went, warm-up included |
 | `planned_us` | int | How long it was meant to go, the ramp included |
@@ -550,6 +601,9 @@ The rest are plain counters.
 | `methods[].dataset.order` | string | `file` or `random`: the order the requests went out in |
 | `methods[].dataset.seed` | int? | The seed of a random order, 0 to 9007199254740991; `null` for file order |
 | `methods[].dataset.reuse` | bool | `false` — the call sends each record at most once (`dataset_reuse: false`); otherwise `true` |
+| `methods[].templates` | object? | The call's templates (`templates: true`); `null` — it has none. An object, not a list. (not released) |
+| `methods[].templates.placeholders` | []string | The placeholders `data` uses, sorted: `seq`, `uuid`. (not released) |
+| `methods[].templates.last_seq` | int | How many of the call's requests were handed to the sender in the process, the ramp and the warm-up included: the number of the last. In a search it counts the whole search. (not released) |
 | `methods[].seconds` | []object | The per-second timeline, see below |
 
 ### Second: `methods[].seconds[]`
@@ -584,7 +638,7 @@ as in the run above, a plain run's other fields are not at the top level. Every 
 | `breakpoint.broke_rps` | int? | The lowest rate the target broke at or a run limit stopped the search at; `null` — it did not break |
 | `breakpoint.errors_limit` | string | The error limit the search used, as a percent: `"1%"` by default. A step broke over it; `100%` means errors do not break a step |
 | `breakpoint.why` | string? | The cause of the run that ended the search, from a closed list: `errors`, `p99_limit`, `p99_vs_base`, `connection`, `no_recovery`, `generator`, `in_flight_cap`, `stream_limit`, `stream_wait`, `client_errors`, `clock_step`, `request_errors`; `null` — no cause. `client_errors`: the limit is crossed only with failures on the client's side, the target's own are within it; the outcome is `run_limit` |
-| `breakpoint.stop_reason` | string? | Who ended the search: `dataset_exhausted` (a `dataset_reuse: false` file ran out), `requested` (stopped by the user); `null` — the search ended itself |
+| `breakpoint.stop_reason` | string? | Who ended the search: `dataset_exhausted` (a `dataset_reuse: false` file ran out), `seq_overflow` (a `{{seq}}` did not fit its field; only in builds newer than the last release), `requested` (stopped by the user); `null` — the search ended itself |
 | `breakpoint.notes` | []string | The search's notes, text for people in ASCII; do not parse |
 | `breakpoint.runs` | []object | Every run in order |
 | `breakpoint.runs[].kind` | string | `step`, `repeat` or `probe` |

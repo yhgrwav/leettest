@@ -77,6 +77,12 @@ func CallsFromConfig(cfg *config.MasterConfig) ([]engine.Call, error) {
 			built.Dataset = &engine.DatasetRef{File: call.Dataset, SHA256: call.DatasetSHA256, Counter: counter, Once: call.DatasetReuse != nil && !*call.DatasetReuse}
 		}
 
+		if call.TemplatesOn() {
+			// Counts and builds nothing: the body needs a schema, which AttachMethods
+			// brings and replaces this with; under -fake there is none.
+			built.Template = engine.NewTemplate(call.TemplatePlaceholders(), 0, nil)
+		}
+
 		calls = append(calls, built)
 	}
 

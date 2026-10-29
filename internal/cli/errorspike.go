@@ -83,12 +83,22 @@ func stopJSON(t *errstop.Trip) *jsonStop {
 	}
 }
 
+// StopSeqOverflow is the JSON stop_reason of a run that a seq which did not fit
+// its field ended.
+const StopSeqOverflow = "seq_overflow"
+
 // stopReasonJSON is the stop_reason of the report.
-func stopReasonJSON(t *errstop.Trip) *string {
-	if t == nil {
+func stopReasonJSON(run RunReport) *string {
+	var reason string
+
+	switch {
+	case run.Stop != nil:
+		reason = StopErrorSpike
+	case run.SeqOverflow != nil:
+		reason = StopSeqOverflow
+	default:
 		return nil
 	}
-	reason := StopErrorSpike
 
 	return &reason
 }

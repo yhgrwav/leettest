@@ -15,6 +15,9 @@ stop.total int
 stop.limit string
 stop.at_us int
 stop.in_flight int
+seq_overflow object?
+seq_overflow.method string
+seq_overflow.limit int
 clock_step_ns int
 started_at string
 duration_us int
@@ -264,6 +267,9 @@ methods[].dataset.used_max int
 methods[].dataset.order string
 methods[].dataset.seed int?
 methods[].dataset.reuse bool
+methods[].templates object?
+methods[].templates.placeholders []string
+methods[].templates.last_seq int
 methods[].seconds []object
 methods[].seconds[].warmup bool
 methods[].seconds[].begun int

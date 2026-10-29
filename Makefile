@@ -6,7 +6,7 @@ LINT_VERSION := v2.14.0
 # CI calls these targets rather than copying their commands: one definition,
 # so a local run and CI cannot drift apart.
 
-.PHONY: help vet test race stress stress-timing lint lint-install fmt check build demo stand run proto clean
+.PHONY: help vet test race stress stress-timing lint lint-install fmt check bench build demo stand run proto clean
 
 # Recipes run in sh (Git Bash, CI) or in cmd.exe (an IDE on Windows, no sh
 # in PATH): every one must mean the same in both. $(info) needs no shell.
@@ -19,6 +19,7 @@ help:
 	$(info make lint          golangci-lint, gofmt and goimports included)
 	$(info make fmt           gofmt the tree)
 	$(info make check         what must pass before a push: vet, test, lint)
+	$(info make bench         the per-request benchmarks: plain and templated)
 	$(info make build         bin/leettest)
 	$(info make demo          a run against the built-in fake target, no server needed)
 	$(info make stand         start the reference stand on 127.0.0.1:50051 (keep it running))
@@ -77,6 +78,11 @@ fmt:
 # gofmt is checked by lint, as one of its formatters.
 check:
 	$(MAKE) vet test lint
+
+# The cost of one request: the plain path (must stay at 0 allocs) and a templated
+# one, and the fast template build against the naive one the reference test uses.
+bench:
+	go test -run NONE -bench "NewRequest|TemplateBuild" -benchmem -benchtime 200000x ./pkg/engine ./internal/cli
 
 build:
 	go build -o bin/leettest ./cmd/leettest
