@@ -140,6 +140,15 @@ Am Ende — ein Bericht je Methode: gesendet, fehlgeschlagen, `sent/s`, p50/p90/
   hängt, senkt diese Zahl nicht.
 - Ein Perzentil, dessen Platz vom Timeout abgeschnittene Aufrufe einnehmen könnten, wird als
   **Untergrenze** ausgegeben: `>2.0s`. Kein Wert, sondern „mindestens".
+- Unter der Tabelle bekommt eine Methode einen Block `over time` (noch nicht veröffentlicht): der
+  gemessene Teil des Laufs ab dem Ende des Warm-ups in höchstens 12 Zeilen; JSON hält bis zu 60
+  Fenster. Ein Aufruf gehört zur Zeile seines geplanten Moments, egal wann er endete. Eine Zeile
+  zeigt `sent/s`, den Anteil der Fehlschläge, p50 und p99 auf zwei signifikante Stellen, daher kann
+  das p50 einer Zeile in der letzten Stelle vom p50 der Tabelle abweichen. Eine Zeile `no calls`
+  heißt, dass in diesem Fenster kein Aufruf hinausging. Liegt die Rate unter einem Aufruf pro
+  Fenster, ist das der Plan, kein Fehler: mit `plan:` der Methode vergleichen. Bei einem `ramp` sind
+  die ersten Zeilen der Hochlauf: ein niedriges `sent/s` dort ist der Plan, kein Fehler; suchen Sie
+  die Zeile, in der p99 oder der Fehleranteil steigt, bevor die Rate ihr Plateau erreicht hat.
 - Unter einer Methode mit `dataset` steht eine Zeile `data:`: wie viele
   Anfragen der Datei benutzt wurden und wie oft die am häufigsten benutzte rausging. Das heißt nicht,
   dass das Ziel so viele verschiedene Anfragen gesehen hat.
