@@ -16,4 +16,4 @@ These are plans, not promised dates. What works today is in the [README](README.
 
 - **[Call chaining](chaining.md)**: a field from one method's reply goes into another's request.
 - **Token refresh** during a long run.
-- **Metrics export** to Prometheus.
+- ~~**Metrics export** to Prometheus.~~ Done in v0.6: [Prometheus metrics](reference.md#prometheus-metrics).

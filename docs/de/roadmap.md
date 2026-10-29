@@ -19,4 +19,4 @@ Das sind Pläne, keine zugesagten Termine. Was heute funktioniert, steht im [REA
 - **[Verkettung von Aufrufen](chaining.md)**: ein Feld aus der Antwort einer Methode in die Anfrage
   einer anderen.
 - **Token-Erneuerung** während eines langen Laufs.
-- **Metrik-Export** nach Prometheus.
+- ~~**Metrik-Export** nach Prometheus.~~ Fertig in v0.6: [Prometheus-Metriken](reference.md#prometheus-metriken).
