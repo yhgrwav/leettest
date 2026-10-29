@@ -15,6 +15,8 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -22,10 +24,12 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/yhgrwav/leettest/internal/cli"
+	"github.com/yhgrwav/leettest/pkg/config"
 	"github.com/yhgrwav/leettest/pkg/engine"
 )
 
@@ -272,6 +276,80 @@ func TestRun_APlanPastTheFieldIsRefusedBeforeTheFirstRequest(t *testing.T) {
 	}
 	if n := len(target.recorder.allSimple()); n != 0 {
 		t.Errorf("the target saw %d requests of a refused plan", n)
+	}
+}
+
+// seqSearch runs the breaking-point search over a call whose {{seq}} field holds
+// 3: the first step (50 rps) hands out 3 requests and the guard stops it before
+// the 4th. It is the one path where the guard fires in a real command, because
+// a plain run is refused earlier by CheckTemplatesFit. The calls are made here,
+// not by the CLI, so that the limit can be as small as the test needs.
+func seqSearch(t *testing.T, asJSON bool) (stdout string, err error) {
+	t.Helper()
+
+	cfg, err := config.LoadFile(writeSearch(t, closedPort(t), checkMethod))
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+
+	calls, err := cli.CallsFromConfig(cfg)
+	if err != nil {
+		t.Fatalf("calls: %v", err)
+	}
+	calls[0].Template = engine.NewTemplate([]string{"seq"}, 3, nil)
+
+	ctx, abort := context.WithCancel(t.Context())
+	defer abort()
+
+	var (
+		out, errOut bytes.Buffer
+		stopper     atomic.Pointer[cli.Stopper]
+	)
+	err = runSearch(ctx, abort, &stopper, searchSetup{
+		cfg: cfg, target: "fake", sender: engine.FakeSender{}, calls: calls, json: asJSON,
+	}, &out, &errOut)
+
+	return out.String(), err
+}
+
+// A search whose {{seq}} outgrows its field ends as stopped, with its report:
+// not as an error that throws the hours of data away, and not as a step that
+// "broke the system" (the field's limit is not the target's).
+// Ground: contract (reviewer R1, deviation 1) — the same guarantee as T1, for
+// the one path where the guard really fires.
+// Mutation: the step's filter lets ErrSeqOverflow through as an ordinary error
+// (the search returns it, no report); stopFor(StopSeqOverflow) is gone (the
+// search is stopped with no reason, no line, null in JSON).
+func TestSearch_ASeqPastItsFieldEndsTheSearchStoppedWithAReport(t *testing.T) {
+	out, err := seqSearch(t, false)
+	if !errors.Is(err, ErrIncomplete) {
+		t.Fatalf("the search returned %v, want ErrIncomplete (exit 3, the report printed)", err)
+	}
+	if got := exitCode(err); got != 3 {
+		t.Errorf("exit code %d, want 3", got)
+	}
+	for _, want := range []string{"stopped at the first step", "{{seq}} of " + strings.TrimPrefix(checkMethod, "/") + " outgrew its field (limit 3) at 50 rps"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the report lacks %q:\n%s", want, out)
+		}
+	}
+
+	out, err = seqSearch(t, true)
+	if exitCode(err) != 3 {
+		t.Fatalf("json: the search returned %v (exit %d), want exit 3", err, exitCode(err))
+	}
+	bp, ok := jsonAt(t, decodeOnly(t, out), "breakpoint").(map[string]any)
+	if !ok {
+		t.Fatalf("json: no breakpoint object:\n%s", out)
+	}
+	if bp["outcome"] != "stopped" || bp["stop_reason"] != "seq_overflow" {
+		t.Errorf("breakpoint = outcome %v stop_reason %v, want stopped, seq_overflow", bp["outcome"], bp["stop_reason"])
+	}
+	if v, present := bp["broke_rps"]; !present || v != nil {
+		t.Errorf("broke_rps = %v (present %v), want null with the key present: the field's limit is not a break of the target", v, present)
+	}
+	if runs, _ := bp["runs"].([]any); len(runs) != 1 {
+		t.Errorf("%d runs listed, want 1: the step the guard stopped", len(runs))
 	}
 }
 

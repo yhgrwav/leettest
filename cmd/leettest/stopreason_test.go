@@ -29,6 +29,9 @@ func TestStopReasonFirstWins(t *testing.T) {
 	}{
 		{"requested then exhausted", cli.StopRequested, cli.StopDatasetExhausted},
 		{"exhausted then requested", cli.StopDatasetExhausted, cli.StopRequested},
+		{"requested then seq overflow", cli.StopRequested, cli.StopSeqOverflow},
+		{"seq overflow then requested", cli.StopSeqOverflow, cli.StopRequested},
+		{"exhausted then seq overflow", cli.StopDatasetExhausted, cli.StopSeqOverflow},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
