@@ -446,6 +446,8 @@ type runFlags struct {
 	interactive    bool
 	flagLabels     map[string]string
 	flagSet        *flag.FlagSet
+	// metricsListen is -metrics-listen, empty when it was not given.
+	metricsListen string
 }
 
 // parseFlags reads the command line and checks it before anything else. done
@@ -468,6 +470,7 @@ func parseFlags(args []string, terminal bool, stdout, stderr io.Writer) (runFlag
 		output         = flags.String("output", "text", "report format on stdout: text, or json for scripts")
 		jsonFile       = flags.String("json-file", "", "also write the JSON report to this new file")
 		plain          = flags.Bool("plain", false, "no live screen: progress lines on stderr, as when stderr is not a terminal")
+		metricsListen  = flags.String("metrics-listen", "", "serve Prometheus metrics on this host:port during the run; overrides export.prometheus.listen and turns the export on")
 		labelArgs      labelFlags
 	)
 	flags.Var(&labelArgs, "label", "a key=value label for the report, repeatable; wins over the config's labels")
@@ -517,6 +520,7 @@ func parseFlags(args []string, terminal bool, stdout, stderr io.Writer) (runFlag
 		interactive:    interactive,
 		flagLabels:     flagLabels,
 		flagSet:        flags,
+		metricsListen:  *metricsListen,
 	}, false, nil
 }
 
