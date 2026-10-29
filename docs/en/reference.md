@@ -61,6 +61,8 @@ load:
 | `load.calls[].pass` | The limits a run must meet to pass: `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, see [below](#pass-limits). Left out — no limits |
 | `load.breakpoint.pass` | A breaking-point search's limit: `held_rps`, see [below](#pass-limits). Left out — no limit |
 | `load.breakpoint.errors_limit` | A percent such as `1%` or `0.5%`, up to three digits after the point, at most `100%`. A search step breaks when more than this share of its calls failed; exactly that much holds. Left out — `1%` |
+| `export.prometheus.listen` | The `host:port` the run serves `/metrics` on while the load goes, see [below](#prometheus-metrics); port `0` takes a free one, and the address taken is printed on stderr. No default: the address comes from this key or `-metrics-listen`, and `export.prometheus` with neither is an error. An example is `127.0.0.1:9464`. **`:9464` opens the port on all interfaces with no password**, and the body holds method names and your `labels`. A key without a value is an error. Not together with `load.breakpoint` and `-dry-run`. (not released) |
+| `export.prometheus.linger` | How long after the run ends the endpoint keeps serving the final values, so that the last scrape sees them. Left out — `15s`; `0` — no hold. **`15s` delays the exit of every run, so set `0` in CI.** A key without a value is an error. Only together with `export.prometheus.listen` or `-metrics-listen`. (not released) |
 
 The config is read strictly: a typo in a field name is an error with the line number, a wrong
 value is an error with the call's number and method, not a run with an empty load. `rps` is a
@@ -338,6 +340,7 @@ not split between machines, and a stop leaves records unsent.
 | `-output` | Report format on stdout: `text` (the default) or `json` for scripts and CI |
 | `-json-file` | Path of a new file: the JSON report (the same object `-output json` prints) is written to it, and stdout stays as `-output` says. An existing file or a missing directory is exit 1 before the start. A run with no report leaves no file. A failed write is exit 1 |
 | `-label` | A `key=value` label for the report's passport; repeat it for several. Wins over the same key in the config's `labels`. A key given twice, or one that breaks the key and value rules, is exit 1 before the start |
+| `-metrics-listen` | `host:port`: serve `/metrics` on this address while the load goes; wins over `export.prometheus.listen` and turns the export on by itself, details [below](#prometheus-metrics). Port `0` takes a free one. **`:9464` opens the port on all interfaces with no password**; a safe example is `127.0.0.1:9464`. Not together with `-dry-run` and `load.breakpoint`. (not released) |
 | `-connect-timeout` | How long to wait for a service that accepted the connection but stays silent. Default `10s`. A refused connection and a wrong address are not waited for |
 | `-max-in-flight` | Cap on requests waiting for a reply. Default `5000` |
 | `-plain` | No live screen: a progress line once a second on stderr, as without a terminal, and no first-run dialog. The report and exit codes are the same |
@@ -346,6 +349,49 @@ not split between machines, and a stop leaves records unsent.
 | `-fake` | Load a built-in stub instead of the service from the config — to look at the tool without a service. The report is marked `fake target` |
 | `-fake-delay`, `-fake-jitter`, `-fake-fail-ratio` | The stub's behavior. Only together with `-fake` |
 | `-version` | Print the version and exit. A build from source prints the commit |
+
+## Prometheus metrics
+
+(not released) A run with `export.prometheus.listen` or `-metrics-listen` serves `/metrics` (text
+format 0.0.4) on that address while the load goes; there are no other paths. The address is taken
+before the service is asked, so a busy port is an error before the start. The values are
+recomputed at most once a second; after the run ends they are computed once more, the final ones,
+and the endpoint holds them for `linger`. An example is
+[`examples/export.yaml`](../../examples/export.yaml).
+
+| Series | Type | Labels | What it is |
+|---|---|---|---|
+| `leettest_planned_rps` | gauge | `method` | The method's planned rate at this moment, calls per second; `0` after the plan ends |
+| `leettest_calls_total` | counter | `method`, `category` | Measured calls in all 11 categories of the report. Warm-up is not in it. A call counts when it completes |
+| `leettest_latency_seconds` | histogram | `method`, `le` | Latency of successful calls only, from the scheduled moment. Warm-up is not in it |
+| `leettest_censored_total` | counter | `method`, `category` | `timed_out` and `aborted`: no answer, the latency is only a lower bound, and they are not in the histogram. The same calls are also in `leettest_calls_total` |
+| `leettest_excluded_total` | counter | `method`, `category` | `unreachable`, `cut_off`, `client_error`, `unclassified`: no usable latency, and they are not in the histogram. The same calls are also in `leettest_calls_total` |
+| `leettest_not_sent_total` | counter | `method`, `cause` | Calls that never left the generator, by the client-side cause: `generator`, `connection`, `stream` |
+| `leettest_in_flight` | gauge | — | Calls in flight now, all methods |
+| `leettest_warmup_sent_total` | counter | `method` | Sent during warm-up. These calls are in no other counter |
+| `leettest_warmup` | gauge | — | `1` while the run is in its warm-up, else `0` |
+
+The config's `labels` and `-label` are added to every series. A label name must be a Prometheus
+label name: `[a-zA-Z_][a-zA-Z0-9_]*`, not starting with `__` and not `method`, `category`,
+`cause` or `le`; otherwise it is an error before the start. The report also accepts keys with `.`
+and `-`; the export does not.
+
+**What to keep in mind.**
+
+- There is no default address. `127.0.0.1:9464` is heard by this machine only; `:9464` is heard
+  on every interface, with no password: the body holds method names and your labels.
+- `linger` is `15s` by default and delays the exit of every run. In CI set `linger: 0`.
+- If Prometheus's `scrape_interval` is longer than `linger`, the last scrape may miss the
+  window. Set `linger` no smaller than the scrape interval.
+- Ctrl-C or SIGTERM during `linger` ends it. The exit code stays the run's own.
+- The histogram buckets are fixed: 1, 2.5 and 5 per decade, from 100 µs to 60 s, plus `+Inf`.
+  `histogram_quantile` interpolates inside a bucket and tells nothing apart below 100 µs: on a
+  stand with zero delay (Windows, loopback) 5.3% of the successful calls fell into the lowest
+  bucket; on Linux the figure will differ, but on a fast target a noticeable share can land
+  there. Take the numbers for a conclusion from the report's p99, which is computed from HDR and
+  does not depend on the buckets; Grafana shows the shape of the distribution. An example
+  query:
+  `histogram_quantile(0.99, sum by (le, method) (rate(leettest_latency_seconds_bucket[30s])))`.
 
 ## Checking before the load
 

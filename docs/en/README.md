@@ -554,6 +554,10 @@ We have a roadmap for the product — **[roadmap](roadmap.md)**. Missing somethi
 
 **[Reference →](reference.md)** — every config field and flag.
 
+**[Prometheus metrics →](reference.md#prometheus-metrics)** (not released) — the run serves
+`/metrics` while the load goes, and Prometheus scrapes it next to the service's own metrics. There
+is no default address, and a `linger` of 15 s delays the exit: read the warnings in that section.
+
 | Question | |
 |---|---|
 | What questions does LeetTest answer? | [Read](questions.md) |
