@@ -114,8 +114,8 @@ func TestSend_AnOKWithoutAReplyIsABadResponse(t *testing.T) {
 			if !out.Heard {
 				t.Errorf("Heard = false: the target answered")
 			}
-			if out.SentAt.IsZero() || out.DoneAt.Sub(out.SentAt) < badReplyDelay {
-				t.Errorf("SentAt %v, DoneAt %v: want at least the stand's %v", out.SentAt, out.DoneAt, badReplyDelay)
+			if out.SentAt.IsZero() || out.DoneAt.Sub(out.SentAt) < badReplyFloor {
+				t.Errorf("SentAt %v, DoneAt %v: want at least %v of the stand's %v", out.SentAt, out.DoneAt, badReplyFloor, badReplyDelay)
 			}
 		})
 	}
