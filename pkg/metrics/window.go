@@ -14,15 +14,31 @@
 
 package metrics
 
+import (
+	"math"
+
+	hdrhistogram "github.com/HdrHistogram/hdrhistogram-go"
+)
+
+// windowSignificantFigures is how precisely a window keeps a latency: coarser
+// than the run's own, so that a run's worth of windows stays small.
+const windowSignificantFigures = 2
+
 // NewWindowLatencies is the distribution of one time window of a run: the
 // same measured and censored pair as NewLatencies, but with two significant
 // digits instead of three, so that a run's worth of windows stays small. A
 // percentile read from it is coarser than the run's own and is not to be
 // compared with it by the last digit.
-//
-// Stub: until the windows are implemented it is NewLatencies.
 func NewWindowLatencies() *Latencies {
-	return NewLatencies()
+	return &Latencies{
+		measured:    newWindowHistogram(),
+		censored:    newWindowHistogram(),
+		censoredMin: math.MaxInt64,
+	}
+}
+
+func newWindowHistogram() *hdrhistogram.Histogram {
+	return hdrhistogram.New(lowestTrackableNanos, highestTrackableNanos, windowSignificantFigures)
 }
 
 // ByteSize is the memory held by the histograms, in bytes. It grows by a

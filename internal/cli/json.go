@@ -644,8 +644,7 @@ func jsonMethodOf(m *engine.MethodReport, warmup time.Duration) jsonMethod {
 		FailureCodes: make([]jsonCode, 0, len(m.FailureCodes)),
 		SilentFromS:  m.SilentFrom,
 		Seconds:      make([]jsonSecond, 0, len(m.Seconds)),
-		// Stub: the windows are not copied until they are implemented.
-		Windows: make([]jsonWindow, 0),
+		Windows:      make([]jsonWindow, 0, len(m.Windows)),
 	}
 	// The rate belongs to a silence: none without one.
 	if m.SilentFrom != nil {
@@ -695,8 +694,26 @@ func jsonMethodOf(m *engine.MethodReport, warmup time.Duration) jsonMethod {
 			TransportWaitSumUS: micros(s.TransportWaitSum), ServiceTimeSumUS: micros(s.ServiceTimeSum),
 		})
 	}
+	for _, w := range m.Windows {
+		out.Windows = append(out.Windows, jsonWindow{
+			StartUS: micros(w.Start), WidthUS: micros(w.Width), Sent: w.Sent, Failed: w.Failed,
+			P50US: windowQuantileUS(w.P50), P99US: windowQuantileUS(w.P99),
+			P99Bound: w.P99.Defined && !w.P99.Exact,
+		})
+	}
 
 	return out
+}
+
+// windowQuantileUS is a quantile's value in microseconds, null when the window
+// has no observations for it.
+func windowQuantileUS(q metrics.Quantile) *int64 {
+	if !q.Defined {
+		return nil
+	}
+	us := micros(q.Value)
+
+	return &us
 }
 
 // WriteJSON writes the report as one JSON object and a newline.

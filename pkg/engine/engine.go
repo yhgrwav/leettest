@@ -617,6 +617,16 @@ func (e *Engine) Run(ctx context.Context) error {
 	for _, call := range e.opts.Calls {
 		methods = append(methods, call.Method)
 	}
+	if e.opts.Windows {
+		e.stats.SetWindows(max(0, e.plannedDuration()-e.opts.Warmup))
+		for _, call := range e.opts.Calls {
+			var planned time.Duration
+			for _, stage := range call.Stages {
+				planned += stage.Duration
+			}
+			e.stats.setMethodPlan(call.Method, max(0, planned-e.opts.Warmup))
+		}
+	}
 	e.stats.Reserve(e.plannedDuration()+e.longestTimeout()+timelineSlack, methods...)
 	// Measured before moment zero: on a coarse clock it takes milliseconds.
 	dispatcher := NewDispatcher(e.opts.Calls)
@@ -652,6 +662,9 @@ func (e *Engine) Run(ctx context.Context) error {
 		defer schedulers.Done()
 
 		err := dispatcher.Run(scheduleCtx, requests)
+		if err == nil {
+			e.stats.planWalked()
+		}
 		if over := (*SeqOverflowError)(nil); errors.As(err, &over) {
 			// The next seq does not fit its field: the plan is cut short, calls
 			// in flight finish, and the run still reports what went out.
