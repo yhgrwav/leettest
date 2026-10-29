@@ -453,6 +453,40 @@ func TestExportRun_AfterTheRunTheEndpointEqualsTheReport(t *testing.T) {
 
 // Ground: reviewer's Р6 — Ctrl-C and SIGTERM in the linger end it at once and
 // leave the run's exit code as it was: not 130, not 143, no error of its own.
+// Ground: contract — the scrape right after the run is the final render, not the
+// text cached by a scrape a moment before the end (the render interval is 1 s).
+// Killed by a run that never tells the handler it is done.
+func TestExportRun_AScrapeRightAfterTheRunIsNotTheCachedText(t *testing.T) {
+	lr := startLive(t, "-fake", "-fake-delay", "1ms", "-output", "json",
+		"-c", writeExportConfig(t, 100, "1500ms", "0s", "", exportSection("30s")))
+	addr := lr.addr(t)
+
+	stop := make(chan struct{})
+	scraped := make(chan struct{})
+	go func() {
+		defer close(scraped)
+		for {
+			select {
+			case <-stop:
+				return
+			case <-time.After(20 * time.Millisecond):
+				_, _, _, _ = fetch(context.Background(), http.MethodGet, "http://"+addr+"/metrics")
+			}
+		}
+	}()
+
+	report := lr.report(t)
+	close(stop)
+	<-scraped
+	body := scrape(t, addr)
+
+	m := jsonAt(t, report, "methods").([]any)[0]
+	want := jsonAt(t, m, "observations").(float64) - jsonAt(t, m, "censored").(float64)
+	if got := valueOf(t, body, "leettest_latency_seconds_count", `method="`+checkMethod+`"`); got != want {
+		t.Errorf("latency_seconds_count right after the run = %v, the report's successes are %v", got, want)
+	}
+}
+
 func TestExportRun_AStopInTheLingerEndsItWithTheRunsOwnExitCode(t *testing.T) {
 	for _, tc := range []struct {
 		name string
