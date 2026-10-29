@@ -74,6 +74,12 @@ func stepsOn(t *testing.T, s *stand.Stand, timeout time.Duration) breakpoint.Run
 // near 20ms. Rates a -race build still sends on time (#144); the premise holds
 // only if they were sent, so a short run fails the test with its numbers.
 func TestBreakpoint_ATargetsQueueOutlivesTheStep(t *testing.T) {
+	const (
+		probeHold = 1500 * time.Millisecond
+		// With a gap up to this, ≥ 200ms of the backlog is left and the probe's
+		// p99 is ≥ 220ms, over twice the 100ms bound it is judged by.
+		maxBacklogGap = 300 * time.Millisecond
+	)
 	target := stand.Start(stand.Capacity(100, 20*time.Millisecond))
 	t.Cleanup(target.Stop)
 
@@ -94,8 +100,19 @@ func TestBreakpoint_ATargetsQueueOutlivesTheStep(t *testing.T) {
 	}
 
 	probe(200, time.Second)
-	if got := probe(50, 1500*time.Millisecond).P99.Value; got < 100*time.Millisecond {
-		t.Errorf("right after a broken step, 50 rps p99 %v: no backlog seen", got)
+	broken := time.Now()
+	got := probe(50, probeHold).P99.Value
+	// The backlog is ~0.5s when the broken step returns and shrinks while the
+	// runner does its own work between the runs (#346: 1.4s on a loaded -race
+	// runner, the probe then met ~70ms). The time from the return to the end of
+	// the probe, less its hold, is that gap; it includes the last call's tail,
+	// which only lowers the bar for asserting.
+	gap := time.Since(broken) - probeHold
+	switch {
+	case gap > maxBacklogGap:
+		t.Logf("the runner took %v between the steps; the backlog was worked off before the probe: premise not checked", gap)
+	case got < 100*time.Millisecond:
+		t.Errorf("right after a broken step, 50 rps p99 %v: no backlog seen (gap between the steps %v)", got, gap)
 	}
 
 	// The probe above ran 1.5s into the backlog and worked it off.
