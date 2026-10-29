@@ -486,6 +486,94 @@ func TestEngine_WindowsAreInTheReportOnlyWhenTheOptionAsksForThem(t *testing.T) 
 	}
 }
 
+// Ground: contract (K1, A4, A5) — end to end through Run: two methods with
+// plans of different length, one of them a ramp and a constant stage. The axis
+// and the width are the run's, shared by both; a method's windows stop where
+// its own plan stops, so a method that merely ended early has no invented
+// "no calls" tail. Mutation: the short method's windows run to the end of the
+// longest plan (three windows, the last one empty).
+func TestEngine_AShorterMethodsWindowsEndWhereItsOwnPlanEnds(t *testing.T) {
+	const warmup = 500 * time.Millisecond
+
+	eng, err := New(Options{
+		Calls: []Call{
+			{Method: "long", Timeout: 100 * time.Millisecond, Stages: []Stage{
+				{StartRPS: 10, TargetRPS: 30, Duration: time.Second},
+				{StartRPS: 30, TargetRPS: 30, Duration: 2 * time.Second},
+			}},
+			{Method: "short", Timeout: 100 * time.Millisecond, Stages: []Stage{
+				{StartRPS: 20, TargetRPS: 20, Duration: 1700 * time.Millisecond},
+			}},
+		},
+		Sender:      FakeSender{Delay: time.Millisecond, FailRatio: 0.3},
+		MaxInFlight: 200,
+		Warmup:      warmup,
+		Windows:     true,
+	})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	if err := eng.Run(t.Context()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	byName := map[string]MethodReport{}
+	for _, m := range eng.Report().Methods {
+		byName[m.Method] = m
+	}
+
+	// The longest plan is 3 s; 2.5 s of it is measured, so a window is 1 s.
+	// long covers all of it: 1 s, 1 s and the 0.5 s that are left. short plans
+	// 1.7 s, 1.2 s of it measured: 1 s and the 0.2 s that are left.
+	for name, want := range map[string][]time.Duration{
+		"long":  {time.Second, time.Second, 500 * time.Millisecond},
+		"short": {time.Second, 200 * time.Millisecond},
+	} {
+		m := byName[name]
+		if len(m.Windows) != len(want) {
+			t.Fatalf("%s: windows = %d, want %d", name, len(m.Windows), len(want))
+		}
+
+		var sent, failed int
+		var folded []*metrics.Snapshot
+		for i, w := range m.Windows {
+			if w.Start != time.Duration(i)*time.Second || w.Width != want[i] {
+				t.Errorf("%s window %d: start %s width %s, want %s and %s: one axis and one width for the run, the last window as wide as what was covered",
+					name, i, w.Start, w.Width, time.Duration(i)*time.Second, want[i])
+			}
+			sent += w.Sent
+			failed += w.Failed
+			folded = append(folded, w.Latency)
+		}
+
+		if sent != m.Sent || failed != m.Failed {
+			t.Errorf("%s: windows hold sent %d failed %d, want the method's %d and %d", name, sent, failed, m.Sent, m.Failed)
+		}
+		if got := metrics.Merge(folded...); int(got.Count()) != m.Latencies || int(got.CensoredCount()) != m.Censored {
+			t.Errorf("%s: windows' observations %d (%d censored), want the method's %d (%d censored)",
+				name, got.Count(), got.CensoredCount(), m.Latencies, m.Censored)
+		}
+		if m.OutsideWindows != 0 {
+			t.Errorf("%s: outside the windows = %d, want 0", name, m.OutsideWindows)
+		}
+	}
+
+	// The plan puts the calls in the windows: long ramps 10 to 30 rps in its
+	// first second, 0.5 s of which is warm-up, so its first window is thinner
+	// than its second; short's last window holds 0.2 s of 20 rps. The schedule
+	// is the plan's, so these counts do not wait on the machine.
+	long, short := byName["long"].Windows, byName["short"].Windows
+	if long[0].Sent < 25 || long[0].Sent > 29 || long[1].Sent < 28 || long[1].Sent > 32 || long[0].Sent >= long[1].Sent || long[2].Sent < 13 || long[2].Sent > 17 {
+		t.Errorf("long sent per window = %d, %d, %d; want about 27, 30, 15, the first thinner than the second", long[0].Sent, long[1].Sent, long[2].Sent)
+	}
+	if short[0].Sent < 19 || short[0].Sent > 21 || short[1].Sent < 3 || short[1].Sent > 5 {
+		t.Errorf("short sent per window = %d, %d; want about 20 and 4", short[0].Sent, short[1].Sent)
+	}
+	if byName["long"].Failed == 0 {
+		t.Error("long failed nothing: the test's own 30% failures did not reach the totals")
+	}
+}
+
 // Ground: contract (A6, T10) — the memory is taken once, at Reserve, and it
 // is fixed by the number of methods alone. The number is pinned, not described.
 func TestWindows_MemoryIsTakenAtReserveAndBoundedByWindowsAndMethods(t *testing.T) {

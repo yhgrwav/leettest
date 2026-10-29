@@ -70,33 +70,59 @@ func windowedRun(warmup time.Duration, windows []engine.Window) RunReport {
 	return run
 }
 
-// overTime is the text of the "over time" block: its header and the rows under
+// timeBlock is one "over time" block of the text: the header
+// `over time, <method> (<span>):`, the line it stands on, and the rows under
 // it, a row being a line that starts with a window label (+m:ss).
-func overTime(t *testing.T, out string) (header string, rows [][]string) {
+type timeBlock struct {
+	method string
+	// span is what the parentheses of the header hold: `rows of 50 s`, with
+	// `, since the end of warm-up` after it when the run had a warm-up.
+	span string
+	line int
+	rows [][]string
+}
+
+// overTimeBlocks is every block of the text, in the order it prints them.
+func overTimeBlocks(out string) []timeBlock {
+	lines := strings.Split(out, "\n")
+
+	var blocks []timeBlock
+	for i, line := range lines {
+		rest, ok := strings.CutPrefix(strings.TrimSpace(line), "over time, ")
+		if !ok {
+			continue
+		}
+
+		at := strings.LastIndex(rest, " (rows of ")
+		if at < 0 || !strings.HasSuffix(rest, "):") {
+			continue
+		}
+
+		b := timeBlock{method: rest[:at], span: strings.TrimSuffix(rest[at+2:], "):"), line: i}
+		for _, row := range lines[i+1:] {
+			fields := strings.Fields(row)
+			if len(fields) == 0 || !strings.HasPrefix(fields[0], "+") {
+				break
+			}
+			b.rows = append(b.rows, fields)
+		}
+		blocks = append(blocks, b)
+	}
+
+	return blocks
+}
+
+// overTime is the first block of the text: what its header says in the
+// parentheses, and its rows; nothing when there is no block.
+func overTime(t *testing.T, out string) (span string, rows [][]string) {
 	t.Helper()
 
-	lines := strings.Split(out, "\n")
-	at := -1
-	for i, line := range lines {
-		if strings.Contains(line, "over time (rows of ") {
-			at, header = i, strings.TrimSpace(line)
-
-			break
-		}
-	}
-	if at < 0 {
+	blocks := overTimeBlocks(out)
+	if len(blocks) == 0 {
 		return "", nil
 	}
 
-	for _, line := range lines[at+1:] {
-		fields := strings.Fields(line)
-		if len(fields) == 0 || !strings.HasPrefix(fields[0], "+") {
-			break
-		}
-		rows = append(rows, fields)
-	}
-
-	return header, rows
+	return blocks[0].span, blocks[0].rows
 }
 
 func labels(rows [][]string) []string {
@@ -112,24 +138,24 @@ func labels(rows [][]string) []string {
 // names the width of a row.
 func TestWindowsBlock_ShowsAtMostTwelveRowsAndNamesTheWidthOfARow(t *testing.T) {
 	cases := []struct {
-		n      int
-		width  time.Duration
-		header string
-		rows   int
-		first  string
-		last   string
+		n     int
+		width time.Duration
+		span  string
+		rows  int
+		first string
+		last  string
 	}{
-		{60, 10 * time.Second, "over time (rows of 50 s):", 12, "+0:00", "+9:10"},
-		{12, 10 * time.Second, "over time (rows of 10 s):", 12, "+0:00", "+1:50"},
-		{13, 10 * time.Second, "over time (rows of 20 s):", 7, "+0:00", "+2:00"},
-		{2, 10 * time.Second, "over time (rows of 10 s):", 2, "+0:00", "+0:10"},
+		{60, 10 * time.Second, "rows of 50 s", 12, "+0:00", "+9:10"},
+		{12, 10 * time.Second, "rows of 10 s", 12, "+0:00", "+1:50"},
+		{13, 10 * time.Second, "rows of 20 s", 7, "+0:00", "+2:00"},
+		{2, 10 * time.Second, "rows of 10 s", 2, "+0:00", "+0:10"},
 	}
 	for _, c := range cases {
 		t.Run(fmt.Sprintf("%d windows", c.n), func(t *testing.T) {
-			header, rows := overTime(t, printedRun(windowedRun(0, evenWindows(c.n, c.width, 0))))
+			span, rows := overTime(t, printedRun(windowedRun(0, evenWindows(c.n, c.width, 0))))
 
-			if header != c.header {
-				t.Errorf("header = %q, want %q", header, c.header)
+			if span != c.span {
+				t.Errorf("header says (%s), want (%s)", span, c.span)
 			}
 			if len(rows) != c.rows {
 				t.Fatalf("rows = %d, want %d", len(rows), c.rows)
@@ -154,14 +180,14 @@ func TestWindowsBlock_IsNotPrintedForFewerThanTwoRows(t *testing.T) {
 // Ground: contract (A4) — the zero of the axis is not the start of the run
 // and the text says so when there is a warm-up.
 func TestWindowsBlock_SaysItCountsFromTheEndOfWarmupWhenThereIsOne(t *testing.T) {
-	header, _ := overTime(t, printedRun(windowedRun(5*time.Second, evenWindows(4, 10*time.Second, 0))))
-	if want := "over time (rows of 10 s, since the end of warm-up):"; header != want {
-		t.Errorf("header = %q, want %q", header, want)
+	span, _ := overTime(t, printedRun(windowedRun(5*time.Second, evenWindows(4, 10*time.Second, 0))))
+	if want := "rows of 10 s, since the end of warm-up"; span != want {
+		t.Errorf("header says (%s), want (%s)", span, want)
 	}
 
-	header, _ = overTime(t, printedRun(windowedRun(0, evenWindows(4, 10*time.Second, 0))))
-	if strings.Contains(header, "warm-up") {
-		t.Errorf("header = %q: no warm-up, nothing to say about it", header)
+	span, rows := overTime(t, printedRun(windowedRun(0, evenWindows(4, 10*time.Second, 0))))
+	if len(rows) == 0 || strings.Contains(span, "warm-up") {
+		t.Errorf("header says (%s) over %d rows: with no warm-up there is a block and nothing to say about it", span, len(rows))
 	}
 }
 
@@ -288,6 +314,79 @@ func TestWindowsBlock_FailedShareIsOfTheCallsSentInTheWindow(t *testing.T) {
 	}
 }
 
+// onlyColumns is the sent/s and failed cells of the one row that a run of
+// two equal windows prints, each of width and holding sent calls of which
+// failed failed.
+func onlyColumns(t *testing.T, width time.Duration, sent, failed int) (rate, share string) {
+	t.Helper()
+
+	one := []time.Duration{10 * time.Millisecond}
+	_, rows := overTime(t, printedRun(windowedRun(0, []engine.Window{
+		windowOf(0, width, sent, failed, one, nil),
+		windowOf(width, width, sent, failed, one, nil),
+	})))
+	if len(rows) != 2 || len(rows[0]) < 3 {
+		t.Fatalf("rows = %v, want two rows of sent/s, failed and the quantiles", rows)
+	}
+
+	return rows[0][1], rows[0][2]
+}
+
+// Ground: contract (A2, K3) — the rate is 0 only when nothing was sent; under
+// 10 it keeps a decimal, so 1 call in 2 s does not read as 0 or 1.
+func TestWindowsBlock_RateKeepsADecimalUnderTenAndIsZeroOnlyWhenNothingWasSent(t *testing.T) {
+	cases := []struct {
+		width time.Duration
+		sent  int
+		want  string
+	}{
+		{2 * time.Second, 1, "0.5"},
+		{2 * time.Second, 7, "3.5"},
+		{time.Second, 3, "3.0"},
+		{10 * time.Second, 99, "9.9"},
+		{time.Second, 10, "10"},
+		{100 * time.Second, 1234, "12"},
+		{time.Second, 100, "100"},
+	}
+	for _, c := range cases {
+		if got, _ := onlyColumns(t, c.width, c.sent, 0); got != c.want {
+			t.Errorf("%d calls in %s: sent/s = %q, want %q", c.sent, c.width, got, c.want)
+		}
+	}
+
+	// A rate of 0.01 is not nothing: it never prints as a zero. A row that sent
+	// nothing says "no calls" (TestWindowsBlock_AWindowWithNoCallsPrintsNoCallsInsteadOfNumbers).
+	if got, _ := onlyColumns(t, 100*time.Second, 1, 0); got == "0" || got == "0.0" || got == "" {
+		t.Errorf("1 call in 100 s: sent/s = %q, want a mark that says it is more than nothing and under 0.1", got)
+	}
+}
+
+// Ground: contract (A2, K4) — 0% only when nothing failed, 100% only when
+// everything did; the edges in between are said as under 1% and over 99%.
+func TestWindowsBlock_FailedShareIsZeroOrAHundredOnlyAtTheEdges(t *testing.T) {
+	cases := []struct {
+		sent, failed int
+		want         string
+	}{
+		{1000, 0, "0%"},
+		{1000, 1, "<1%"},
+		{1000, 5, "<1%"},
+		{1000, 10, "1%"},
+		{1000, 250, "25%"},
+		{1000, 990, "99%"},
+		{1000, 995, ">99%"},
+		{1000, 999, ">99%"},
+		{1000, 1000, "100%"},
+		{1, 0, "0%"},
+		{1, 1, "100%"},
+	}
+	for _, c := range cases {
+		if _, got := onlyColumns(t, time.Second, c.sent, c.failed); got != c.want {
+			t.Errorf("%d of %d failed: share = %q, want %q", c.failed, c.sent, got, c.want)
+		}
+	}
+}
+
 // Ground: contract (A3, T7) — the p99 that is a lower bound is marked as in
 // the totals (#73), by the ASCII sign the report already uses.
 func TestWindowsBlock_ALowerBoundP99IsMarkedLikeInTheTotals(t *testing.T) {
@@ -331,6 +430,79 @@ func TestWindowsBlock_LabelsHaveATenthWhenTheWidthIsNotWholeSeconds(t *testing.T
 	}
 }
 
+// Ground: contract (A3, K2) — a label is a moment, so its tenth is cut off,
+// never rounded up to a moment that has not come; the size of a row in the
+// header is a quantity, so it is rounded to the nearest tenth. A run of 61 s
+// in 60 windows of 1 016 666 667 ns, five of them to a row: 5 083 333 335 ns.
+func TestWindowsBlock_ALabelTruncatesItsTenthAndTheHeaderRoundsTheRowSize(t *testing.T) {
+	const width = 1016666667 * time.Nanosecond
+
+	span, rows := overTime(t, printedRun(windowedRun(0, evenWindows(60, width, 0))))
+
+	if want := "rows of 5.1 s"; span != want {
+		t.Errorf("header says (%s), want (%s): 5.083 s to the nearest tenth", span, want)
+	}
+
+	want := []string{
+		"+0:00.0", "+0:05.0", "+0:10.1", "+0:15.2", "+0:20.3", "+0:25.4",
+		"+0:30.5", "+0:35.5", "+0:40.6", "+0:45.7", "+0:50.8", "+0:55.9",
+	}
+	if got := labels(rows); strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("labels = %v, want %v", got, want)
+	}
+
+	// 3.05 s is +0:03.0, not +0:03.1; 9.15 s is +0:09.1, not +0:09.2.
+	_, rows = overTime(t, printedRun(windowedRun(0, evenWindows(4, 3050*time.Millisecond, 0))))
+
+	want = []string{"+0:00.0", "+0:03.0", "+0:06.1", "+0:09.1"}
+	if got := labels(rows); strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("labels of rows 3.05 s wide = %v, want %v", got, want)
+	}
+}
+
+// Ground: contract (A3, K2) — the block names its method and stands after the
+// table, one per method with windows, in the order of the table. What stands
+// between the table and the blocks is not pinned.
+func TestWindowsBlock_NamesItsMethodAndStandsAfterTheTableInTheTablesOrder(t *testing.T) {
+	run := RunReport{Report: engine.Report{Methods: []engine.MethodReport{
+		{Method: "/pkg.S/Zeta", Sent: 100, Windows: evenWindows(3, time.Second, 0)},
+		{Method: "/pkg.S/Plain", Sent: 100},
+		{Method: "/pkg.S/Alpha", Sent: 100, Windows: evenWindows(4, time.Second, 0)},
+	}}}
+
+	out := printedRun(run)
+	blocks := overTimeBlocks(out)
+	if len(blocks) != 2 {
+		t.Fatalf("%d blocks, want 2:\n%s", len(blocks), out)
+	}
+
+	// The table spells the method without its leading slash; the header may
+	// spell it either way, but it names the method of its rows.
+	for i, name := range []string{"pkg.S/Zeta", "pkg.S/Alpha"} {
+		if got := strings.TrimPrefix(blocks[i].method, "/"); got != name {
+			t.Errorf("block %d is of %q, want %q: the blocks follow the table's order, not the alphabet", i, blocks[i].method, name)
+		}
+		if len(blocks[i].rows) != [2]int{3, 4}[i] {
+			t.Errorf("block %d has %d rows, want %d: the rows of its own method", i, len(blocks[i].rows), [2]int{3, 4}[i])
+		}
+	}
+
+	lastRow := -1
+	for i, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "pkg.S/Alpha ") {
+			lastRow = i
+		}
+	}
+	if lastRow < 0 {
+		t.Fatalf("no table row of the last method in:\n%s", out)
+	}
+	for i, b := range blocks {
+		if b.line <= lastRow {
+			t.Errorf("block %d (%s) stands on line %d, inside or above the table that ends on line %d", i, b.method, b.line, lastRow)
+		}
+	}
+}
+
 // Ground: contract (A3) — the block is per method.
 func TestWindowsBlock_IsPrintedForEachMethodThatHasWindows(t *testing.T) {
 	run := RunReport{Report: engine.Report{Methods: []engine.MethodReport{
@@ -340,7 +512,7 @@ func TestWindowsBlock_IsPrintedForEachMethodThatHasWindows(t *testing.T) {
 	}}}
 
 	out := printedRun(run)
-	if got := strings.Count(out, "over time (rows of"); got != 2 {
+	if got := len(overTimeBlocks(out)); got != 2 {
 		t.Errorf("%d blocks, want 2: one for each method with windows, none for the one without:\n%s", got, out)
 	}
 }
