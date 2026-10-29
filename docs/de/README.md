@@ -144,7 +144,7 @@ Am Ende — ein Bericht je Methode: gesendet, fehlgeschlagen, `sent/s`, p50/p90/
   hängt, senkt diese Zahl nicht.
 - Ein Perzentil, dessen Platz vom Timeout abgeschnittene Aufrufe einnehmen könnten, wird als
   **Untergrenze** ausgegeben: `>2.0s`. Kein Wert, sondern „mindestens".
-- Unter der Tabelle bekommt eine Methode einen Block `over time` (noch nicht veröffentlicht): der
+- Unter der Tabelle bekommt eine Methode einen Block `over time`: der
   gemessene Teil des Laufs ab dem Ende des Warm-ups in höchstens 12 Zeilen; JSON hält bis zu 60
   Fenster. Ein Aufruf gehört zur Zeile seines geplanten Moments, egal wann er endete. Eine Zeile
   zeigt `sent/s`, den Anteil der Fehlschläge, p50 und p99 auf zwei signifikante Stellen, daher kann
@@ -582,7 +582,7 @@ Für das Produkt gibt es einen Plan — **[roadmap](roadmap.md)**. Fehlt Ihnen e
 
 **[Referenz →](reference.md)** — jedes Konfigurationsfeld und Flag.
 
-**[Prometheus-Metriken →](reference.md#prometheus-metriken)** (nicht veröffentlicht) — der Lauf
+**[Prometheus-Metriken →](reference.md#prometheus-metriken)** — der Lauf
 liefert `/metrics` aus, solange die Last läuft, und Prometheus scrapt es neben den eigenen Metriken
 des Dienstes. Es gibt keine Standardadresse, und ein `linger` von 15 s verzögert das Ende: Lesen Sie
 die Warnungen in diesem Abschnitt.

@@ -57,12 +57,12 @@ load:
 | `load.calls[].dataset_order` | `file` (left out) or `random`: the order of the dataset's requests. Needs `dataset` |
 | `load.calls[].dataset_seed` | A whole number from 0 to 9007199254740991 that fixes a random order. Needs `dataset_order: random`. Left out — one is drawn and the report prints it |
 | `load.calls[].dataset_reuse` | `true` (left out) or `false`: with `false` no record goes out twice, in the whole process. Needs `dataset` |
-| `load.calls[].templates` | `true` or `false` (left out — `false`; a key with no value is an error): turns on the `{{uuid}}` and `{{seq}}` placeholders in `data`, see [below](#a-request-that-changes-templates). Needs at least one placeholder, not together with `dataset`. (not released) |
+| `load.calls[].templates` | `true` or `false` (left out — `false`; a key with no value is an error): turns on the `{{uuid}}` and `{{seq}}` placeholders in `data`, see [below](#a-request-that-changes-templates). Needs at least one placeholder, not together with `dataset`. |
 | `load.calls[].pass` | The limits a run must meet to pass: `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, see [below](#pass-limits). Left out — no limits |
 | `load.breakpoint.pass` | A breaking-point search's limit: `held_rps`, see [below](#pass-limits). Left out — no limit |
 | `load.breakpoint.errors_limit` | A percent such as `1%` or `0.5%`, up to three digits after the point, at most `100%`. A search step breaks when more than this share of its calls failed; exactly that much holds. Left out — `1%` |
-| `export.prometheus.listen` | The `host:port` the run serves `/metrics` on while the load goes, see [below](#prometheus-metrics); port `0` takes a free one, and the address taken is printed on stderr. No default: the address comes from this key or `-metrics-listen`, and `export.prometheus` with neither is an error. An example is `127.0.0.1:9464`. **`:9464` opens the port on all interfaces with no password**, and the body holds method names and your `labels`. A key without a value is an error. Not together with `load.breakpoint` and `-dry-run`. (not released) |
-| `export.prometheus.linger` | How long after the run ends the endpoint keeps serving the final values, so that the last scrape sees them. Left out — `15s`; `0` — no hold. **`15s` delays the exit of every run, so set `0` in CI.** A key without a value is an error. Only together with `export.prometheus.listen` or `-metrics-listen`. (not released) |
+| `export.prometheus.listen` | The `host:port` the run serves `/metrics` on while the load goes, see [below](#prometheus-metrics); port `0` takes a free one, and the address taken is printed on stderr. No default: the address comes from this key or `-metrics-listen`, and `export.prometheus` with neither is an error. An example is `127.0.0.1:9464`. **`:9464` opens the port on all interfaces with no password**, and the body holds method names and your `labels`. A key without a value is an error. Not together with `load.breakpoint` and `-dry-run`. |
+| `export.prometheus.linger` | How long after the run ends the endpoint keeps serving the final values, so that the last scrape sees them. Left out — `15s`; `0` — no hold. **`15s` delays the exit of every run, so set `0` in CI.** A key without a value is an error. Only together with `export.prometheus.listen` or `-metrics-listen`. |
 
 The config is read strictly: a typo in a field name is an error with the line number, a wrong
 value is an error with the call's number and method, not a run with an empty load. `rps` is a
@@ -340,7 +340,7 @@ not split between machines, and a stop leaves records unsent.
 | `-output` | Report format on stdout: `text` (the default) or `json` for scripts and CI |
 | `-json-file` | Path of a new file: the JSON report (the same object `-output json` prints) is written to it, and stdout stays as `-output` says. An existing file or a missing directory is exit 1 before the start. A run with no report leaves no file. A failed write is exit 1 |
 | `-label` | A `key=value` label for the report's passport; repeat it for several. Wins over the same key in the config's `labels`. A key given twice, or one that breaks the key and value rules, is exit 1 before the start |
-| `-metrics-listen` | `host:port`: serve `/metrics` on this address while the load goes; wins over `export.prometheus.listen` and turns the export on by itself, details [below](#prometheus-metrics). Port `0` takes a free one. **`:9464` opens the port on all interfaces with no password**; a safe example is `127.0.0.1:9464`. Not together with `-dry-run` and `load.breakpoint`. (not released) |
+| `-metrics-listen` | `host:port`: serve `/metrics` on this address while the load goes; wins over `export.prometheus.listen` and turns the export on by itself, details [below](#prometheus-metrics). Port `0` takes a free one. **`:9464` opens the port on all interfaces with no password**; a safe example is `127.0.0.1:9464`. Not together with `-dry-run` and `load.breakpoint`. |
 | `-connect-timeout` | How long to wait for a service that accepted the connection but stays silent. Default `10s`. A refused connection and a wrong address are not waited for |
 | `-max-in-flight` | Cap on requests waiting for a reply. Default `5000` |
 | `-plain` | No live screen: a progress line once a second on stderr, as without a terminal, and no first-run dialog. The report and exit codes are the same |
@@ -352,7 +352,7 @@ not split between machines, and a stop leaves records unsent.
 
 ## Prometheus metrics
 
-(not released) A run with `export.prometheus.listen` or `-metrics-listen` serves `/metrics` (text
+A run with `export.prometheus.listen` or `-metrics-listen` serves `/metrics` (text
 format 0.0.4) on that address while the load goes; there are no other paths. The address is taken
 before the service is asked, so a busy port is an error before the start. The values are
 recomputed at most once a second; after the run ends they are computed once more, the final ones,
@@ -519,9 +519,9 @@ measured calls only. The first column is the field's full path.
 | `stop.limit` | string | The limit as written in the config: `"5%"`. |
 | `stop.at_us` | int | The time from the start of the run to the stop, in whole microseconds. |
 | `stop.in_flight` | int | The calls in flight at that moment (begun, not finished): on a hanging target, what the window cannot show. |
-| `seq_overflow` | object? | Where a `{{seq}}` did not fit its field and the run stopped; `null` when that did not happen. `stop_reason` is then `seq_overflow` and the run ends softly (exit 3). (not released) |
-| `seq_overflow.method` | string | The method whose field overflowed, written as in `methods[].method`, leading `/` included. (not released) |
-| `seq_overflow.limit` | int | The largest `seq` the method's narrowest field holds. (not released) |
+| `seq_overflow` | object? | Where a `{{seq}}` did not fit its field and the run stopped; `null` when that did not happen. `stop_reason` is then `seq_overflow` and the run ends softly (exit 3). |
+| `seq_overflow.method` | string | The method whose field overflowed, written as in `methods[].method`, leading `/` included. |
+| `seq_overflow.limit` | int | The largest `seq` the method's narrowest field holds. |
 | `started_at` | string | Start of the schedule, RFC 3339 UTC, warm-up included. Every `_us` and `_s` counts from it |
 | `duration_us` | int | How long the run went, warm-up included |
 | `planned_us` | int | How long it was meant to go, the ramp included |
@@ -647,11 +647,11 @@ The rest are plain counters.
 | `methods[].dataset.order` | string | `file` or `random`: the order the requests went out in |
 | `methods[].dataset.seed` | int? | The seed of a random order, 0 to 9007199254740991; `null` for file order |
 | `methods[].dataset.reuse` | bool | `false` — the call sends each record at most once (`dataset_reuse: false`); otherwise `true` |
-| `methods[].templates` | object? | The call's templates (`templates: true`); `null` — it has none. An object, not a list. (not released) |
-| `methods[].templates.placeholders` | []string | The placeholders `data` uses, sorted: `seq`, `uuid`. (not released) |
-| `methods[].templates.last_seq` | int | How many of the call's requests were handed to the sender in the process, the ramp and the warm-up included: the number of the last. In a search it counts the whole search. (not released) |
+| `methods[].templates` | object? | The call's templates (`templates: true`); `null` — it has none. An object, not a list. |
+| `methods[].templates.placeholders` | []string | The placeholders `data` uses, sorted: `seq`, `uuid`. |
+| `methods[].templates.last_seq` | int | How many of the call's requests were handed to the sender in the process, the ramp and the warm-up included: the number of the last. In a search it counts the whole search. |
 | `methods[].seconds` | []object | The per-second timeline, see below |
-| `methods[].windows` | []object | The measured part of the run in at most 60 windows, see below; `[]` when the run has none (a breakpoint-search step, or nothing measured). (not released) |
+| `methods[].windows` | []object | The measured part of the run in at most 60 windows, see below; `[]` when the run has none (a breakpoint-search step, or nothing measured). |
 
 ### Second: `methods[].seconds[]`
 
@@ -679,12 +679,12 @@ have two significant digits, so they are not compared with the run's own by the 
 
 | Field | Type | Meaning |
 |---|---|---|
-| `methods[].windows[].start_us` | int | Start of the window in microseconds from the end of the warm-up. (not released) |
-| `methods[].windows[].width_us` | int | The span of the run the window covers: the planned width, less for the last window of a run that stopped early. (not released) |
-| `methods[].windows[].sent` | int | Calls scheduled in the window that went out, defined as the method's `sent`. (not released) |
-| `methods[].windows[].failed` | int | Of them, the failed ones, defined as the method's `failed`. (not released) |
-| `methods[].windows[].p50_us`, `methods[].windows[].p99_us` | int? | Percentiles of the window's latency in microseconds; `null` in a window with no observations. (not released) |
-| `methods[].windows[].p99_bound` | bool | The window's p99 is a lower bound: a call that did not finish reaches it. (not released) |
+| `methods[].windows[].start_us` | int | Start of the window in microseconds from the end of the warm-up. |
+| `methods[].windows[].width_us` | int | The span of the run the window covers: the planned width, less for the last window of a run that stopped early. |
+| `methods[].windows[].sent` | int | Calls scheduled in the window that went out, defined as the method's `sent`. |
+| `methods[].windows[].failed` | int | Of them, the failed ones, defined as the method's `failed`. |
+| `methods[].windows[].p50_us`, `methods[].windows[].p99_us` | int? | Percentiles of the window's latency in microseconds; `null` in a window with no observations. |
+| `methods[].windows[].p99_bound` | bool | The window's p99 is a lower bound: a call that did not finish reaches it. |
 
 ### Breaking-point search: `mode: "breakpoint"`
 
