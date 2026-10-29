@@ -5,6 +5,7 @@ config app.connections
 config app.key
 config app.max_response_size
 config app.metadata
+config app.mode
 config app.proto.files
 config app.proto.import_paths
 config app.protoset
@@ -33,6 +34,7 @@ config load.calls[].pass
 config load.calls[].rps
 config load.calls[].timeout
 config load.ramp
+config load.stop_on_errors
 config load.warmup
 config name
 flag c
@@ -48,6 +50,7 @@ flag max-in-flight
 flag output
 flag plain
 flag version
+flag yes
 json aborted
 json breakpoint
 json breakpoint.broke_rps
@@ -329,7 +332,9 @@ json settings
 json settings.compression
 json settings.connections
 json settings.max_in_flight
+json settings.mode
 json settings.ramp_us
+json settings.stop_on_errors
 json settings.warmup_us
 json start_lag
 json start_lag.max
@@ -341,6 +346,14 @@ json start_lag.p99.lower_bound
 json start_lag.p99.ns
 json start_lag.p99.us
 json started_at
+json stop
+json stop.at_us
+json stop.failed
+json stop.in_flight
+json stop.limit
+json stop.method
+json stop.total
+json stop_reason
 json tail_wait_cause
 json target
 json thresholds
