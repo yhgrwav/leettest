@@ -368,6 +368,8 @@ type Call struct {
 	DatasetSeed  *int64  `yaml:"dataset_seed"`
 	// DatasetReuse is dataset_reuse; nil when left out, which is true.
 	DatasetReuse *bool `yaml:"dataset_reuse"`
+	// Templates is templates; nil when left out, which is false.
+	Templates *bool `yaml:"templates"`
 	// RawTimeout is the field as written; nil means it was left out.
 	RawTimeout *time.Duration `yaml:"timeout"`
 	Timeout    time.Duration  `yaml:"-"`

@@ -44,7 +44,10 @@ type Call struct {
 	Payloads [][]byte
 	// Dataset is set for a call whose Payloads are a file's records: what the
 	// report says of them. A pointer, so that the Call stays small to copy.
-	Dataset      *DatasetRef
+	Dataset *DatasetRef
+	// Template is set for a call whose body is made per request; Payload and
+	// Payloads are not used with it.
+	Template     *Template
 	Timeout      time.Duration
 	Stages       []Stage
 	KeepResponse bool

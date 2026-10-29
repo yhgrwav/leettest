@@ -144,6 +144,8 @@ type MethodReport struct {
 	Max  metrics.Quantile
 	// Dataset is nil for a call without a dataset.
 	Dataset *DatasetReport
+	// Templates is nil for a call without templates.
+	Templates *TemplatesReport
 	// P99WithoutClientWaits is P99 of the same calls with each one's
 	// client-side waits taken out — start lag, the wait for a connection and
 	// for a stream: the time the target had them. After a resolver wait
