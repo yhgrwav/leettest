@@ -169,6 +169,19 @@ jobs:
                  else if (fast + 0 >= naive + 0) { print "fast build " fast " ns/op is not faster than naive " naive; bad = 1 }
                  exit bad
                }' bench.txt
+      # The export's bucket walk keeps its benchmark too: it allocates at most a
+      # third of the bytes of the Distribution() version it is tested against
+      # (about a twelfth on the author's machine). B/op, not ns/op: bytes do not
+      # drift on a shared runner.
+      - name: Bucket walk allocates a third of the reference at most
+        run: |
+          awk '$1 ~ /^BenchmarkBufferCumulative(-[0-9]+)?$/ { fast = $(NF-3) }
+               $1 ~ /^BenchmarkBufferCumulativeReference(-[0-9]+)?$/ { ref = $(NF-3) }
+               END {
+                 if (fast == "" || ref == "") { print "a benchmark did not run"; bad = 1 }
+                 else if (fast * 3 > ref) { print "bucket walk " fast " B/op is over a third of the reference " ref " B/op"; bad = 1 }
+                 exit bad
+               }' bench.txt
 
   # The stand's Go code is generated from wallet.proto with pinned tools:
   # regenerating must change nothing.
