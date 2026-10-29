@@ -139,7 +139,7 @@ At the end — a report per method: sent, failed, `sent/s`, p50/p90/p95/p99.
   does not lower this number.
 - A percentile whose place calls cut off by the timeout could take is printed as a **lower
   bound**: `>2.0s`. Not a value, but "at least".
-- Under the table a method gets an `over time` block (not released): the measured part of the run,
+- Under the table a method gets an `over time` block: the measured part of the run,
   from the end of the warm-up, in at most 12 rows; JSON holds up to 60 windows. A call belongs to
   the row of its planned moment, whenever it finished. A row shows `sent/s`, the share failed, p50
   and p99 to two significant digits, so a row's p50 may differ from the table's p50 in the last
@@ -554,7 +554,7 @@ We have a roadmap for the product — **[roadmap](roadmap.md)**. Missing somethi
 
 **[Reference →](reference.md)** — every config field and flag.
 
-**[Prometheus metrics →](reference.md#prometheus-metrics)** (not released) — the run serves
+**[Prometheus metrics →](reference.md#prometheus-metrics)** — the run serves
 `/metrics` while the load goes, and Prometheus scrapes it next to the service's own metrics. There
 is no default address, and a `linger` of 15 s delays the exit: read the warnings in that section.
 

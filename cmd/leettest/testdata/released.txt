@@ -13,6 +13,8 @@ config app.server_name
 config app.target.ip
 config app.target.port
 config app.tls
+config export.prometheus.linger
+config export.prometheus.listen
 config labels
 config load.breakpoint.errors_limit
 config load.breakpoint.factor
@@ -32,6 +34,7 @@ config load.calls[].duration
 config load.calls[].method
 config load.calls[].pass
 config load.calls[].rps
+config load.calls[].templates
 config load.calls[].timeout
 config load.ramp
 config load.stop_on_errors
@@ -47,6 +50,7 @@ flag fake-jitter
 flag json-file
 flag label
 flag max-in-flight
+flag metrics-listen
 flag output
 flag plain
 flag version
@@ -299,6 +303,9 @@ json methods[].silent_from_s
 json methods[].silent_planned_rps_high
 json methods[].silent_planned_rps_low
 json methods[].silent_sent_rps
+json methods[].templates
+json methods[].templates.last_seq
+json methods[].templates.placeholders
 json methods[].timed_out
 json methods[].timed_out_after_wait
 json methods[].timeout_us
@@ -307,6 +314,14 @@ json methods[].unreachable
 json methods[].warmup_failed
 json methods[].warmup_not_sent
 json methods[].warmup_sent
+json methods[].windows
+json methods[].windows[].failed
+json methods[].windows[].p50_us
+json methods[].windows[].p99_bound
+json methods[].windows[].p99_us
+json methods[].windows[].sent
+json methods[].windows[].start_us
+json methods[].windows[].width_us
 json methods_source
 json mode
 json name
@@ -328,6 +343,9 @@ json passport.os
 json planned_us
 json schema_version
 json sent
+json seq_overflow
+json seq_overflow.limit
+json seq_overflow.method
 json settings
 json settings.compression
 json settings.connections

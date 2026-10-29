@@ -59,12 +59,12 @@ load:
 | `load.calls[].dataset_order` | `file` (weggelassen) oder `random`: die Reihenfolge der Anfragen aus der Datei. Braucht `dataset` |
 | `load.calls[].dataset_seed` | Eine ganze Zahl von 0 bis 9007199254740991, legt eine zufällige Reihenfolge fest. Braucht `dataset_order: random`. Weggelassen — wird selbst gewählt und im Bericht ausgegeben |
 | `load.calls[].dataset_reuse` | `true` (weggelassen) oder `false`: bei `false` geht kein Datensatz im ganzen Prozess zweimal raus. Braucht `dataset` |
-| `load.calls[].templates` | `true` oder `false` (weggelassen — `false`; ein Schlüssel ohne Wert ist ein Fehler): schaltet die Platzhalter `{{uuid}}` und `{{seq}}` in `data` ein, siehe [unten](#eine-anfrage-die-sich-ändert-templates). Braucht mindestens einen Platzhalter, nicht zusammen mit `dataset`. (nicht veröffentlicht) |
+| `load.calls[].templates` | `true` oder `false` (weggelassen — `false`; ein Schlüssel ohne Wert ist ein Fehler): schaltet die Platzhalter `{{uuid}}` und `{{seq}}` in `data` ein, siehe [unten](#eine-anfrage-die-sich-ändert-templates). Braucht mindestens einen Platzhalter, nicht zusammen mit `dataset`. |
 | `load.calls[].pass` | Die Grenzen, die ein Lauf einhalten muss, um zu bestehen: `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, siehe [unten](#grenzen-pass). Weggelassen — keine Grenzen |
 | `load.breakpoint.pass` | Die Grenze einer Bruchpunkt-Suche: `held_rps`, siehe [unten](#grenzen-pass). Weggelassen — keine Grenze |
 | `load.breakpoint.errors_limit` | Ein Prozentwert wie `1%` oder `0.5%`, bis zu drei Stellen nach dem Punkt, höchstens `100%`. Eine Stufe der Suche bricht, wenn mehr als dieser Anteil der Aufrufe fehlschlug; genau so viel wird gehalten. Weggelassen — `1%` |
-| `export.prometheus.listen` | Das `host:port`, auf dem der Lauf `/metrics` ausliefert, solange die Last läuft, siehe [unten](#prometheus-metriken); Port `0` nimmt einen freien, die gewählte Adresse steht auf stderr. Kein Standard: Die Adresse kommt von diesem Schlüssel oder von `-metrics-listen`, und `export.prometheus` ohne beides ist ein Fehler. Ein Beispiel ist `127.0.0.1:9464`. **`:9464` öffnet den Port auf allen Interfaces ohne Passwort**, und der Body enthält Methodennamen und Ihre `labels`. Ein Schlüssel ohne Wert ist ein Fehler. Nicht zusammen mit `load.breakpoint` und `-dry-run`. (nicht veröffentlicht) |
-| `export.prometheus.linger` | Wie lange der Endpunkt nach dem Ende des Laufs die Endwerte weiter ausliefert, damit der letzte Scrape sie sieht. Weggelassen — `15s`; `0` — nicht halten. **`15s` verzögert das Ende jedes Laufs, setzen Sie in CI `0`.** Ein Schlüssel ohne Wert ist ein Fehler. Nur zusammen mit `export.prometheus.listen` oder `-metrics-listen`. (nicht veröffentlicht) |
+| `export.prometheus.listen` | Das `host:port`, auf dem der Lauf `/metrics` ausliefert, solange die Last läuft, siehe [unten](#prometheus-metriken); Port `0` nimmt einen freien, die gewählte Adresse steht auf stderr. Kein Standard: Die Adresse kommt von diesem Schlüssel oder von `-metrics-listen`, und `export.prometheus` ohne beides ist ein Fehler. Ein Beispiel ist `127.0.0.1:9464`. **`:9464` öffnet den Port auf allen Interfaces ohne Passwort**, und der Body enthält Methodennamen und Ihre `labels`. Ein Schlüssel ohne Wert ist ein Fehler. Nicht zusammen mit `load.breakpoint` und `-dry-run`. |
+| `export.prometheus.linger` | Wie lange der Endpunkt nach dem Ende des Laufs die Endwerte weiter ausliefert, damit der letzte Scrape sie sieht. Weggelassen — `15s`; `0` — nicht halten. **`15s` verzögert das Ende jedes Laufs, setzen Sie in CI `0`.** Ein Schlüssel ohne Wert ist ein Fehler. Nur zusammen mit `export.prometheus.listen` oder `-metrics-listen`. |
 
 Die Konfiguration wird streng gelesen: Ein Tippfehler in einem Feldnamen ist ein Fehler mit der
 Zeilennummer, ein falscher Wert ein Fehler mit Nummer und Methode des Aufrufs, kein Lauf mit leerer
@@ -354,7 +354,7 @@ ein Anhalten lässt Datensätze ungesendet.
 | `-output` | Berichtsformat auf stdout: `text` (Standard) oder `json` für Skripte und CI |
 | `-json-file` | Pfad einer neuen Datei: der JSON-Bericht (dasselbe Objekt wie bei `-output json`) wird hineingeschrieben, stdout bleibt, wie `-output` es sagt. Eine vorhandene Datei oder ein fehlendes Verzeichnis ist Exit 1 vor dem Start. Ein Lauf ohne Bericht hinterlässt keine Datei. Ein fehlgeschlagenes Schreiben ist Exit 1 |
 | `-label` | Ein Label `key=value` für den Pass des Berichts; mehrfach angebbar. Es gewinnt gegen denselben Schlüssel in `labels` der Konfiguration. Ein doppelt angegebener Schlüssel oder einer, der die Regeln für Schlüssel und Wert verletzt, ist Exit 1 vor dem Start |
-| `-metrics-listen` | `host:port`: `/metrics` auf dieser Adresse ausliefern, solange die Last läuft; gewinnt gegen `export.prometheus.listen` und schaltet den Export von selbst ein, Details [unten](#prometheus-metriken). Port `0` nimmt einen freien. **`:9464` öffnet den Port auf allen Interfaces ohne Passwort**; ein sicheres Beispiel ist `127.0.0.1:9464`. Nicht zusammen mit `-dry-run` und `load.breakpoint`. (nicht veröffentlicht) |
+| `-metrics-listen` | `host:port`: `/metrics` auf dieser Adresse ausliefern, solange die Last läuft; gewinnt gegen `export.prometheus.listen` und schaltet den Export von selbst ein, Details [unten](#prometheus-metriken). Port `0` nimmt einen freien. **`:9464` öffnet den Port auf allen Interfaces ohne Passwort**; ein sicheres Beispiel ist `127.0.0.1:9464`. Nicht zusammen mit `-dry-run` und `load.breakpoint`. |
 | `-connect-timeout` | Wie lange auf einen Dienst gewartet wird, der die Verbindung angenommen hat, aber schweigt. Standard `10s`. Auf eine abgelehnte Verbindung und eine falsche Adresse wird nicht gewartet |
 | `-max-in-flight` | Grenze für Anfragen, die auf eine Antwort warten. Standard `5000` |
 | `-plain` | Ohne Live-Bildschirm: eine Fortschrittszeile pro Sekunde auf stderr, wie ohne Terminal, und ohne den Dialog beim ersten Start. Der Bericht und die Exit-Codes sind dieselben |
@@ -366,7 +366,7 @@ ein Anhalten lässt Datensätze ungesendet.
 
 ## Prometheus-Metriken
 
-(nicht veröffentlicht) Ein Lauf mit `export.prometheus.listen` oder `-metrics-listen` liefert
+Ein Lauf mit `export.prometheus.listen` oder `-metrics-listen` liefert
 `/metrics` (Textformat 0.0.4) auf dieser Adresse aus, solange die Last läuft; andere Pfade gibt es
 nicht. Die Adresse wird belegt, bevor der Dienst angesprochen wird, ein belegter Port ist also ein
 Fehler vor dem Start. Die Werte werden höchstens einmal pro Sekunde neu berechnet; nach dem Ende
@@ -544,9 +544,9 @@ unten den Typ „percentile?" hat.
 | `stop.limit` | string | Die Grenze, wie in der Konfiguration geschrieben: `"5%"`. |
 | `stop.at_us` | int | Die Zeit vom Start des Laufs bis zum Stopp, in ganzen Mikrosekunden. |
 | `stop.in_flight` | int | Die Aufrufe im Flug in diesem Moment (begonnen, nicht beendet): bei einem hängenden Ziel das, was das Fenster nicht zeigt. |
-| `seq_overflow` | object? | Wo ein `{{seq}}` nicht in sein Feld passte und der Lauf anhielt; `null`, wenn das nicht geschah. `stop_reason` ist dann `seq_overflow`, und der Lauf endet sanft (Exit 3). (nicht veröffentlicht) |
-| `seq_overflow.method` | string | Die Methode, deren Feld überlief, geschrieben wie in `methods[].method`, mit führendem `/`. (nicht veröffentlicht) |
-| `seq_overflow.limit` | int | Das größte `seq`, das das schmalste Feld der Methode fasst. (nicht veröffentlicht) |
+| `seq_overflow` | object? | Wo ein `{{seq}}` nicht in sein Feld passte und der Lauf anhielt; `null`, wenn das nicht geschah. `stop_reason` ist dann `seq_overflow`, und der Lauf endet sanft (Exit 3). |
+| `seq_overflow.method` | string | Die Methode, deren Feld überlief, geschrieben wie in `methods[].method`, mit führendem `/`. |
+| `seq_overflow.limit` | int | Das größte `seq`, das das schmalste Feld der Methode fasst. |
 | `started_at` | string | Beginn des Plans, RFC 3339 UTC, Aufwärmen eingeschlossen. Jedes `_us` und `_s` zählt ab hier |
 | `duration_us` | int | Wie lange der Lauf ging, Aufwärmen eingeschlossen |
 | `planned_us` | int | Wie lange er gehen sollte, der Anlauf eingeschlossen |
@@ -672,11 +672,11 @@ Die übrigen sind einfache Zähler.
 | `methods[].dataset.order` | string | `file` oder `random`: in welcher Reihenfolge die Anfragen rausgingen |
 | `methods[].dataset.seed` | int? | Seed einer zufälligen Reihenfolge, 0 bis 9007199254740991; `null` bei der Reihenfolge der Datei |
 | `methods[].dataset.reuse` | bool | `false` — der Aufruf sendet jeden Datensatz höchstens einmal (`dataset_reuse: false`); sonst `true` |
-| `methods[].templates` | object? | Die Templates des Aufrufs (`templates: true`); `null` — er hat keine. Ein Objekt, keine Liste. (nicht veröffentlicht) |
-| `methods[].templates.placeholders` | []string | Die Platzhalter, die `data` benutzt, sortiert: `seq`, `uuid`. (nicht veröffentlicht) |
-| `methods[].templates.last_seq` | int | Wie viele Anfragen des Aufrufs im Prozess an den Sender übergeben wurden, Anlauf und Aufwärmen eingeschlossen: die Nummer der letzten. In einer Suche zählt es die ganze Suche. (nicht veröffentlicht) |
+| `methods[].templates` | object? | Die Templates des Aufrufs (`templates: true`); `null` — er hat keine. Ein Objekt, keine Liste. |
+| `methods[].templates.placeholders` | []string | Die Platzhalter, die `data` benutzt, sortiert: `seq`, `uuid`. |
+| `methods[].templates.last_seq` | int | Wie viele Anfragen des Aufrufs im Prozess an den Sender übergeben wurden, Anlauf und Aufwärmen eingeschlossen: die Nummer der letzten. In einer Suche zählt es die ganze Suche. |
 | `methods[].seconds` | []object | Die Zeitleiste pro Sekunde, siehe unten |
-| `methods[].windows` | []object | Der gemessene Teil des Laufs in höchstens 60 Fenstern, siehe unten; `[]`, wenn der Lauf keine hat (ein Schritt der Bruchpunkt-Suche oder nichts gemessen). (nicht veröffentlicht) |
+| `methods[].windows` | []object | Der gemessene Teil des Laufs in höchstens 60 Fenstern, siehe unten; `[]`, wenn der Lauf keine hat (ein Schritt der Bruchpunkt-Suche oder nichts gemessen). |
 
 ### Sekunde: `methods[].seconds[]`
 
@@ -705,12 +705,12 @@ Gesamtwerten verglichen.
 
 | Feld | Typ | Bedeutung |
 |---|---|---|
-| `methods[].windows[].start_us` | int | Beginn des Fensters in Mikrosekunden ab dem Ende des Aufwärmens. (nicht veröffentlicht) |
-| `methods[].windows[].width_us` | int | Die vom Fenster abgedeckte Laufzeit: die geplante Breite, weniger beim letzten Fenster eines früher beendeten Laufs. (nicht veröffentlicht) |
-| `methods[].windows[].sent` | int | Im Fenster geplante Aufrufe, die rausgingen, definiert wie `sent` der Methode. (nicht veröffentlicht) |
-| `methods[].windows[].failed` | int | Davon die fehlgeschlagenen, definiert wie `failed` der Methode. (nicht veröffentlicht) |
-| `methods[].windows[].p50_us`, `methods[].windows[].p99_us` | int? | Perzentile der Latenz des Fensters in Mikrosekunden; `null` in einem Fenster ohne Beobachtungen. (nicht veröffentlicht) |
-| `methods[].windows[].p99_bound` | bool | Das p99 des Fensters ist eine Untergrenze: ein nicht beendeter Aufruf erreicht es. (nicht veröffentlicht) |
+| `methods[].windows[].start_us` | int | Beginn des Fensters in Mikrosekunden ab dem Ende des Aufwärmens. |
+| `methods[].windows[].width_us` | int | Die vom Fenster abgedeckte Laufzeit: die geplante Breite, weniger beim letzten Fenster eines früher beendeten Laufs. |
+| `methods[].windows[].sent` | int | Im Fenster geplante Aufrufe, die rausgingen, definiert wie `sent` der Methode. |
+| `methods[].windows[].failed` | int | Davon die fehlgeschlagenen, definiert wie `failed` der Methode. |
+| `methods[].windows[].p50_us`, `methods[].windows[].p99_us` | int? | Perzentile der Latenz des Fensters in Mikrosekunden; `null` in einem Fenster ohne Beobachtungen. |
+| `methods[].windows[].p99_bound` | bool | Das p99 des Fensters ist eine Untergrenze: ein nicht beendeter Aufruf erreicht es. |
 
 ### Suche nach dem Bruchpunkt: `mode: "breakpoint"`
 
