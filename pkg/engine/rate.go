@@ -14,10 +14,7 @@
 
 package engine
 
-import (
-	"math"
-	"time"
-)
+import "time"
 
 // rateAt is the rate the plan offers elapsed after its start, in calls per
 // second: a constant stage holds its rate, a ramp moves linearly from its
@@ -26,9 +23,25 @@ import (
 // boundary). A negative elapsed is the plan's first rate, a stage of zero
 // Duration is skipped, and 0 comes after the last stage and for a plan with
 // none. Pure: it reads nothing but its arguments.
-//
-// STUB (prometheus-export, layer 2): returns NaN, so that no test passes by
-// the answer 0 alone.
-func rateAt(_ []Stage, _ time.Duration) float64 {
-	return math.NaN()
+func rateAt(stages []Stage, elapsed time.Duration) float64 {
+	var base time.Duration
+	for _, stage := range stages {
+		if stage.Duration <= 0 {
+			continue
+		}
+		if elapsed < 0 {
+			return float64(stage.StartRPS)
+		}
+		if elapsed < base+stage.Duration {
+			if stage.StartRPS == stage.TargetRPS {
+				return float64(stage.StartRPS)
+			}
+			within := elapsed - base
+			slope := float64(stage.TargetRPS-stage.StartRPS) / float64(stage.Duration)
+			return max(float64(stage.StartRPS)+slope*float64(within), 0)
+		}
+		base += stage.Duration
+	}
+
+	return 0
 }

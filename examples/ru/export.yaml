@@ -1,0 +1,25 @@
+# Экспорт в Prometheus: прогон отдаёт /metrics на export.prometheus.listen, и Prometheus снимает
+# его, пока идёт нагрузка. После прогона точка держит итоговые значения ещё linger, чтобы их
+# увидел последний сбор; код выхода — свой, как у прогона. Рядом с load.breakpoint не работает.
+# На эталонном стенде, из корня репозитория:
+#   go run ./test/stand/cmd/stand -delay 20ms
+#   leettest -c examples/ru/export.yaml
+#   curl http://127.0.0.1:9464/metrics     # из другого терминала
+
+app:
+  target:
+    ip: 127.0.0.1
+    port: 50051
+  tls: false
+
+load:
+  warmup: 5s
+  calls:
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 800
+      duration: 1m
+
+export:
+  prometheus:
+    listen: 127.0.0.1:9464          # host:port; порт 0 берёт свободный
+    linger: 15s                     # отдавать итог столько после прогона; 0 — не держать

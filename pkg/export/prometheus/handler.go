@@ -15,7 +15,10 @@
 package prometheus
 
 import (
+	"bytes"
+	"io"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -36,17 +39,71 @@ type Source struct {
 // whatever the interval, and from then on that text is served and Read is never
 // called again. Concurrent scrapes share one render. The reply is 200 with
 // Content-Type "text/plain; version=0.0.4; charset=utf-8".
-//
-// STUB (prometheus-export, layer 3): 404 to everything.
-func NewHandler(_ Source, _ time.Duration, _ func() time.Time) http.Handler {
-	return http.NotFoundHandler()
+func NewHandler(src Source, minInterval time.Duration, now func() time.Time) http.Handler {
+	return &handler{src: src, minInterval: minInterval, now: now}
 }
 
 // NewServer is an http.Server around h with a ReadHeaderTimeout: a port open
 // to anyone must not hold a goroutine for a client that never finishes its
 // request line.
-//
-// STUB (prometheus-export, layer 3): no timeout.
 func NewServer(h http.Handler) *http.Server {
-	return &http.Server{Handler: h}
+	return &http.Server{
+		Handler:           h,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+}
+
+type handler struct {
+	src         Source
+	minInterval time.Duration
+	now         func() time.Time
+
+	mu       sync.Mutex
+	text     string
+	last     time.Time
+	rendered bool
+	final    bool
+}
+
+func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet || r.URL.Path != "/metrics" {
+		http.NotFound(w, r)
+
+		return
+	}
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	done := false
+	if h.src.Done != nil {
+		select {
+		case <-h.src.Done:
+			done = true
+		default:
+		}
+	}
+
+	switch {
+	case h.final:
+	case done:
+		h.render()
+		h.final = true
+	case !h.rendered:
+		h.render()
+	case !h.now().Before(h.last.Add(h.minInterval)):
+		h.render()
+	}
+
+	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.WriteString(w, h.text)
+}
+
+func (h *handler) render() {
+	var b bytes.Buffer
+	_ = Render(&b, h.src.Read())
+	h.text = b.String()
+	h.last = h.now()
+	h.rendered = true
 }

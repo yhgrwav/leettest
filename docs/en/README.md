@@ -52,7 +52,11 @@ go install github.com/yhgrwav/leettest/cmd/leettest@latest
 ```
 
 Check: `leettest -version`. If the command is not found after `go install` —
-`export PATH="$PATH:$(go env GOPATH)/bin"`.
+add the directory to your `PATH`:
+
+```sh
+export PATH="$PATH:$(go env GOPATH)/bin"
+```
 
 **Where to run:** on Linux next to the target — in the same network, cluster or on a CI runner.
 Everything between the generator and the target goes into the latency. More in the

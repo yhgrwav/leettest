@@ -16,6 +16,9 @@ package config
 
 import (
 	"errors"
+	"fmt"
+	"net"
+	"strconv"
 	"time"
 )
 
@@ -47,8 +50,61 @@ type Prometheus struct {
 
 // resolveExport reads export: and refuses what cannot run. It wraps
 // ErrInvalidExport.
-//
-// STUB (prometheus-export, layer 5): reads nothing and refuses nothing.
 func (m *MasterConfig) resolveExport() error {
+	if m.Export == nil || m.Export.Prometheus == nil {
+		return nil
+	}
+	p := m.Export.Prometheus
+
+	if m.Load.Breakpoint != nil {
+		return fmt.Errorf("%w: export cannot run beside load.breakpoint: the search builds a new engine per step", ErrInvalidExport)
+	}
+
+	if p.RawLinger == nil {
+		p.Linger = DefaultLinger
+	} else {
+		p.Linger = *p.RawLinger
+	}
+	if p.Linger < 0 {
+		return fmt.Errorf("%w: export.prometheus.linger %s must not be negative", ErrInvalidExport, p.Linger)
+	}
+
+	if p.Listen != "" {
+		if err := checkListen(p.Listen); err != nil {
+			return fmt.Errorf("%w: export.prometheus.listen %q: %w", ErrInvalidExport, p.Listen, err)
+		}
+	}
+
 	return nil
+}
+
+func checkListen(listen string) error {
+	host, port, err := net.SplitHostPort(listen)
+	if err != nil {
+		return err
+	}
+	if !validListenHost(host) {
+		return fmt.Errorf("host %q is not a host name or an IP address", host)
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 0 || n > 65535 {
+		return fmt.Errorf("port %q is not a whole number from 0 to 65535", port)
+	}
+
+	return nil
+}
+
+func validListenHost(host string) bool {
+	if host == "" || net.ParseIP(host) != nil {
+		return true
+	}
+	for _, r := range host {
+		letter := r == '_' || r == '.' || r == '-' ||
+			(r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
+		if !letter {
+			return false
+		}
+	}
+
+	return true
 }
