@@ -124,6 +124,10 @@ func (m *MasterConfig) resolve() error {
 		return err
 	}
 
+	if err := m.resolveExport(); err != nil {
+		return err
+	}
+
 	address, err := m.App.Target.CreateConnectionString()
 	if err != nil {
 		return err

@@ -35,7 +35,7 @@ curl -fsSL https://raw.githubusercontent.com/yhgrwav/leettest/main/install.sh | 
 ```
 
 Das Skript installiert das neueste Release nach `~/.local/bin` und prüft die Prüfsumme. Liegt dieses
-Verzeichnis nicht im `PATH`, gibt es eine Zeile `export PATH=...` aus: Führen Sie sie in diesem
+Verzeichnis nicht im `PATH`, gibt es eine Zeile aus, die `PATH` exportiert: Führen Sie sie in diesem
 Terminal aus, und legen Sie sie in Ihr Shell-Profil, um sie zu behalten. `LEETTEST_INSTALL_DIR`
 wählt ein anderes Verzeichnis, `LEETTEST_VERSION` eine andere Version; die Variable steht vor `sh`,
 nicht vor `curl`:

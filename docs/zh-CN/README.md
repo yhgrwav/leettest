@@ -51,7 +51,11 @@ go install github.com/yhgrwav/leettest/cmd/leettest@latest
 ```
 
 检查：`leettest -version`。如果 `go install` 之后找不到该命令——
-`export PATH="$PATH:$(go env GOPATH)/bin"`。
+把该目录加入 `PATH`：
+
+```sh
+export PATH="$PATH:$(go env GOPATH)/bin"
+```
 
 **在哪里运行：**在 Linux 上、紧挨着目标——同一网络、同一集群或 CI runner。压测机与目标之间的一切
 都会计入延迟。详见[参考手册](reference.md#在哪里运行)。

@@ -49,7 +49,11 @@ go install github.com/yhgrwav/leettest/cmd/leettest@latest
 ```
 
 Проверка: `leettest -version`. Если после `go install` команда не найдена —
-`export PATH="$PATH:$(go env GOPATH)/bin"`.
+добавьте каталог в `PATH`:
+
+```sh
+export PATH="$PATH:$(go env GOPATH)/bin"
+```
 
 **Где запускать:** на Linux рядом с целью — в той же сети, кластере или на раннере CI. Всё, что
 лежит между генератором и целью, попадает в латенси. Подробнее — в [справочнике](docs/ru/reference.md#где-запускать).

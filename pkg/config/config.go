@@ -106,6 +106,8 @@ type MasterConfig struct {
 	SHA256 string `yaml:"-"`
 	App    App    `yaml:"app"`
 	Load   Load   `yaml:"load"`
+	// Export turns on the exporters; nil is none.
+	Export *Export `yaml:"export"`
 }
 
 type App struct {

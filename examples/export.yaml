@@ -1,0 +1,25 @@
+# Prometheus export: the run serves /metrics on export.prometheus.listen, and Prometheus scrapes it
+# while the load runs. After the run the endpoint keeps the final values for linger, so the last
+# scrape sees them; the exit code is the run's own. Not available beside load.breakpoint.
+# Against the reference stand, from the repository root:
+#   go run ./test/stand/cmd/stand -delay 20ms
+#   leettest -c examples/export.yaml
+#   curl http://127.0.0.1:9464/metrics     # from another terminal
+
+app:
+  target:
+    ip: 127.0.0.1
+    port: 50051
+  tls: false
+
+load:
+  warmup: 5s
+  calls:
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 800
+      duration: 1m
+
+export:
+  prometheus:
+    listen: 127.0.0.1:9464          # host:port; port 0 takes a free one
+    linger: 15s                     # serve the final values this long after the run; 0 - none

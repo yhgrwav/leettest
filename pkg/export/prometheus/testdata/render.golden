@@ -1,0 +1,108 @@
+# HELP leettest_planned_rps Offered load of the plan at this moment, calls per second; 0 after the plan ends.
+# TYPE leettest_planned_rps gauge
+leettest_planned_rps{method="pkg.Svc/Get",commit="abc1",env="st\"a\\ge\nx"} 12.5
+leettest_planned_rps{method="pkg.Svc/Put",commit="abc1",env="st\"a\\ge\nx"} 0
+# HELP leettest_calls_total Measured calls by outcome category, warm-up excluded. Counted when a call completes.
+# TYPE leettest_calls_total counter
+leettest_calls_total{method="pkg.Svc/Get",category="success",commit="abc1",env="st\"a\\ge\nx"} 7
+leettest_calls_total{method="pkg.Svc/Get",category="request_error",commit="abc1",env="st\"a\\ge\nx"} 1
+leettest_calls_total{method="pkg.Svc/Get",category="overload",commit="abc1",env="st\"a\\ge\nx"} 2
+leettest_calls_total{method="pkg.Svc/Get",category="failure",commit="abc1",env="st\"a\\ge\nx"} 3
+leettest_calls_total{method="pkg.Svc/Get",category="timed_out",commit="abc1",env="st\"a\\ge\nx"} 4
+leettest_calls_total{method="pkg.Svc/Get",category="cut_off",commit="abc1",env="st\"a\\ge\nx"} 5
+leettest_calls_total{method="pkg.Svc/Get",category="unreachable",commit="abc1",env="st\"a\\ge\nx"} 6
+leettest_calls_total{method="pkg.Svc/Get",category="client_error",commit="abc1",env="st\"a\\ge\nx"} 8
+leettest_calls_total{method="pkg.Svc/Get",category="bad_response",commit="abc1",env="st\"a\\ge\nx"} 9
+leettest_calls_total{method="pkg.Svc/Get",category="aborted",commit="abc1",env="st\"a\\ge\nx"} 10
+leettest_calls_total{method="pkg.Svc/Get",category="unclassified",commit="abc1",env="st\"a\\ge\nx"} 11
+leettest_calls_total{method="pkg.Svc/Put",category="success",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_calls_total{method="pkg.Svc/Put",category="request_error",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_calls_total{method="pkg.Svc/Put",category="overload",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_calls_total{method="pkg.Svc/Put",category="failure",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_calls_total{method="pkg.Svc/Put",category="timed_out",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_calls_total{method="pkg.Svc/Put",category="cut_off",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_calls_total{method="pkg.Svc/Put",category="unreachable",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_calls_total{method="pkg.Svc/Put",category="client_error",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_calls_total{method="pkg.Svc/Put",category="bad_response",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_calls_total{method="pkg.Svc/Put",category="aborted",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_calls_total{method="pkg.Svc/Put",category="unclassified",commit="abc1",env="st\"a\\ge\nx"} 0
+# HELP leettest_latency_seconds Latency from the scheduled time, success only, warm-up excluded. Buckets are HDR sub-buckets by lower value, about 0.1% fine; the sum is read from them.
+# TYPE leettest_latency_seconds histogram
+leettest_latency_seconds_bucket{method="pkg.Svc/Get",le="0.0001",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_latency_seconds_bucket{method="pkg.Svc/Get",le="0.00025",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_latency_seconds_bucket{method="pkg.Svc/Get",le="0.0005",commit="abc1",env="st\"a\\ge\nx"} 1
+leettest_latency_seconds_bucket{method="pkg.Svc/Get",le="0.001",commit="abc1",env="st\"a\\ge\nx"} 1
+leettest_latency_seconds_bucket{method="pkg.Svc/Get",le="0.0025",commit="abc1",env="st\"a\\ge\nx"} 2
+leettest_latency_seconds_bucket{method="pkg.Svc/Get",le="0.005",commit="abc1",env="st\"a\\ge\nx"} 2
+leettest_latency_seconds_bucket{method="pkg.Svc/Get",le="0.01",commit="abc1",env="st\"a\\ge\nx"} 3
+leettest_latency_seconds_bucket{method="pkg.Svc/Get",le="0.025",commit="abc1",env="st\"a\\ge\nx"} 3
+leettest_latency_seconds_bucket{method="pkg.Svc/Get",le="0.05",commit="abc1",env="st\"a\\ge\nx"} 4
+leettest_latency_seconds_bucket{method="pkg.Svc/Get",le="0.1",commit="abc1",env="st\"a\\ge\nx"} 4
+leettest_latency_seconds_bucket{method="pkg.Svc/Get",le="0.25",commit="abc1",env="st\"a\\ge\nx"} 5
+leettest_latency_seconds_bucket{method="pkg.Svc/Get",le="0.5",commit="abc1",env="st\"a\\ge\nx"} 5
+leettest_latency_seconds_bucket{method="pkg.Svc/Get",le="1",commit="abc1",env="st\"a\\ge\nx"} 5
+leettest_latency_seconds_bucket{method="pkg.Svc/Get",le="2.5",commit="abc1",env="st\"a\\ge\nx"} 5
+leettest_latency_seconds_bucket{method="pkg.Svc/Get",le="5",commit="abc1",env="st\"a\\ge\nx"} 6
+leettest_latency_seconds_bucket{method="pkg.Svc/Get",le="10",commit="abc1",env="st\"a\\ge\nx"} 6
+leettest_latency_seconds_bucket{method="pkg.Svc/Get",le="25",commit="abc1",env="st\"a\\ge\nx"} 6
+leettest_latency_seconds_bucket{method="pkg.Svc/Get",le="50",commit="abc1",env="st\"a\\ge\nx"} 6
+leettest_latency_seconds_bucket{method="pkg.Svc/Get",le="60",commit="abc1",env="st\"a\\ge\nx"} 6
+leettest_latency_seconds_bucket{method="pkg.Svc/Get",le="+Inf",commit="abc1",env="st\"a\\ge\nx"} 7
+leettest_latency_seconds_sum{method="pkg.Svc/Get",commit="abc1",env="st\"a\\ge\nx"} 123.456
+leettest_latency_seconds_count{method="pkg.Svc/Get",commit="abc1",env="st\"a\\ge\nx"} 7
+leettest_latency_seconds_bucket{method="pkg.Svc/Put",le="0.0001",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_latency_seconds_bucket{method="pkg.Svc/Put",le="0.00025",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_latency_seconds_bucket{method="pkg.Svc/Put",le="0.0005",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_latency_seconds_bucket{method="pkg.Svc/Put",le="0.001",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_latency_seconds_bucket{method="pkg.Svc/Put",le="0.0025",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_latency_seconds_bucket{method="pkg.Svc/Put",le="0.005",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_latency_seconds_bucket{method="pkg.Svc/Put",le="0.01",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_latency_seconds_bucket{method="pkg.Svc/Put",le="0.025",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_latency_seconds_bucket{method="pkg.Svc/Put",le="0.05",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_latency_seconds_bucket{method="pkg.Svc/Put",le="0.1",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_latency_seconds_bucket{method="pkg.Svc/Put",le="0.25",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_latency_seconds_bucket{method="pkg.Svc/Put",le="0.5",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_latency_seconds_bucket{method="pkg.Svc/Put",le="1",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_latency_seconds_bucket{method="pkg.Svc/Put",le="2.5",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_latency_seconds_bucket{method="pkg.Svc/Put",le="5",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_latency_seconds_bucket{method="pkg.Svc/Put",le="10",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_latency_seconds_bucket{method="pkg.Svc/Put",le="25",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_latency_seconds_bucket{method="pkg.Svc/Put",le="50",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_latency_seconds_bucket{method="pkg.Svc/Put",le="60",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_latency_seconds_bucket{method="pkg.Svc/Put",le="+Inf",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_latency_seconds_sum{method="pkg.Svc/Put",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_latency_seconds_count{method="pkg.Svc/Put",commit="abc1",env="st\"a\\ge\nx"} 0
+# HELP leettest_censored_total Calls that ended without an answer, timed_out and aborted: their latency is only a lower bound and is not in leettest_latency_seconds.
+# TYPE leettest_censored_total counter
+leettest_censored_total{method="pkg.Svc/Get",category="timed_out",commit="abc1",env="st\"a\\ge\nx"} 4
+leettest_censored_total{method="pkg.Svc/Get",category="aborted",commit="abc1",env="st\"a\\ge\nx"} 10
+leettest_censored_total{method="pkg.Svc/Put",category="timed_out",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_censored_total{method="pkg.Svc/Put",category="aborted",commit="abc1",env="st\"a\\ge\nx"} 0
+# HELP leettest_excluded_total Calls with no usable latency: unreachable, cut_off, client_error, unclassified. Not in leettest_latency_seconds.
+# TYPE leettest_excluded_total counter
+leettest_excluded_total{method="pkg.Svc/Get",category="unreachable",commit="abc1",env="st\"a\\ge\nx"} 6
+leettest_excluded_total{method="pkg.Svc/Get",category="cut_off",commit="abc1",env="st\"a\\ge\nx"} 5
+leettest_excluded_total{method="pkg.Svc/Get",category="client_error",commit="abc1",env="st\"a\\ge\nx"} 8
+leettest_excluded_total{method="pkg.Svc/Get",category="unclassified",commit="abc1",env="st\"a\\ge\nx"} 11
+leettest_excluded_total{method="pkg.Svc/Put",category="unreachable",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_excluded_total{method="pkg.Svc/Put",category="cut_off",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_excluded_total{method="pkg.Svc/Put",category="client_error",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_excluded_total{method="pkg.Svc/Put",category="unclassified",commit="abc1",env="st\"a\\ge\nx"} 0
+# HELP leettest_not_sent_total Calls that never left the generator, by the client-side cause: generator, connection, stream.
+# TYPE leettest_not_sent_total counter
+leettest_not_sent_total{method="pkg.Svc/Get",cause="generator",commit="abc1",env="st\"a\\ge\nx"} 20
+leettest_not_sent_total{method="pkg.Svc/Get",cause="connection",commit="abc1",env="st\"a\\ge\nx"} 30
+leettest_not_sent_total{method="pkg.Svc/Get",cause="stream",commit="abc1",env="st\"a\\ge\nx"} 40
+leettest_not_sent_total{method="pkg.Svc/Put",cause="generator",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_not_sent_total{method="pkg.Svc/Put",cause="connection",commit="abc1",env="st\"a\\ge\nx"} 0
+leettest_not_sent_total{method="pkg.Svc/Put",cause="stream",commit="abc1",env="st\"a\\ge\nx"} 0
+# HELP leettest_in_flight Calls in flight now, all methods.
+# TYPE leettest_in_flight gauge
+leettest_in_flight{commit="abc1",env="st\"a\\ge\nx"} 3
+# HELP leettest_warmup_sent_total Calls sent during warm-up; they are in no other counter.
+# TYPE leettest_warmup_sent_total counter
+leettest_warmup_sent_total{method="pkg.Svc/Get",commit="abc1",env="st\"a\\ge\nx"} 15
+leettest_warmup_sent_total{method="pkg.Svc/Put",commit="abc1",env="st\"a\\ge\nx"} 0
+# HELP leettest_warmup 1 while the run is in its warm-up, else 0.
+# TYPE leettest_warmup gauge
+leettest_warmup{commit="abc1",env="st\"a\\ge\nx"} 1
