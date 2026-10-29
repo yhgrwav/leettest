@@ -652,6 +652,40 @@ func TestStatsExportInto_NextToRecordTheEndIsExact(t *testing.T) {
 	}
 }
 
+// Ground: concurrency — the elapsed time is read under the lock the end of the
+// run is written under (killed by -race: a mutant that read it outside the lock).
+func TestStatsExportInto_NextToTheEndOfTheRunTheReadIsLocked(t *testing.T) {
+	stats, _ := startedStats(0, "a")
+
+	stop := make(chan struct{})
+	var readers sync.WaitGroup
+	for range 2 {
+		readers.Go(func() {
+			var view ExportView
+			buf := metrics.NewBuffer()
+			calls := []Call{{Method: "a", Stages: []Stage{{Duration: time.Minute, StartRPS: 10, TargetRPS: 10}}}}
+
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+
+				stats.ExportInto(&view, buf, exportBounds, calls)
+			}
+		})
+	}
+
+	for range 200 {
+		stats.EndSending(time.Now())
+		stats.Finish(time.Now())
+		time.Sleep(50 * time.Microsecond)
+	}
+	close(stop)
+	readers.Wait()
+}
+
 // Ground: contract of the name — "Into": a repeated call refills the same view
 // in place, the methods and each method's buckets keep their backing arrays, so
 // a scrape every second does not hand the garbage collector a new view each time.
