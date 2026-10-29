@@ -23,6 +23,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime/pprof"
 	"slices"
 	"strconv"
 	"strings"
@@ -317,9 +318,60 @@ func runCLI(ctx context.Context, t *testing.T, limit time.Duration, args ...stri
 	case err := <-done:
 		return result{stdout: stdout.String(), stderr: stderr.String(), err: err}
 	case <-time.After(limit):
+		logGoroutines(t)
 		t.Fatalf("run has not returned after %v", limit)
 
 		return result{}
+	}
+}
+
+// logGoroutines writes the stack of every goroutine into the test log, so a
+// run that did not return shows where its goroutines wait: parked in our code
+// (a hang) or inside the work (a slow machine).
+func logGoroutines(t *testing.T) {
+	t.Helper()
+
+	t.Logf("goroutines at the limit:\n%s", goroutineDump())
+}
+
+// goroutineDump is the goroutine profile in its fullest text form: every
+// stack, with the state and how long each goroutine has waited.
+func goroutineDump() string {
+	var dump bytes.Buffer
+	if err := pprof.Lookup("goroutine").WriteTo(&dump, 2); err != nil {
+		return "no dump: " + err.Error()
+	}
+
+	return dump.String()
+}
+
+func parkedOnAChannel(release <-chan struct{}) { <-release }
+
+// The dump runCLI logs on its limit names a goroutine that waits and where.
+// Ground: contract of the test helper — a hang is told from a slow run by the dump.
+func TestGoroutineDump_NamesAParkedGoroutine(t *testing.T) {
+	release := make(chan struct{})
+	finished := make(chan struct{})
+	go func() {
+		defer close(finished)
+		parkedOnAChannel(release)
+	}()
+	t.Cleanup(func() {
+		close(release)
+		<-finished
+	})
+
+	// The goroutine may not have reached the channel yet: ask until it shows.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		dump := goroutineDump()
+		if strings.Contains(dump, "parkedOnAChannel") && strings.Contains(dump, "chan receive") {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the dump has no goroutine parked in parkedOnAChannel:\n%s", dump)
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 
