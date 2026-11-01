@@ -579,6 +579,10 @@ Issues and discussions are welcome. Pull requests are accepted after signing the
 the agent, [AGENTS.md](../../AGENTS.md). The CLA is a license, not a transfer of rights: the
 copyright stays with you.
 
+## Support the project
+
+USDT (TRC20): `TGi6i9DgBHQV6RNzVSMQmgamGrYh5RdZYH`
+
 ## License
 
 Apache License 2.0 — see [LICENSE](../../LICENSE).
