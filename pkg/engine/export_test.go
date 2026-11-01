@@ -568,22 +568,214 @@ func TestStatsExportInto_AMethodOutsideThePlanHasNoPlannedRPS(t *testing.T) {
 	}
 }
 
+// exportLagged is a call of method scheduled at start+at whose start lag is
+// lag (negative: it began before its schedule), ending in category. A sent
+// call goes out the moment it begins and takes 5 ms; one of an unsent
+// category never left the generator and ran into its deadline.
+func exportLagged(start time.Time, at time.Duration, method string, category Category, lag time.Duration) Result {
+	r := exportCall(start, at, method, category, 5*time.Millisecond)
+	r.BegunAt = r.ScheduledAt.Add(lag)
+	r.SentAt = r.BegunAt
+	r.DoneAt = r.BegunAt.Add(5 * time.Millisecond)
+	r.Deadline = r.BegunAt.Add(time.Second)
+
+	return r
+}
+
+func exportLaggedUnsent(start time.Time, at time.Duration, method string, lag time.Duration) Result {
+	r := exportLagged(start, at, method, CategoryTimeout, lag)
+	r.NotSent = true
+	r.NotSentOn = BlockedOnGenerator
+	r.SentAt = time.Time{}
+	r.DoneAt = r.Deadline
+
+	return r
+}
+
+// startLagCase is `count` calls with the start lag `lag`. The lags sit well
+// away from exportBounds (1 ms, 10 ms, 100 ms, 1 s): a value on an edge may
+// fall either side of it inside an HDR sub-bucket.
+type startLagCase struct {
+	lag   time.Duration
+	count int
+}
+
+// startLagPopulation is 200 calls whose 99th percentile (rank 198) is in the
+// 1 s bucket and not in the first or the last one, and one call (2 s) past the
+// last bound, that is only in the total.
+var startLagPopulation = []startLagCase{
+	{300 * time.Microsecond, 60},
+	{700 * time.Microsecond, 40},
+	{4 * time.Millisecond, 50},
+	{9 * time.Millisecond, 30},
+	{30 * time.Millisecond, 10},
+	{80 * time.Millisecond, 6},
+	{400 * time.Millisecond, 3},
+	{2 * time.Second, 1},
+}
+
+// Ground: decisions «Серия leettest_start_lag_seconds (Д6)» (and P31: a
+// pre-aggregate that disagrees with the report is a lie) — the run-wide start
+// lag in the view is the report's population and the report's p99 falls in
+// the bucket the cumulative counts say. 200 calls on two methods, in every
+// category, a fifth of them unsent, plus warm-up calls with a huge lag and a
+// call that began before its schedule: none of these two is in the view.
+func TestStatsExportInto_StartLagAgreesWithTheReport(t *testing.T) {
+	const warmup = time.Second
+	stats, start := startedStats(warmup, "a", "b")
+
+	var want []time.Duration
+	i := 0
+	for _, c := range startLagPopulation {
+		for range c.count {
+			method := []string{"a", "b"}[i%2]
+			at := warmup + time.Duration(i)*time.Millisecond
+			if i%5 == 0 {
+				stats.Record(exportLaggedUnsent(start, at, method, c.lag))
+			} else {
+				stats.Record(exportLagged(start, at, method, exportOrder[i%ExportCategories], c.lag))
+			}
+			want = append(want, c.lag)
+			i++
+		}
+	}
+	for j := range 9 {
+		// Inside the warm-up, sent and unsent: counted by the warm-up, not here.
+		if j%3 == 0 {
+			stats.Record(exportLaggedUnsent(start, time.Duration(j)*time.Millisecond, "a", 5*time.Second))
+		} else {
+			stats.Record(exportLagged(start, time.Duration(j)*time.Millisecond, "b", CategorySuccess, 5*time.Second))
+		}
+	}
+	// Began a millisecond before its schedule: not a lag at all.
+	stats.Record(exportLagged(start, warmup+time.Minute/2, "a", CategorySuccess, -time.Millisecond))
+	stats.Finish(start.Add(time.Minute))
+
+	h := exportOf(stats).StartLag
+	if h.Count != int64(len(want)) {
+		t.Fatalf("StartLag.Count = %d, want %d: the post-warm-up calls with a lag of 0 or more", h.Count, len(want))
+	}
+	if len(h.Cumulative) != len(exportBounds) {
+		t.Fatalf("StartLag.Cumulative has %d buckets, want %d", len(h.Cumulative), len(exportBounds))
+	}
+
+	var sum time.Duration
+	for _, lag := range want {
+		sum += lag
+	}
+	for b, bound := range exportBounds {
+		var n int64
+		for _, lag := range want {
+			if lag <= bound {
+				n++
+			}
+		}
+		if h.Cumulative[b] != n {
+			t.Errorf("StartLag.Cumulative at %v = %d, the inputs have %d at or under it", bound, h.Cumulative[b], n)
+		}
+	}
+	if h.Sum < sum-sum/1000 || h.Sum > sum+sum/1000 {
+		t.Errorf("StartLag.Sum = %v, want %v within 0.1%%", h.Sum, sum)
+	}
+
+	// The report's p99 is in the first bucket that reaches rank ⌈0.99·Count⌉.
+	rank := (h.Count*99 + 99) / 100
+	bucket := slices.IndexFunc(h.Cumulative, func(c int64) bool { return c >= rank })
+	p99 := stats.Report().StartLagP99
+	if !p99.Defined || bucket < 0 {
+		t.Fatalf("p99 defined %v, first bucket reaching rank %d: %d; want a defined p99 inside the bounds", p99.Defined, rank, bucket)
+	}
+	if p99.Value > exportBounds[bucket] || (bucket > 0 && p99.Value <= exportBounds[bucket-1]) {
+		t.Errorf("report StartLagP99 = %v, the cumulative puts rank %d in the bucket above %v up to %v",
+			p99.Value, rank, bucketBelow(bucket), exportBounds[bucket])
+	}
+}
+
+func bucketBelow(bucket int) time.Duration {
+	if bucket == 0 {
+		return 0
+	}
+
+	return exportBounds[bucket-1]
+}
+
+// Ground: contract (#88) — the warm-up's start lag is out, as its latency is
+// (TestStatsExportInto_WarmupCallsAreNotInTheHistogram): a cold start is late
+// by nature and would fill the tail the series is read for.
+func TestStatsExportInto_WarmupCallsAreNotInTheStartLag(t *testing.T) {
+	stats, start := startedStats(time.Second, "a")
+
+	for range 5 {
+		stats.Record(exportLagged(start, 100*time.Millisecond, "a", CategorySuccess, 500*time.Millisecond))
+	}
+	stats.Record(exportLaggedUnsent(start, 200*time.Millisecond, "a", 500*time.Millisecond))
+	for range 3 {
+		stats.Record(exportLagged(start, 2*time.Second, "a", CategorySuccess, 4*time.Millisecond))
+	}
+
+	h := exportOf(stats).StartLag
+	if h.Count != 3 || !slices.Equal(h.Cumulative, []int64{0, 3, 3, 3}) {
+		t.Errorf("start lag: count %d, cumulative %v; want 3 and [0 3 3 3]: only the three after the warm-up", h.Count, h.Cumulative)
+	}
+	if want := 12 * time.Millisecond; h.Sum < want-want/1000 || h.Sum > want+want/1000 {
+		t.Errorf("start lag sum = %v, want %v within 0.1%%", h.Sum, want)
+	}
+}
+
+// Ground: contract — nothing recorded yet: a view of a started run has an
+// empty start lag with the bounds' width, so a scrape renders zeros.
+func TestStatsExportInto_AStartedRunWithoutCallsHasAnEmptyStartLag(t *testing.T) {
+	stats, _ := startedStats(0, "a")
+
+	h := exportOf(stats).StartLag
+	if h.Count != 0 || h.Sum != 0 || !slices.Equal(h.Cumulative, make([]int64, len(exportBounds))) {
+		t.Errorf("start lag of a run without calls = %+v, want zeros in %d buckets", h, len(exportBounds))
+	}
+}
+
+// Ground: contract — the start lag is the run's, not a method's: the same
+// calls spread over methods any way give the same histogram.
+func TestStatsExportInto_StartLagDoesNotDependOnTheMethodSplit(t *testing.T) {
+	record := func(split func(i int) string) ExportHistogram {
+		stats, start := startedStats(0, "a", "b", "c")
+		for i := range 60 {
+			stats.Record(exportLagged(start, 0, split(i), CategorySuccess, time.Duration(i%6+1)*3*time.Millisecond))
+		}
+
+		return exportOf(stats).StartLag
+	}
+
+	one := record(func(int) string { return "a" })
+	three := record(func(i int) string { return []string{"a", "b", "c"}[i%3] })
+	if one.Count != 60 || one.Count != three.Count || !slices.Equal(one.Cumulative, three.Cumulative) || one.Sum != three.Sum {
+		t.Errorf("one method: %+v, three methods: %+v; want the same 60 calls", one, three)
+	}
+}
+
 // hammered records from four goroutines while two read the view all the time,
-// and returns how many views were not one consistent copy, and the last view.
-func hammered(t *testing.T) (torn int64, final ExportMethod) {
+// and returns how many views were not one consistent copy, the last view's
+// method and its start lag. The writers start only after each reader has read
+// once, and the test fails if no view was read at all: a run that checked
+// nothing must not pass.
+func hammered(t *testing.T) (torn int64, final ExportMethod, lag ExportHistogram) {
 	t.Helper()
 
 	stats, start := startedStats(0, "a")
 
-	const writers, each = 4, 500
+	const writers, each, readerCount = 4, 500, 2
 
 	var (
 		wg      sync.WaitGroup
 		readers sync.WaitGroup
+		ready   sync.WaitGroup
 		bad     atomic.Int64
+		reads   atomic.Int64
 	)
+	ready.Add(readerCount)
 	for range writers {
 		wg.Go(func() {
+			ready.Wait()
+
 			for range each {
 				stats.Record(exportCall(start, 0, "a", CategorySuccess, 5*time.Millisecond))
 			}
@@ -591,10 +783,11 @@ func hammered(t *testing.T) (torn int64, final ExportMethod) {
 	}
 
 	stop := make(chan struct{})
-	for range 2 {
+	for range readerCount {
 		readers.Go(func() {
 			var view ExportView
 			buf := metrics.NewBuffer()
+			first := true
 
 			for {
 				select {
@@ -604,6 +797,12 @@ func hammered(t *testing.T) (torn int64, final ExportMethod) {
 				}
 
 				stats.ExportInto(&view, buf, exportBounds, nil)
+				reads.Add(1)
+				if first {
+					first = false
+
+					ready.Done()
+				}
 				if len(view.Methods) != 1 {
 					bad.Add(1)
 
@@ -611,6 +810,12 @@ func hammered(t *testing.T) (torn int64, final ExportMethod) {
 				}
 				// One copy of the distribution: the three numbers are one.
 				if m := view.Methods[0]; m.Calls[ExportSuccess] != m.Count || m.Cumulative[len(m.Cumulative)-1] > m.Count {
+					bad.Add(1)
+				}
+				// The same for the run-wide start lag, a distribution of its own
+				// copied under its own lock: every call began on time, so the
+				// first bucket holds all of them.
+				if h := view.StartLag; len(h.Cumulative) != len(exportBounds) || h.Cumulative[0] != h.Count || h.Count > writers*each {
 					bad.Add(1)
 				}
 			}
@@ -631,24 +836,33 @@ func hammered(t *testing.T) (torn int64, final ExportMethod) {
 		t.Fatalf("the writers and readers have not finished in %v", exportCeiling)
 	}
 
-	return bad.Load(), onlyMethod(t, exportOf(stats))
+	if reads.Load() < readerCount {
+		t.Fatalf("the readers read %d views, want at least one each: nothing was checked", reads.Load())
+	}
+
+	last := exportOf(stats)
+
+	return bad.Load(), onlyMethod(t, last), last.StartLag
 }
 
 // Ground: concurrency (WORKFLOW §3) — a scrape next to the recording sees one
 // copy: success, the histogram's count and its buckets are consistent in every
-// view. Meaningful under -race too.
+// view, the run-wide start lag too. Meaningful under -race too.
 func TestStatsExportInto_NextToRecordEveryViewIsOneCopy(t *testing.T) {
-	if torn, _ := hammered(t); torn != 0 {
+	if torn, _, _ := hammered(t); torn != 0 {
 		t.Errorf("%d views were torn or empty, want none", torn)
 	}
 }
 
 // Ground: concurrency — and at the end nothing is lost: 2000 successes in, 2000
-// out, in the counter and in the histogram.
+// out, in the counter and in the histogram, and 2000 start lags.
 func TestStatsExportInto_NextToRecordTheEndIsExact(t *testing.T) {
-	_, final := hammered(t)
+	_, final, lag := hammered(t)
 	if final.Calls[ExportSuccess] != 2000 || final.Count != 2000 {
 		t.Errorf("success %d, histogram count %d, want 2000 each", final.Calls[ExportSuccess], final.Count)
+	}
+	if lag.Count != 2000 || !slices.Equal(lag.Cumulative, []int64{2000, 2000, 2000, 2000}) {
+		t.Errorf("start lag count %d, cumulative %v, want 2000 and 2000 in each of the four buckets", lag.Count, lag.Cumulative)
 	}
 }
 
@@ -704,13 +918,19 @@ func TestStatsExportInto_RefillsTheViewInPlace(t *testing.T) {
 	if len(view.Methods[0].Cumulative) != len(exportBounds) {
 		t.Fatalf("the first method holds %d buckets, want %d", len(view.Methods[0].Cumulative), len(exportBounds))
 	}
-	methods, buckets := &view.Methods[0], &view.Methods[0].Cumulative[0]
+	if len(view.StartLag.Cumulative) != len(exportBounds) {
+		t.Fatalf("the start lag holds %d buckets, want %d", len(view.StartLag.Cumulative), len(exportBounds))
+	}
+	methods, buckets, lagBuckets := &view.Methods[0], &view.Methods[0].Cumulative[0], &view.StartLag.Cumulative[0]
 
 	stats.Record(exportCall(start, 0, "a", CategorySuccess, 5*time.Millisecond))
 	stats.ExportInto(&view, buf, exportBounds, nil)
 
-	if &view.Methods[0] != methods || &view.Methods[0].Cumulative[0] != buckets {
+	if &view.Methods[0] != methods || &view.Methods[0].Cumulative[0] != buckets || &view.StartLag.Cumulative[0] != lagBuckets {
 		t.Error("a second ExportInto built a new methods slice or new buckets, want the first ones refilled")
+	}
+	if view.StartLag.Count != 2 {
+		t.Errorf("the refilled view counts %d start lags, want 2", view.StartLag.Count)
 	}
 	if view.Methods[0].Count != 2 {
 		t.Errorf("the refilled view counts %d successes, want 2", view.Methods[0].Count)
@@ -719,7 +939,8 @@ func TestStatsExportInto_RefillsTheViewInPlace(t *testing.T) {
 
 // Ground: contract — looking is not touching: a scrape storm over a finished
 // run leaves the report as it was (the exporter takes copies, it changes no
-// counter). Green on the stub, which reads nothing: it holds the line for the code.
+// counter), the run-wide start lag included: its 200 calls are still 200 after
+// 100 reads, and the report's p99 of it is the one from before.
 func TestStatsExportInto_DoesNotChangeTheReport(t *testing.T) {
 	stats, start := startedStats(0, "a", "b")
 	for i := range 200 {
@@ -737,6 +958,9 @@ func TestStatsExportInto_DoesNotChangeTheReport(t *testing.T) {
 
 	if after := stats.Report(); !reflect.DeepEqual(before, after) {
 		t.Error("the report changed after 100 views")
+	}
+	if view.StartLag.Count != 200 {
+		t.Errorf("the start lag counts %d calls after 100 views, want 200: a read must neither lose nor add", view.StartLag.Count)
 	}
 }
 

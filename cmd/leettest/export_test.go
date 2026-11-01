@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/yhgrwav/leettest/pkg/engine"
+	"github.com/yhgrwav/leettest/pkg/export/prometheus"
 )
 
 // syncBuf is a writer a test may read while the run still writes to it.
@@ -276,6 +277,17 @@ func sampleLines(body string) []string {
 	return out
 }
 
+func countHasPrefix(lines []string, prefix string) int {
+	n := 0
+	for _, line := range lines {
+		if strings.HasPrefix(line, prefix) {
+			n++
+		}
+	}
+
+	return n
+}
+
 func writeExportConfig(t *testing.T, rps int, duration, warmup, appLines, topLines string) string {
 	t.Helper()
 
@@ -392,6 +404,67 @@ func TestExportRun_AfterTheRunTheEndpointEqualsTheReport(t *testing.T) {
 			t.Errorf("latency_seconds_bucket{le=+Inf} = %v, the report's successes are %v", got, want["success"])
 		}
 	})
+	// Ground: decisions «Серия leettest_start_lag_seconds (Д6)» and P31 — the
+	// run-wide start lag is the report's population: every measured call, the
+	// ones that went out whatever came back (the 30% failures here) and the ones
+	// that did not (report: sent + not_sent), warm-up out; and +Inf is the count.
+	t.Run("start lag +Inf is its count, and the count covers sent and unsent calls", func(t *testing.T) {
+		count := valueOf(t, body, "leettest_start_lag_seconds_count")
+		if inf := valueOf(t, body, "leettest_start_lag_seconds_bucket", `le="+Inf"`); inf != count {
+			t.Errorf("start_lag_seconds_bucket{le=+Inf} = %v, _count = %v, want them equal", inf, count)
+		}
+
+		sent, notSent := jsonAt(t, report, "sent").(float64), jsonAt(t, report, "not_sent").(float64)
+		if count != sent+notSent {
+			t.Errorf("start_lag_seconds_count = %v, the report has %v sent + %v not sent", count, sent, notSent)
+		}
+		if count == 0 || count <= want["success"] {
+			t.Errorf("start_lag_seconds_count = %v with %v successes: the failed calls must be in it, and the run must have some", count, want["success"])
+		}
+	})
+	// Ground: the buckets are copied from the engine's view, not only the count:
+	// a fake run's start lag is far below the last finite edge, so that bucket
+	// holds every call, and the counts never fall from edge to edge.
+	t.Run("start lag buckets are filled and cumulative", func(t *testing.T) {
+		count := valueOf(t, body, "leettest_start_lag_seconds_count")
+		if last := valueOf(t, body, "leettest_start_lag_seconds_bucket", `le="60"`); last != count {
+			t.Errorf("start_lag_seconds_bucket{le=60} = %v, _count = %v, want all calls under 60 s", last, count)
+		}
+
+		prev := 0.0
+		for _, bound := range prometheus.Bounds {
+			got := valueOf(t, body, "leettest_start_lag_seconds_bucket", fmt.Sprintf("le=%q", strconv.FormatFloat(bound, 'g', -1, 64)))
+			if got < prev {
+				t.Errorf("start_lag_seconds_bucket{le=%v} = %v after %v: not cumulative", bound, got, prev)
+			}
+			prev = got
+		}
+
+		// The sum is the buckets' lower values: above 0 when some call began late
+		// (the report's maximum, exact), and no more than every call at that maximum.
+		maxNS, ok := jsonAt(t, report, "start_lag", "max", "ns").(float64)
+		if !ok || maxNS <= 0 {
+			t.Skipf("the report's start lag maximum is %v ns: no lag to sum", maxNS)
+		}
+		if sum := valueOf(t, body, "leettest_start_lag_seconds_sum"); sum <= 0 || sum > count*maxNS/1e9 {
+			t.Errorf("start_lag_seconds_sum = %v, want within (0, %v] for %v calls with the maximum lag %v ns", sum, count*maxNS/1e9, count, maxNS)
+		}
+	})
+	t.Run("start lag has no method label", func(t *testing.T) {
+		n := 0
+		for _, line := range sampleLines(body) {
+			if !strings.HasPrefix(line, "leettest_start_lag_seconds") {
+				continue
+			}
+			n++
+			if strings.Contains(line, "method=") {
+				t.Errorf("%q has a method label", line)
+			}
+		}
+		if n != 22 {
+			t.Errorf("%d start lag samples, want 22 (19 buckets, +Inf, _sum, _count)", n)
+		}
+	})
 	for _, cause := range []string{"generator", "connection", "stream"} {
 		t.Run("not_sent_total/"+cause, func(t *testing.T) {
 			if got, wantN := valueOf(t, body, "leettest_not_sent_total", method, `cause="`+cause+`"`), num("not_sent_"+cause); got != wantN {
@@ -427,6 +500,9 @@ func TestExportRun_AfterTheRunTheEndpointEqualsTheReport(t *testing.T) {
 		lines := sampleLines(body)
 		if len(lines) == 0 {
 			t.Fatal("no samples")
+		}
+		if n := countHasPrefix(lines, "leettest_start_lag_seconds"); n != 22 {
+			t.Errorf("%d start lag samples among the lines checked, want 22: the new family is covered too", n)
 		}
 		for _, line := range lines {
 			if !strings.Contains(line, `commit="abc",env="stage"}`) {
@@ -555,7 +631,7 @@ func scrapeOrEmpty(t *testing.T, lr *liveRun) string {
 }
 
 // Ground: reviewer's Р1 and В8/Т8 — the listener is open before Run: a scrape
-// before the first call is 200 with the HELP and TYPE lines of the nine families
+// before the first call is 200 with the HELP and TYPE lines of the ten families
 // and no sample (methods are reserved inside Run).
 func TestExportRun_AScrapeBeforeRunIsTheHeadersAlone(t *testing.T) {
 	release := make(chan struct{})
@@ -584,8 +660,8 @@ func TestExportRun_AScrapeBeforeRunIsTheHeadersAlone(t *testing.T) {
 	if ct := header.Get("Content-Type"); ct != "text/plain; version=0.0.4; charset=utf-8" {
 		t.Errorf("Content-Type = %q", ct)
 	}
-	if n := strings.Count(body, "# TYPE "); n != 9 {
-		t.Errorf("%d TYPE lines before Run, want 9 families:\n%s", n, body)
+	if n := strings.Count(body, "# TYPE "); n != 10 {
+		t.Errorf("%d TYPE lines before Run, want 10 families:\n%s", n, body)
 	}
 	if lines := sampleLines(body); len(lines) != 0 {
 		t.Errorf("%d samples before Run, want none: %q", len(lines), lines)
