@@ -99,6 +99,30 @@ leettest_not_sent_total{method="pkg.Svc/Put",cause="stream",commit="abc1",env="s
 # HELP leettest_in_flight Calls in flight now, all methods.
 # TYPE leettest_in_flight gauge
 leettest_in_flight{commit="abc1",env="st\"a\\ge\nx"} 3
+# HELP leettest_start_lag_seconds How late calls began against their schedule, all methods, warm-up excluded; calls that never went out included. Buckets are HDR sub-buckets by lower value; the sum is read from them.
+# TYPE leettest_start_lag_seconds histogram
+leettest_start_lag_seconds_bucket{le="0.0001",commit="abc1",env="st\"a\\ge\nx"} 1
+leettest_start_lag_seconds_bucket{le="0.00025",commit="abc1",env="st\"a\\ge\nx"} 2
+leettest_start_lag_seconds_bucket{le="0.0005",commit="abc1",env="st\"a\\ge\nx"} 4
+leettest_start_lag_seconds_bucket{le="0.001",commit="abc1",env="st\"a\\ge\nx"} 4
+leettest_start_lag_seconds_bucket{le="0.0025",commit="abc1",env="st\"a\\ge\nx"} 6
+leettest_start_lag_seconds_bucket{le="0.005",commit="abc1",env="st\"a\\ge\nx"} 6
+leettest_start_lag_seconds_bucket{le="0.01",commit="abc1",env="st\"a\\ge\nx"} 9
+leettest_start_lag_seconds_bucket{le="0.025",commit="abc1",env="st\"a\\ge\nx"} 9
+leettest_start_lag_seconds_bucket{le="0.05",commit="abc1",env="st\"a\\ge\nx"} 10
+leettest_start_lag_seconds_bucket{le="0.1",commit="abc1",env="st\"a\\ge\nx"} 10
+leettest_start_lag_seconds_bucket{le="0.25",commit="abc1",env="st\"a\\ge\nx"} 10
+leettest_start_lag_seconds_bucket{le="0.5",commit="abc1",env="st\"a\\ge\nx"} 10
+leettest_start_lag_seconds_bucket{le="1",commit="abc1",env="st\"a\\ge\nx"} 10
+leettest_start_lag_seconds_bucket{le="2.5",commit="abc1",env="st\"a\\ge\nx"} 10
+leettest_start_lag_seconds_bucket{le="5",commit="abc1",env="st\"a\\ge\nx"} 11
+leettest_start_lag_seconds_bucket{le="10",commit="abc1",env="st\"a\\ge\nx"} 11
+leettest_start_lag_seconds_bucket{le="25",commit="abc1",env="st\"a\\ge\nx"} 11
+leettest_start_lag_seconds_bucket{le="50",commit="abc1",env="st\"a\\ge\nx"} 11
+leettest_start_lag_seconds_bucket{le="60",commit="abc1",env="st\"a\\ge\nx"} 11
+leettest_start_lag_seconds_bucket{le="+Inf",commit="abc1",env="st\"a\\ge\nx"} 12
+leettest_start_lag_seconds_sum{commit="abc1",env="st\"a\\ge\nx"} 2.5
+leettest_start_lag_seconds_count{commit="abc1",env="st\"a\\ge\nx"} 12
 # HELP leettest_warmup_sent_total Calls sent during warm-up; they are in no other counter.
 # TYPE leettest_warmup_sent_total counter
 leettest_warmup_sent_total{method="pkg.Svc/Get",commit="abc1",env="st\"a\\ge\nx"} 15

@@ -57,8 +57,21 @@ type ExportView struct {
 	// Warmup is true while the run is inside its warm-up.
 	Warmup   bool
 	InFlight int64
+	// StartLag is how late calls began against their schedule, all methods
+	// together, warm-up out, unsent calls in: the distribution the report's
+	// start-lag p99 is read from.
+	StartLag ExportHistogram
 	// Methods are the run's methods, by name.
 	Methods []ExportMethod
+}
+
+// ExportHistogram is one distribution as cumulative buckets: Cumulative[i] is
+// what is at or under the i-th bound the caller gave, Count the total (+Inf),
+// Sum the sum of the values read from the buckets.
+type ExportHistogram struct {
+	Cumulative []int64
+	Count      int64
+	Sum        time.Duration
 }
 
 // ExportMethod is one method's counters. Warm-up is in WarmupSent only.

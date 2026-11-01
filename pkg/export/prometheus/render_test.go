@@ -34,6 +34,13 @@ func goldenView() View {
 		Started:  true,
 		InFlight: 3,
 		Warmup:   true,
+		// 12 calls, one of them past the last bound; the sum is not a bucket
+		// edge, so a sum taken from the wrong place is seen.
+		StartLag: Histogram{
+			Cumulative: [19]int64{1, 2, 4, 4, 6, 6, 9, 9, 10, 10, 10, 10, 10, 10, 11, 11, 11, 11, 11},
+			Count:      12,
+			SumSeconds: 2.5,
+		},
 		Methods: []Method{
 			{
 				Name:       "pkg.Svc/Get",
@@ -164,20 +171,32 @@ func TestRender_ANotStartedViewIsMetadataOnly(t *testing.T) {
 	v.Started = false
 	text := renderOf(t, v)
 
-	if got := len(samples(text)); got != 0 || countPrefix(text, "# TYPE ") != 9 || countPrefix(text, "# HELP ") != 9 {
-		t.Errorf("not-started view: %d samples, %d TYPE, %d HELP lines, want 0, 9, 9\n%s",
+	if got := len(samples(text)); got != 0 || countPrefix(text, "# TYPE ") != 10 || countPrefix(text, "# HELP ") != 10 {
+		t.Errorf("not-started view: %d samples, %d TYPE, %d HELP lines, want 0, 10, 10\n%s",
 			got, countPrefix(text, "# TYPE "), countPrefix(text, "# HELP "), text)
 	}
 }
 
-// Ground: edge — a started run with no method named: only the two series that
-// belong to the whole run, without braces when there is no label.
+// Ground: edge — a started run with no method named: only the series that
+// belong to the whole run (in flight, warm-up and the start-lag histogram, all
+// zero here), without braces when there is no label.
 func TestRender_AStartedViewWithoutMethodsHasOnlyTheRunWideSamples(t *testing.T) {
 	got := samples(renderOf(t, View{Started: true, InFlight: 2}))
 
-	want := map[string]string{"leettest_in_flight": "2", "leettest_warmup": "0"}
-	if len(got) != len(want) || got["leettest_in_flight"] != "2" || got["leettest_warmup"] != "0" {
-		t.Errorf("samples = %v, want %v", got, want)
+	var other []string
+	for k := range got {
+		if !strings.HasPrefix(k, "leettest_start_lag_seconds") {
+			other = append(other, k)
+		}
+	}
+	slices.Sort(other)
+	if want := []string{"leettest_in_flight", "leettest_warmup"}; !slices.Equal(other, want) ||
+		got["leettest_in_flight"] != "2" || got["leettest_warmup"] != "0" {
+		t.Errorf("samples outside the start-lag family = %v (in_flight %q, warmup %q), want %v",
+			other, got["leettest_in_flight"], got["leettest_warmup"], want)
+	}
+	if n := len(got) - len(other); n != 22 {
+		t.Errorf("the start-lag family has %d samples without a call, want 22 (19 buckets, +Inf, _sum, _count)", n)
 	}
 }
 
@@ -262,14 +281,94 @@ func TestRender_CensoredAndExcludedRepeatTheirCategoriesOfCallsTotal(t *testing.
 	}
 }
 
-// Ground: review verdict V2, V5 — no `run` label (a new series set per run) and
-// no start_lag series (no distribution of it exists). Green on the stub: it
-// holds the line for the code.
-func TestRender_HasNoRunLabelAndNoStartLagSeries(t *testing.T) {
+// Ground: review verdict V2 — no `run` label (a new series set per run). Green
+// on the stub: it holds the line for the code. The start_lag half of the old
+// guard went with decisions «Серия leettest_start_lag_seconds (Д6)».
+func TestRender_HasNoRunLabel(t *testing.T) {
 	text := renderOf(t, goldenView())
 
-	if strings.Contains(text, "run=") || strings.Contains(text, "start_lag") {
-		t.Errorf("the text has a run label or a start_lag series:\n%s", text)
+	if strings.Contains(text, "run=") {
+		t.Errorf("the text has a run label:\n%s", text)
+	}
+}
+
+// startLagSamples are the sample lines of the start-lag family, as written.
+func startLagSamples(text string) []string {
+	var out []string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(line, "leettest_start_lag_seconds") {
+			out = append(out, line)
+		}
+	}
+
+	return out
+}
+
+// Ground: decisions «Серия leettest_start_lag_seconds (Д6)» — the value is
+// run-wide, there is no per-method one: no sample of the family carries
+// `method=`, with user labels the only labels besides `le` are theirs, sorted.
+func TestRender_StartLagHasNoMethodLabel(t *testing.T) {
+	text := renderOf(t, goldenView())
+	lines := startLagSamples(text)
+
+	// 19 buckets, +Inf, _sum, _count: once, however many methods the view has.
+	if len(lines) != 22 {
+		t.Fatalf("the start-lag family has %d samples, want 22:\n%s", len(lines), strings.Join(lines, "\n"))
+	}
+	for _, line := range lines {
+		if strings.Contains(line, "method=") {
+			t.Errorf("a start-lag sample carries a method label: %s", line)
+		}
+		open, end := strings.IndexByte(line, '{'), strings.IndexByte(line, '}')
+		if open < 0 || end < open {
+			t.Errorf("a start-lag sample has no labels although the view has user labels: %s", line)
+
+			continue
+		}
+		body := line[open+1 : end]
+		if !strings.Contains(line[:open], "_bucket") {
+			if !strings.HasPrefix(body, `commit="abc1",env="`) {
+				t.Errorf("_sum/_count labels = %s, want the user labels commit, env in this order", body)
+			}
+
+			continue
+		}
+		if !strings.HasPrefix(body, `le="`) || !strings.Contains(body, `",commit="abc1",env="`) {
+			t.Errorf("bucket labels = %s, want le first and the user labels commit, env after it", body)
+		}
+	}
+
+	// Without user labels the bucket carries le alone, _sum and _count none.
+	bare := startLagSamples(renderOf(t, View{Started: true, Methods: []Method{{Name: "m"}, {Name: "n"}}}))
+	if len(bare) != 22 {
+		t.Fatalf("two methods, no labels: the family has %d samples, want 22", len(bare))
+	}
+	if bare[0] != `leettest_start_lag_seconds_bucket{le="0.0001"} 0` ||
+		bare[20] != "leettest_start_lag_seconds_sum 0" || bare[21] != "leettest_start_lag_seconds_count 0" {
+		t.Errorf("bare family: first %q, sum %q, count %q", bare[0], bare[20], bare[21])
+	}
+}
+
+// Ground: decisions «Серия leettest_start_lag_seconds (Д6)» — the +Inf bucket
+// is the count, also when calls fell past the last bound (the last finite
+// bucket is then lower) and in a started view with no call yet.
+func TestRender_StartLagPlusInfIsItsCount(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		h    Histogram
+	}{
+		{"golden", goldenView().StartLag},
+		{"no calls yet", Histogram{}},
+		{"all past the last bound", Histogram{Count: 4}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := samples(renderOf(t, View{Started: true, StartLag: tc.h}))
+
+			inf, count := got[`leettest_start_lag_seconds_bucket{le="+Inf"}`], got["leettest_start_lag_seconds_count"]
+			if want := strconv.FormatInt(tc.h.Count, 10); inf != want || count != want {
+				t.Errorf("+Inf = %q, _count = %q, want both %s", inf, count, want)
+			}
+		})
 	}
 }
 
