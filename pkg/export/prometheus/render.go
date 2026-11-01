@@ -23,7 +23,7 @@ import (
 	"strings"
 )
 
-// Render writes v in the text exposition format 0.0.4: nine metric families
+// Render writes v in the text exposition format 0.0.4: ten metric families
 // in a fixed order, each with its HELP and TYPE lines, and methods in the
 // order of v.Methods. A series' own labels (method, category or cause, le)
 // come first and the user's labels after them, sorted by name.
@@ -116,6 +116,19 @@ func Render(w io.Writer, v View) error {
 	r.family("leettest_in_flight", "Calls in flight now, all methods.", "gauge")
 	if v.Started {
 		r.sample("leettest_in_flight", nil, formatInt(v.InFlight))
+	}
+
+	r.family("leettest_start_lag_seconds",
+		"How late calls began against their schedule, all methods, warm-up excluded; calls that never went out included. Buckets are HDR sub-buckets by lower value; the sum is read from them.",
+		"histogram")
+	if v.Started {
+		for i, bound := range Bounds {
+			r.sample("leettest_start_lag_seconds_bucket",
+				[]Label{{"le", formatFloat(bound)}}, formatInt(v.StartLag.Cumulative[i]))
+		}
+		r.sample("leettest_start_lag_seconds_bucket", []Label{{"le", "+Inf"}}, formatInt(v.StartLag.Count))
+		r.sample("leettest_start_lag_seconds_sum", nil, formatFloat(v.StartLag.SumSeconds))
+		r.sample("leettest_start_lag_seconds_count", nil, formatInt(v.StartLag.Count))
 	}
 
 	r.family("leettest_warmup_sent_total",

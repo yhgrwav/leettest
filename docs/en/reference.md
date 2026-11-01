@@ -368,6 +368,7 @@ and the endpoint holds them for `linger`. An example is
 | `leettest_excluded_total` | counter | `method`, `category` | `unreachable`, `cut_off`, `client_error`, `unclassified`: no usable latency, and they are not in the histogram. The same calls are also in `leettest_calls_total` |
 | `leettest_not_sent_total` | counter | `method`, `cause` | Calls that never left the generator, by the client-side cause: `generator`, `connection`, `stream` |
 | `leettest_in_flight` | gauge | — | Calls in flight now, all methods |
+| `leettest_start_lag_seconds` | histogram | `le` | How late calls began against their schedule, all methods together (not released yet). Warm-up is not in it, calls that never went out are. A call counts when it completes |
 | `leettest_warmup_sent_total` | counter | `method` | Sent during warm-up. These calls are in no other counter |
 | `leettest_warmup` | gauge | — | `1` while the run is in its warm-up, else `0` |
 
@@ -392,6 +393,13 @@ and `-`; the export does not.
   does not depend on the buckets; Grafana shows the shape of the distribution. An example
   query:
   `histogram_quantile(0.99, sum by (le, method) (rate(leettest_latency_seconds_bucket[30s])))`.
+- `leettest_start_lag_seconds` shows, on the same axis as `leettest_planned_rps`, when the
+  generator ran late: a dip in the load together with a rise of this series is the generator's
+  fault, not the target's. It is one series per run, with no `method` label, all methods in it.
+  It holds the same calls as the report's start-lag p99 (`start_lag.p99`): no warm-up, calls that never went out
+  included. A call enters the series when it completes (an unsent one, at its own deadline), so
+  a spike is shifted by the length of the call. Take the number for a conclusion from the
+  report's p99: `histogram_quantile` is an estimate inside a bucket.
 
 ## Checking before the load
 
