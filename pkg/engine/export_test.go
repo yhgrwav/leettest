@@ -754,21 +754,28 @@ func TestStatsExportInto_StartLagDoesNotDependOnTheMethodSplit(t *testing.T) {
 
 // hammered records from four goroutines while two read the view all the time,
 // and returns how many views were not one consistent copy, the last view's
-// method and its start lag.
+// method and its start lag. The writers start only after each reader has read
+// once, and the test fails if no view was read at all: a run that checked
+// nothing must not pass.
 func hammered(t *testing.T) (torn int64, final ExportMethod, lag ExportHistogram) {
 	t.Helper()
 
 	stats, start := startedStats(0, "a")
 
-	const writers, each = 4, 500
+	const writers, each, readerCount = 4, 500, 2
 
 	var (
 		wg      sync.WaitGroup
 		readers sync.WaitGroup
+		ready   sync.WaitGroup
 		bad     atomic.Int64
+		reads   atomic.Int64
 	)
+	ready.Add(readerCount)
 	for range writers {
 		wg.Go(func() {
+			ready.Wait()
+
 			for range each {
 				stats.Record(exportCall(start, 0, "a", CategorySuccess, 5*time.Millisecond))
 			}
@@ -776,10 +783,11 @@ func hammered(t *testing.T) (torn int64, final ExportMethod, lag ExportHistogram
 	}
 
 	stop := make(chan struct{})
-	for range 2 {
+	for range readerCount {
 		readers.Go(func() {
 			var view ExportView
 			buf := metrics.NewBuffer()
+			first := true
 
 			for {
 				select {
@@ -789,6 +797,12 @@ func hammered(t *testing.T) (torn int64, final ExportMethod, lag ExportHistogram
 				}
 
 				stats.ExportInto(&view, buf, exportBounds, nil)
+				reads.Add(1)
+				if first {
+					first = false
+
+					ready.Done()
+				}
 				if len(view.Methods) != 1 {
 					bad.Add(1)
 
@@ -820,6 +834,10 @@ func hammered(t *testing.T) (torn int64, final ExportMethod, lag ExportHistogram
 	case <-finished:
 	case <-time.After(exportCeiling):
 		t.Fatalf("the writers and readers have not finished in %v", exportCeiling)
+	}
+
+	if reads.Load() < readerCount {
+		t.Fatalf("the readers read %d views, want at least one each: nothing was checked", reads.Load())
 	}
 
 	last := exportOf(stats)
