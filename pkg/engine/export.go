@@ -57,8 +57,21 @@ type ExportView struct {
 	// Warmup is true while the run is inside its warm-up.
 	Warmup   bool
 	InFlight int64
+	// StartLag is how late calls began against their schedule, all methods
+	// together, warm-up out, unsent calls in: the distribution the report's
+	// start-lag p99 is read from.
+	StartLag ExportHistogram
 	// Methods are the run's methods, by name.
 	Methods []ExportMethod
+}
+
+// ExportHistogram is one distribution as cumulative buckets: Cumulative[i] is
+// what is at or under the i-th bound the caller gave, Count the total (+Inf),
+// Sum the sum of the values read from the buckets.
+type ExportHistogram struct {
+	Cumulative []int64
+	Count      int64
+	Sum        time.Duration
 }
 
 // ExportMethod is one method's counters. Warm-up is in WarmupSent only.
@@ -96,7 +109,8 @@ type exportMethod struct {
 // bounds are the histogram edges, ascending. The counters are copied under
 // the lock Record takes, each method's distribution under its own lock, never
 // nested; the plan's rate is read at the elapsed time taken under the same
-// lock as the counters. Methods come by name. Before Start, Started is false
+// lock as the counters. The run-wide start lag is copied like a method's
+// distribution, after the counters' lock is released. Methods come by name. Before Start, Started is false
 // and nothing else is filled.
 func (s *Stats) ExportInto(dst *ExportView, buf *metrics.Buffer, bounds []time.Duration, calls []Call) {
 	s.mu.Lock()
@@ -143,6 +157,14 @@ func (s *Stats) ExportInto(dst *ExportView, buf *metrics.Buffer, bounds []time.D
 	dst.Started = true
 	dst.Warmup = warmup
 	dst.InFlight = 0
+
+	if cap(dst.StartLag.Cumulative) < len(bounds) {
+		dst.StartLag.Cumulative = make([]int64, len(bounds))
+	} else {
+		dst.StartLag.Cumulative = dst.StartLag.Cumulative[:len(bounds)]
+	}
+	s.startLag.CopyInto(buf)
+	dst.StartLag.Count, dst.StartLag.Sum = buf.Cumulative(bounds, dst.StartLag.Cumulative)
 
 	if cap(dst.Methods) < len(methods) {
 		grown := make([]ExportMethod, len(methods))

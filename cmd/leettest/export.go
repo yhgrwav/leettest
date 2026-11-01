@@ -208,6 +208,9 @@ func (e *metricsExport) read() prometheus.View {
 	e.pview.Started = e.view.Started
 	e.pview.Warmup = e.view.Warmup
 	e.pview.InFlight = e.view.InFlight
+	e.pview.StartLag.Count = e.view.StartLag.Count
+	e.pview.StartLag.SumSeconds = e.view.StartLag.Sum.Seconds()
+	copy(e.pview.StartLag.Cumulative[:], e.view.StartLag.Cumulative)
 	if cap(e.pview.Methods) < len(e.view.Methods) {
 		e.pview.Methods = make([]prometheus.Method, len(e.view.Methods))
 	} else {

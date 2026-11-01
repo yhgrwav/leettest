@@ -76,5 +76,8 @@ type View struct {
 	Started  bool
 	InFlight int64
 	Warmup   bool
+	// StartLag is how late calls began against their schedule, all methods
+	// together: the run-wide histogram the report's start-lag p99 reads.
+	StartLag Histogram
 	Methods  []Method
 }
