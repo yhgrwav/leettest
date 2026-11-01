@@ -608,6 +608,10 @@ anfängt — in [CONTRIBUTING.md](../../CONTRIBUTING.md): ein Weg für Menschen 
 KI-Agenten, und für den Agenten [AGENTS.md](../../AGENTS.md). Das CLA ist eine Lizenz, keine
 Übertragung von Rechten: Das Urheberrecht bleibt bei Ihnen.
 
+## Projekt unterstützen
+
+USDT (TRC20): `TGi6i9DgBHQV6RNzVSMQmgamGrYh5RdZYH`
+
 ## Lizenz
 
 Apache License 2.0 — siehe [LICENSE](../../LICENSE).

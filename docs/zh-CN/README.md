@@ -518,6 +518,10 @@ Prometheus 把它和服务自身的指标放在一起抓取。没有默认地址
 借助 AI 智能体的路径，给智能体的是 [AGENTS.md](../../AGENTS.md)。CLA 是许可，不是权利转让：
 著作权仍归你所有。
 
+## 支持项目
+
+USDT (TRC20)：`TGi6i9DgBHQV6RNzVSMQmgamGrYh5RdZYH`
+
 ## 许可证
 
 Apache License 2.0——见 [LICENSE](../../LICENSE)。
