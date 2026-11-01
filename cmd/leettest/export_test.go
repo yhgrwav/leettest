@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/yhgrwav/leettest/pkg/engine"
+	"github.com/yhgrwav/leettest/pkg/export/prometheus"
 )
 
 // syncBuf is a writer a test may read while the run still writes to it.
@@ -419,6 +420,34 @@ func TestExportRun_AfterTheRunTheEndpointEqualsTheReport(t *testing.T) {
 		}
 		if count == 0 || count <= want["success"] {
 			t.Errorf("start_lag_seconds_count = %v with %v successes: the failed calls must be in it, and the run must have some", count, want["success"])
+		}
+	})
+	// Ground: the buckets are copied from the engine's view, not only the count:
+	// a fake run's start lag is far below the last finite edge, so that bucket
+	// holds every call, and the counts never fall from edge to edge.
+	t.Run("start lag buckets are filled and cumulative", func(t *testing.T) {
+		count := valueOf(t, body, "leettest_start_lag_seconds_count")
+		if last := valueOf(t, body, "leettest_start_lag_seconds_bucket", `le="60"`); last != count {
+			t.Errorf("start_lag_seconds_bucket{le=60} = %v, _count = %v, want all calls under 60 s", last, count)
+		}
+
+		prev := 0.0
+		for _, bound := range prometheus.Bounds {
+			got := valueOf(t, body, "leettest_start_lag_seconds_bucket", fmt.Sprintf("le=%q", strconv.FormatFloat(bound, 'g', -1, 64)))
+			if got < prev {
+				t.Errorf("start_lag_seconds_bucket{le=%v} = %v after %v: not cumulative", bound, got, prev)
+			}
+			prev = got
+		}
+
+		// The sum is the buckets' lower values: above 0 when some call began late
+		// (the report's maximum, exact), and no more than every call at that maximum.
+		maxNS, ok := jsonAt(t, report, "start_lag", "max", "ns").(float64)
+		if !ok || maxNS <= 0 {
+			t.Skipf("the report's start lag maximum is %v ns: no lag to sum", maxNS)
+		}
+		if sum := valueOf(t, body, "leettest_start_lag_seconds_sum"); sum <= 0 || sum > count*maxNS/1e9 {
+			t.Errorf("start_lag_seconds_sum = %v, want within (0, %v] for %v calls with the maximum lag %v ns", sum, count*maxNS/1e9, count, maxNS)
 		}
 	})
 	t.Run("start lag has no method label", func(t *testing.T) {
