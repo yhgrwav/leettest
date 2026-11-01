@@ -126,7 +126,7 @@ Read https://raw.githubusercontent.com/yhgrwav/leettest/main/AGENTS.md and load-
 - `sent/s` 是已发送调用数除以发送时间：运行末尾挂起的目标不会拉低这个数字。
 - 如果被超时截断的调用可能占据某个百分位的位置，该百分位会以**下界**形式输出：`>2.0s`。这不是
   数值，而是“至少”。
-- 表格下方，每个方法有一个 `over time` 块（尚未发布）：运行的测量部分，从预热结束算起，最多 12
+- 表格下方，每个方法有一个 `over time` 块：运行的测量部分，从预热结束算起，最多 12
   行；JSON 中最多 60 个窗口。调用归入其计划时刻所在的行，无论它何时结束。每行显示 `sent/s`、失败
   比例，以及两位有效数字的 p50 和 p99，因此某行的 p50 可能与表格的 p50 在最后一位上不同。`no calls`
   行表示该窗口内没有发出任何调用。如果速率低于每个窗口一次调用，这是计划本身，不是故障：请对照该
@@ -494,7 +494,7 @@ leettest compare -max-p99-rise 20% -output json before.json after.json
 
 **[参考手册 →](reference.md)**——每个配置字段和命令行参数。
 
-**[Prometheus 指标 →](reference.md#prometheus-指标)**（未发布）——运行在加压期间提供 `/metrics`，
+**[Prometheus 指标 →](reference.md#prometheus-指标)**——运行在加压期间提供 `/metrics`，
 Prometheus 把它和服务自身的指标放在一起抓取。没有默认地址，`15s` 的 `linger` 会拖延退出：请阅读该
 节中的警告。
 
