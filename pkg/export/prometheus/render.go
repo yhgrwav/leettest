@@ -119,7 +119,7 @@ func Render(w io.Writer, v View) error {
 	}
 
 	r.family("leettest_start_lag_seconds",
-		"How late calls began against their schedule, all methods, warm-up excluded; calls that never went out included. Buckets are HDR sub-buckets by lower value; the sum is read from them.",
+		"How late calls began against their schedule, all methods, warm-up excluded; calls that never went out included. Buckets are HDR sub-buckets by lower value; the sum is read from them. Counted when a call ends.",
 		"histogram")
 	if v.Started {
 		for i, bound := range Bounds {

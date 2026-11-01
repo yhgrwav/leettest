@@ -39,7 +39,7 @@ func goldenView() View {
 		StartLag: Histogram{
 			Cumulative: [19]int64{1, 2, 4, 4, 6, 6, 9, 9, 10, 10, 10, 10, 10, 10, 11, 11, 11, 11, 11},
 			Count:      12,
-			SumSeconds: 2.5,
+			SumSeconds: 64.37,
 		},
 		Methods: []Method{
 			{
