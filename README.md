@@ -553,6 +553,10 @@ Issues и обсуждения приветствуются. Pull request'ы п�
 [CONTRIBUTING.md](CONTRIBUTING.md): там отдельно путь человека и путь с ИИ-агентом, а агенту —
 [AGENTS.md](AGENTS.md). CLA — это лицензия, а не передача прав: авторские права остаются у вас.
 
+## Поддержать проект
+
+USDT (TRC20): `TGi6i9DgBHQV6RNzVSMQmgamGrYh5RdZYH`
+
 ## Лицензия
 
 Apache License 2.0 — см. [LICENSE](LICENSE).
