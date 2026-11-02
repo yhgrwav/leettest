@@ -106,8 +106,7 @@ func ClockTooCoarse(run RunReport) bool {
 }
 
 // GeneratorLate says the generator's lag decided the run's p99 tail: the wait
-// verdict (engine.Report.WaitVerdict) names the generator. The stub is false
-// until the code stage of reviews/generator-limit.md.
+// verdict (engine.Report.WaitVerdict) names the generator.
 func GeneratorLate(_ RunReport) bool {
 	return false
 }

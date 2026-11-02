@@ -16,6 +16,7 @@ package cli
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -25,8 +26,7 @@ import (
 	"github.com/yhgrwav/leettest/pkg/metrics"
 )
 
-// v0.7 unit 1 (reviews/generator-limit.md, decisions "v0.7 story"): a plain
-// run whose p99 tail the generator's lag decided is an invalid run,
+// A plain run whose p99 tail the generator's lag decided is an invalid run,
 // invalid_reasons generator_late. The test of the verdict is the one the JSON
 // already uses for tail_wait_cause: engine.Report.WaitVerdict, run-wide.
 
@@ -148,6 +148,50 @@ func TestGeneratorLate_ItIsTheGeneratorVerdictOfTheTail(t *testing.T) {
 	}
 }
 
+// Calls left unsent by a stream or a connection, while the sent calls started a
+// little late (over the floor, in the tail) and p99 does not move: the verdict
+// rests on the unsent calls alone, so its cause is theirs. The run is not
+// invalid for the generator, the report does not say the generator fell behind,
+// and the JSON names the cause that left the calls unsent.
+func TestGeneratorLate_UnsentCallsOfAnotherCauseAreNotTheGenerators(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		edit  func(*engine.Report)
+		cause string
+	}{
+		{"connection", func(r *engine.Report) {
+			r.Methods[0].NotSent, r.Methods[0].NotSentConnection = 3, 3
+			r.NotSent, r.NotSentConnection = 3, 3
+			r.ConnectionCauseCalls, r.ConnectionTailCalls = 3, 3
+		}, "connection"},
+		{"stream", func(r *engine.Report) {
+			r.Methods[0].NotSent, r.Methods[0].NotSentStream = 3, 3
+			r.NotSent, r.NotSentStream = 3, 3
+			r.StreamCauseCalls, r.StreamTailCalls = 3, 3
+		}, "stream"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// 12 sent calls started late in the tail (lateRun), p99 50ms and
+			// 48ms without the waits: not moved.
+			run := lateRun(lateMethod(lateA, 50*time.Millisecond, 48*time.Millisecond))
+			tc.edit(&run.Report)
+
+			if GeneratorLate(run) {
+				t.Error("GeneratorLate = true: unsent calls of another cause make the run invalid for the generator")
+			}
+			if got := field(t, writeJSON(t, jsonRunOf(run)), "tail_wait_cause"); got != tc.cause {
+				t.Errorf("tail_wait_cause = %v, want %s", got, tc.cause)
+			}
+			if got := anyStrings(field(t, writeJSON(t, jsonRunOf(run)), "invalid_reasons")); slices.Contains(got, "generator_late") {
+				t.Errorf("invalid_reasons = %v", got)
+			}
+			if text := printedRun(run); strings.Contains(text, "the generator fell behind") {
+				t.Errorf("the report blames the generator for calls the %s left unsent:\n%s", tc.name, text)
+			}
+		})
+	}
+}
+
 func jsonRunOf(run RunReport) JSONRun {
 	r := jsonRun(run.Report)
 	r.Run = run
@@ -156,15 +200,27 @@ func jsonRunOf(run RunReport) JSONRun {
 }
 
 // The report says the run is invalid, which methods the lag decided and what to
-// change. The sentence is the brain's proposal until the reviewer approves it
-// word for word (reviews/generator-limit.md, item 3); it replaces the line
-// "limited by the run, not the target: the generator fell behind for N calls".
+// change; it replaces the line "limited by the run, not the target: the
+// generator fell behind for N calls". The sentence is fixed word for word:
+// <methods> are the ones the lag moved (and the ones that lost calls to the
+// generator), joined by ", "; the start lag p99 and max come from the run; the
+// tail ", N calls never sent" is there only when the generator left calls
+// unsent.
+func generatorLateSentence(run RunReport, methods string) string {
+	s := "invalid run: the generator fell behind its schedule and decided the p99 tail of " + methods +
+		": start lag p99 " + formatQuantile(run.StartLagP99) + ", max " + formatDuration(run.StartLagMax)
+	if n := run.NotSentGenerator; n > 0 {
+		s += ", " + strconv.Itoa(n) + " calls never sent"
+	}
+
+	return s + ". The latencies include this machine's delay and do not measure the target. " +
+		"Give the generator more CPU, lower the rate, or split it over several machines."
+}
+
 func TestGeneratorLate_TheReportSaysInvalidAndWhatToChange(t *testing.T) {
 	run := lateRun()
 
-	want := "invalid run: the generator fell behind its schedule and decided the p99 tail of " + lateA +
-		": start lag p99 " + formatQuantile(run.StartLagP99) + ". The latencies measure this machine, not the target. " +
-		"Give the generator more CPU, lower the rate, or split it over several machines."
+	want := generatorLateSentence(run, lateA)
 	if got := noteOf(t, run, "invalid run: the generator fell behind"); !strings.HasPrefix(got, want) {
 		t.Errorf("note:\n%s\nwant it to start:\n%s", got, want)
 	}
@@ -209,21 +265,57 @@ func TestGeneratorLate_OnlyTheMethodsTheLagDecidedAreNamed(t *testing.T) {
 	}
 }
 
-// A verdict that rests on calls the generator left unsent has no moved p99 to
-// name a method by: it names the methods that lost calls (a detail of the
-// proposal, for the reviewer).
-func TestGeneratorLate_AVerdictOfUnsentCallsNamesTheMethodsThatLostThem(t *testing.T) {
-	lost := lateMethod(lateA, 50*time.Millisecond, 50*time.Millisecond)
-	lost.NotSent, lost.NotSentGenerator = 3, 3
-	run := lateRun(lost, lateMethod(lateB, 8*time.Millisecond, 8*time.Millisecond))
-	run.NotSent, run.NotSentGenerator = 3, 3
+// The methods named are those whose p99 moved by a tenth or more, and those
+// that lost calls to the generator, in the report's order, joined by ", ". A
+// verdict on unsent calls with a p99 that did not move names the methods that
+// lost them, and says how many calls were never sent. The list is never empty
+// when the run is invalid for the generator.
+func TestGeneratorLate_TheMethodsAreTheMovedOnesAndTheOnesThatLostCalls(t *testing.T) {
+	const lateC = "shop.v1.Cart/Add"
 
-	if !GeneratorLate(run) {
-		t.Fatal("GeneratorLate = false for unsent calls whose cause leads the tail")
+	lost := func(name string, n int) engine.MethodReport {
+		m := lateMethod(name, 50*time.Millisecond, 48*time.Millisecond)
+		m.NotSent, m.NotSentGenerator = n, n
+
+		return m
 	}
-	head, _, _ := strings.Cut(noteOf(t, run, "invalid run: the generator fell behind"), ": start lag p99")
-	if !strings.Contains(head, lateA) || strings.Contains(head, lateB) {
-		t.Errorf("methods named in %q, want %s and not %s", head, lateA, lateB)
+	steady := func(name string) engine.MethodReport { return lateMethod(name, 8*time.Millisecond, 8*time.Millisecond) }
+	moved := func(name string) engine.MethodReport {
+		return lateMethod(name, 50*time.Millisecond, 5*time.Millisecond)
+	}
+
+	for _, tc := range []struct {
+		name    string
+		methods []engine.MethodReport
+		never   int
+		want    string
+	}{
+		{"unsent only: the method that lost calls", []engine.MethodReport{lost(lateA, 3), steady(lateB)}, 3, lateA},
+		{"moved and lost: both, in the report's order", []engine.MethodReport{steady(lateC), lost(lateB, 2), moved(lateA)}, 2, lateB + ", " + lateA},
+		{"moved that also lost calls is named once", []engine.MethodReport{func() engine.MethodReport {
+			m := moved(lateA)
+			m.NotSent, m.NotSentGenerator = 4, 4
+
+			return m
+		}(), steady(lateB)}, 4, lateA},
+		{"two that lost calls", []engine.MethodReport{lost(lateA, 1), steady(lateC), lost(lateB, 2)}, 3, lateA + ", " + lateB},
+		{"moved only: no tail about unsent calls", []engine.MethodReport{moved(lateA), steady(lateB)}, 0, lateA},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			run := lateRun(tc.methods...)
+			run.NotSent, run.NotSentGenerator = tc.never, tc.never
+
+			if !GeneratorLate(run) {
+				t.Fatal("GeneratorLate = false, want the run invalid for the generator")
+			}
+			want := generatorLateSentence(run, tc.want)
+			if got := noteOf(t, run, "invalid run: the generator fell behind"); !strings.HasPrefix(got, want) {
+				t.Errorf("note:\n%s\nwant it to start:\n%s", got, want)
+			}
+			if strings.Contains(want, "calls never sent") != (tc.never > 0) {
+				t.Fatalf("the fixture and the sentence disagree about the tail: %q", want)
+			}
+		})
 	}
 }
 
@@ -356,5 +448,17 @@ func TestGeneratorLate_ASearchStepIsNotInvalidForIt(t *testing.T) {
 	}
 	if got := field(t, report, "outcome"); got != OutcomeComplete {
 		t.Errorf("the step's outcome %v, want %s", got, OutcomeComplete)
+	}
+
+	// The step's notes say what they said before: limited by the run. The new
+	// text would contradict "complete" in the same object.
+	notes := anyStrings(field(t, report, "notes"))
+	if slices.ContainsFunc(notes, func(n string) bool { return strings.Contains(n, "invalid run:") }) {
+		t.Errorf("a search step's notes call it an invalid run: %v", notes)
+	}
+	if !slices.ContainsFunc(notes, func(n string) bool {
+		return strings.Contains(flat(n), "limited by the run, not the target: the generator fell behind")
+	}) {
+		t.Errorf("a search step's notes lost \"limited by the run, not the target: the generator fell behind\": %v", notes)
 	}
 }

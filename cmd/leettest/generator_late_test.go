@@ -25,8 +25,8 @@ import (
 	"github.com/yhgrwav/leettest/pkg/threshold"
 )
 
-// v0.7 unit 1 (reviews/generator-limit.md): a plain run whose p99 tail the
-// generator's lag decided ends invalid, exit code 2, however the limits read.
+// A plain run whose p99 tail the generator's lag decided ends invalid, exit
+// code 2, however the limits read.
 
 func quantile(d time.Duration) metrics.Quantile {
 	return metrics.Quantile{Value: d, Exact: true, Defined: true}

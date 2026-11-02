@@ -29,17 +29,26 @@ import (
 	"github.com/yhgrwav/leettest/test/stand"
 )
 
+const (
+	// lateEvery is the spacing of the scheduled moments.
+	lateEvery = 5 * time.Millisecond
+	lateCalls = 200
+)
+
 // lateStarter runs n calls through the real pool, the real gRPC sender and the
-// stand, each handed over `late` after the moment it was scheduled for: the
-// generator's lateness is set exactly, by the scheduled moments, not left to
-// how busy the machine is. The stand answers at once, so a call's latency is
-// its lateness plus a few milliseconds, and without the lateness a few
-// milliseconds.
+// stand, each handed to the pool `late` after the moment it was scheduled for:
+// a feeding goroutine sleeps until due_i+late, due_i = start + i*lateEvery, so
+// every call starts exactly `late` behind its schedule and none ahead of it,
+// not left to how busy the machine is. The stand answers at once, so a call's
+// latency is its lateness plus a few milliseconds, and without the lateness a
+// few milliseconds. The pool is as large as the run, so no call waits for a
+// slot.
 //
 // The engine builds its schedule itself and a test cannot hand it a late one,
 // so the pool and the stats, the parts the engine is made of, are driven
-// directly. The report is Stats.Report, the one the engine returns.
-func lateStarter(t *testing.T, s *stand.Stand, n int, late time.Duration) engine.Report {
+// directly. The report is Stats.Report, the one the engine returns; the
+// results are returned beside it for the tests to check their premise.
+func lateStarter(t *testing.T, s *stand.Stand, n int, late time.Duration) (engine.Report, []engine.Result) {
 	t.Helper()
 
 	sender := grpcsender.New(grpcsender.Options{
@@ -54,21 +63,28 @@ func lateStarter(t *testing.T, s *stand.Stand, n int, late time.Duration) engine
 	const timeout = 2 * time.Second
 
 	stats := engine.NewStats()
-	stats.Reserve(time.Duration(n)*time.Millisecond+late+timeout+5*time.Second, s.Method())
+	stats.Reserve(time.Duration(n)*lateEvery+late+timeout+5*time.Second, s.Method())
 
-	// Moment zero is `late` before the first call is handed over: the i-th call
-	// was due i ms after it and is started at least late-i ms behind.
-	zero := time.Now().Add(-late)
-	stats.Start(zero, 0)
-	stats.EndSending(zero.Add(time.Duration(n) * time.Millisecond))
+	start := time.Now().Add(50 * time.Millisecond)
+	stats.Start(start, 0)
+	stats.EndSending(start.Add(time.Duration(n) * lateEvery))
 
-	in := make(chan engine.Request, n)
-	for i := range n {
-		due := zero.Add(time.Duration(i) * time.Millisecond)
-		in <- engine.Request{Method: s.Method(), ScheduledAt: due, Deadline: due.Add(late + timeout)}
-	}
-	close(in)
+	in := make(chan engine.Request)
+	go func() {
+		defer close(in)
 
+		for i := range n {
+			due := start.Add(time.Duration(i) * lateEvery)
+			select {
+			case <-time.After(time.Until(due.Add(late))):
+			case <-t.Context().Done():
+				return
+			}
+			in <- engine.Request{Method: s.Method(), ScheduledAt: due, Deadline: due.Add(late + timeout)}
+		}
+	}()
+
+	var results []engine.Result
 	out := make(chan engine.Result, n)
 	done := make(chan struct{})
 	go func() {
@@ -76,6 +92,7 @@ func lateStarter(t *testing.T, s *stand.Stand, n int, late time.Duration) engine
 
 		for r := range out {
 			stats.Record(r)
+			results = append(results, r)
 		}
 	}()
 
@@ -88,7 +105,37 @@ func lateStarter(t *testing.T, s *stand.Stand, n int, late time.Duration) engine
 
 	stats.Finish(time.Now())
 
-	return stats.Report()
+	return stats.Report(), results
+}
+
+// checkLateStarter fails the test, with the numbers, when the run was not the
+// one the test describes: every call counted in the latencies (a call ahead
+// of its schedule is dropped from them) and every call as late as asked, or
+// none of them over the wait floor.
+func checkLateStarter(t *testing.T, report engine.Report, results []engine.Result, late time.Duration) {
+	t.Helper()
+
+	if len(report.Methods) != 1 {
+		t.Fatalf("%d methods in the report, want 1", len(report.Methods))
+	}
+	if m := report.Methods[0]; m.Sent != lateCalls || m.Latencies != lateCalls {
+		t.Fatalf("sent %d, latencies %d, want %d of both: calls were dropped from the latencies", m.Sent, m.Latencies, lateCalls)
+	}
+	if len(results) != lateCalls {
+		t.Fatalf("%d results, want %d", len(results), lateCalls)
+	}
+
+	for i := range results {
+		lag := results[i].QueueTime()
+		if late > 0 && lag < late {
+			t.Fatalf("a call began %v behind its schedule, want every call at least %v behind", lag, late)
+		}
+	}
+
+	if late == 0 && report.StartLagP99.Value >= report.WaitFloor {
+		t.Fatalf("start lag p99 %v, want under the wait floor %v: the machine was too busy for the on-time run to mean anything",
+			report.StartLagP99.Value, report.WaitFloor)
+	}
 }
 
 // The whole way from a generator that started its calls late to the exit
@@ -101,7 +148,8 @@ func TestReport_ALateStarterMakesTheRunInvalid(t *testing.T) {
 
 	const late = 150 * time.Millisecond
 
-	report := lateStarter(t, target, 200, late)
+	report, results := lateStarter(t, target, lateCalls, late)
+	checkLateStarter(t, report, results, late)
 
 	// The premise: what the stand did and the wait verdict that is not new.
 	if report.StartLagP99.Value < late/2 {
@@ -144,7 +192,8 @@ func TestReport_AnOnTimeStarterIsNotLate(t *testing.T) {
 	target := stand.Start(stand.Constant(time.Millisecond))
 	t.Cleanup(target.Stop)
 
-	report := lateStarter(t, target, 200, 0)
+	report, results := lateStarter(t, target, lateCalls, 0)
+	checkLateStarter(t, report, results, 0)
 
 	if cli.GeneratorLate(cli.RunReport{Report: report}) {
 		cause, side, ok := report.WaitVerdict()

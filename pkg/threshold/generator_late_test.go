@@ -22,10 +22,9 @@ import (
 	"github.com/yhgrwav/leettest/pkg/threshold"
 )
 
-// v0.7 unit 1 (reviews/generator-limit.md, question В1): a plain run whose
-// p99 tail the generator decided is invalid. The reason of its thresholds
-// stays the more telling one, "the generator was late", not the bare
-// "invalid": the user reads the cause in the verdict line, not only in the
+// A plain run whose p99 tail the generator decided is invalid. The reason of
+// its thresholds stays the more telling one, "the generator was late", not the
+// bare "invalid": the user reads the cause in the verdict line, not only in the
 // run's reasons.
 
 // generatorLate is a run whose wait verdict names the generator: a p99 of
@@ -50,6 +49,20 @@ func bothLimits() threshold.MethodLimits {
 // in an invalid one: nothing in it is decided).
 func TestGeneratorLate_AnInvalidRunKeepsTheGeneratorAsTheReason(t *testing.T) {
 	results := threshold.Evaluate(generatorLate(), threshold.Invalid, []threshold.MethodLimits{bothLimits()})
+
+	verdictIs(t, find(t, results, shop, threshold.P99), threshold.VerdictUnknown, threshold.ReasonGenerator)
+	verdictIs(t, find(t, results, shop, threshold.Errors), threshold.VerdictUnknown, threshold.ReasonGenerator)
+}
+
+// A run invalid for another reason as well (the in-flight cap, the clock) with
+// the generator's verdict is still "the generator was late": in an ordinary run
+// that verdict means generator_late is among the reasons, so the generator is
+// the more telling thing to say.
+func TestGeneratorLate_BesideAnotherInvalidReasonTheGeneratorIsStillTheReason(t *testing.T) {
+	report := generatorLate()
+	report.CapHit = &engine.CapHit{Unsent: 1}
+
+	results := threshold.Evaluate(report, threshold.Invalid, []threshold.MethodLimits{bothLimits()})
 
 	verdictIs(t, find(t, results, shop, threshold.P99), threshold.VerdictUnknown, threshold.ReasonGenerator)
 	verdictIs(t, find(t, results, shop, threshold.Errors), threshold.VerdictUnknown, threshold.ReasonGenerator)
