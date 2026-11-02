@@ -257,7 +257,7 @@ There is a report, but its numbers are not about the load on the target (exit 2)
   the run to 1 µs or more (`clock_step`). Measure from Linux.
 - **the generator's lag decided the p99 tail** (`generator_late`, not released yet): the latencies
   include this machine's delay and do not measure the target. Give the generator more CPU, lower
-  the rate, or split it over several machines. The report names the methods.
+  the rate, or split it over several machines. A method is judged from 100 observations. The report names the methods.
 - **a `pass` limit cannot be decided** (`thresholds_undecided`): too few observations, the
   generator was late, calls waited for a free stream, a tail of calls with no answer. The
   `Thresholds:` block names the limit and the reason.
