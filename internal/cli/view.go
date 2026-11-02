@@ -93,6 +93,12 @@ func (m *model) fullBody(inner int) string {
 
 	b.WriteString(m.header(inner))
 	b.WriteString("\n\n")
+	// The early warning is a live-view thing: the CLI repeats it on stderr once
+	// the view is gone, so the final screen does not hold the room for it.
+	if m.lagLine != "" && !m.done {
+		b.WriteString(m.styles.warn.Render(strings.Join(wrapText(m.lagLine, inner), "\n")))
+		b.WriteString("\n\n")
+	}
 	// The final screen switches nothing, so it shows no tabs.
 	if !m.done {
 		b.WriteString(m.tabBar(inner))

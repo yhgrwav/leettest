@@ -208,6 +208,19 @@ func MinCount(p float64) int64 {
 	return n
 }
 
+// MinAbove is the fewest of n observations that must lie above a threshold for
+// the percentile p of all n to lie above it: the observations at or below it
+// must not reach the rank of p (rankFor), so n - rank + 1 of them are above.
+// With p = 0.99 and n = 100 that is 2: one above the threshold is the maximum's
+// business, two are p99's.
+func MinAbove(p float64, n int64) int64 {
+	if n < 1 {
+		return 1
+	}
+
+	return n - rankFor(p, n) + 1
+}
+
 // addCounts accumulates b into a in place; a and b share the same histogram
 // shape and therefore the same length.
 func addCounts(a, b []int64) {

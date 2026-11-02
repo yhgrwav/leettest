@@ -104,3 +104,58 @@ func BenchmarkStatsRecord(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkStatsRecordTimed is BenchmarkStatsRecord with results a real run
+// produces: every moment set, the calls spread over five seconds of the
+// schedule, the first two of them warm-up, one in four begun 2ms late. The
+// plain benchmark's results have no BegunAt, which the timeline drops whole,
+// so it never reaches the per-second lag counters.
+// Ground: hot path — nanoseconds and allocations per record, the early warning's counters included.
+func BenchmarkStatsRecordTimed(b *testing.B) {
+	for _, writers := range []int{8, 500} {
+		b.Run(fmt.Sprintf("writers%d", writers), func(b *testing.B) {
+			stats := NewStats()
+			start := time.Now()
+			stats.Reserve(time.Hour, "pkg.Service/Method")
+			stats.Start(start, 2*time.Second)
+
+			var wg sync.WaitGroup
+
+			each := max(b.N/writers, 1)
+
+			b.ResetTimer()
+
+			for range writers {
+				wg.Add(1)
+
+				go func() {
+					defer wg.Done()
+
+					for i := range each {
+						scheduled := start.Add(time.Duration(i%5000) * time.Millisecond)
+
+						lag := time.Duration(0)
+						if i%4 == 0 {
+							lag = 2 * time.Millisecond
+						}
+
+						stats.Record(Result{
+							Method:      "pkg.Service/Method",
+							ScheduledAt: scheduled,
+							BegunAt:     scheduled.Add(lag),
+							Outcome: Outcome{
+								SentAt:   scheduled.Add(lag + 100*time.Microsecond),
+								DoneAt:   scheduled.Add(lag + 12*time.Millisecond),
+								Category: CategorySuccess,
+							},
+						})
+					}
+				}()
+			}
+
+			wg.Wait()
+			b.StopTimer()
+			b.ReportMetric(float64(writers*each), "records")
+		})
+	}
+}

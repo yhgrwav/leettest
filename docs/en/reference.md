@@ -495,6 +495,16 @@ the generator and the target goes into the latency and looks like the target's t
   `tail_wait_cause: generator`. A tail decided by streams or connections does not make a run
   invalid. A
   breaking-point search is not affected: its steps keep their own `generator` cause.
+- The generator's lag is warned of while the run goes on (not released yet). Once a second the last
+  five whole seconds of the run are looked at, warm-up included, by the second a call was done in.
+  When more than 1% of the calls started later than the wait floor (1 ms by default, the
+  p99 rule: at least 100 starts, and 2 of 100, 3 of 200, 11 of 1000), or the generator left a call
+  unsent at all, one line goes to stderr, once per run, in text and JSON mode alike: `warning: the
+  generator is behind its schedule: 2140 of 60000 calls in the last 5 s (warm-up) started more than
+  1.00ms late, at 12000 rps scheduled. If this holds, the latency measures this machine, not the
+  target, and the run may end invalid (generator_late).` The live screen shows the line and repeats
+  it on stderr after it closes. It is a hint, not a verdict: the report still decides whether the
+  run is valid. A breaking-point search does not print it.
 
 ## Response size, traffic and warm-up in the report (not released yet)
 

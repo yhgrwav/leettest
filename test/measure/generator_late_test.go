@@ -52,6 +52,17 @@ const (
 func lateStarter(t *testing.T, s *stand.Stand, n int, late time.Duration) (engine.Report, []engine.Result) {
 	t.Helper()
 
+	stats, _, results := lateStarterStats(t, s, n, late)
+
+	return stats.Report(), results
+}
+
+// lateStarterStats is lateStarter with the stats it recorded into and the
+// moment the run started, for a test that reads them another way than the
+// report.
+func lateStarterStats(t *testing.T, s *stand.Stand, n int, late time.Duration) (*engine.Stats, time.Time, []engine.Result) {
+	t.Helper()
+
 	sender := grpcsender.New(grpcsender.Options{
 		Target:      s.Target(),
 		DialOptions: []grpc.DialOption{s.DialOption()},
@@ -109,7 +120,7 @@ func lateStarter(t *testing.T, s *stand.Stand, n int, late time.Duration) (engin
 
 	stats.Finish(time.Now())
 
-	return stats.Report(), results
+	return stats, start, results
 }
 
 // checkLateStarter fails the test, with the numbers, when the run was not the

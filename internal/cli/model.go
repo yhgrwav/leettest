@@ -117,6 +117,10 @@ type model struct {
 	editing  bool
 	notice   string
 
+	// lagLine is the early warning that the generator fell behind; it stays in
+	// the view until the run is over.
+	lagLine string
+
 	// hintKey is the last key that was no command, shown until hintStage
 	// runs out; hintAt is the frame it was pressed on.
 	hintKey string
@@ -184,6 +188,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		return m, tick()
+
+	case lagWarningMsg:
+		m.lagLine = msg.line
+
+		return m, nil
 
 	case doneMsg:
 		m.engine.SnapshotInto(&m.snapshot, m.live, true)
