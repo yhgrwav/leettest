@@ -405,14 +405,28 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		}
 	})
 
+	// The early warning that the generator fell behind its schedule: one line per
+	// run, in the live view while it is up and on stderr after it, or on stderr
+	// at once without a view.
+	notice := &lagNotice{stderr: stderr}
+	if flags.interactive {
+		notice.send = func(line string) {
+			if p := view.Load(); p != nil {
+				p.Send(cli.LagWarningMsg(line))
+			}
+		}
+	}
+
 	var stepAfter atomic.Int64
 	start := func() error {
 		stopMeter := meter.Start()
 		stopWatch := startWatch(ctx, watch)
+		stopLag := startLagWatch(ctx, lagSource(eng), lagTickEvery, notice.deliver)
 		err := eng.Run(ctx)
 		if exp != nil {
 			exp.finish()
 		}
+		stopLag()
 		stopWatch()
 		stopMeter()
 		stepAfter.Store(int64(clockStep()))
@@ -435,6 +449,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		program := cli.NewProgram(target, label, eng, cli.ExcludedWindow(cfg), settings, s, reportOf)
 		view.Store(program)
 		runErr = cli.RunLive(program, s, start, abort)
+		notice.afterView()
 	} else if runErr = cli.RunPlain(stderr, target, eng, start); runErr != nil && !endsWithReport(runErr) {
 		return runErr
 	}
