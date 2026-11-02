@@ -263,12 +263,40 @@ type MethodReport struct {
 	// RequestBytes is the mean request body of the measured calls that went
 	// out, before and after compression; nil when none did.
 	RequestBytes *RequestBytes
+	// ResponseBytes is the mean reply body, in bytes as the client's codec got
+	// it (after decompression), of the measured calls that got a body; nil
+	// when none did. Warm-up is not in it.
+	ResponseBytes *float64
+	// Warmup is what the warm-up's calls measured, apart from the measured
+	// part; nil when no warm-up call came back with a latency.
+	Warmup *WarmupReport
 }
 
 // RequestBytes is a mean request size in bytes: Raw is the message, Wire the
 // body on the wire without the 5-byte frame. Equal without compression.
 type RequestBytes struct {
 	Raw, Wire float64
+}
+
+// WarmupReport is a method's warm-up in its own histogram: the same latency
+// as the measured part (from scheduledAt, 3 significant digits), kept out of
+// every number about the measured part.
+type WarmupReport struct {
+	// Calls is the observations behind P50 and P99.
+	Calls int
+	P50   metrics.Quantile
+	// P99 is Defined only when Calls >= metrics.MinCount(0.99).
+	P99 metrics.Quantile
+	// ResponseBytes is the mean reply body of the warm-up calls that got one;
+	// nil when none did.
+	ResponseBytes *float64
+}
+
+// Traffic is the message bodies the measured calls moved, in bits per second
+// of the window the rates use: without HTTP/2 frames, headers and TLS, so a
+// lower bound of what went over the wire.
+type Traffic struct {
+	SentBitsPerSecond, ReceivedBitsPerSecond float64
 }
 
 // CapHit is how a run stopped on the in-flight cap. In a run the budget
@@ -338,6 +366,9 @@ type Report struct {
 	// LateCancelMax is how far past its deadline a timed-out call returned
 	// on its own: how late cancellation ran.
 	LateCancelMax time.Duration
+	// Traffic is what the measured calls' message bodies came to per second of
+	// the window MethodReport.RPS divides by; nil when that window is empty.
+	Traffic *Traffic
 
 	// NotSentGenerator, NotSentStream and NotSentConnection split NotSent by what
 	// kept a call from going out: the generator's lag, a ready connection

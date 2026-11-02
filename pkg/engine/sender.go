@@ -101,7 +101,11 @@ type Outcome struct {
 	// and after compression, without the 5-byte frame; 0 when no attempt
 	// handed one to the transport.
 	RawBytes, WireBytes int
-	Category            Category
+	// ResponseBytes is the length of the reply body as the client's codec got
+	// it, after decompression; 0 when no body came, and when the client
+	// refused the reply as larger than its limit.
+	ResponseBytes int
+	Category      Category
 	// Err is the error as reported by the transport, including any text from
 	// the target. Nil for CategorySuccess, non-nil otherwise. pkg/engine
 	// does not inspect or print it; that is left to the caller.
