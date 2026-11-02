@@ -67,6 +67,34 @@ func TestRunState_ALateGeneratorIsInvalidAndExit2(t *testing.T) {
 	}
 }
 
+// The count of observations behind p99 is the boundary: the same report with
+// 99 observations is complete, exit 0; with 100 = metrics.MinCount(0.99) it
+// is invalid, exit 2. Below it p99 is the maximum, and one call decides it.
+func TestRunState_TheBoundaryIs99And100Observations(t *testing.T) {
+	few := lateGenerator()
+	few.Methods[0].Sent, few.Methods[0].Latencies = 99, 99
+
+	if got := runState(few); got != threshold.Complete {
+		t.Errorf("99 observations: runState = %v, want Complete (%v)", got, threshold.Complete)
+	}
+	if err := runResult(few, nil); err != nil {
+		t.Errorf("99 observations: runResult = %v, want nil", err)
+	}
+	if code := exitCode(runResult(few, nil)); code != 0 {
+		t.Errorf("99 observations: exit code %d, want 0", code)
+	}
+
+	enough := lateGenerator()
+	enough.Methods[0].Sent, enough.Methods[0].Latencies = 100, 100
+
+	if got := runState(enough); got != threshold.Invalid {
+		t.Errorf("100 observations: runState = %v, want Invalid (%v)", got, threshold.Invalid)
+	}
+	if code := exitCode(runResult(enough, nil)); code != 2 {
+		t.Errorf("100 observations: exit code %d, want 2", code)
+	}
+}
+
 // An invalid run before a short one, as for the cap and the clock: a run
 // stopped by Ctrl-C whose generator was behind is still not a number about
 // the target.

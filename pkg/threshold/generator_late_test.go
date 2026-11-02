@@ -68,6 +68,28 @@ func TestGeneratorLate_BesideAnotherInvalidReasonTheGeneratorIsStillTheReason(t 
 	verdictIs(t, find(t, results, shop, threshold.Errors), threshold.VerdictUnknown, threshold.ReasonGenerator)
 }
 
+// A method of fewer than 100 observations (metrics.MinCount(0.99)) is not
+// judged for the generator: its p99 is the maximum. In a run invalid for
+// another reason (the cap) the limits are "invalid", not "the generator";
+// with enough observations they stay "the generator was late".
+func TestGeneratorLate_TheReasonNeedsEnoughObservations(t *testing.T) {
+	few := generatorLate()
+	few.Methods[0].Sent, few.Methods[0].Latencies = 15, 15
+	few.Sent = 15
+	few.CapHit = &engine.CapHit{Unsent: 1}
+
+	results := threshold.Evaluate(few, threshold.Invalid, []threshold.MethodLimits{bothLimits()})
+	verdictIs(t, find(t, results, shop, threshold.P99), threshold.VerdictUnknown, threshold.ReasonInvalid)
+	verdictIs(t, find(t, results, shop, threshold.Errors), threshold.VerdictUnknown, threshold.ReasonInvalid)
+
+	enough := generatorLate()
+	enough.CapHit = &engine.CapHit{Unsent: 1}
+
+	results = threshold.Evaluate(enough, threshold.Invalid, []threshold.MethodLimits{bothLimits()})
+	verdictIs(t, find(t, results, shop, threshold.P99), threshold.VerdictUnknown, threshold.ReasonGenerator)
+	verdictIs(t, find(t, results, shop, threshold.Errors), threshold.VerdictUnknown, threshold.ReasonGenerator)
+}
+
 // The stream and the connection are not the generator: an invalid run (a
 // clock, a cap) stays "invalid" for them, as it was.
 func TestGeneratorLate_OtherCausesKeepTheOldReasons(t *testing.T) {

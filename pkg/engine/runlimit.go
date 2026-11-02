@@ -93,6 +93,20 @@ func leader(generator, stream, connection int) (cause WaitCause, ok bool) {
 	return cause, top > 0
 }
 
+// GeneratorDecidedTail says the generator's lag decided the run's p99 tail:
+// the wait verdict names the generator.
+func (r Report) GeneratorDecidedTail() bool {
+	cause, _, ok := r.WaitVerdict()
+
+	return ok && cause == WaitGenerator
+}
+
+// LateByGenerator says the generator's lag decided this method's numbers: its
+// p99 moved, or the generator left its calls unsent.
+func (m *MethodReport) LateByGenerator() bool {
+	return m.Moved() || m.NotSentGenerator > 0
+}
+
 // ClientWaitsMoved says some method's p99 drops by a tenth or more when every
 // client-side wait is taken out. A tenth is a hypothesis (docs/decisions.md);
 // it is taken on the histogram's values, lower bounds included.
