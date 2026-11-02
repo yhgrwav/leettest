@@ -15,6 +15,7 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -228,19 +229,123 @@ func TestRun_NoLagNoWarning(t *testing.T) {
 		}
 	})
 
+	// The window needs 100 starts to judge the tail, and a second of this run
+	// holds 50: three whole seconds is the least that lets the rule speak, so the
+	// run lasts four and the real window is read on every tick.
 	t.Run("the engine at 50 rps", func(t *testing.T) {
 		savedEvery := lagTickEvery
 		t.Cleanup(func() { lagTickEvery = savedEvery })
 
 		lagTickEvery = 20 * time.Millisecond
 
-		res := runCLI(t.Context(), t, 20*time.Second, "-fake", "-c", writeLongerRun(t))
+		res := runCLI(t.Context(), t, 30*time.Second, "-fake", "-c", writeRunOf(t, "4s"))
 		if res.err != nil {
 			t.Fatalf("run: %v\n%s", res.err, res.stderr)
 		}
 
 		if strings.Contains(res.stderr, "generator is behind") {
 			t.Errorf("stderr has a warning on a 50 rps run:\n%s", res.stderr)
+		}
+	})
+}
+
+// writeRunOf is the config of the other runs with its stage lasting dur.
+func writeRunOf(t *testing.T, dur string) string {
+	t.Helper()
+
+	path := writeConfig(t, closedPort(t), checkMethod, plaintext)
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+
+	longer := strings.Replace(string(raw), "duration: 300ms", "duration: "+dur, 1)
+	if longer == string(raw) {
+		t.Fatal("the config has no duration to change")
+	}
+
+	if err := os.WriteFile(path, []byte(longer), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	return path
+}
+
+// With a live view the line goes into the view when it fires and is repeated on
+// stderr once the view is gone, once however many times it is asked.
+//
+// Ground: contract — the view takes the screen with it when it leaves, so the
+// warning would be lost with it.
+func TestLagNotice_LiveViewRepeatsTheLineOnceAfterTheViewExits(t *testing.T) {
+	var (
+		stderr strings.Builder
+		sent   []string
+	)
+
+	n := &lagNotice{stderr: &stderr, send: func(line string) { sent = append(sent, line) }}
+
+	n.deliver("warning: first")
+	n.deliver("warning: second")
+
+	if len(sent) != 1 || sent[0] != "warning: first" {
+		t.Errorf("sent into the view = %q, want the first line once", sent)
+	}
+
+	if stderr.Len() != 0 {
+		t.Errorf("stderr before the view exits = %q, want nothing: the view shows it", stderr.String())
+	}
+
+	n.afterView()
+	n.afterView()
+
+	if got, want := stderr.String(), "warning: first\n"; got != want {
+		t.Errorf("stderr after the view exits = %q, want %q once", got, want)
+	}
+}
+
+// A run the generator kept up in leaves nothing on stderr when the view exits.
+//
+// Ground: contract — silence on a clean run.
+func TestLagNotice_NoWarningNothingAfterTheView(t *testing.T) {
+	var stderr strings.Builder
+
+	n := &lagNotice{stderr: &stderr, send: func(string) { t.Error("sent a line nobody delivered") }}
+	n.afterView()
+
+	if stderr.Len() != 0 {
+		t.Errorf("stderr = %q, want nothing", stderr.String())
+	}
+}
+
+// Without a view the line is one stderr line at once, and afterView adds none; a
+// line that arrives after the view is gone goes to stderr and is not repeated.
+//
+// Ground: boundary — the order of the watch and the view's exit is not fixed.
+func TestLagNotice_PlainAndLateDelivery(t *testing.T) {
+	t.Run("no view", func(t *testing.T) {
+		var stderr strings.Builder
+
+		n := &lagNotice{stderr: &stderr}
+		n.deliver("warning: a")
+		n.deliver("warning: b")
+		n.afterView()
+
+		if got, want := stderr.String(), "warning: a\n"; got != want {
+			t.Errorf("stderr = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("delivered after the view exited", func(t *testing.T) {
+		var stderr strings.Builder
+
+		n := &lagNotice{stderr: &stderr, send: func(string) { t.Error("sent into a view that is gone") }}
+		n.afterView()
+		n.deliver("warning: late")
+		n.afterView()
+
+		if got, want := stderr.String(), "warning: late\n"; got != want {
+			t.Errorf("stderr = %q, want %q", got, want)
 		}
 	})
 }

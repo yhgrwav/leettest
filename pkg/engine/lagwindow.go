@@ -14,7 +14,50 @@
 
 package engine
 
-import "time"
+import (
+	"time"
+
+	"github.com/yhgrwav/leettest/pkg/metrics"
+)
+
+// lagP is the percentile the early warning judges the start lag by, the p99 of
+// the report.
+const lagP = 0.99
+
+// lagSecond is the counters of one second of the run, by the second a call was
+// done in: the moment the generator finished with it or gave up on it.
+type lagSecond struct {
+	calls, starts, late, unsent int
+}
+
+// countLag files r in the second it was done in. The caller holds s.mu. A call
+// done before the start or past the reserved span is left out whole, as the
+// timeline leaves it.
+func (s *Stats) countLag(r Result) {
+	if s.startedAt.IsZero() {
+		return
+	}
+
+	done := r.DoneAt.Sub(s.startedAt)
+	if done < 0 || done/time.Second >= time.Duration(len(s.lag)) {
+		return
+	}
+
+	sec := &s.lag[done/time.Second]
+	sec.calls++
+
+	if lag := r.QueueTime(); lag >= 0 {
+		sec.starts++
+
+		if lag > s.floor {
+			sec.late++
+		}
+	}
+
+	if r.NotSent && notSentCause(r) == BlockedOnGenerator {
+		sec.unsent++
+	}
+}
 
 // LagWindow is the last whole seconds of the run as the generator lived them:
 // how many calls started, how many of those started over the wait floor late,
@@ -47,15 +90,70 @@ type LagWindow struct {
 // p99 of the start lag over the floor (rule #73, at least metrics.MinCount
 // starts), or any call left unsent by the generator.
 func (w LagWindow) Behind() bool {
-	return false
+	if w.NotSentGenerator > 0 {
+		return true
+	}
+
+	starts := int64(w.Starts)
+
+	return starts >= metrics.MinCount(lagP) && int64(w.Late) >= metrics.MinAbove(lagP, starts)
 }
 
-// LagWindow reads the window of the last seconds whole seconds before now.
-func (s *Stats) LagWindow(_ time.Time, _ int) LagWindow {
-	return LagWindow{}
+// LagWindow reads the window of the last seconds whole seconds before now, by
+// the second a call was done in. The second now is in is not whole and is left
+// out; fewer than seconds seconds into the run, the window is those there are.
+// Warm-up seconds are in it. A run that has not started, seconds of zero or
+// less, and a now before the first whole second give an empty window. Scheduled
+// stays 0: only Engine.LagWindow knows the plan.
+func (s *Stats) LagWindow(now time.Time, seconds int) LagWindow {
+	if seconds <= 0 {
+		return LagWindow{}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.startedAt.IsZero() {
+		return LagWindow{}
+	}
+
+	// The whole seconds before now are [to-seconds, to); seconds can be as
+	// large as an int, so it is subtracted from to and not added to from.
+	to := int(now.Sub(s.startedAt) / time.Second)
+	if to <= 0 {
+		return LagWindow{}
+	}
+
+	from := max(to-seconds, 0)
+	end := time.Duration(to) * time.Second
+	w := LagWindow{Seconds: to - from, End: end, Warmup: end <= s.warmup, Floor: s.floor}
+
+	for i := from; i < min(to, len(s.lag)); i++ {
+		sec := s.lag[i]
+		w.Calls += sec.calls
+		w.Starts += sec.starts
+		w.Late += sec.late
+		w.NotSentGenerator += sec.unsent
+	}
+
+	return w
 }
 
-// LagWindow is Stats.LagWindow of the run.
+// LagWindow is Stats.LagWindow of the run with Scheduled filled in: the rate
+// the plan asked for over the window's seconds, the highest of each method's
+// stages that overlap it (ratesOver), summed over the methods. On a ramp that is
+// the rate at the window's far end, not the stage's target.
 func (e *Engine) LagWindow(now time.Time, seconds int) LagWindow {
-	return e.stats.LagWindow(now, seconds)
+	w := e.stats.LagWindow(now, seconds)
+	if w.Seconds == 0 {
+		return w
+	}
+
+	from := w.End - time.Duration(w.Seconds)*time.Second
+	for _, call := range e.opts.Calls {
+		_, high := ratesOver(call.Stages, from, w.End)
+		w.Scheduled += high
+	}
+
+	return w
 }

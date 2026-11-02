@@ -443,7 +443,10 @@ type Stats struct {
 	notSent                                 int
 	aborted                                 int
 	reserve                                 int
-	byMethod                                map[string]*methodStats
+	// lag holds the per-second counters the early warning reads, by the second
+	// a call was done in; reserved with the timeline, never grown.
+	lag      []lagSecond
+	byMethod map[string]*methodStats
 	// windowWidth and windowCount are the shared axis of the windows; 0 when
 	// nobody asked for them. windowPlans is where each method's own measured
 	// plan ends, absent for a method that keeps the whole measured part.
@@ -606,6 +609,7 @@ func (s *Stats) Reserve(span time.Duration, methods ...string) {
 	defer s.mu.Unlock()
 
 	s.reserve = int(span/time.Second) + 1
+	s.lag = make([]lagSecond, s.reserve)
 	for _, name := range methods {
 		if _, ok := s.byMethod[name]; !ok {
 			s.byMethod[name] = s.newMethod()
@@ -689,6 +693,8 @@ func (s *Stats) Record(r Result) {
 	// The timeline keeps warmup: a target failing on the way up is exactly
 	// what it should show, and the report says which seconds were warmup.
 	method.timeline.record(s.startedAt, r)
+	// Before the warm-up branch below: the early warning counts the warm-up too.
+	s.countLag(r)
 
 	if heard(r) {
 		// The send, not the schedule: a generator behind its schedule would

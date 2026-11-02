@@ -34,19 +34,20 @@ func lwCall(start time.Time, at, lag time.Duration) Result {
 	}
 }
 
-// lwUnsent is a call that never went out: its deadline came after wait, with
-// the blocker the sender named.
-func lwUnsent(start time.Time, at, lag time.Duration, blocker Blocker) Result {
+// lwUnsent is a call that never went out: its deadline came budget after the
+// schedule and it is done at that deadline, with the blocker the sender named.
+func lwUnsent(start time.Time, at, lag, budget time.Duration, blocker Blocker) Result {
 	scheduled := start.Add(at)
 	begun := scheduled.Add(lag)
+	deadline := scheduled.Add(budget)
 
 	return Result{
 		Method:      "a",
 		ScheduledAt: scheduled,
 		BegunAt:     begun,
-		Deadline:    scheduled.Add(10 * time.Second),
+		Deadline:    deadline,
 		Outcome: Outcome{
-			SentAt: begun, DoneAt: begun.Add(time.Second), Category: CategoryTimeout,
+			SentAt: begun, DoneAt: deadline, Category: CategoryTimeout,
 			NotSent: true, NotSentOn: blocker,
 		},
 	}
@@ -119,9 +120,10 @@ func TestLagWindow_WarmupCallsAreCounted(t *testing.T) {
 	stats := lwStats(start, 2*time.Second)
 
 	stats.Record(lwCall(start, 500*time.Millisecond, 5*time.Millisecond))
-	stats.Record(lwUnsent(start, 1500*time.Millisecond, 5*time.Millisecond, BlockedOnGenerator))
+	stats.Record(lwUnsent(start, 1500*time.Millisecond, 5*time.Millisecond, 2*time.Second, BlockedOnGenerator))
 
-	w := lwRead(stats, start, 2500*time.Millisecond, 5)
+	// The unsent call is done at its deadline, 3.5 s: second 3 of the window.
+	w := lwRead(stats, start, 4500*time.Millisecond, 5)
 
 	if w.Starts != 2 || w.Late != 2 || w.NotSentGenerator != 1 {
 		t.Errorf("window of the warm-up: %d starts, %d late, %d unsent by the generator; want 2, 2, 1", w.Starts, w.Late, w.NotSentGenerator)
@@ -180,8 +182,8 @@ func TestLagWindow_APastWarmupWindowKeepsTheWarmupSeconds(t *testing.T) {
 }
 
 // The window is the last whole seconds before now, by the second a call was
-// scheduled in. A call of second 1 is in a window read in second 6 and out of
-// one read in second 7; the second now is in is not whole and is left out.
+// done in. A call of second 1 is in a window read in second 6 and out of one
+// read in second 7; the second now is in is not whole and is left out.
 //
 // Ground: boundary — a second slides out of a window; no end-to-end test hits
 // the second to the millisecond.
@@ -292,23 +294,72 @@ func TestLagWindow_UnsentCountsOnlyWhatTheGeneratorHeldBack(t *testing.T) {
 	start := time.Unix(1_000, 0)
 	stats := lwStats(start, 0)
 
-	stats.Record(lwUnsent(start, 100*time.Millisecond, 0, BlockedOnGenerator))
-	stats.Record(lwUnsent(start, 200*time.Millisecond, 0, BlockedOnStream))
-	stats.Record(lwUnsent(start, 300*time.Millisecond, 0, BlockedOnConnection))
-	stats.Record(lwUnsent(start, 400*time.Millisecond, 0, BlockedUnknown))
+	// Each unsent call is done at its deadline a second after the schedule, in
+	// second 1; a sixth, unsent by the stream, begun 600 ms late against a
+	// budget of 1 s, was held back by the generator for more than it had left
+	// (the timing of notSentCause), whatever the sender named.
+	stats.Record(lwUnsent(start, 100*time.Millisecond, 0, time.Second, BlockedOnGenerator))
+	stats.Record(lwUnsent(start, 200*time.Millisecond, 0, time.Second, BlockedOnStream))
+	stats.Record(lwUnsent(start, 300*time.Millisecond, 0, time.Second, BlockedOnConnection))
+	stats.Record(lwUnsent(start, 400*time.Millisecond, 0, time.Second, BlockedUnknown))
 	stats.Record(lwCall(start, 500*time.Millisecond, 0))
+	stats.Record(lwUnsent(start, 700*time.Millisecond, 600*time.Millisecond, time.Second, BlockedOnStream))
 
-	w := lwRead(stats, start, 1500*time.Millisecond, 5)
+	w := lwRead(stats, start, 3500*time.Millisecond, 5)
 
-	if w.NotSentGenerator != 1 || w.Calls != 5 {
-		t.Errorf("unsent by the generator = %d of %d calls, want 1 of 5 (four unsent)", w.NotSentGenerator, w.Calls)
+	if w.NotSentGenerator != 2 || w.Calls != 6 {
+		t.Errorf("unsent by the generator = %d of %d calls, want 2 of 6: the one it named and the one its timing names", w.NotSentGenerator, w.Calls)
 	}
-	if w.Starts != 5 {
-		t.Errorf("starts = %d, want 5: an unsent call has a start on record too", w.Starts)
+	if w.Starts != 6 {
+		t.Errorf("starts = %d, want 6: an unsent call has a start on record too", w.Starts)
 	}
-	if w.Late != 0 {
-		t.Errorf("late = %d, want 0: nobody was over the floor", w.Late)
+	if w.Late != 1 {
+		t.Errorf("late = %d, want 1: only the call begun 600 ms late was over the floor", w.Late)
 	}
+}
+
+// The window counts a call in the second it was done in, not the second it was
+// scheduled in: an unsent call is recorded at its deadline, which may be many
+// seconds after the schedule, and the line must find it then.
+//
+// Ground: boundary — an unsent call with a long timeout, and a slow answer,
+// between the second of the schedule and the second of the end.
+func TestLagWindow_TheAxisIsTheSecondACallIsDoneIn(t *testing.T) {
+	start := time.Unix(1_000, 0)
+
+	t.Run("an unsent call with a timeout of 10 s", func(t *testing.T) {
+		stats := lwStats(start, 0)
+		stats.Record(lwUnsent(start, 1500*time.Millisecond, 0, 10*time.Second, BlockedOnGenerator))
+
+		if w := lwRead(stats, start, 6500*time.Millisecond, 5); w.NotSentGenerator != 0 || w.Behind() {
+			t.Errorf("at 6.5 s: %d unsent, behind %v; want none: it is not done yet", w.NotSentGenerator, w.Behind())
+		}
+
+		if w := lwRead(stats, start, 12500*time.Millisecond, 5); w.NotSentGenerator != 1 || !w.Behind() {
+			t.Errorf("at 12.5 s: %d unsent, behind %v; want 1, true: it was done in second 11", w.NotSentGenerator, w.Behind())
+		}
+	})
+
+	t.Run("an answer after 6 s", func(t *testing.T) {
+		stats := lwStats(start, 0)
+		slow := lwCall(start, 500*time.Millisecond, 5*time.Millisecond)
+		slow.DoneAt = start.Add(6500 * time.Millisecond)
+		stats.Record(slow)
+
+		for _, c := range []struct {
+			at         time.Duration
+			wantStarts int
+		}{
+			{1500 * time.Millisecond, 0},
+			{6900 * time.Millisecond, 0},
+			{7500 * time.Millisecond, 1},
+		} {
+			w := lwRead(stats, start, c.at, 5)
+			if w.Starts != c.wantStarts || w.Late != c.wantStarts {
+				t.Errorf("read at %v: %d starts, %d late; want %d of each", c.at, w.Starts, w.Late, c.wantStarts)
+			}
+		}
+	})
 }
 
 // A call that began before it was scheduled has no start lag to speak of; the
@@ -427,7 +478,7 @@ func TestLagWindow_RecordAndReadAllocateNothing(t *testing.T) {
 
 	late := lwCall(start, 3500*time.Millisecond, 5*time.Millisecond)
 	warm := lwCall(start, 500*time.Millisecond, 5*time.Millisecond)
-	unsent := lwUnsent(start, 3500*time.Millisecond, 5*time.Millisecond, BlockedOnGenerator)
+	unsent := lwUnsent(start, 3500*time.Millisecond, 5*time.Millisecond, time.Second, BlockedOnGenerator)
 	stats.Record(late)
 
 	if allocs := testing.AllocsPerRun(200, func() {
@@ -516,20 +567,42 @@ func TestEngine_LagWindowIsTheStatsWindow(t *testing.T) {
 }
 
 // The rate in the line is the schedule's of the window, not what was reached:
-// the highest stage rate the window overlaps, summed over the methods.
+// the highest stage rate the window overlaps, summed over the methods; on a
+// ramp, the rate at the far end of the window.
 //
-// Ground: boundary — a window inside one stage, across two, and wholly in the
-// second.
+// Ground: boundary — a window inside one stage, across two, wholly in the
+// second, and on a ramp (a stage with no StartRPS ramps from 0, so the constant
+// ones state StartRPS).
 func TestEngine_LagWindowCarriesTheScheduledRate(t *testing.T) {
 	start := time.Unix(1_000, 0)
-	stages := []Stage{{TargetRPS: 100, Duration: 3 * time.Second}, {TargetRPS: 400, Duration: 7 * time.Second}}
+	stages := []Stage{
+		{StartRPS: 100, TargetRPS: 100, Duration: 3 * time.Second},
+		{StartRPS: 400, TargetRPS: 400, Duration: 7 * time.Second},
+	}
+	ramp := []Stage{
+		{StartRPS: 100, TargetRPS: 100, Duration: 3 * time.Second},
+		{StartRPS: 100, TargetRPS: 400, Duration: 6 * time.Second},
+	}
+	constant := []Stage{{StartRPS: 50, TargetRPS: 50, Duration: 10 * time.Second}}
 
 	eng := &Engine{
 		opts: Options{Calls: []Call{
 			{Method: "a", Stages: stages},
-			{Method: "b", Stages: []Stage{{TargetRPS: 50, Duration: 10 * time.Second}}},
+			{Method: "b", Stages: constant},
 		}},
 		stats: lwStats(start, 0),
+	}
+
+	rampEng := &Engine{
+		opts: Options{Calls: []Call{
+			{Method: "a", Stages: ramp},
+			{Method: "b", Stages: constant},
+		}},
+		stats: lwStats(start, 0),
+	}
+
+	if got := rampEng.LagWindow(start.Add(6500*time.Millisecond), 3).Scheduled; got != 250+50 {
+		t.Errorf("on a ramp 100 to 400 over 6 s, window [3 s, 6 s): scheduled = %d, want %d: the rate at the window's far end, 250, and 50", got, 250+50)
 	}
 
 	for _, c := range []struct {
