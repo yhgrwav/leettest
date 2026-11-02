@@ -105,6 +105,13 @@ func ClockTooCoarse(run RunReport) bool {
 	return coarseClockMethod(run) != nil || clockGrew(run)
 }
 
+// GeneratorLate says the generator's lag decided the run's p99 tail: the wait
+// verdict (engine.Report.WaitVerdict) names the generator. The stub is false
+// until the code stage of reviews/generator-limit.md.
+func GeneratorLate(_ RunReport) bool {
+	return false
+}
+
 // PrintReport writes the finished run to w as plain ASCII text: characters
 // from outside, such as a method name or the target's error text, come out as
 // escapes.
