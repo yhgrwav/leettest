@@ -35,10 +35,14 @@ func floatPtr(v float64) *float64 { return &v }
 
 // afterWarmup is the report of a run that had a warm-up: a run-level line about
 // it ("warm-up N sent") is in the text, so a method line printed because of
-// that count, not because of the method's own report, would show.
+// that count, run-level or the method's own, not because of the method's
+// warm-up report, would show.
 func afterWarmup() engine.Report {
 	report := echoReport()
 	report.WarmupSent = 50
+	for i := range report.Methods {
+		report.Methods[i].WarmupSent = 50
+	}
 
 	return report
 }
@@ -158,6 +162,11 @@ func TestTrafficLine_ScalesTheUnitAndKeepsThreeSignificantDigits(t *testing.T) {
 		{65_560_000, "65.6 Mbit/s"},
 		{98_765_432, "98.8 Mbit/s"},
 		{1_234_567_890, "1.23 Gbit/s"},
+		// The unit is chosen after rounding to 3 digits, and trailing zeros stay.
+		{999, "999 bit/s"},
+		{999.6, "1.00 kbit/s"},
+		{999_999, "1.00 Mbit/s"},
+		{2_500_000, "2.50 Mbit/s"},
 	} {
 		report := echoReport()
 		report.Traffic = &engine.Traffic{SentBitsPerSecond: c.bits, ReceivedBitsPerSecond: c.bits}

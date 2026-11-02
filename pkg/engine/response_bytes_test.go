@@ -413,9 +413,6 @@ func TestReport_TrafficIsNilWithoutAMeasuredWindow(t *testing.T) {
 	}
 }
 
-// sinkMethod keeps newMethod's result from being optimised away.
-var sinkMethod *methodStats
-
 // Ground: hot path — a warm-up call is recorded under the lock every worker
 // shares; after the first it costs no allocation, and the measured success that
 // carries the new sizes costs what one without them did.
@@ -448,21 +445,41 @@ func TestRecord_TheNewSizesCostNoAllocation(t *testing.T) {
 	}
 }
 
-// Ground: hot path — the warm-up histogram is allocated only for a run that has
-// a warm-up: a method of a run without one pays nothing for it, "off is absent".
-// Mutation "the histogram is made for every method" turns it red. Green only
-// for a histogram made in newMethod; one made lazily at the first warm-up call
-// would need this test to change.
-func TestNewMethod_WithoutAWarmupHasNoWarmupHistogram(t *testing.T) {
-	made := func(warmup time.Duration) float64 {
+// Ground: hot path — the warm-up histogram exists only in a run that has a
+// warm-up: a method of a run without one pays nothing for it, "off is absent".
+// The order is the engine's: Reserve, then Start (the methods are born before
+// the warm-up length is known), then a warm-up call and a measured one. The
+// test reads behaviour, not where the histogram is made: the run with a warm-up
+// allocates more than the run without one and reports a Warmup; the run without
+// reports none. Mutations "the histogram is made for every method" (equal
+// allocations) and "made in newMethod by s.warmup" (a reserved method is born
+// before Start: no Warmup) turn it red.
+func TestWarmup_HistogramIsMadeOnlyForARunWithAWarmup(t *testing.T) {
+	start := time.Now()
+	run := func(warmup time.Duration) *Stats {
 		stats := NewStats()
-		stats.Start(time.Now(), warmup)
+		stats.Reserve(time.Hour, "a")
+		stats.Start(start, warmup)
+		out := Outcome{Category: CategorySuccess, ResponseBytes: 10, ResponseWireBytes: 10}
+		if warmup > 0 {
+			recordAfter(stats, start, "a", time.Second, 10*time.Millisecond, out)
+		}
+		recordAfter(stats, start, "a", warmup+time.Second, 10*time.Millisecond, out)
+		stats.EndSending(start.Add(warmup + 2*time.Second))
+		stats.Finish(start.Add(warmup + 2*time.Second))
 
-		return testing.AllocsPerRun(50, func() { sinkMethod = stats.newMethod() })
+		return stats
 	}
 
-	without, with := made(0), made(time.Second)
+	without, with := testing.AllocsPerRun(20, func() { run(0) }), testing.AllocsPerRun(20, func() { run(time.Minute) })
 	if without >= with {
-		t.Errorf("a method makes %v allocations without a warm-up and %v with one: the histogram is made either way", without, with)
+		t.Errorf("a run makes %v allocations without a warm-up and %v with one: the histogram is made either way", without, with)
+	}
+
+	if w := run(time.Minute).Report().Methods[0].Warmup; w == nil || w.Calls != 1 {
+		t.Errorf("Warmup of a reserved method in a run with a warm-up = %+v, want the one warm-up call", w)
+	}
+	if w := run(0).Report().Methods[0].Warmup; w != nil {
+		t.Errorf("Warmup of a run without a warm-up = %+v, want nil", w)
 	}
 }

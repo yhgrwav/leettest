@@ -111,8 +111,10 @@ type JSONReport struct {
 	Connections       *jsonConns      `json:"connections"`
 	ClientWaits       jsonClientWaits `json:"client_waits"`
 	GeneratorCPU      *jsonGenCPU     `json:"generator_cpu"`
-	Methods           []jsonMethod    `json:"methods"`
-	Unchecked         []jsonUnchecked `json:"unchecked"`
+	// Traffic is null without a measured window.
+	Traffic   *jsonTraffic    `json:"traffic"`
+	Methods   []jsonMethod    `json:"methods"`
+	Unchecked []jsonUnchecked `json:"unchecked"`
 	// Thresholds are the verdicts on the limits the config set, in its order;
 	// null when it set none.
 	Thresholds *[]jsonThreshold `json:"thresholds"`
@@ -159,6 +161,26 @@ func compressionOf(name string) *string {
 type jsonRequestBytes struct {
 	Raw  float64 `json:"raw"`
 	Wire float64 `json:"wire"`
+}
+
+// jsonTraffic is the message bodies the measured calls moved, in raw bits per
+// second (the text report scales the unit, this does not): requests as they
+// went out, replies of successful calls before decompression. Without HTTP/2
+// frames, headers and TLS.
+type jsonTraffic struct {
+	SentBitsPerSecond     float64 `json:"sent_bits_per_second"`
+	ReceivedBitsPerSecond float64 `json:"received_bits_per_second"`
+}
+
+// jsonWarmup is a method's warm-up measured apart from the run.
+type jsonWarmup struct {
+	Calls int           `json:"calls"`
+	P50   *jsonQuantile `json:"p50"`
+	// P99 is null while the warm-up has fewer observations than
+	// metrics.MinCount(0.99).
+	P99 *jsonQuantile `json:"p99"`
+	// ResponseBytes is null when no warm-up call succeeded.
+	ResponseBytes *float64 `json:"response_bytes"`
 }
 
 type jsonQuantile struct {
@@ -333,33 +355,38 @@ type jsonMethod struct {
 	PlannedRPSHigh    int      `json:"planned_rps_high"`
 	PlannedDurationUS int64    `json:"planned_duration_us"`
 	// RequestBytes is null without compression.
-	RequestBytes          *jsonRequestBytes `json:"request_bytes"`
-	Latency               jsonLatency       `json:"latency"`
-	P99WithoutClientWaits *jsonQuantile     `json:"p99_without_client_waits"`
-	Observations          int               `json:"observations"`
-	Censored              int               `json:"censored"`
-	InvalidLatencies      int               `json:"invalid_latencies"`
-	TimedOut              int               `json:"timed_out"`
-	TimedOutAfterWait     int               `json:"timed_out_after_wait"`
-	CutOff                int               `json:"cut_off"`
-	Unreachable           int               `json:"unreachable"`
-	Unclassified          int               `json:"unclassified"`
-	OutsideTimeline       int               `json:"outside_timeline"`
-	RequestError          jsonAnswers       `json:"request_error"`
-	Overload              jsonAnswers       `json:"overload"`
-	Failure               jsonAnswers       `json:"failure"`
-	BadResponse           jsonAnswers       `json:"bad_response"`
-	ClientError           int               `json:"client_error"`
-	FailureCodes          []jsonCode        `json:"failure_codes"`
-	SilentFromS           *int              `json:"silent_from_s"`
-	SilentSentRPS         *int              `json:"silent_sent_rps"`
-	SilentPlannedRPSLow   *int              `json:"silent_planned_rps_low"`
-	SilentPlannedRPSHigh  *int              `json:"silent_planned_rps_high"`
-	LastAnswerAtUS        *int64            `json:"last_answer_at_us"`
-	Dataset               *jsonDataset      `json:"dataset"`
-	Templates             *jsonTemplates    `json:"templates"`
-	Seconds               []jsonSecond      `json:"seconds"`
-	Windows               []jsonWindow      `json:"windows"`
+	RequestBytes *jsonRequestBytes `json:"request_bytes"`
+	// ResponseBytes is the mean reply body of the measured successes, after
+	// decompression; null when none succeeded.
+	ResponseBytes *float64 `json:"response_bytes"`
+	// Warmup is null when the warm-up left no observation.
+	Warmup                *jsonWarmup    `json:"warmup"`
+	Latency               jsonLatency    `json:"latency"`
+	P99WithoutClientWaits *jsonQuantile  `json:"p99_without_client_waits"`
+	Observations          int            `json:"observations"`
+	Censored              int            `json:"censored"`
+	InvalidLatencies      int            `json:"invalid_latencies"`
+	TimedOut              int            `json:"timed_out"`
+	TimedOutAfterWait     int            `json:"timed_out_after_wait"`
+	CutOff                int            `json:"cut_off"`
+	Unreachable           int            `json:"unreachable"`
+	Unclassified          int            `json:"unclassified"`
+	OutsideTimeline       int            `json:"outside_timeline"`
+	RequestError          jsonAnswers    `json:"request_error"`
+	Overload              jsonAnswers    `json:"overload"`
+	Failure               jsonAnswers    `json:"failure"`
+	BadResponse           jsonAnswers    `json:"bad_response"`
+	ClientError           int            `json:"client_error"`
+	FailureCodes          []jsonCode     `json:"failure_codes"`
+	SilentFromS           *int           `json:"silent_from_s"`
+	SilentSentRPS         *int           `json:"silent_sent_rps"`
+	SilentPlannedRPSLow   *int           `json:"silent_planned_rps_low"`
+	SilentPlannedRPSHigh  *int           `json:"silent_planned_rps_high"`
+	LastAnswerAtUS        *int64         `json:"last_answer_at_us"`
+	Dataset               *jsonDataset   `json:"dataset"`
+	Templates             *jsonTemplates `json:"templates"`
+	Seconds               []jsonSecond   `json:"seconds"`
+	Windows               []jsonWindow   `json:"windows"`
 }
 
 // jsonWindow is one time window of a method, counted from the end of the
@@ -500,8 +527,25 @@ func jsonRunFacts(run JSONRun) JSONReport {
 			GeneratorTailCalls: r.GeneratorTailCalls, StreamTailCalls: r.StreamTailCalls, ConnectionTailCalls: r.ConnectionTailCalls,
 		},
 		GeneratorCPU: genCPUOf(run.Run.GeneratorCPU),
+		Traffic:      trafficJSON(r.Traffic),
 		Thresholds:   thresholdsJSON(run.Run.Thresholds),
 	}
+}
+
+func trafficJSON(t *engine.Traffic) *jsonTraffic {
+	if t == nil {
+		return nil
+	}
+
+	return &jsonTraffic{SentBitsPerSecond: t.SentBitsPerSecond, ReceivedBitsPerSecond: t.ReceivedBitsPerSecond}
+}
+
+func warmupJSON(w *engine.WarmupReport) *jsonWarmup {
+	if w == nil {
+		return nil
+	}
+
+	return &jsonWarmup{Calls: w.Calls, P50: quantile(w.P50), P99: quantile(w.P99), ResponseBytes: w.ResponseBytes}
 }
 
 func startLagJSON(r *engine.Report) jsonStartLag {
@@ -633,6 +677,7 @@ func jsonMethodOf(m *engine.MethodReport, warmup time.Duration) jsonMethod {
 		WarmupSent:        m.WarmupSent, WarmupFailed: m.WarmupFailed, WarmupNotSent: m.WarmupNotSent,
 		TimeoutUS: micros(m.Timeout), PlannedRPSLow: m.RPSLow, PlannedRPSHigh: m.RPSHigh,
 		PlannedDurationUS: micros(m.PlannedDuration),
+		ResponseBytes:     m.ResponseBytes, Warmup: warmupJSON(m.Warmup),
 		Latency: jsonLatency{
 			Min: quantile(m.Min), P50: quantile(m.P50), P90: quantile(m.P90),
 			P95: quantile(m.P95), P99: quantile(m.P99), P999: quantile(m.P999), Max: quantile(m.Max),

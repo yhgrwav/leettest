@@ -414,6 +414,13 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
   [阅读报告](README.md#阅读报告)。
 - 在 Windows 上时钟步长约 0.5 ms，针对快速服务的运行会被判为无效（`clock_step`，退出码 2）。
 
+## 报告中的响应大小、流量和预热（未发布）
+
+简述，完整翻译在发布前补上：方法行下 `response: N B per call`（成功调用响应体解压后的平均大小）；
+运行头部 `traffic: sent …, received …`（仅消息体，不含 HTTP/2、头部和 TLS；发送按最后一次尝试
+计，是下界）；方法行下 `warm-up: N calls, p50 …, p99 …`——`N calls` 是观测数（成功加下界），
+不是运行行里的 `warm-up N sent`。
+
 ## JSON 字段
 
 契约的规则——结构版本、单位、用 `null` 而不是 `0`、未知字段——见
@@ -511,6 +518,8 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `generator_cpu.busy_seconds` | int | 其中 `share` 不低于 0.90 的秒数（按四舍五入后的值比较）。这些秒加起来不足一秒时为 `0` |
 | `generator_cpu.first_busy_s` | int? | 第一个这样的秒，从运行开始算起，预热计入；没有则为 `null` |
 | `generator_cpu.seconds` | []float | 从运行开始算起每一秒的占比，预热和超时尾部都包含：条目数与最长的 `methods[].seconds` 相同。没有任何读数覆盖的秒为 `null`，与前一秒合并计算的不足半秒的最后一秒也为 `null` |
+| `traffic` | object? | 发送窗口内每秒的消息体流量（未发布）；无窗口时为 `null` |
+| `traffic.sent_bits_per_second`, `traffic.received_bits_per_second` | float | （未发布）每秒比特数，未换算单位：请求体按线上大小，成功调用的响应体按解压前大小。不含 HTTP/2 帧、头部和 TLS |
 | `methods` | []object | 方法，见下文 |
 | `unchecked` | []object | 无法通过 reflection 检查的方法 |
 | `unchecked[].method` | string | 方法 |
@@ -544,6 +553,11 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `methods[].planned_duration_us` | int | 该方法计划运行多久，按配置，包括爬升 |
 | `methods[].request_bytes` | object? | 已发出的被测调用的请求体平均大小；无压缩时为 `null` |
 | `methods[].request_bytes.raw`, `methods[].request_bytes.wire` | float | 压缩前与线上的字节数（不含 5 字节帧头） |
+| `methods[].response_bytes` | float? | 已测成功调用的响应体平均大小，解压后（未发布）；无成功时为 `null` |
+| `methods[].warmup` | object? | 与运行分开测量的预热（未发布）；没有任何观测时为 `null` |
+| `methods[].warmup.calls` | int | （未发布）百分位背后的观测数（成功，以及超时或中止的调用作为下界），不是 `warmup_sent` 的计数 |
+| `methods[].warmup.p50`, `methods[].warmup.p99` | percentile? | （未发布）自计划时刻起的延迟，`lower_bound` 同 `methods[].latency`；观测少于 100 时 `p99` 为 `null` |
+| `methods[].warmup.response_bytes` | float? | （未发布）预热成功调用的响应体平均大小；无成功时为 `null` |
 | `methods[].latency` | object | 成功调用的延迟，超时和被截断的调用作为下界 |
 | `methods[].latency.min`、`methods[].latency.p50`、`methods[].latency.p90`、`methods[].latency.p95`、`methods[].latency.p99`、`methods[].latency.max` | percentile? | 最小值、百分位、最大值 |
 | `methods[].latency.p999` | percentile? | 按同一规则得出的 p99.9；方法的观测数（`observations`）少于 1000 时为 null，此时 p99.9 只会是最大值 |

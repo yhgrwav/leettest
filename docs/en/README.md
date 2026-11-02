@@ -147,6 +147,11 @@ At the end — a report per method: sent, failed, `sent/s`, p50/p90/p95/p99.
   per window, that is the plan, not a failure: compare with the method's `plan:`. With a `ramp`
   the first rows are the ramp: a low `sent/s` there is the plan, not a failure; look for the row
   where p99 or the failed share climbs before the rate has reached its plateau.
+- The `traffic:` line in the run's header is how many bits per second the message bodies moved,
+  sent and received (not released yet). It is a lower bound: no HTTP/2 frames, headers or TLS, and
+  received is counted by the size before decompression. Under a method, `response: N B per call`
+  is the mean reply size of the successful calls, and in a run with a warm-up `warm-up: N calls,
+  p50, p99` is its own numbers, apart from the run.
 - Under a method with a `dataset` stands a `data:` line: how many requests of the
   file were used and how many times the most used one went out. It does not mean the target saw
   that many distinct requests.

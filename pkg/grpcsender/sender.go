@@ -636,6 +636,12 @@ func (s *Sender) Send(ctx context.Context, req engine.Request) (engine.Outcome, 
 	}
 	sentAt, doneAt, notSent := timestamps(times, category)
 
+	// A reply the codec refused as too large was never taken: no size.
+	replyBytes := call.reply.size
+	if call.reply.over {
+		replyBytes = 0
+	}
+
 	outcome := engine.Outcome{
 		Link:       index,
 		SentAt:     sentAt,
@@ -646,8 +652,11 @@ func (s *Sender) Send(ctx context.Context, req engine.Request) (engine.Outcome, 
 		RawBytes:   times.rawBytes,
 		WireBytes:  times.wireBytes,
 		Category:   category,
-		Code:       code.String(),
-		Err:        err,
+
+		ResponseBytes:     replyBytes,
+		ResponseWireBytes: times.replyWireBytes,
+		Code:              code.String(),
+		Err:               err,
 
 		CodeFromTarget: fromTarget,
 		// A trailer that only copies or echoes our deadline is grpc-go on the

@@ -528,12 +528,20 @@ type methodStats struct {
 	// bodies counts the measured calls that handed a request body to the
 	// transport; rawBytes and wireBytes sum their sizes.
 	bodies, rawBytes, wireBytes int64
-	sent                        int
-	failed                      int
-	unanswered                  int
-	cutOff                      int
-	unknown                     int
-	timedOut                    int
+	// replies counts the measured successful calls; replyBytes sums their
+	// reply bodies after decompression and replyWire before it.
+	replies, replyBytes, replyWire int64
+	// warmupLat is the warm-up's own latency distribution; nil in a run without
+	// a warm-up. warmupReplies and warmupReplyBytes are replies and replyBytes
+	// of the warm-up's successes.
+	warmupLat                       *metrics.Latencies
+	warmupReplies, warmupReplyBytes int64
+	sent                            int
+	failed                          int
+	unanswered                      int
+	cutOff                          int
+	unknown                         int
+	timedOut                        int
 	// timedOutLate counts timeouts sent with less than half the deadline left.
 	timedOutLate int
 	unsentOut    int
@@ -616,17 +624,33 @@ func (s *Stats) newMethod() *methodStats {
 		lastAnswer:  -1,
 		timeline:    newTimeline(s.reserve),
 	}
+	if s.warmup > 0 {
+		method.warmupLat = metrics.NewLatencies()
+	}
 	s.allocateWindows(method)
 
 	return method
 }
 
+// Start fixes the run's clock and warm-up. The methods Reserve made before it
+// get their warm-up distribution here, the ones born later in newMethod: a run
+// without a warm-up makes none, and Record only checks for nil.
 func (s *Stats) Start(at time.Time, warmup time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.startedAt = at
 	s.warmup = warmup
+
+	if warmup <= 0 {
+		return
+	}
+
+	for _, method := range s.byMethod {
+		if method.warmupLat == nil {
+			method.warmupLat = metrics.NewLatencies()
+		}
+	}
 }
 
 // EndSending reports a moment the schedule stopped handing out calls; the
@@ -673,18 +697,28 @@ func (s *Stats) Record(r Result) {
 	}
 
 	if r.ScheduledAt.Before(s.startedAt.Add(s.warmup)) {
+		// The distribution has a lock of its own: written after this one is
+		// released, as the measured one is.
+		var observed *metrics.Latencies
 		if r.NotSent {
 			s.warmupNotSent++
 			method.warmupNotSent++
 		} else {
 			s.warmupSent++
 			method.warmupSent++
+			observed = method.warmupLat
+			if r.Category == CategorySuccess {
+				method.warmupReplies++
+				method.warmupReplyBytes += int64(r.ResponseBytes)
+			}
 			if r.Category != CategorySuccess && r.Category != CategoryAborted {
 				s.warmupFailed++
 				method.warmupFailed++
 			}
 		}
 		s.mu.Unlock()
+
+		recordWarmup(observed, r)
 
 		return
 	}
@@ -761,6 +795,11 @@ func (s *Stats) Record(r Result) {
 	}
 
 	method.sent++
+	if r.Category == CategorySuccess {
+		method.replies++
+		method.replyBytes += int64(r.ResponseBytes)
+		method.replyWire += int64(r.ResponseWireBytes)
+	}
 	if r.RawBytes > 0 || r.WireBytes > 0 {
 		method.bodies++
 		method.rawBytes += int64(r.RawBytes)
@@ -898,6 +937,23 @@ func (s *Stats) Record(r Result) {
 	}
 }
 
+// recordWarmup puts a warm-up call in the warm-up distribution by the rule of
+// the measured one: a success as measured, a timed-out or aborted call as a
+// lower bound, any other answer not at all. A nil distribution is a run
+// without a warm-up.
+func recordWarmup(dist *metrics.Latencies, r Result) {
+	if dist == nil {
+		return
+	}
+
+	switch r.Category {
+	case CategorySuccess:
+		dist.Record(r.Latency())
+	case CategoryTimeout, CategoryAborted:
+		dist.RecordCensored(r.CensorThreshold())
+	}
+}
+
 // methodView is one method's counters taken under the lock together with a
 // snapshot of its distribution, so percentiles can be computed without holding
 // anything.
@@ -918,6 +974,10 @@ type methodView struct {
 	rejected    *metrics.Snapshot
 	waited      [3]*metrics.Snapshot
 	codes       []CodeCount
+	// warmupLat is the warm-up distribution, nil without a warm-up; warmup its
+	// snapshot.
+	warmupLat *metrics.Latencies
+	warmup    *metrics.Snapshot
 }
 
 // views copies the counters under the lock and takes each distribution's
@@ -938,7 +998,7 @@ func (s *Stats) views() (elapsed, measured time.Duration, sent, failed int, out 
 		out = append(out, methodView{
 			name: name, sent: method.sent, failed: method.failed, unanswered: method.unanswered, cutOff: method.cutOff,
 			unknown: method.unknown, clientError: method.clientError, lastAnswer: method.lastAnswer,
-			codes: failureCodes(method.codes),
+			codes: failureCodes(method.codes), warmupLat: method.warmupLat,
 		})
 		sources = append(sources, method)
 	}
@@ -951,6 +1011,9 @@ func (s *Stats) views() (elapsed, measured time.Duration, sent, failed int, out 
 		out[i].failure = src.failure.Snapshot()
 		out[i].badResponse = src.badResponse.Snapshot()
 		out[i].rejected = src.rejected.Snapshot()
+		if out[i].warmupLat != nil {
+			out[i].warmup = out[i].warmupLat.Snapshot()
+		}
 		for c, w := range src.waited {
 			if w != nil {
 				out[i].waited[c] = w.Snapshot()
@@ -1080,7 +1143,15 @@ func (s *Stats) Report() Report {
 	waited := s.waited
 	timelines := make(map[string]MethodReport, len(s.byMethod))
 	windowViews := s.windowViewsLocked()
+	// Bytes of the measured part that went out and came back, for the traffic.
+	var sentBytes, receivedBytes int64
+	warmupReplyMean := make(map[string]float64, len(s.byMethod))
 	for name, method := range s.byMethod {
+		sentBytes += method.wireBytes
+		receivedBytes += method.replyWire
+		if method.warmupReplies > 0 {
+			warmupReplyMean[name] = float64(method.warmupReplyBytes) / float64(method.warmupReplies)
+		}
 		entry := MethodReport{
 			Seconds:           method.timeline.export(),
 			OutsideTimeline:   method.timeline.outside,
@@ -1101,6 +1172,10 @@ func (s *Stats) Report() Report {
 		if method.bodies > 0 {
 			n := float64(method.bodies)
 			entry.RequestBytes = &RequestBytes{Raw: float64(method.rawBytes) / n, Wire: float64(method.wireBytes) / n}
+		}
+		if method.replies > 0 {
+			mean := float64(method.replyBytes) / float64(method.replies)
+			entry.ResponseBytes = &mean
 		}
 		if from, ok := method.timeline.silentFrom(); ok {
 			entry.SilentFrom = &from
@@ -1201,6 +1276,8 @@ func (s *Stats) Report() Report {
 			WarmupFailed:      timelines[v.name].WarmupFailed,
 			WarmupNotSent:     timelines[v.name].WarmupNotSent,
 			RequestBytes:      timelines[v.name].RequestBytes,
+			ResponseBytes:     timelines[v.name].ResponseBytes,
+			Warmup:            warmupOf(v.warmup, warmupReplyMean, v.name),
 			SilentFrom:        timelines[v.name].SilentFrom,
 			SentRPS:           timelines[v.name].SentRPS,
 			LastAnswerAt:      timelines[v.name].LastAnswerAt,
@@ -1228,7 +1305,34 @@ func (s *Stats) Report() Report {
 	report.ConnectionTailCalls = tail[1] + connection
 	report.StreamTailCalls = tail[2] + stream
 
+	if measured > 0 {
+		bits := 8 / measured.Seconds()
+		report.Traffic = &Traffic{
+			SentBitsPerSecond:     float64(sentBytes) * bits,
+			ReceivedBitsPerSecond: float64(receivedBytes) * bits,
+		}
+	}
+
 	return report
+}
+
+// warmupOf is a method's warm-up from its distribution's snapshot; nil when the
+// distribution is missing or holds no observation. mean is the replies' mean
+// by method name.
+func warmupOf(dist *metrics.Snapshot, mean map[string]float64, name string) *WarmupReport {
+	if dist == nil || dist.Count() == 0 {
+		return nil
+	}
+
+	w := &WarmupReport{Calls: int(dist.Count()), P50: dist.Percentile(0.50)}
+	if dist.Count() >= metrics.MinCount(0.99) {
+		w.P99 = dist.Percentile(0.99)
+	}
+	if m, ok := mean[name]; ok {
+		w.ResponseBytes = &m
+	}
+
+	return w
 }
 
 // sendingWindow is what rates divide by: from the end of warmup to the end of
