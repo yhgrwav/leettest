@@ -227,7 +227,7 @@ func TestSearch_EdgesOfTheProfile(t *testing.T) {
 func TestSearch_TheRunsOwnLimitIsNotTheTargets(t *testing.T) {
 	for name, limit := range map[string]func(*engine.Report){
 		"in-flight cap":  func(r *engine.Report) { r.CapHit = &engine.CapHit{} },
-		"calls not sent": func(r *engine.Report) { r.NotSent, r.GeneratorTailCalls = 3, 3 },
+		"calls not sent": func(r *engine.Report) { r.NotSent, r.NotSentGenerator, r.GeneratorTailCalls = 3, 3, 3 },
 		"generator behind": func(r *engine.Report) {
 			r.Methods[0].P99WithoutClientWaits, r.GeneratorTailCalls = exact(10*time.Millisecond), 30
 		},

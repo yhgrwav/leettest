@@ -130,15 +130,15 @@ func (r crRun) file(t *testing.T, path string) RunFile {
 		rep.Methods = append(rep.Methods, mr)
 	}
 
-	// The run-level verdict is the engine's own: some wait in the tail, and
-	// calls unsent, name the cause.
+	// The run-level verdict is the engine's own: with no p99 moved, the calls
+	// unsent name the cause, and the wait of that cause is in the tail.
 	switch r.tail {
 	case "generator":
-		rep.NotSent, rep.GeneratorTailCalls = 1, 1
+		rep.NotSent, rep.NotSentGenerator, rep.GeneratorTailCalls = 1, 1, 1
 	case "stream":
-		rep.NotSent, rep.StreamTailCalls = 1, 1
+		rep.NotSent, rep.NotSentStream, rep.StreamTailCalls = 1, 1, 1
 	case "connection":
-		rep.NotSent, rep.ConnectionTailCalls = 1, 1
+		rep.NotSent, rep.NotSentConnection, rep.ConnectionTailCalls = 1, 1, 1
 	}
 
 	raw, err := json.Marshal(NewJSONReport(JSONRun{

@@ -413,6 +413,12 @@ func cjReasonCases(t *testing.T) []cjReasonCase {
 		r.outcome = cli.OutcomeInvalid
 		r.edit = append(r.edit, func(rep *cli.JSONReport) { rep.InvalidReasons = []string{"in_flight_cap"} })
 	})
+	// v0.7: a run the generator's lag made invalid is invalid for the compare as the cap is,
+	// not "the generator held calls back" (which an older leettest's complete run still says).
+	late := jrNew().with(func(r *jrRun) {
+		r.outcome = cli.OutcomeInvalid
+		r.edit = append(r.edit, func(rep *cli.JSONReport) { rep.InvalidReasons = []string{"generator_late"} })
+	}).with(jrTail("generator"))
 	rejected := jrNew().with(func(r *jrRun) { r.methods[0] = jrMethod{name: "/" + cmpMethod, sent: 40, failed: 40, rejected: 40} })
 	other := brokeAt(1000)
 	other.target = "10.0.0.2:50051"
@@ -435,6 +441,7 @@ func cjReasonCases(t *testing.T) []cjReasonCase {
 		run("the reports differ", jrBase(), jrNew().with(cjOtherTarget), cjAllUnknown("not_comparable", "reports are not comparable")),
 		run("a method that measured nothing", jrBase(), rejected, cjAllUnknown("method_invalid", "new method is invalid (request_error)")),
 		run("an invalid run", jrBase(), invalid, cjAllUnknown("invalid", "new run is invalid")),
+		run("an invalid run by the generator", jrBase(), late, cjAllUnknown("invalid", "new run is invalid")),
 		run("an incomplete run", incomplete, jrNew(), cjAllUnknown("incomplete", "base run is incomplete")),
 		run("held back by the generator", jrBase(), jrNew().with(jrTail("generator")),
 			cjAllUnknown("generator", "new: the generator held calls back")),

@@ -40,7 +40,8 @@ func verdictOf(t *testing.T, r engine.Report) string {
 	t.Helper()
 
 	for _, n := range reportNotes(r, "") {
-		if strings.HasPrefix(n, "limited by") || strings.HasPrefix(n, "the connection to the target was not ready") {
+		if strings.HasPrefix(n, "limited by") || strings.HasPrefix(n, "invalid run: the generator fell behind") ||
+			strings.HasPrefix(n, "the connection to the target was not ready") {
 			return n
 		}
 	}
@@ -53,7 +54,8 @@ func verdictOf(t *testing.T, r engine.Report) string {
 func TestVerdict_NamesTheLargestCauseAndListsTheRest(t *testing.T) {
 	v := verdictOf(t, ledgerShaped())
 
-	if !strings.HasPrefix(v, "limited by the run, not the target: the generator fell behind") {
+	// v0.7: a generator verdict is an invalid run, the list of causes follows it as before.
+	if !strings.HasPrefix(v, "invalid run: the generator fell behind its schedule") {
 		t.Errorf("heading does not name the generator:\n%s", v)
 	}
 	if !strings.Contains(v, "causes in the p99 tail, largest first: generator late 28839; connection not ready 24372; waited for a stream 213") {
@@ -95,7 +97,7 @@ func TestVerdict_ATieIsBrokenByAFixedOrder(t *testing.T) {
 	r.GeneratorTailCalls, r.ConnectionTailCalls, r.StreamTailCalls = 100, 100, 100
 
 	v := verdictOf(t, r)
-	if !strings.HasPrefix(v, "limited by the run, not the target: the generator fell behind") {
+	if !strings.HasPrefix(v, "invalid run: the generator fell behind its schedule") {
 		t.Errorf("heading:\n%s", v)
 	}
 	if !strings.Contains(v, "causes in the p99 tail, largest first: generator late 100; waited for a stream 100; connection not ready 100") {
@@ -121,9 +123,10 @@ func TestVerdict_AGeneratorBehindOnSentCallsOutranksStreams(t *testing.T) {
 	r := oneStream()
 	r.GeneratorCauseCalls, r.StreamCauseCalls = 50, 48
 	r.GeneratorTailCalls, r.StreamTailCalls = 50, 48
+	r.Methods[0].Latencies = 1000 // enough observations for the p99 to be judged
 
 	v := verdictOf(t, r)
-	if !strings.HasPrefix(v, "limited by the run, not the target: the generator fell behind for 50 calls") {
+	if !strings.HasPrefix(v, "invalid run: the generator fell behind its schedule") {
 		t.Errorf("heading:\n%s", v)
 	}
 }

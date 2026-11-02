@@ -480,6 +480,7 @@ func NewBreakpointReport(run BreakpointRun) BreakpointReport {
 			r = run.Runs[i]
 		}
 		r.MethodsSource = run.MethodsSource
+		r.searchStep = true
 		outcome := OutcomeComplete
 		switch {
 		case s.Cause == breakpoint.CauseClockStep || s.Cause == breakpoint.CauseRequestErrors:

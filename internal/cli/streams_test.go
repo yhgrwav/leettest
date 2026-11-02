@@ -142,7 +142,9 @@ func TestNotes_AClientWaitUnderATenthOfP99IsANoteNotAVerdict(t *testing.T) {
 		}
 		notes := reportNotes(report, "")
 		text := strings.Join(notes, "\n\n")
-		if _, ok := noteStarting(notes, "limited by"); ok != tc.verdict {
+		_, limited := noteStarting(notes, "limited by")
+		_, late := noteStarting(notes, "invalid run: the generator fell behind")
+		if ok := limited || late; ok != tc.verdict {
 			t.Errorf("%s: verdict %v, want %v:\n%s", tc.name, ok, tc.verdict, text)
 		}
 		if got := tailWaitCause(report) != nil; got != tc.verdict {
