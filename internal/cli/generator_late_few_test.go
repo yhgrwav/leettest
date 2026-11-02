@@ -45,10 +45,10 @@ func lostToGenerator(m engine.MethodReport, k int) engine.MethodReport {
 
 func lateRunOf(methods ...engine.MethodReport) RunReport {
 	run := lateRun(methods...)
-	run.Report.NotSent, run.Report.NotSentGenerator = 0, 0
+	run.NotSent, run.NotSentGenerator = 0, 0
 	for i := range methods {
-		run.Report.NotSent += methods[i].NotSent
-		run.Report.NotSentGenerator += methods[i].NotSentGenerator
+		run.NotSent += methods[i].NotSent
+		run.NotSentGenerator += methods[i].NotSentGenerator
 	}
 
 	return run

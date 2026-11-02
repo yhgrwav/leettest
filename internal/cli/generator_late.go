@@ -37,7 +37,8 @@ func GeneratorLate(run RunReport) bool {
 }
 
 // generatorLateHeading is the verdict sentence of a late generator, up to the
-// advice. It names the methods the lag moved and those that lost calls to the
+// advice. It names the methods engine.MethodReport.LateByGenerator picks: those
+// the lag moved with enough observations and those that lost calls to the
 // generator, in the report's order.
 func generatorLateHeading(report engine.Report) string {
 	var names []string
