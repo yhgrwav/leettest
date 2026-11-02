@@ -490,8 +490,10 @@ the generator and the target goes into the latency and looks like the target's t
   (`clock_step`, exit code 2).
 - If the generator's own lag decided the p99 tail, the run is invalid (`generator_late`, exit code
   2, not released yet): the report names the methods and says to give the generator more CPU, lower
-  the rate or split it over several machines. It is the same calculation as `tail_wait_cause:
-  "generator"`; a tail decided by streams or connections does not make a run invalid. A
+  the rate or split it over several machines. It is judged on methods with at least 100
+  observations; with fewer, p99 is the maximum, and the run stays valid with the note and
+  `tail_wait_cause: generator`. A tail decided by streams or connections does not make a run
+  invalid. A
   breaking-point search is not affected: its steps keep their own `generator` cause.
 
 ## JSON fields
