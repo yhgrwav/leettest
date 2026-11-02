@@ -506,7 +506,16 @@ bei 2 ms.
 - Unter Windows springt die Uhr in Schritten von etwa 0,5 ms, und ein Lauf gegen einen schnellen
   Dienst wird für ungültig erklärt (`clock_step`, Exit-Code 2).
 
+## Antwortgröße, Traffic und Warm-up im Bericht (nicht veröffentlicht)
+
+Kurz, die Übersetzung folgt vor dem Release: unter der Methode `response: N B per call` (Mittel der
+Antwortkörper erfolgreicher Aufrufe, nach dem Entpacken); im Kopf des Laufs `traffic: sent …,
+received …` (nur Nachrichtenkörper, ohne HTTP/2, Header und TLS; gesendet zählt den letzten Versuch,
+eine Untergrenze); unter der Methode `warm-up: N calls, p50 …, p99 …` — `N calls` sind die
+Beobachtungen (Erfolge und Untergrenzen), nicht das `warm-up N sent` der Laufzeile.
+
 ## JSON-Felder
+
 
 Die Regeln des Vertrags — Schemaversion, Einheiten, `null` statt `0`, unbekannte Felder — stehen im
 [README](README.md#json-für-skripte-und-ci). Hier ist jedes Feld von `schema_version` 1. Ein Typ mit
@@ -604,6 +613,8 @@ unten den Typ „percentile?" hat.
 | `generator_cpu.busy_seconds` | int | Wie viele dieser Sekunden einen `share` von 0.90 oder mehr haben (verglichen wird der gerundete Wert). `0`, wenn sie zusammen unter einer Sekunde liegen |
 | `generator_cpu.first_busy_s` | int? | Die erste solche Sekunde ab Laufbeginn, das Warm-up zählt mit; `null`, wenn es keine gibt |
 | `generator_cpu.seconds` | []float | Der Anteil jeder Sekunde ab Laufbeginn, Warm-up und Timeout-Ende eingeschlossen: so viele Einträge wie das längste `methods[].seconds`. `null` für eine Sekunde, die keine Messung abdeckt, und für eine letzte Sekunde unter einer halben, die mit der vorigen zusammen gezählt wird |
+| `traffic` | object? | Nachrichtenkörper pro Sekunde des Sendefensters (nicht veröffentlicht); `null` ohne Fenster |
+| `traffic.sent_bits_per_second`, `traffic.received_bits_per_second` | float | (nicht veröffentlicht) Bit pro Sekunde, nicht skaliert: Anfragekörper nach Größe auf der Leitung, Antworten erfolgreicher Aufrufe vor dem Entpacken. Ohne HTTP/2-Frames, Header und TLS |
 | `methods` | []object | Methoden, siehe unten |
 | `unchecked` | []object | Methoden, die über Reflection nicht geprüft werden konnten |
 | `unchecked[].method` | string | Die Methode |
@@ -638,6 +649,11 @@ Die übrigen sind einfache Zähler.
 | `methods[].planned_duration_us` | int | Wie lange die Methode gehen sollte, wie konfiguriert, der Anlauf eingeschlossen |
 | `methods[].request_bytes` | object? | Der Anfragekörper, Mittel über die gemessenen Aufrufe, die hinausgingen; `null` ohne Kompression |
 | `methods[].request_bytes.raw`, `methods[].request_bytes.wire` | float | Bytes vor der Kompression und auf der Leitung (ohne den 5-Byte-Rahmen) |
+| `methods[].response_bytes` | float? | Antwortkörper, Mittel über die gemessenen erfolgreichen Aufrufe, nach dem Entpacken (nicht veröffentlicht); `null`, wenn keiner erfolgreich war |
+| `methods[].warmup` | object? | Warm-up, getrennt vom Lauf gemessen (nicht veröffentlicht); `null` ohne Beobachtung |
+| `methods[].warmup.calls` | int | (nicht veröffentlicht) Beobachtungen hinter den Perzentilen (Erfolge und zeitüberschrittene oder abgebrochene Aufrufe als Untergrenzen), nicht die Zahl `warmup_sent` |
+| `methods[].warmup.p50`, `methods[].warmup.p99` | percentile? | (nicht veröffentlicht) Latenz ab dem geplanten Zeitpunkt, `lower_bound` wie in `methods[].latency`; `p99` ist unter 100 Beobachtungen `null` |
+| `methods[].warmup.response_bytes` | float? | (nicht veröffentlicht) Mittlerer Antwortkörper der Warm-up-Erfolge; `null`, wenn keiner erfolgreich war |
 | `methods[].latency` | object | Latenz erfolgreicher Aufrufe, mit Timeouts und abgebrochenen Aufrufen als Untergrenzen |
 | `methods[].latency.min`, `methods[].latency.p50`, `methods[].latency.p90`, `methods[].latency.p95`, `methods[].latency.p99`, `methods[].latency.max` | percentile? | Minimum, Perzentile, Maximum |
 | `methods[].latency.p999` | percentile? | p99.9 nach derselben Regel; null, solange die Methode weniger als 1000 Beobachtungen (`observations`) hat, dann wäre p99.9 das Maximum |

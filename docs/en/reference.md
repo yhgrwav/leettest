@@ -496,6 +496,25 @@ the generator and the target goes into the latency and looks like the target's t
   invalid. A
   breaking-point search is not affected: its steps keep their own `generator` cause.
 
+## Response size, traffic and warm-up in the report (not released yet)
+
+- Under a method's row, `response: N B per call`: the mean reply body of the measured successful
+  calls, after decompression, whole bytes. An empty reply is `0 B`, a size; a method with no
+  success has no line.
+- In the run's header block, `traffic: sent X, received Y (message bodies only, without HTTP/2,
+  headers and TLS)`, in bit/s, kbit/s, Mbit/s or Gbit/s (steps of 10^3, 3 significant digits).
+  Sent counts the request bodies of every measured call that went out, by their wire size;
+  received counts the replies of successful calls by their size before decompression. Both are
+  per second of the measured sending window, and a lower bound of what crossed the network. Sent
+  takes the last attempt of a call: a transparent retry after `REFUSED_STREAM` may have put a first
+  body on the wire, so it is a lower bound too.
+- Under a method's row of a run with a warm-up, `warm-up: N calls, p50 …, p99 …, response …`: the
+  warm-up measured apart from the run, in its own histogram, by the same rule as the measured
+  latency (from the scheduled moment, timed-out and aborted calls as lower bounds, `>`). `N calls`
+  is the observations behind the percentiles (successes plus those lower bounds), not the
+  `warm-up N sent` of the run's line, which counts every call sent. Under 100 observations p99 is
+  told as `too few observations (N of 100)`.
+
 ## JSON fields
 
 The contract's rules — schema version, units, `null` rather than `0`, unknown fields — are in the
@@ -594,6 +613,8 @@ measured calls only. The first column is the field's full path.
 | `generator_cpu.busy_seconds` | int | How many of those seconds have a `share` of 0.90 or more (compared as rounded). `0` when they total under a second |
 | `generator_cpu.first_busy_s` | int? | The first such second, counted from the start of the run, warm-up included; `null` without one |
 | `generator_cpu.seconds` | []float | The share of each second from the start of the run, warm-up and the timeout tail included: as many entries as the longest `methods[].seconds`. `null` for a second no reading covers, and for a last second under half a second that is counted with the one before |
+| `traffic` | object? | Message bodies per second of the measured sending window (not released yet); `null` without a window |
+| `traffic.sent_bits_per_second`, `traffic.received_bits_per_second` | float | (not released yet) Bits per second, unscaled: request bodies of the measured calls that went out by wire size, replies of successful calls by size before decompression. Without HTTP/2 frames, headers and TLS |
 | `methods` | []object | Methods, see below |
 | `unchecked` | []object | Methods that could not be checked through reflection |
 | `unchecked[].method` | string | The method |
@@ -628,6 +649,11 @@ The rest are plain counters.
 | `methods[].planned_duration_us` | int | How long the method was meant to go, as configured, the ramp included |
 | `methods[].request_bytes` | object? | The request body, mean over the measured calls that went out; `null` without compression |
 | `methods[].request_bytes.raw`, `methods[].request_bytes.wire` | float | Bytes before compression and on the wire (without the 5-byte frame) |
+| `methods[].response_bytes` | float? | The reply body, mean over the measured successful calls, after decompression (not released yet); `0` for empty replies, `null` when none succeeded |
+| `methods[].warmup` | object? | The warm-up measured apart from the run (not released yet); `null` when it left no observation |
+| `methods[].warmup.calls` | int | (not released yet) The observations behind the percentiles: successes and the timed-out or aborted calls as lower bounds; not the `warmup_sent` count |
+| `methods[].warmup.p50`, `methods[].warmup.p99` | percentile? | (not released yet) Latency from the scheduled moment, `lower_bound` as in `methods[].latency`; `p99` is `null` under 100 observations |
+| `methods[].warmup.response_bytes` | float? | (not released yet) The mean reply body of the warm-up's successes; `null` when none succeeded |
 | `methods[].latency` | object | Latency of successful calls, with timeouts and aborted calls as lower bounds |
 | `methods[].latency.min`, `methods[].latency.p50`, `methods[].latency.p90`, `methods[].latency.p95`, `methods[].latency.p99`, `methods[].latency.max` | percentile? | Minimum, percentiles, maximum |
 | `methods[].latency.p999` | percentile? | p99.9 by the same rule; null while the method has fewer than 1000 observations (`observations`), where p99.9 would be the max |

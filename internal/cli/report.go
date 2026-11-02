@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -156,7 +157,37 @@ func printRunHeader(w io.Writer, target string, run RunReport) {
 	if report.Aborted > 0 {
 		fmt.Fprintf(w, ", aborted %d", report.Aborted)
 	}
-	fmt.Fprint(w, "\n\n")
+	fmt.Fprintln(w)
+	if t := report.Traffic; t != nil {
+		fmt.Fprintf(w, "traffic: sent %s, received %s (message bodies only, without HTTP/2, headers and TLS)\n",
+			formatBitRate(t.SentBitsPerSecond), formatBitRate(t.ReceivedBitsPerSecond))
+	}
+	fmt.Fprintln(w)
+}
+
+// formatBitRate prints bits per second in the unit that reads best, steps of
+// 10^3, with 3 significant digits rounded to nearest: 400 bit/s, 1.23 kbit/s,
+// 98.8 Mbit/s. A value that rounds up to 1000 takes the next unit.
+func formatBitRate(bits float64) string {
+	if bits <= 0 {
+		return "0 bit/s"
+	}
+
+	units := [...]string{"bit/s", "kbit/s", "Mbit/s", "Gbit/s"}
+	v, i := bits, 0
+	for i < len(units)-1 && math.Round(v) >= 1000 {
+		v /= 1000
+		i++
+	}
+
+	switch {
+	case v >= 99.95:
+		return fmt.Sprintf("%.0f %s", v, units[i])
+	case v >= 9.995:
+		return fmt.Sprintf("%.1f %s", v, units[i])
+	default:
+		return fmt.Sprintf("%.2f %s", v, units[i])
+	}
 }
 
 func printMethodTable(w io.Writer, run RunReport) {
@@ -209,8 +240,34 @@ func printMethodRow(w io.Writer, m *engine.MethodReport, compression string, ram
 	if m.Templates != nil {
 		fmt.Fprintln(w, templatesLine(m.Templates))
 	}
+	if m.ResponseBytes != nil {
+		fmt.Fprintf(w, "  response: %.0f B per call\n", *m.ResponseBytes)
+	}
+	if line := warmupLine(m.Warmup); line != "" {
+		fmt.Fprintln(w, line)
+	}
 
 	printAnswerRows(w, m)
+}
+
+// warmupLine is the method's warm-up measured apart from the run. The p99 of a
+// warm-up too small for one is told with the count, as p99.9 is, never as a
+// number.
+func warmupLine(w *engine.WarmupReport) string {
+	if w == nil {
+		return ""
+	}
+
+	p99 := "p99 " + formatQuantile(w.P99)
+	if !w.P99.Defined {
+		p99 = fmt.Sprintf("p99 too few observations (%d of %d)", w.Calls, metrics.MinCount(0.99))
+	}
+	line := fmt.Sprintf("  warm-up: %d calls, p50 %s, %s", w.Calls, formatQuantile(w.P50), p99)
+	if w.ResponseBytes != nil {
+		line += fmt.Sprintf(", response %.0f B", *w.ResponseBytes)
+	}
+
+	return line
 }
 
 func printAnswerRows(w io.Writer, m *engine.MethodReport) {
