@@ -81,6 +81,53 @@ func TestReport_WaitVerdictOnTheEnginesOwnReports(t *testing.T) {
 	}
 }
 
+// Unsent calls with a p99 that no wait moved give the verdict by themselves:
+// the cause is the one that left them unsent, not the one that leads the tail
+// of the calls that went out. Three calls the connection never let go must not
+// read as a generator verdict because ten sent calls started a little late.
+// A p99 that did move is judged by the tail, as before.
+func TestReport_WaitVerdictOfUnsentCallsOnAnUnmovedP99NamesTheUnsentCause(t *testing.T) {
+	q := func(ms float64) metrics.Quantile {
+		return metrics.Quantile{Value: time.Duration(ms * float64(time.Millisecond)), Exact: true, Defined: true}
+	}
+	unmoved := []MethodReport{{P99: q(50), P99WithoutClientWaits: q(48)}}
+	moved := []MethodReport{{P99: q(50), P99WithoutClientWaits: q(5)}}
+
+	for _, tc := range []struct {
+		name   string
+		report Report
+		cause  WaitCause
+		side   Side
+		ok     bool
+	}{
+		{"3 unsent for a connection, 12 sent calls late in the tail",
+			Report{NotSent: 3, NotSentConnection: 3, ConnectionTailCalls: 3, GeneratorTailCalls: 12, Methods: unmoved},
+			WaitConnection, SideTarget, true},
+		{"3 unsent for a stream, 12 sent calls late in the tail",
+			Report{NotSent: 3, NotSentStream: 3, StreamTailCalls: 3, GeneratorTailCalls: 12, Methods: unmoved},
+			WaitStream, SideRun, true},
+		{"3 unsent by the generator",
+			Report{NotSent: 3, NotSentGenerator: 3, GeneratorTailCalls: 12, Methods: unmoved},
+			WaitGenerator, SideRun, true},
+		{"the larger unsent cause wins",
+			Report{NotSent: 5, NotSentGenerator: 1, NotSentStream: 4, GeneratorTailCalls: 12, StreamTailCalls: 4, Methods: unmoved},
+			WaitStream, SideRun, true},
+		{"a tie of unsent causes keeps the order generator, stream, connection",
+			Report{NotSent: 4, NotSentStream: 2, NotSentConnection: 2, ConnectionTailCalls: 9, Methods: unmoved},
+			WaitStream, SideRun, true},
+		{"nothing unsent and p99 unmoved is no verdict",
+			Report{GeneratorTailCalls: 12, Methods: unmoved}, "", "", false},
+		{"a moved p99 is judged by the tail whatever was left unsent",
+			Report{NotSent: 3, NotSentConnection: 3, ConnectionTailCalls: 3, GeneratorTailCalls: 12, Methods: moved},
+			WaitGenerator, SideRun, true},
+	} {
+		cause, side, ok := tc.report.WaitVerdict()
+		if cause != tc.cause || side != tc.side || ok != tc.ok {
+			t.Errorf("%s: %q %q %v, want %q %q %v", tc.name, cause, side, ok, tc.cause, tc.side, tc.ok)
+		}
+	}
+}
+
 // Ground: contract — one rule for the report's verdict and the search (#140,
 // moved from internal/cli): a tenth of p99 on the histogram's values, or
 // unsent calls, and a wait in the tail; and one place says whose limit it is:

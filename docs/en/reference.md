@@ -488,6 +488,13 @@ the generator and the target goes into the latency and looks like the target's t
   [reading the report](README.md#reading-the-report).
 - On Windows the clock steps about 0.5 ms, and a run against a fast service will be declared invalid
   (`clock_step`, exit code 2).
+- If the generator's own lag decided the p99 tail, the run is invalid (`generator_late`, exit code
+  2, not released yet): the report names the methods and says to give the generator more CPU, lower
+  the rate or split it over several machines. It is judged on methods with at least 100
+  observations; with fewer, p99 is the maximum, and the run stays valid with the note and
+  `tail_wait_cause: generator`. A tail decided by streams or connections does not make a run
+  invalid. A
+  breaking-point search is not affected: its steps keep their own `generator` cause.
 
 ## JSON fields
 
@@ -516,7 +523,7 @@ measured calls only. The first column is the field's full path.
 | `name` | string | The run's name: the config's `name`, else the service name, else the config file name; always a string |
 | `methods_source` | string? | Where the methods came from: `reflection`, `proto` (the `app.proto` files) or `protoset`; `null` with `-fake` |
 | `outcome` | string | `complete`, `invalid`, `incomplete` — matches exit code `0`, `2`, `3`; a finished run that missed a `pass` limit is `complete` with code `4`; with `-json-file` and a failed write the code is `1` and `outcome` stays the run's |
-| `invalid_reasons` | []string | Why the run is invalid: `in_flight_cap`, `nothing_measured`, `clock_step`, `thresholds_undecided` (a `pass` limit cannot be decided, and not because the run was stopped or already invalid). Empty — valid |
+| `invalid_reasons` | []string | Why the run is invalid: `in_flight_cap`, `nothing_measured`, `clock_step`, `generator_late` (the generator fell behind, since v0.7; see "Where to run"), `thresholds_undecided` (a `pass` limit cannot be decided, and not because the run was stopped or already invalid). Empty — valid |
 | `tail_wait_cause` | string? | The client-side wait that set the tail: `generator`, `stream`, `connection`; `null` — no verdict |
 | `clock_step_ns` | int | The host clock step, ns: every latency and wait is ± it |
 | `stop_reason` | string? | `error_spike` when `load.stop_on_errors` stopped the run; otherwise `null`. |

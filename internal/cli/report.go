@@ -65,6 +65,10 @@ type RunReport struct {
 	// Stop is the moment load.stop_on_errors ended the run; nil when it did
 	// not.
 	Stop *errstop.Trip
+
+	// searchStep marks a step of a breaking-point search: the generator's lag
+	// ends the search there and does not make the step an invalid run.
+	searchStep bool
 }
 
 // RunSettings echoes what a run was started with, as configured: the

@@ -36,9 +36,14 @@ func streamRun(each ...engine.LinkReport) engine.Report {
 func streamVerdictOf(t *testing.T, report engine.Report) string {
 	t.Helper()
 
-	v, ok := noteStarting(reportNotes(report, ""), "limited by")
+	notes := reportNotes(report, "")
+	v, ok := noteStarting(notes, "limited by")
 	if !ok {
-		t.Fatalf("no stream verdict in:\n%s", strings.Join(reportNotes(report, ""), "\n\n"))
+		// A late generator's verdict reads "invalid run:" since v0.7.
+		v, ok = noteStarting(notes, "invalid run: the generator fell behind")
+	}
+	if !ok {
+		t.Fatalf("no stream verdict in:\n%s", strings.Join(notes, "\n\n"))
 	}
 
 	return oneLine(v)

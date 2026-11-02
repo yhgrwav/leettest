@@ -86,7 +86,7 @@ func TestVerdict_SentCallsTheGeneratorStartedLateMoveP99(t *testing.T) {
 	r := reportOf(t, times(200, waitCall{lag: 20 * ms, served: 2 * ms}))
 
 	v := verdictOf(t, r)
-	if !strings.HasPrefix(v, "limited by the run, not the target: the generator fell behind for 200 calls") {
+	if !strings.HasPrefix(v, "invalid run: the generator fell behind its schedule") {
 		t.Errorf("heading:\n%s", v)
 	}
 }

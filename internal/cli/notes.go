@@ -32,12 +32,13 @@ const silencePlanTolerancePercent = 10
 // what the log keeps cannot drift apart. It knows nothing of the ramp in the
 // engine's excluded window: reportNotesAfter does.
 func reportNotes(report engine.Report, maxResponse string) []string {
-	return reportNotesAfter(report, maxResponse, 0)
+	return reportNotesAfter(report, maxResponse, 0, false)
 }
 
 // reportNotesAfter is reportNotes for a run whose config had load.ramp: ramp
-// is the part of the engine's excluded window that was the ramp.
-func reportNotesAfter(report engine.Report, maxResponse string, ramp time.Duration) []string {
+// is the part of the engine's excluded window that was the ramp. searchStep
+// says the report is a step of a breaking-point search.
+func reportNotesAfter(report engine.Report, maxResponse string, ramp time.Duration, searchStep bool) []string {
 	notes := make([]string, 0, 8)
 	notes = append(notes, warmUpNote(report, ramp)...)
 
@@ -51,7 +52,7 @@ func reportNotesAfter(report engine.Report, maxResponse string, ramp time.Durati
 	notes = append(notes, capHitNote(report)...)
 	notes = append(notes, incompleteNote(report)...)
 	notes = append(notes, seqOverflowNote(report)...)
-	if v := streamVerdict(report); v != "" {
+	if v := verdictText(report, searchStep); v != "" {
 		notes = append(notes, v)
 	}
 	notes = append(notes, cutOffNote(totals)...)
@@ -400,7 +401,7 @@ func invalidMeasurementNote(totals noteTotals) []string {
 // runNotes are reportNotes and what the CLI measured beside the engine: the
 // CPU the process used and the host clock.
 func runNotes(run RunReport) []string {
-	notes := reportNotesAfter(run.Report, run.MaxResponse, run.ramp())
+	notes := reportNotesAfter(run.Report, run.MaxResponse, run.ramp(), run.searchStep)
 	notes = append(notes, stopNotes(run)...)
 	notes = append(notes, connectionNotes(run.Target, run.Connections)...)
 

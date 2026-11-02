@@ -261,6 +261,37 @@ func neverRecovers() func(int) engine.Report {
 	}
 }
 
+// Calls the connection left unsent, with a p99 that no wait moved, end the
+// search on the connection (the target's side) even when sent calls started a
+// little late in the tail: the verdict rests on the unsent calls, not on the
+// generator's lag.
+func TestSearch_UnsentCallsOfAConnectionOnAnUnmovedP99AreNotTheGenerators(t *testing.T) {
+	target := func(rps int) engine.Report {
+		r := capacity(10000)(rps)
+		if rps >= 195 {
+			r.Methods[0].P99WithoutClientWaits = exact(19 * time.Millisecond)
+			r.NotSent, r.NotSentConnection = 3, 3
+			r.Methods[0].NotSent, r.Methods[0].NotSentConnection = 3, 3
+			r.ConnectionCauseCalls, r.ConnectionTailCalls = 3, 3
+			r.GeneratorCauseCalls, r.GeneratorTailCalls = 40, 12
+		}
+
+		return r
+	}
+
+	var asked []int
+	res, err := Search(t.Context(), plan, fake(target, &asked))
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if res.Cause == CauseGenerator {
+		t.Errorf("cause generator for calls the connection left unsent: %v held %d broke %d", res.Outcome, res.Held, res.Broke)
+	}
+	if res.Cause != CauseConnection {
+		t.Errorf("cause %v (%v), want connection", res.Cause, res.Outcome)
+	}
+}
+
 // Every cause the closed list names comes from the search, on the run that
 // ended it.
 func TestSearch_EveryCauseIsReachable(t *testing.T) {
