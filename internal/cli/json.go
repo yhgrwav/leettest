@@ -108,6 +108,7 @@ type JSONReport struct {
 	WarmupNotSent     int             `json:"warmup_not_sent"`
 	CapHit            *jsonCapHit     `json:"cap_hit"`
 	StartLag          jsonStartLag    `json:"start_lag"`
+	Schedule          jsonSchedule    `json:"schedule"`
 	Connections       *jsonConns      `json:"connections"`
 	ClientWaits       jsonClientWaits `json:"client_waits"`
 	GeneratorCPU      *jsonGenCPU     `json:"generator_cpu"`
@@ -224,6 +225,14 @@ type jsonCapHit struct {
 type jsonStartLag struct {
 	P99 *jsonQuantile `json:"p99"`
 	Max *jsonQuantile `json:"max"`
+}
+
+// jsonSchedule says whether the generator waited to each call's moment
+// exactly, and if not, why: the engine's reasons (no_precise_sleep,
+// clock_step, gomaxprocs). Always present; the list is empty when exact.
+type jsonSchedule struct {
+	Exact           bool     `json:"exact"`
+	NotExactReasons []string `json:"not_exact_reasons"`
 }
 
 type jsonConns struct {

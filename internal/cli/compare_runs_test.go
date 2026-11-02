@@ -66,6 +66,9 @@ type crRun struct {
 	// "" for null.
 	tail    string
 	methods []crMethod
+	// notExact is why the run's schedule was not exact: the engine's reasons,
+	// none for an exact one.
+	notExact []string
 	// thresholds are the verdicts of the config's pass: limits, as the run
 	// report carries them.
 	thresholds []threshold.Result
@@ -115,7 +118,7 @@ func crNew() crRun {
 func (r crRun) file(t *testing.T, path string) RunFile {
 	t.Helper()
 
-	rep := engine.Report{}
+	rep := engine.Report{ScheduleNotExact: r.notExact}
 	for _, m := range r.methods {
 		mr := engine.MethodReport{
 			Method: "/" + m.name, Sent: m.sent, Failed: m.failed, P99: m.p99,
