@@ -37,9 +37,10 @@ const (
 
 // lateStarter runs n calls through the real pool, the real gRPC sender and the
 // stand, each handed to the pool `late` after the moment it was scheduled for:
-// a feeding goroutine sleeps until due_i+late, due_i = start + i*lateEvery, so
-// every call starts exactly `late` behind its schedule and none ahead of it,
-// not left to how busy the machine is. The stand answers at once, so a call's
+// a feeding goroutine paces the calls lateEvery apart and hands each over with
+// the scheduled moment `late` in the past, so every call starts at least `late`
+// behind its schedule and none ahead of it, not left to how busy the machine
+// is. The stand answers at once, so a call's
 // latency is its lateness plus a few milliseconds, and without the lateness a
 // few milliseconds. The pool is as large as the run, so no call waits for a
 // slot.
@@ -74,12 +75,15 @@ func lateStarter(t *testing.T, s *stand.Stand, n int, late time.Duration) (engin
 		defer close(in)
 
 		for i := range n {
-			due := start.Add(time.Duration(i) * lateEvery)
 			select {
-			case <-time.After(time.Until(due.Add(late))):
+			case <-time.After(time.Until(start.Add(time.Duration(i)*lateEvery + late))):
 			case <-t.Context().Done():
 				return
 			}
+			// The scheduled moment is taken at the hand-over, `late` back: the
+			// timer's own overshoot (a millisecond in a container) is not part
+			// of the lag, only the pool's and the sender's are.
+			due := time.Now().Add(-late)
 			in <- engine.Request{Method: s.Method(), ScheduledAt: due, Deadline: due.Add(late + timeout)}
 		}
 	}()
