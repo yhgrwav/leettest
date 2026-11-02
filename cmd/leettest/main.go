@@ -1057,7 +1057,7 @@ func endsWithReport(err error) bool {
 // checked: an invalid run before a short one, as in the exit code.
 func runState(run cli.RunReport) threshold.State {
 	switch {
-	case run.CapHit != nil || run.RequestRejected || cli.ClockTooCoarse(run):
+	case run.CapHit != nil || run.RequestRejected || cli.ClockTooCoarse(run) || cli.GeneratorLate(run):
 		return threshold.Invalid
 	case run.Incomplete:
 		return threshold.Incomplete

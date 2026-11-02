@@ -121,18 +121,44 @@ func rankedCauses(report engine.Report) []cause {
 // by engine.Report.WaitVerdict: a move below the floor has nothing to name,
 // and stays a note.
 func verdictCause(report engine.Report) (cause, engine.Side, bool) {
-	_, side, ok := report.WaitVerdict()
+	wait, side, ok := report.WaitVerdict()
 	if !ok {
 		return cause{}, "", false
 	}
 
-	return rankedCauses(report)[0], side, true
+	var name string
+	var unsent int
+	switch wait {
+	case engine.WaitGenerator:
+		name, unsent = causeGenerator, report.NotSentGenerator
+	case engine.WaitStream:
+		name, unsent = causeStream, report.NotSentStream
+	default:
+		name, unsent = causeConnection, report.NotSentConnection
+	}
+
+	// The verdict's cause leads the tail, or, when p99 did not move, it is the
+	// one that left calls unsent and may be behind another in the tail.
+	for _, c := range rankedCauses(report) {
+		if c.what == name {
+			return c, side, true
+		}
+	}
+
+	return cause{tail: unsent, n: unsent, what: name}, side, true
 }
 
 // streamVerdict is the verdict on a run held back by itself or its
 // connection, or "" when nothing moved. It is about the run: the numbers of
 // single methods go to streamNotes.
 func streamVerdict(report engine.Report) string {
+	return verdictText(report, false)
+}
+
+// verdictText is streamVerdict; for a step of a breaking-point search the
+// generator's lag is the run's limit, not an invalid run (the search ends on
+// it with its own cause).
+func verdictText(report engine.Report, searchStep bool) string {
 	top, side, ok := verdictCause(report)
 	if !ok {
 		return ""
@@ -140,13 +166,16 @@ func streamVerdict(report engine.Report) string {
 
 	var b strings.Builder
 
-	if side == engine.SideRun {
+	lateRun := top.what == causeGenerator && !searchStep
+	if side == engine.SideRun && !lateRun {
 		b.WriteString("limited by the run, not the target: ")
 	}
-	switch top.what {
-	case causeGenerator:
+	switch {
+	case lateRun:
+		b.WriteString(generatorLateHeading(report))
+	case top.what == causeGenerator:
 		fmt.Fprintf(&b, "the generator fell behind for %s.", plural(top.n, "call"))
-	case causeConnection:
+	case top.what == causeConnection:
 		fmt.Fprintf(&b, "the connection to the target was not ready for %s.", plural(top.n, "call"))
 	default:
 		b.WriteString(streamHeading(report))
@@ -234,7 +263,7 @@ func shortStreamVerdict(report engine.Report) string {
 	}
 	switch top.what {
 	case causeGenerator:
-		return run + "the generator fell behind"
+		return "invalid run: the generator fell behind"
 	case causeConnection:
 		return run + "the connection to the target was not ready"
 	}

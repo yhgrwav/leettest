@@ -598,6 +598,9 @@ func invalidReasonsJSON(run RunReport, methods []jsonMethod) []string {
 	if ClockTooCoarse(run) {
 		out = append(out, "clock_step")
 	}
+	if GeneratorLate(run) {
+		out = append(out, reasonGeneratorLate)
+	}
 	if thresholdsUndecided(run.Thresholds) {
 		out = append(out, reasonThresholdsUndecided)
 	}

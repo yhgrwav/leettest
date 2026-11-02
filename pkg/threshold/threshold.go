@@ -141,6 +141,12 @@ func appendMethod(results []Result, report engine.Report, m *engine.MethodReport
 	lim := ml.Limits
 	runSide, runReason := runSideOf(report, m)
 
+	// An invalid run in which the generator decided the p99 tail says the
+	// generator: it is the more telling reason, and nothing in the run is
+	// decided, the failures' share included.
+	cause, _, ok := report.WaitVerdict()
+	lateGenerator := state == Invalid && ok && cause == engine.WaitGenerator
+
 	for _, l := range []struct {
 		key   Key
 		limit time.Duration
@@ -156,6 +162,8 @@ func appendMethod(results []Result, report engine.Report, m *engine.MethodReport
 		r := Result{Method: ml.Name, Key: l.key, Limit: l.limit, Value: l.value}
 
 		switch {
+		case lateGenerator:
+			r.Verdict, r.Reason = VerdictUnknown, ReasonGenerator
 		case state != Complete:
 			r.Verdict, r.Reason = VerdictUnknown, notComplete(state)
 		case runSide:
@@ -170,9 +178,12 @@ func appendMethod(results []Result, report engine.Report, m *engine.MethodReport
 	if lim.Errors != nil {
 		r := Result{Method: ml.Name, Key: Errors, LimitPercent: lim.Errors.Text}
 
-		if state != Complete {
+		switch {
+		case lateGenerator:
+			r.Verdict, r.Reason = VerdictUnknown, ReasonGenerator
+		case state != Complete:
 			r.Verdict, r.Reason = VerdictUnknown, notComplete(state)
-		} else {
+		default:
 			judgeShare(&r, *lim.Errors, m, runSide, runReason)
 		}
 
