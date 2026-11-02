@@ -32,12 +32,18 @@ import (
 	walletv1 "github.com/yhgrwav/leettest/test/stand/proto/wallet/v1"
 )
 
-// A method whose reply has a size known from the proto: the stand's GetBalance
-// answers with the wallet id it was given and an amount, so a 2000-byte id
-// makes a reply of about 2 KB. The report must carry that size exactly, the
-// traffic it moved to the accuracy of the window, and the warm-up's own
-// numbers beside the measured ones.
-func TestReport_ResponseSizeAndTrafficAreThoseOfTheStandsReply(t *testing.T) {
+// sizedRun is a run of the stand's GetBalance with a 2000-byte wallet id: the
+// stand answers with the id it was given and an amount, so the reply has a size
+// known from the proto, and the request one of its own.
+type sizedRun struct {
+	report    engine.Report
+	request   []byte
+	replySize int
+}
+
+func runSized(t *testing.T, compression string) sizedRun {
+	t.Helper()
+
 	const (
 		rps      = 50
 		warmup   = 500 * time.Millisecond
@@ -54,7 +60,9 @@ func TestReport_ResponseSizeAndTrafficAreThoseOfTheStandsReply(t *testing.T) {
 	target := stand.Start(stand.Constant(0))
 	t.Cleanup(target.Stop)
 
-	sender := grpcsender.New(grpcsender.Options{Target: target.Target(), DialOptions: []grpc.DialOption{target.DialOption()}})
+	sender := grpcsender.New(grpcsender.Options{
+		Target: target.Target(), DialOptions: []grpc.DialOption{target.DialOption()}, Compression: compression,
+	})
 	if err = sender.Connect(t.Context()); err != nil {
 		t.Fatalf("connect: %v", err)
 	}
@@ -84,14 +92,25 @@ func TestReport_ResponseSizeAndTrafficAreThoseOfTheStandsReply(t *testing.T) {
 	if report.Failed != 0 || report.Sent == 0 || len(report.Methods) != 1 {
 		t.Fatalf("sent %d, failed %d over %d methods: the stand answers every call", report.Sent, report.Failed, len(report.Methods))
 	}
+
+	return sizedRun{report: report, request: request, replySize: replySize}
+}
+
+// A method whose reply has a size known from the proto: the report must carry
+// that size exactly, the traffic it moved to the accuracy of the window, and
+// the warm-up's own numbers beside the measured ones.
+func TestReport_ResponseSizeAndTrafficAreThoseOfTheStandsReply(t *testing.T) {
+	run := runSized(t, "")
+	report, replySize := run.report, run.replySize
 	m := report.Methods[0]
 
 	if m.ResponseBytes == nil || *m.ResponseBytes != float64(replySize) {
 		t.Errorf("ResponseBytes = %v, want exactly the reply's %d", m.ResponseBytes, replySize)
 	}
 
-	// The window is the one the rate divides by: with every call answered,
-	// received is the reply size times the rate, sent the request size times it.
+	// The window is the one the rate divides by: with every call answered and no
+	// compression, received is the reply size times the rate, sent the request
+	// size times it.
 	tr := report.Traffic
 	if tr == nil {
 		t.Error("Traffic is nil in a run with a measured window")
@@ -102,7 +121,7 @@ func TestReport_ResponseSizeAndTrafficAreThoseOfTheStandsReply(t *testing.T) {
 		got, want float64
 	}{
 		{"received", tr.ReceivedBitsPerSecond, float64(replySize) * 8 * m.RPS},
-		{"sent", tr.SentBitsPerSecond, float64(len(request)) * 8 * m.RPS},
+		{"sent", tr.SentBitsPerSecond, float64(len(run.request)) * 8 * m.RPS},
 	} {
 		if math.Abs(c.got-c.want) > c.want/100 {
 			t.Errorf("%s = %.0f bit/s, want %.0f within 1%%: size x 8 x %.1f calls/s", c.name, c.got, c.want, m.RPS)
@@ -111,14 +130,14 @@ func TestReport_ResponseSizeAndTrafficAreThoseOfTheStandsReply(t *testing.T) {
 
 	w := m.Warmup
 	if w == nil {
-		t.Errorf("Warmup is nil: %d warm-up calls were answered", report.WarmupSent)
+		t.Errorf("Warmup is nil: %d warm-up calls were sent", report.WarmupSent)
 		w = &engine.WarmupReport{}
 	}
 	if w.Calls == 0 || w.Calls > report.WarmupSent {
 		t.Errorf("Warmup.Calls = %d, warm-up sent %d: want some, and no more than went out", w.Calls, report.WarmupSent)
 	}
-	if !w.P50.Defined || w.P50.Value <= 0 || w.P50.Value > ceiling {
-		t.Errorf("Warmup.P50 = %+v, want a latency", w.P50)
+	if !w.P50.Defined || !w.P50.Exact || w.P50.Value <= 0 || w.P50.Value > ceiling {
+		t.Errorf("Warmup.P50 = %+v, want an exact latency", w.P50)
 	}
 	if w.ResponseBytes == nil || *w.ResponseBytes != float64(replySize) {
 		t.Errorf("Warmup.ResponseBytes = %v, want the reply's %d", w.ResponseBytes, replySize)
@@ -129,7 +148,7 @@ func TestReport_ResponseSizeAndTrafficAreThoseOfTheStandsReply(t *testing.T) {
 	}
 
 	var out strings.Builder
-	cli.PrintReport(&out, target.Target(), cli.RunReport{Report: report})
+	cli.PrintReport(&out, "stand", cli.RunReport{Report: report})
 	text := out.String()
 	for _, want := range []string{
 		fmt.Sprintf("  response: %d B per call", replySize),
@@ -139,5 +158,32 @@ func TestReport_ResponseSizeAndTrafficAreThoseOfTheStandsReply(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Errorf("no %q in the report:\n%s", want, text)
 		}
+	}
+}
+
+// With gzip the stand answers folded too: the reply is told by its size after
+// decompression (the input of a calibration), the traffic by what went over the
+// wire, a fraction of it for a body of one repeated letter. Counting the
+// received traffic after decompression would report a channel the run did not use.
+func TestReport_TrafficOfACompressedRunIsTheCompressedSize(t *testing.T) {
+	run := runSized(t, "gzip")
+	report, replySize := run.report, run.replySize
+	m := report.Methods[0]
+
+	if m.ResponseBytes == nil || *m.ResponseBytes != float64(replySize) {
+		t.Errorf("ResponseBytes = %v, want exactly the reply's %d after decompression", m.ResponseBytes, replySize)
+	}
+
+	tr := report.Traffic
+	if tr == nil {
+		t.Fatal("Traffic is nil in a run with a measured window")
+	}
+	unfolded := float64(replySize) * 8 * m.RPS
+	if tr.ReceivedBitsPerSecond <= 0 || tr.ReceivedBitsPerSecond > unfolded/4 {
+		t.Errorf("received = %.0f bit/s, want a fraction (at most a quarter) of the %.0f bit/s the unfolded replies make", tr.ReceivedBitsPerSecond, unfolded)
+	}
+	unfoldedSent := float64(len(run.request)) * 8 * m.RPS
+	if tr.SentBitsPerSecond <= 0 || tr.SentBitsPerSecond > unfoldedSent/4 {
+		t.Errorf("sent = %.0f bit/s, want a fraction (at most a quarter) of the %.0f bit/s the unfolded requests make", tr.SentBitsPerSecond, unfoldedSent)
 	}
 }

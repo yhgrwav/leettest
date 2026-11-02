@@ -264,11 +264,13 @@ type MethodReport struct {
 	// out, before and after compression; nil when none did.
 	RequestBytes *RequestBytes
 	// ResponseBytes is the mean reply body, in bytes as the client's codec got
-	// it (after decompression), of the measured calls that got a body; nil
-	// when none did. Warm-up is not in it.
+	// it (after decompression), of the measured successful calls: a success
+	// always carried a body, an empty one counts as 0. Nil when no measured
+	// call succeeded. Warm-up is not in it.
 	ResponseBytes *float64
 	// Warmup is what the warm-up's calls measured, apart from the measured
-	// part; nil when no warm-up call came back with a latency.
+	// part; nil when no warm-up call left an observation, a censored one
+	// included.
 	Warmup *WarmupReport
 }
 
@@ -282,18 +284,23 @@ type RequestBytes struct {
 // as the measured part (from scheduledAt, 3 significant digits), kept out of
 // every number about the measured part.
 type WarmupReport struct {
-	// Calls is the observations behind P50 and P99.
+	// Calls is the observations behind P50 and P99: the successes, and the
+	// timed-out and aborted calls as censored ones, by the rule of the
+	// measured latency.
 	Calls int
 	P50   metrics.Quantile
-	// P99 is Defined only when Calls >= metrics.MinCount(0.99).
+	// P99 is Defined only when Calls >= metrics.MinCount(0.99). Either may be
+	// a lower bound (Exact false) when a censored observation reaches it.
 	P99 metrics.Quantile
-	// ResponseBytes is the mean reply body of the warm-up calls that got one;
-	// nil when none did.
+	// ResponseBytes is the mean reply body of the warm-up's successful calls;
+	// nil when none succeeded.
 	ResponseBytes *float64
 }
 
 // Traffic is the message bodies the measured calls moved, in bits per second
-// of the window the rates use: without HTTP/2 frames, headers and TLS, so a
+// of the window the rates use: requests that went out by their wire size,
+// replies of successful calls by their size before decompression
+// (Outcome.ResponseWireBytes). Without HTTP/2 frames, headers and TLS, so a
 // lower bound of what went over the wire.
 type Traffic struct {
 	SentBitsPerSecond, ReceivedBitsPerSecond float64

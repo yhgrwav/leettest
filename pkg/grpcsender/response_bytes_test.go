@@ -73,8 +73,8 @@ func sendReplying(t *testing.T, size int, compression string, extra ...grpc.Serv
 }
 
 // Ground: contract — Outcome.ResponseBytes is public: the length of the reply
-// body as the client's codec got it, the number the report's response size and
-// traffic are made of.
+// body as the client's codec got it, the number the report's response size is
+// made of. Without compression the size before decompression is the same.
 func TestResponseBytes_IsTheLengthOfTheReplyBody(t *testing.T) {
 	for _, size := range []int{1, 2048, 70_000} {
 		out := sendReplying(t, size, "")
@@ -84,12 +84,17 @@ func TestResponseBytes_IsTheLengthOfTheReplyBody(t *testing.T) {
 		if out.ResponseBytes != size {
 			t.Errorf("size %d: ResponseBytes = %d, want the body's %d", size, out.ResponseBytes, size)
 		}
+		if out.ResponseWireBytes != size {
+			t.Errorf("size %d: ResponseWireBytes = %d, want the body's %d: nothing was compressed", size, out.ResponseWireBytes, size)
+		}
 	}
 }
 
-// Ground: contract — the size is of the body after decompression, not of what
+// Ground: contract — ResponseBytes is the body after decompression, not what
 // went over the wire: the same 8 KiB reply counts 8192 whether the target
-// compressed it or not.
+// compressed it or not. ResponseWireBytes is the other one, the size before
+// decompression without the frame, as the server's stats saw it leave: the
+// number the traffic of the run is made of.
 func TestResponseBytes_OfACompressedReplyIsAfterDecompression(t *testing.T) {
 	const size = 8192
 
@@ -109,6 +114,9 @@ func TestResponseBytes_OfACompressedReplyIsAfterDecompression(t *testing.T) {
 	if out.ResponseBytes != size {
 		t.Errorf("ResponseBytes = %d, want %d: the body after decompression, not the %d on the wire", out.ResponseBytes, size, wire.onTheWire[0])
 	}
+	if out.ResponseWireBytes != wire.onTheWire[0] {
+		t.Errorf("ResponseWireBytes = %d, want %d: the compressed size the target sent, not the %d after decompression", out.ResponseWireBytes, wire.onTheWire[0], size)
+	}
 }
 
 // Ground: contract — a reply the client refused as larger than its limit
@@ -125,7 +133,7 @@ func TestResponseBytes_OfARefusedReplyIsZero(t *testing.T) {
 }
 
 // Ground: contract — a call that got no body (an error status from the
-// target) has no size: 0.
+// target) has no size: 0 in both fields.
 func TestResponseBytes_OfACallWithoutABodyIsZero(t *testing.T) {
 	opts := listen(t, &seeingTarget{}, grpc.ForceServerCodec(rawCodec{}),
 		grpc.UnknownServiceHandler(func(_ any, stream grpc.ServerStream) error {
@@ -150,5 +158,8 @@ func TestResponseBytes_OfACallWithoutABodyIsZero(t *testing.T) {
 	}
 	if out.ResponseBytes != 0 {
 		t.Errorf("ResponseBytes = %d, want 0: no body came", out.ResponseBytes)
+	}
+	if out.ResponseWireBytes != 0 {
+		t.Errorf("ResponseWireBytes = %d, want 0: no body came", out.ResponseWireBytes)
 	}
 }

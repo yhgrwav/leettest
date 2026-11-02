@@ -105,7 +105,11 @@ type Outcome struct {
 	// it, after decompression; 0 when no body came, and when the client
 	// refused the reply as larger than its limit.
 	ResponseBytes int
-	Category      Category
+	// ResponseWireBytes is the same reply body before decompression, without
+	// the 5-byte frame: the pair of WireBytes. Equal to ResponseBytes when
+	// the reply was not compressed.
+	ResponseWireBytes int
+	Category          Category
 	// Err is the error as reported by the transport, including any text from
 	// the target. Nil for CategorySuccess, non-nil otherwise. pkg/engine
 	// does not inspect or print it; that is left to the caller.
