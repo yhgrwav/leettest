@@ -123,6 +123,7 @@ func TestVerdict_AGeneratorBehindOnSentCallsOutranksStreams(t *testing.T) {
 	r := oneStream()
 	r.GeneratorCauseCalls, r.StreamCauseCalls = 50, 48
 	r.GeneratorTailCalls, r.StreamTailCalls = 50, 48
+	r.Methods[0].Latencies = 1000 // enough observations for the p99 to be judged
 
 	v := verdictOf(t, r)
 	if !strings.HasPrefix(v, "invalid run: the generator fell behind its schedule") {

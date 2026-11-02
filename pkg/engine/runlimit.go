@@ -14,6 +14,8 @@
 
 package engine
 
+import "github.com/yhgrwav/leettest/pkg/metrics"
+
 // WaitCause is the client-side wait that held a run back.
 type WaitCause string
 
@@ -93,18 +95,38 @@ func leader(generator, stream, connection int) (cause WaitCause, ok bool) {
 	return cause, top > 0
 }
 
+// p99Observations is the count from which a p99 is no longer the maximum.
+var p99Observations = metrics.MinCount(0.99)
+
 // GeneratorDecidedTail says the generator's lag decided the run's p99 tail:
-// the wait verdict names the generator.
+// the wait verdict names the generator, and some method was late by it
+// (MethodReport.LateByGenerator) or the generator left calls unsent. The one
+// answer for the exit code, the text and the JSON of generator_late.
 func (r Report) GeneratorDecidedTail() bool {
 	cause, _, ok := r.WaitVerdict()
+	if !ok || cause != WaitGenerator {
+		return false
+	}
 
-	return ok && cause == WaitGenerator
+	if r.NotSentGenerator > 0 {
+		return true
+	}
+
+	for i := range r.Methods {
+		if r.Methods[i].LateByGenerator() {
+			return true
+		}
+	}
+
+	return false
 }
 
-// LateByGenerator says the generator's lag decided this method's numbers: its
-// p99 moved, or the generator left its calls unsent.
+// LateByGenerator says the generator's lag decided this method's numbers: the
+// generator left its calls unsent, or its p99 moved and rests on at least
+// metrics.MinCount(0.99) observations. Below that count p99 is the maximum, and
+// one call over the wait floor moves it.
 func (m *MethodReport) LateByGenerator() bool {
-	return m.Moved() || m.NotSentGenerator > 0
+	return m.NotSentGenerator > 0 || (m.Moved() && int64(m.Latencies) >= p99Observations)
 }
 
 // ClientWaitsMoved says some method's p99 drops by a tenth or more when every

@@ -144,8 +144,7 @@ func appendMethod(results []Result, report engine.Report, m *engine.MethodReport
 	// An invalid run in which the generator decided the p99 tail says the
 	// generator: it is the more telling reason, and nothing in the run is
 	// decided, the failures' share included.
-	cause, _, ok := report.WaitVerdict()
-	lateGenerator := state == Invalid && ok && cause == engine.WaitGenerator
+	lateGenerator := state == Invalid && report.GeneratorDecidedTail()
 
 	for _, l := range []struct {
 		key   Key

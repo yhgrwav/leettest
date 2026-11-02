@@ -166,7 +166,7 @@ func verdictText(report engine.Report, searchStep bool) string {
 
 	var b strings.Builder
 
-	lateRun := top.what == causeGenerator && !searchStep
+	lateRun := top.what == causeGenerator && !searchStep && report.GeneratorDecidedTail()
 	if side == engine.SideRun && !lateRun {
 		b.WriteString("limited by the run, not the target: ")
 	}
@@ -263,7 +263,11 @@ func shortStreamVerdict(report engine.Report) string {
 	}
 	switch top.what {
 	case causeGenerator:
-		return "invalid run: the generator fell behind"
+		if report.GeneratorDecidedTail() {
+			return "invalid run: the generator fell behind"
+		}
+
+		return run + "the generator fell behind"
 	case causeConnection:
 		return run + "the connection to the target was not ready"
 	}

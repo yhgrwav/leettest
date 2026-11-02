@@ -25,19 +25,15 @@ import (
 // generator's lag decided.
 const reasonGeneratorLate = "generator_late"
 
-// GeneratorLate says the generator's lag decided the run's p99 tail: the wait
-// verdict (engine.Report.WaitVerdict) names the generator, the one calculation
-// that gives tail_wait_cause "generator". Such latencies include the delay of
-// this machine, so the run is invalid. A step of a breaking-point search is
-// never late in this sense: the search ends on the generator with its own
-// cause.
+// GeneratorLate says the generator's lag decided the run's p99 tail
+// (engine.Report.GeneratorDecidedTail): the wait verdict names the generator
+// and a method with enough observations for its p99 to be more than the
+// maximum was moved by it, or the generator left calls unsent. Such latencies
+// include the delay of this machine, so the run is invalid. A step of a
+// breaking-point search is never late in this sense: the search ends on the
+// generator with its own cause.
 func GeneratorLate(run RunReport) bool {
-	if run.searchStep {
-		return false
-	}
-	cause, _, ok := run.WaitVerdict()
-
-	return ok && cause == engine.WaitGenerator
+	return !run.searchStep && run.GeneratorDecidedTail()
 }
 
 // generatorLateHeading is the verdict sentence of a late generator, up to the
@@ -46,7 +42,7 @@ func GeneratorLate(run RunReport) bool {
 func generatorLateHeading(report engine.Report) string {
 	var names []string
 	for i := range report.Methods {
-		if m := &report.Methods[i]; m.Moved() || m.NotSentGenerator > 0 {
+		if m := &report.Methods[i]; m.LateByGenerator() {
 			names = append(names, displayMethod(m.Method))
 		}
 	}
