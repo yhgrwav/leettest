@@ -3,7 +3,7 @@
 [Русский](../ru/reference.md) · [English](../en/reference.md) · [Deutsch](../de/reference.md) · [简体中文](reference.md)
 [← 首页](README.md)
 
-> 译自 [docs/ru/reference.md](../ru/reference.md)，对应 4c1eb2e，2026-10-29。如有出入，以俄文版为准。
+> 译自 [docs/ru/reference.md](../ru/reference.md)，对应 bfd24aa，2026-11-03。如有出入，以俄文版为准。
 > **可能滞后：** 中文版在每次发布前同步，最新内容请看[英文版](../en/reference.md)。
 
 每个配置字段、每个命令行参数，以及工具在启动前检查什么。如何阅读报告见
@@ -326,6 +326,7 @@ seed 在启动时选取，每个调用各有一个。
 | `leettest_excluded_total` | counter | `method`, `category` | `unreachable`、`cut_off`、`client_error`、`unclassified`：没有可用的延迟，不在直方图中。这些调用同样计入 `leettest_calls_total` |
 | `leettest_not_sent_total` | counter | `method`, `cause` | 未离开生成器的调用，按客户端一侧的原因分：`generator`、`connection`、`stream` |
 | `leettest_in_flight` | gauge | — | 此刻在途的调用，所有方法合计 |
+| `leettest_start_lag_seconds` | histogram | `le` | 调用比计划晚开始多久，所有方法合计（未发布）。预热不计入，从未发出的调用计入。调用在结束时计入 |
 | `leettest_warmup_sent_total` | counter | `method` | 预热期间发出的调用。这些调用不在任何其他计数器中 |
 | `leettest_warmup` | gauge | — | 运行处于预热时为 `1`，否则为 `0` |
 
@@ -347,6 +348,11 @@ seed 在启动时选取，每个调用各有一个。
   落在那里。下结论用的数字请取报告的 p99，它由 HDR 算出，与桶无关；Grafana 显示的是分布的形状。
   查询示例：
   `histogram_quantile(0.99, sum by (le, method) (rate(leettest_latency_seconds_bucket[30s])))`。
+- `leettest_start_lag_seconds` 与 `leettest_planned_rps` 在同一条时间轴上，显示生成器何时来不及：
+  负载下跌的同时这条序列上升，责任在生成器，不在目标。每次运行一条序列，没有 `method` 标签，
+  所有方法都在里面。它包含的调用与报告中启动延迟的 p99（`start_lag.p99`）相同：不含预热，
+  包含从未发出的调用。调用在结束时计入序列（未发出的在它自己的截止时间计入），所以峰值会比实际
+  晚一个调用的时长。下结论用的数字请取报告的 p99：`histogram_quantile` 只是桶内的估计。
 
 ## 压测前检查
 
@@ -413,13 +419,32 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 - 在 L4 负载均衡器后面只有一个后端承受负载：一条连接——一个后端。见
   [阅读报告](README.md#阅读报告)。
 - 在 Windows 上时钟步长约 0.5 ms，针对快速服务的运行会被判为无效（`clock_step`，退出码 2）。
+- 如果生成器自己的延迟决定了 p99 尾部，运行无效（`generator_late`，退出码 2，未发布）：报告会列出
+  相关方法，并建议给生成器更多 CPU、降低速率，或把速率分摊到多台机器上。只评判有 100 个及以上
+  观测的方法；少于 100 个时 p99 就是最大值，运行仍然有效，只给出提示和 `tail_wait_cause: generator`。
+  由流或连接决定的尾部不会使运行无效。断点搜索不受影响：它的各步保留自己的原因 `generator`。
+- 运行进行中就会预警生成器的延迟（未发布）。每秒查看一次运行最近五个完整的秒，包含预热，按调用
+  结束所在的那一秒计。如果超过 1% 的调用比等待阈值（默认 1 ms）更晚开始（按 p99 的规则：至少
+  100 次启动，100 次中 2 次、200 次中 3 次、1000 次中 11 次），或者生成器有调用根本没发出，就会向
+  stderr 输出一行，每次运行一次，文本和 JSON 模式相同：`warning: the generator is behind its
+  schedule: 2140 of 60000 calls in the last 5 s (warm-up) started more than 1.00ms late, at 12000
+  rps scheduled. If this holds, the latency measures this machine, not the target, and the run may
+  end invalid (generator_late).` 实时画面显示这一行，并在关闭后再向 stderr 重复一次。这是提示，
+  不是裁决：运行是否有效由报告决定。断点搜索不输出这一行。
 
 ## 报告中的响应大小、流量和预热（未发布）
 
-简述，完整翻译在发布前补上：方法行下 `response: N B per call`（成功调用响应体解压后的平均大小）；
-运行头部 `traffic: sent …, received …`（仅消息体，不含 HTTP/2、头部和 TLS；发送按最后一次尝试
-计，是下界）；方法行下 `warm-up: N calls, p50 …, p99 …`——`N calls` 是观测数（成功加下界），
-不是运行行里的 `warm-up N sent`。
+- 方法行下的 `response: N B per call`：被测成功调用的平均响应体大小，解压后，整数字节。空响应是
+  `0 B`，这是一个大小；没有成功调用的方法没有这一行。
+- 运行头部块中的 `traffic: sent X, received Y (message bodies only, without HTTP/2, headers and
+  TLS)`，单位为 bit/s、kbit/s、Mbit/s 或 Gbit/s（以 10^3 为进位，三位有效数字）。sent 统计所有被测
+  且已发出的调用的请求体，按线上大小；received 统计成功调用的响应，按解压前的大小。两者都按被测
+  发送窗口的每秒计，是实际经过网络的数据量的下界。sent 取一次调用的最后一次尝试：`REFUSED_STREAM`
+  之后的透明重试可能已经把第一份消息体发上了线路，所以它同样是下界。
+- 在有预热的运行中，方法行下的 `warm-up: N calls, p50 …, p99 …, response …`：预热在单独的直方图中
+  与运行分开测量，规则与被测延迟相同（从计划时刻算起，超时结束和被中止的调用作为下界，`>`）。
+  `N calls` 是百分位背后的观测数（成功加这些下界），不是运行行里的 `warm-up N sent`，后者统计每个
+  已发出的调用。观测少于 100 个时，p99 显示为 `too few observations (N of 100)`。
 
 ## 计划行（未发布）
 
@@ -464,7 +489,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `name` | string | 运行的名称：配置中的 `name`，否则为服务名，否则为配置文件名；始终是字符串 |
 | `methods_source` | string? | 方法的来源：`reflection`、`proto`（`app.proto` 的文件）或 `protoset`；使用 `-fake` 时为 `null` |
 | `outcome` | string | `complete`、`invalid`、`incomplete`——对应退出码 `0`、`2`、`3`；已结束但没达到 `pass` 限值的运行是 `complete`，退出码 `4`；使用 `-json-file` 且写入失败时退出码为 `1`，`outcome` 仍是该次运行的 |
-| `invalid_reasons` | []string | 运行无效的原因：`in_flight_cap`、`nothing_measured`、`clock_step`、`thresholds_undecided`（某个 `pass` 限值无法判定，且原因不是运行被停止或已经无效）。为空——有效 |
+| `invalid_reasons` | []string | 运行无效的原因：`in_flight_cap`、`nothing_measured`、`clock_step`、`generator_late`（生成器落后于计划，自 v0.7 起；见“在哪里运行”）、`thresholds_undecided`（某个 `pass` 限值无法判定，且原因不是运行被停止或已经无效）。为空——有效 |
 | `tail_wait_cause` | string? | 决定尾部的客户端侧等待：`generator`、`stream`、`connection`；`null`——没有结论 |
 | `clock_step_ns` | int | 主机时钟步长，纳秒：每个延迟和等待都有 ± 这个值的误差 |
 | `stop_reason` | string? | 由 `load.stop_on_errors` 停止运行时为 `error_spike`；否则为 `null`。 |

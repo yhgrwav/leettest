@@ -15,7 +15,7 @@
 
 ---
 
-> Übersetzt aus [README.md](../../README.md) bei 4c1eb2e, 2026-10-29. Bei Abweichungen gilt die
+> Übersetzt aus [README.md](../../README.md) bei bfd24aa, 2026-11-03. Bei Abweichungen gilt die
 > russische Fassung. Dazu ein Verzeichnis der deutschen Dokumentation, das im Original fehlt.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/README.md).
@@ -153,6 +153,11 @@ Am Ende — ein Bericht je Methode: gesendet, fehlgeschlagen, `sent/s`, p50/p90/
   Fenster, ist das der Plan, kein Fehler: mit `plan:` der Methode vergleichen. Bei einem `ramp` sind
   die ersten Zeilen der Hochlauf: ein niedriges `sent/s` dort ist der Plan, kein Fehler; suchen Sie
   die Zeile, in der p99 oder der Fehleranteil steigt, bevor die Rate ihr Plateau erreicht hat.
+- Die Zeile `traffic:` im Kopf des Laufs zeigt, wie viele Bit pro Sekunde die Nachrichtenkörper
+  bewegt haben: gesendet und empfangen (nicht veröffentlicht). Das ist eine Untergrenze: ohne
+  HTTP/2-Frames, Header und TLS; der Empfang wird nach der Größe vor dem Entpacken gezählt. Unter
+  der Methode ist `response: N B per call` die mittlere Antwortgröße der erfolgreichen Aufrufe, und
+  bei einem Warm-up sind `warm-up: N calls, p50, p99` dessen eigene Zahlen, getrennt vom Lauf.
 - Unter einer Methode mit `dataset` steht eine Zeile `data:`: wie viele
   Anfragen der Datei benutzt wurden und wie oft die am häufigsten benutzte rausging. Das heißt nicht,
   dass das Ziel so viele verschiedene Anfragen gesehen hat.
@@ -269,6 +274,10 @@ Es gibt einen Bericht, aber seine Zahlen handeln nicht von der Last auf das Ziel
   `bad response` ist.** Der Hinweis nennt Methode, Ursache und was zu tun ist.
 - **die Uhr des Hosts gröber ist als ein Viertel des p50** einer Methode, oder der Schritt während
   des Laufs auf 1 µs oder mehr wuchs (`clock_step`). Messen Sie von Linux aus.
+- **die Verspätung des Generators das p99-Ende bestimmt hat** (`generator_late`, nicht
+  veröffentlicht): Die Latenzen enthalten die Verspätung dieses Rechners und messen nicht das Ziel.
+  Geben Sie dem Generator mehr CPU, senken Sie die Rate oder teilen Sie sie auf mehrere Rechner auf.
+  Beurteilt wird eine Methode ab 100 Beobachtungen. Der Bericht nennt die Methoden.
 - **sich eine `pass`-Grenze nicht entscheiden lässt** (`thresholds_undecided`): zu wenige
   Beobachtungen, der Generator war zu spät, Aufrufe warteten auf einen freien Stream, am Ende der
   Verteilung stehen Aufrufe ohne Antwort. Der Block `Thresholds:` nennt die Grenze und den Grund.
