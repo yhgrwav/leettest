@@ -21,6 +21,9 @@ func TestMain(m *testing.M) {
 // test tells the command's step from the engine's on a coarse host and on a
 // fine one.
 func TestRun_ASearchStepsTakeTheClockStepTheCommandMeasured(t *testing.T) {
+	saved := clockStep
+	t.Cleanup(func() { clockStep = saved })
+
 	for _, tc := range []struct {
 		name string
 		step time.Duration
@@ -29,13 +32,10 @@ func TestRun_ASearchStepsTakeTheClockStepTheCommandMeasured(t *testing.T) {
 		{"a coarse clock", 15625 * time.Microsecond, true},
 		{"a fine clock", 999 * time.Nanosecond, false},
 	} {
-		saved := clockStep
 		clockStep = func() time.Duration { return tc.step }
 
 		res := runCLI(t.Context(), t, 60*time.Second,
 			"-fake", "-output", "json", "-c", writeSearch(t, closedPort(t), checkMethod))
-
-		clockStep = saved
 
 		bp, _ := decodeOnly(t, res.stdout)["breakpoint"].(map[string]any)
 
