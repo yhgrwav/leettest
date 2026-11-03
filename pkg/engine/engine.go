@@ -230,6 +230,9 @@ type Options struct {
 	Warmup      time.Duration
 	// WaitFloor replaces StreamWaitFloor when set: see WaitFloorFor.
 	WaitFloor time.Duration
+	// ClockStep is the clock step the caller measured before the run; the
+	// verdict on the schedule uses it. 0: the engine measures it itself.
+	ClockStep time.Duration
 	// Windows asks for the report's time windows over the measured part of the
 	// run. Off, a run holds none: a step of a breakpoint search leaves it off.
 	Windows bool
@@ -257,6 +260,9 @@ type Engine struct {
 	capHit atomic.Pointer[InFlightCapError]
 	// startedAt is when Run started, for the moment of a cap hit.
 	startedAt time.Time
+	// notExact is why the dispatcher did not wait to each moment exactly,
+	// taken from it once Run built it.
+	notExact []string
 	// links is the address of each connection when the sender has two or more,
 	// asked once in New; nil otherwise.
 	links []string
@@ -407,6 +413,7 @@ func (e *Engine) Report() Report {
 		report.Scheduled += ScheduledAfter(call.Stages, e.opts.Warmup)
 	}
 	report.StartedAt = e.startedAt
+	report.ScheduleNotExact = e.notExact
 
 	report.Connections = e.connections()
 
@@ -629,7 +636,8 @@ func (e *Engine) Run(ctx context.Context) error {
 	}
 	e.stats.Reserve(e.plannedDuration()+e.longestTimeout()+timelineSlack, methods...)
 	// Measured before moment zero: on a coarse clock it takes milliseconds.
-	dispatcher := NewDispatcher(e.opts.Calls)
+	dispatcher := newDispatcher(e.opts.Calls, e.opts.ClockStep)
+	e.notExact = dispatcher.notExact
 	e.startedAt = time.Now()
 	dispatcher.start = e.startedAt
 	e.stats.Start(e.startedAt, e.opts.Warmup)

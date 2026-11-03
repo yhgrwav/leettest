@@ -370,6 +370,9 @@ type Report struct {
 	// schedule. They do not see a generator late to pick up an answer.
 	StartLagP99 metrics.Quantile
 	StartLagMax time.Duration
+	// ScheduleNotExact is why the dispatcher did not wait to each moment
+	// exactly (the Schedule* names, in a fixed order); empty when it did.
+	ScheduleNotExact []string
 	// LateCancelMax is how far past its deadline a timed-out call returned
 	// on its own: how late cancellation ran.
 	LateCancelMax time.Duration

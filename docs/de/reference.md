@@ -514,6 +514,38 @@ received …` (nur Nachrichtenkörper, ohne HTTP/2, Header und TLS; gesendet zä
 eine Untergrenze); unter der Methode `warm-up: N calls, p50 …, p99 …` — `N calls` sind die
 Beobachtungen (Erfolge und Untergrenzen), nicht das `warm-up N sent` der Laufzeile.
 
+## Die Zeile zum Zeitplan (nicht veröffentlicht)
+
+Hat der Generator nicht auf den genauen Zeitpunkt jedes Aufrufs gewartet, steht im Kopf des Berichts
+eine weitere Zeile, unter `machine:` (unter `labels:`, wenn es Labels gibt):
+
+```
+schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser, GOMAXPROCS below 2): calls may start late, and latencies include that delay (p99 without client-side waits does not). Start lag in this run: p99 1.30ms, max 2.10ms.
+```
+
+- Die Gründe stehen in dieser Reihenfolge, jeder nur wenn er zutrifft: der Host kann nicht
+  mikrosekundengenau schlafen (`no microsecond sleep on <os>`), die Uhr springt in Schritten von
+  1 µs oder mehr, `GOMAXPROCS` ist kleiner als 2. Ohne Pass steht `this host`.
+- Nur Linux hat einen Mikrosekunden-Sleep. Auf macOS und Windows trifft der erste Grund immer zu, und
+  auf macOS folgt das aus dem Code (der Sleep ist nur für Linux gebaut), nicht aus einer Messung.
+- `clock_step` ist hier nicht das `clock_step` aus `invalid_reasons`. Hier heißt es: Der Schritt
+  beträgt 1 µs oder mehr; der Lauf wird dadurch nicht ungültig. Ein Windows-Lauf mit Schritt 0,5 ms
+  und p50 25 ms hat `invalid_reasons: []` und `not_exact_reasons: ["no_precise_sleep",
+  "clock_step"]`. In `invalid_reasons` heißt es: Der Schritt ist größer als ein Viertel des p50 einer
+  Methode oder um ein Viertel oder mehr gewachsen; bei p50 1 ms steht der Name in beiden Listen.
+- Die Latenz eines Aufrufs wird ab dem geplanten Zeitpunkt gemessen, ein später Start steckt also
+  darin. Das p99 ohne Wartezeiten auf Clientseite zieht die ganze Startverspätung ab und enthält sie
+  nicht.
+- Der letzte Satz ist die eigene Startverspätung des Laufs, dieselben Zahlen wie in der Notiz zur
+  Startverspätung; ohne Startverspätung entfällt dieser Satz.
+- Ein genauer Zeitplan druckt nichts.
+- Eine Suche nach dem Bruchpunkt druckt eine Zeile für die ganze Suche: die Gründe aller Schritte,
+  jeder Schritt hat seine eigene Uhr. Ein Grund, der nicht in jedem Schritt zutraf, sagt das, zum
+  Beispiel `clock step 1us or coarser in 2 of 5 steps`. Der Satz zur Startverspätung fehlt dort.
+- Dasselbe steht im JSON als `schedule` (unten). `leettest compare` nennt einen Unterschied der
+  Zeitpläne so: `differs: schedule: exact -> not exact (clock_step)`, und `none` für einen Bericht,
+  der vor dem Feld geschrieben wurde.
+
 ## JSON-Felder
 
 
@@ -589,6 +621,9 @@ unten den Typ „percentile?" hat.
 | `start_lag` | object | Wie spät Aufrufe gegenüber dem Plan starteten |
 | `start_lag.p99` | percentile? | p99 der Verspätung |
 | `start_lag.max` | percentile? | Das Maximum, immer exakt; `null` ohne Aufrufe |
+| `schedule` | object | Ob der Generator genau auf den Zeitpunkt jedes Aufrufs gewartet hat (nicht veröffentlicht) |
+| `schedule.exact` | bool | (nicht veröffentlicht) `true` — hat er; die Liste unten ist leer |
+| `schedule.not_exact_reasons` | []string | (nicht veröffentlicht) Warum nicht, in dieser Reihenfolge: `no_precise_sleep` (nur Linux hat einen Mikrosekunden-Sleep), `clock_step` (der Schritt beträgt 1 µs oder mehr; nicht das `clock_step` aus `invalid_reasons`, der Lauf wird dadurch nicht ungültig), `gomaxprocs`; `[]` wenn genau, nie `null` |
 | `connections` | object? | Verbindungen; `null`, wenn der Sender sie nicht meldet |
 | `connections.open` | int | Wie viele Verbindungen gleichzeitig Aufrufe trugen |
 | `connections.reconnects` | int | Erfolgreiche Handshakes nach dem ersten |
@@ -800,8 +835,8 @@ Ein Feld, das es für die Art der Prüfung nicht gibt, ist `null`: bei `capacity
 | `base.labels`, `new.labels` | map | Labels des Passes; `{}` ohne Pass oder ohne Labels |
 | `comparable` | bool | `true` — die Berichte unterscheiden sich in nichts, was sie unvergleichbar macht, und die Läufe haben eine gemeinsame Methode |
 | `differences` | []object | Was die Berichte unvergleichbar macht, in der Reihenfolge des Vergleichs; `[]`, wenn nichts |
-| `differences[].field` | string | Name des Feldes wie in der Zeile `differs:` (`target`, `method`, `leettest_version`, `passport.config_sha256`, `methods`, `dataset <Methode>`). Fehlt der Pass — `passport` |
-| `differences[].base` | string | Wert „vorher“; `none` — kein `dataset` oder kein Pass |
+| `differences[].field` | string | Name des Feldes wie in der Zeile `differs:` (`target`, `method`, `leettest_version`, `passport.config_sha256`, `schedule` (nicht veröffentlicht), `methods`, `dataset <Methode>`). Fehlt der Pass — `passport` |
+| `differences[].base` | string | Wert „vorher“; `none` — kein `dataset`, kein Pass oder kein `schedule` im Bericht |
 | `differences[].new` | string | Wert „nachher“; bei `passport` — `present` dort, wo ein Pass da ist |
 | `verdict` | string? | Das schlechteste Urteil der Prüfungen mit Grenze: `fail`, sonst `unknown`, sonst `pass`; `null` — keine Grenze gesetzt |
 | `checks` | []object | Prüfungen in der Reihenfolge des Textes: bei einer Suche eine (`capacity`), bei einem Lauf für jede gemeinsame Methode in der Reihenfolge „vorher“ erst `p99`, dann `errors`; `[]`, wenn es nichts zu vergleichen gibt |

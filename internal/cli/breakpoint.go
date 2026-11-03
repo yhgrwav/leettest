@@ -288,6 +288,7 @@ func PrintBreakpoint(w io.Writer, run BreakpointRun) {
 	fmt.Fprintln(w)
 
 	printPassport(w, run.Passport)
+	printSearchSchedule(w, run.Passport, res.Steps)
 	if run.Name != "" {
 		fmt.Fprintf(w, "name: %s\n", run.Name)
 	}
