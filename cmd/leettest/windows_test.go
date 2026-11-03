@@ -52,6 +52,27 @@ func TestEngineOptions_WindowsAreAskedForByAPlainRunAndNotByASearch(t *testing.T
 	}
 }
 
+// Ground: wiring — the clock step the command measured before the run is the
+// one the engine judges the schedule by, so the verdict agrees with the step
+// the report prints; a second measurement could disagree with it.
+func TestEngineOptions_TheClockStepMeasuredBeforeTheRunIsHandedOn(t *testing.T) {
+	cfg, err := config.LoadFile(writeConfig(t, closedPort(t), checkMethod, plaintext))
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+
+	const step = 15625 * time.Microsecond
+
+	opts, _, _, err := engineOptions(cfg, engine.FakeSender{}, defaultMaxInFlight, step)
+	if err != nil {
+		t.Fatalf("engineOptions: %v", err)
+	}
+
+	if opts.ClockStep != step {
+		t.Errorf("ClockStep %v, want %v", opts.ClockStep, step)
+	}
+}
+
 // Ground: end to end (A2, A5) — the windows reach the JSON of a real command
 // line run, and add up to the method's sent.
 func TestRun_APlainRunPutsItsWindowsInTheJSON(t *testing.T) {
