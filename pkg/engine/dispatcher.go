@@ -33,6 +33,16 @@ const (
 	spinWindow = 50 * time.Microsecond
 )
 
+// The reasons a schedule is not exact, as the report names them.
+const (
+	// ScheduleNoPreciseSleep: the host cannot sleep to a microsecond.
+	ScheduleNoPreciseSleep = "no_precise_sleep"
+	// ScheduleClockStep: the host clock steps by 1µs or more.
+	ScheduleClockStep = "clock_step"
+	// ScheduleGOMAXPROCS: fewer than two Ps.
+	ScheduleGOMAXPROCS = "gomaxprocs"
+)
+
 // Dispatcher hands out the requests of every call of a run, in the order of
 // their scheduled moments. One goroutine for the whole run: its wait costs
 // the same however many methods there are.
@@ -41,10 +51,25 @@ type Dispatcher struct {
 	// start is the plan's moment zero; zero means when Run begins.
 	start time.Time
 	exact bool
+	// notExact is why exact is false, in the order of the Schedule* names;
+	// empty when it is true.
+	notExact []string
 }
 
 func NewDispatcher(calls []Call) *Dispatcher {
-	return &Dispatcher{calls: calls, exact: exactSchedule()}
+	return newDispatcher(calls, 0)
+}
+
+// newDispatcher judges the schedule once, here, and nothing in Run asks again.
+// step is the clock step the caller measured; 0 measures it.
+func newDispatcher(calls []Call, step time.Duration) *Dispatcher {
+	if step <= 0 {
+		step = clock.StepOf(time.Now)
+	}
+
+	reasons := scheduleReasonsFor(preciseSleep, step, runtime.GOMAXPROCS(0))
+
+	return &Dispatcher{calls: calls, exact: len(reasons) == 0, notExact: reasons}
 }
 
 // Run sends each request to out at its scheduled moment until every call's
@@ -171,6 +196,24 @@ func exactSchedule() bool {
 // answers wait for it to be taken back.
 func exactScheduleFor(precise bool, step time.Duration, procs int) bool {
 	return precise && step < time.Microsecond && procs >= 2
+}
+
+// scheduleReasonsFor is why exactScheduleFor is false for the same inputs: one
+// name for each condition it fails, in the order no_precise_sleep, clock_step,
+// gomaxprocs; none when it is true.
+func scheduleReasonsFor(precise bool, step time.Duration, procs int) []string {
+	var reasons []string
+	if !precise {
+		reasons = append(reasons, ScheduleNoPreciseSleep)
+	}
+	if step >= time.Microsecond {
+		reasons = append(reasons, ScheduleClockStep)
+	}
+	if procs < 2 {
+		reasons = append(reasons, ScheduleGOMAXPROCS)
+	}
+
+	return reasons
 }
 
 // waitUntil returns at at, or when ctx ends with its error. Not exact: a plain

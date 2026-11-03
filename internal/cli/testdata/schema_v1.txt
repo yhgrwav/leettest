@@ -63,6 +63,9 @@ start_lag.max object?
 start_lag.max.us int
 start_lag.max.ns int
 start_lag.max.lower_bound bool
+schedule object
+schedule.exact bool
+schedule.not_exact_reasons []string
 connections object?
 connections.open int
 connections.reconnects int

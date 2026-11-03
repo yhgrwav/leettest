@@ -632,6 +632,7 @@ func engineOptions(cfg *config.MasterConfig, sender engine.Sender, maxInFlight i
 		MaxInFlight: maxInFlight,
 		Warmup:      cli.ExcludedWindow(cfg),
 		WaitFloor:   engine.WaitFloorFor(stepBefore),
+		ClockStep:   stepBefore,
 		Windows:     cfg.Load.Breakpoint == nil,
 	}
 

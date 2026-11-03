@@ -154,6 +154,7 @@ func runDifferences(base, nw RunFile) []CompareDiff {
 	out = differ(out, "target", base.Report.Target, nw.Report.Target, "")
 	out = differ(out, "leettest_version", base.Report.LeetTestVersion, nw.Report.LeetTestVersion, "")
 	out = append(out, passportDifferences(base.Path, nw.Path, base.Report.Passport, nw.Report.Passport)...)
+	out = differ(out, "schedule", scheduleText(base.Report.Schedule), scheduleText(nw.Report.Schedule), "")
 	out = differ(out, "methods", methodSet(base.Report), methodSet(nw.Report), "")
 
 	for _, pair := range commonMethods(base.Report, nw.Report) {

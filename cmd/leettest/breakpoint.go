@@ -238,7 +238,7 @@ func (r *searchRunner) step(_ context.Context, rps int, settle, hold time.Durati
 	calls[0].Stages = []engine.Stage{{StartRPS: rps, TargetRPS: rps, Duration: hold}}
 	before := clockStep()
 	eng, err := engine.New(engine.Options{
-		Calls: calls, Sender: r.s.sender, MaxInFlight: need, Warmup: settle, WaitFloor: engine.WaitFloorFor(before),
+		Calls: calls, Sender: r.s.sender, MaxInFlight: need, Warmup: settle, WaitFloor: engine.WaitFloorFor(before), ClockStep: before,
 	})
 	if err != nil {
 		return engine.Report{}, err

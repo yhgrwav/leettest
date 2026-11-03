@@ -134,6 +134,7 @@ func printRunHeader(w io.Writer, target string, run RunReport) {
 		fmt.Fprintln(w, run.MethodsSource.Line())
 	}
 	printPassport(w, run.Passport)
+	printRunSchedule(w, run)
 	if run.Name != "" {
 		fmt.Fprintf(w, "name: %s\n", run.Name)
 	}
