@@ -15,6 +15,10 @@
 package cli
 
 import (
+	"bytes"
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -22,6 +26,7 @@ import (
 
 	"github.com/yhgrwav/leettest/pkg/breakpoint"
 	"github.com/yhgrwav/leettest/pkg/engine"
+	"github.com/yhgrwav/leettest/pkg/metrics"
 )
 
 // A report says when the generator did not wait to each call's moment
@@ -30,9 +35,23 @@ import (
 // the field. The reasons are injected, so none of this depends on the host the
 // test runs on.
 
-// schedTail is what the line says after the reasons: the start lag is the
-// run's own, p99 and max, the numbers the start lag note prints too.
-const schedTail = ": starts may be late; that delay is inside the latencies. Start lag in this run: p99 1.30ms, max 2.10ms."
+// schedBody is what the line says after the reasons: the delay is inside the
+// latencies, and not inside the p99 without the client-side waits (which takes
+// the whole start lag off). schedTail adds the run's own start lag, p99 and
+// max, the numbers the start lag note prints too; a run with no start lag
+// ends on schedBody.
+const (
+	schedBody = ": calls may start late, and latencies include that delay (p99 without client-side waits does not)."
+	schedTail = schedBody + " Start lag in this run: p99 1.30ms, max 2.10ms."
+)
+
+// The reasons in words, as the line spells them: the OS by the name its
+// passport gives (or "this host" without a passport), the clock step by the 1us
+// the verdict draws the line at, the Ps by the 2 it needs.
+const (
+	wordsStep  = "clock step 1us or coarser"
+	wordsProcs = "GOMAXPROCS below 2"
+)
 
 const (
 	schedNoSleep = "no_precise_sleep"
@@ -40,16 +59,16 @@ const (
 	schedProcs   = "gomaxprocs"
 )
 
-func schedPassport(os string) *Passport {
+func schedPassport(goos string) *Passport {
 	p := crPassport()
-	p.OS = os
+	p.OS = goos
 
 	return p
 }
 
 // schedRun is a run on os whose schedule was not exact for reasons, with a
 // start lag of 1.3ms at p99 and 2.1ms at most.
-func schedRun(os string, reasons ...string) RunReport {
+func schedRun(goos string, reasons ...string) RunReport {
 	return RunReport{
 		Report: engine.Report{
 			Sent: 1000, Duration: 10 * time.Second, Planned: 10 * time.Second,
@@ -57,19 +76,28 @@ func schedRun(os string, reasons ...string) RunReport {
 			ScheduleNotExact: reasons,
 			Methods:          []engine.MethodReport{lateMethod(lateA, 5*time.Millisecond, 5*time.Millisecond)},
 		},
-		Passport: schedPassport(os),
+		Passport: schedPassport(goos),
 	}
 }
 
-func schedSearch(os string, reasons ...string) BreakpointRun {
-	steps := []breakpoint.Step{held(100), held(125), held(156)}
-	for i := range steps {
+func schedSearch(goos string, reasons ...string) BreakpointRun {
+	return schedSearchBy(goos, reasons, reasons, reasons)
+}
+
+// schedSearchBy is a search with a step for each list of reasons, the engine's
+// own for that step.
+func schedSearchBy(goos string, perStep ...[]string) BreakpointRun {
+	rates := []int{100, 125, 156, 195, 244}
+	steps := make([]breakpoint.Step, len(perStep))
+
+	for i, reasons := range perStep {
+		steps[i] = held(rates[i])
 		steps[i].Report.ScheduleNotExact = reasons
 	}
 
 	return BreakpointRun{
-		Target: "t:1", Method: "pkg.Svc/Do", Plan: bpPlan, Passport: schedPassport(os),
-		Result: breakpoint.Result{Outcome: breakpoint.HeldThroughout, Held: 156, Steps: steps},
+		Target: "t:1", Method: "pkg.Svc/Do", Plan: bpPlan, Passport: schedPassport(goos),
+		Result: breakpoint.Result{Outcome: breakpoint.HeldThroughout, Held: rates[len(perStep)-1], Steps: steps},
 	}
 }
 
@@ -126,16 +154,77 @@ func TestSchedule_TextSaysWhyInOneLine(t *testing.T) {
 		{"no microsecond sleep, darwin", "darwin", []string{schedNoSleep},
 			"schedule: not exact (no microsecond sleep on darwin)" + schedTail},
 		{"a coarse clock", "linux", []string{schedStep},
-			"schedule: not exact (clock step of 1 us or coarser)" + schedTail},
+			"schedule: not exact (" + wordsStep + ")" + schedTail},
 		{"one P", "linux", []string{schedProcs},
-			"schedule: not exact (GOMAXPROCS below 2)" + schedTail},
+			"schedule: not exact (" + wordsProcs + ")" + schedTail},
 		{"two reasons", "windows", []string{schedNoSleep, schedProcs},
-			"schedule: not exact (no microsecond sleep on windows, GOMAXPROCS below 2)" + schedTail},
+			"schedule: not exact (no microsecond sleep on windows, " + wordsProcs + ")" + schedTail},
 		{"three reasons, in the engine's order", "windows", []string{schedNoSleep, schedStep, schedProcs},
-			"schedule: not exact (no microsecond sleep on windows, clock step of 1 us or coarser, GOMAXPROCS below 2)" + schedTail},
+			"schedule: not exact (no microsecond sleep on windows, " + wordsStep + ", " + wordsProcs + ")" + schedTail},
 	} {
 		out := printedRun(schedRun(tc.os, tc.reasons...))
 
+		if got := scheduleLines(out); !slices.Equal(got, []string{tc.want}) {
+			t.Errorf("%s: schedule lines %q, want %q\n%s", tc.name, got, []string{tc.want}, out)
+		}
+	}
+}
+
+// A run with no start lag to show (the condition of the start lag note: no
+// p99 and no max) keeps the line, which then ends on the claim and has no
+// sentence of numbers: "Start lag in this run: p99 -, max 0" would say a lag
+// was measured. A max alone is a lag to show.
+//
+// Ground: boundary — the numbers sentence stands exactly where startLagNote
+// prints its numbers.
+func TestSchedule_TextWithoutAStartLagHasNoNumbers(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		p99  metrics.Quantile
+		max  time.Duration
+		want string
+	}{
+		{"no lag at all", metrics.Quantile{}, 0, "schedule: not exact (no microsecond sleep on windows)" + schedBody},
+		{"a negative max and no p99", metrics.Quantile{}, -time.Microsecond, "schedule: not exact (no microsecond sleep on windows)" + schedBody},
+		{"a max and no p99", metrics.Quantile{}, 2100 * time.Microsecond,
+			"schedule: not exact (no microsecond sleep on windows)" + schedBody + " Start lag in this run: p99 -, max 2.10ms."},
+		{"a p99 and no max", lagQuantile(1300 * time.Microsecond), 0,
+			"schedule: not exact (no microsecond sleep on windows)" + schedBody + " Start lag in this run: p99 1.30ms, max 0."},
+	} {
+		run := schedRun("windows", schedNoSleep)
+		run.StartLagP99, run.StartLagMax = tc.p99, tc.max
+
+		out := printedRun(run)
+		if got := scheduleLines(out); !slices.Equal(got, []string{tc.want}) {
+			t.Errorf("%s: schedule lines %q, want %q\n%s", tc.name, got, []string{tc.want}, out)
+		}
+	}
+}
+
+// A report with no passport (a library caller, a step of a search) has no OS
+// to name, and the line is still printed: the reasons are the engine's, not
+// the passport's, and saying nothing would hide the cause. Only the OS reason
+// reads the passport.
+//
+// Ground: contract — the line does not depend on the passport; "this host"
+// stands where the OS name would.
+func TestSchedule_TextWithoutAPassportSaysThisHost(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		reasons []string
+		want    string
+	}{
+		{"no microsecond sleep", []string{schedNoSleep},
+			"schedule: not exact (no microsecond sleep on this host)" + schedTail},
+		{"all three", []string{schedNoSleep, schedStep, schedProcs},
+			"schedule: not exact (no microsecond sleep on this host, " + wordsStep + ", " + wordsProcs + ")" + schedTail},
+		{"a reason that names no OS", []string{schedStep},
+			"schedule: not exact (" + wordsStep + ")" + schedTail},
+	} {
+		run := schedRun("windows", tc.reasons...)
+		run.Passport = nil
+
+		out := printedRun(run)
 		if got := scheduleLines(out); !slices.Equal(got, []string{tc.want}) {
 			t.Errorf("%s: schedule lines %q, want %q\n%s", tc.name, got, []string{tc.want}, out)
 		}
@@ -203,9 +292,12 @@ func TestSchedule_TextStandsUnderTheMachine(t *testing.T) {
 func TestSchedule_ASearchSaysItOnce(t *testing.T) {
 	out := printedSearchRun(schedSearch("windows", schedNoSleep))
 
-	lines := scheduleLines(out)
-	if len(lines) != 1 || !strings.HasPrefix(lines[0], "schedule: not exact (no microsecond sleep on windows)") {
-		t.Fatalf("search with three inexact steps: schedule lines %q, want one naming the OS\n%s", lines, out)
+	// The steps' start lags differ and the worst step is past the breaking
+	// point, where the lag is the generator's overload and not the timer's:
+	// the line carries no numbers.
+	want := []string{"schedule: not exact (no microsecond sleep on windows)" + schedBody}
+	if lines := scheduleLines(out); !slices.Equal(lines, want) {
+		t.Fatalf("search with three inexact steps: schedule lines %q, want %q\n%s", lines, want, out)
 	}
 
 	rows := strings.Split(out, "\n")
@@ -216,6 +308,101 @@ func TestSchedule_ASearchSaysItOnce(t *testing.T) {
 
 	if got := scheduleLines(printedSearchRun(schedSearch("linux"))); len(got) != 0 {
 		t.Errorf("an exact search: schedule lines %q, want none", got)
+	}
+}
+
+// The line stands under the labels when the search has them, as a run's does.
+//
+// Ground: contract — the header is read as one block.
+func TestSchedule_ASearchLineStandsUnderTheLabels(t *testing.T) {
+	run := schedSearch("windows", schedNoSleep)
+	run.Passport.Labels = map[string]string{"env": "ci"}
+
+	lines := strings.Split(printedSearchRun(run), "\n")
+
+	at := slices.IndexFunc(lines, func(l string) bool { return strings.HasPrefix(l, "machine: ") })
+	if at < 0 || at+2 >= len(lines) || !strings.HasPrefix(lines[at+1], "labels: ") ||
+		!strings.HasPrefix(lines[at+2], "schedule: not exact") {
+		t.Errorf("the schedule line is not right under the labels line:\n%s", strings.Join(lines, "\n"))
+	}
+}
+
+// The steps of a search have a clock of their own and may not agree on the
+// reasons. The line is the union, in the engine's order (no_precise_sleep,
+// clock_step, gomaxprocs); a reason that was not in every step says in how many
+// it was. The reasons of the steps never print once for each step.
+//
+// Ground: contract — one line for a search whatever its steps said; a reason
+// shown without its count would claim it held for the whole search.
+func TestSchedule_ASearchNamesTheUnionOfItsSteps(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		os      string
+		perStep [][]string
+		want    string
+	}{
+		{"every reason in some steps", "windows",
+			[][]string{{schedNoSleep, schedStep}, {schedNoSleep}, {schedNoSleep, schedProcs}},
+			"schedule: not exact (no microsecond sleep on windows, " + wordsStep + " in 1 of 3 steps, " +
+				wordsProcs + " in 1 of 3 steps)" + schedBody},
+		{"the engine's order, not the order of the steps", "windows",
+			[][]string{{schedProcs}, {schedProcs}, {schedNoSleep}},
+			"schedule: not exact (no microsecond sleep on windows in 1 of 3 steps, " + wordsProcs + " in 2 of 3 steps)" + schedBody},
+		{"one step of four", "linux",
+			[][]string{nil, {schedStep}, nil, nil},
+			"schedule: not exact (" + wordsStep + " in 1 of 4 steps)" + schedBody},
+		{"the last step only", "linux",
+			[][]string{{}, {}, {schedProcs}},
+			"schedule: not exact (" + wordsProcs + " in 1 of 3 steps)" + schedBody},
+		{"every step has the reason, one has another too", "linux",
+			[][]string{{schedProcs}, {schedProcs, schedStep}, {schedProcs}},
+			"schedule: not exact (" + wordsStep + " in 1 of 3 steps, " + wordsProcs + ")" + schedBody},
+		{"a single step", "windows",
+			[][]string{{schedNoSleep}},
+			"schedule: not exact (no microsecond sleep on windows)" + schedBody},
+	} {
+		out := printedSearchRun(schedSearchBy(tc.os, tc.perStep...))
+
+		if got := scheduleLines(out); !slices.Equal(got, []string{tc.want}) {
+			t.Errorf("%s: schedule lines %q, want %q\n%s", tc.name, got, []string{tc.want}, out)
+		}
+	}
+}
+
+// Without a passport the OS is "this host" in a search too, and the line is
+// still there.
+//
+// Ground: contract — the line does not depend on the passport.
+func TestSchedule_ASearchWithoutAPassportSaysThisHost(t *testing.T) {
+	run := schedSearch("windows", schedNoSleep)
+	run.Passport = nil
+
+	want := []string{"schedule: not exact (no microsecond sleep on this host)" + schedBody}
+	if got := scheduleLines(printedSearchRun(run)); !slices.Equal(got, want) {
+		t.Errorf("schedule lines %q, want %q", got, want)
+	}
+}
+
+// A search's JSON has no schedule of its own: each step's report has it (a
+// step measures its own clock, so the answer is not the search's), and the
+// passport of a search is the machine and the config, not the schedule.
+//
+// Ground: contract — the search schema takes no new top-level key, and the
+// passport no new field.
+func TestSchedule_ASearchJSONHasNoScheduleOfItsOwn(t *testing.T) {
+	out := searchJSONOf(t, schedSearch("windows", schedNoSleep))
+
+	if _, ok := out["schedule"]; ok {
+		t.Errorf("a search report has a top-level schedule: %v", out["schedule"])
+	}
+
+	passport, ok := out["passport"].(map[string]any)
+	if !ok {
+		t.Fatalf("passport %v (%T), want an object", out["passport"], out["passport"])
+	}
+
+	if _, ok := passport["schedule"]; ok {
+		t.Errorf("the passport of a search has a schedule: %v", passport["schedule"])
 	}
 }
 
@@ -296,6 +483,182 @@ func TestSchedule_JSONOfASearchStepHasIt(t *testing.T) {
 			if got := schedStrings(t, raw); !slices.Equal(got, want) {
 				t.Errorf("%s: run %d: schedule.not_exact_reasons %q, want %q", tc.name, i, got, want)
 			}
+		}
+	}
+}
+
+// schedWithoutKey is f as a report written before the schedule field would
+// be: the file has no "schedule" key, and it is read back by ReadReport, the
+// way compare reads it.
+func schedWithoutKey(t *testing.T, f RunFile) RunFile {
+	t.Helper()
+
+	raw, err := json.Marshal(f.Report)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var doc map[string]any
+	if err = json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if _, ok := doc["schedule"]; !ok {
+		t.Fatal("fixture: the report has no schedule key to drop")
+	}
+
+	delete(doc, "schedule")
+
+	if raw, err = json.Marshal(doc); err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	if bytes.Contains(raw, []byte(`"schedule"`)) {
+		t.Fatalf("fixture: a schedule key is left in %s", raw)
+	}
+
+	path := filepath.Join(t.TempDir(), "old.json")
+	if err = os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	read, err := ReadReport(path)
+	if err != nil || read.Mode != ModeRun {
+		t.Fatalf("read the report without a schedule: mode %q, %v", read.Mode, err)
+	}
+
+	return RunFile{Path: f.Path, Report: read.Run}
+}
+
+// schedDiff is a difference as the compare report names it, without the text
+// lines it keeps for itself.
+func schedDiff(d CompareDiff) [3]string { return [3]string{d.Field, d.Base, d.New} }
+
+// A report written before the schedule field has no key, and a missing key is
+// not a schedule that was not exact: it is `none`, the way a missing passport
+// is. Read as "not exact with no reasons" it would put a claim into a run that
+// never made it. A difference of `none` against a report that has one makes
+// the reports not comparable, as any other difference does.
+//
+// Ground: contract — an old report is read as it was, not as a failure.
+func TestCompareRuns_AReportWithoutAScheduleIsNone(t *testing.T) {
+	for _, tc := range []struct {
+		name                 string
+		oldBase, oldNew      bool
+		base, nw             []string
+		wantLine             string
+		wantField, wantBase  string
+		wantNew              string
+		comparableAfterwards bool
+	}{
+		{name: "old base, exact new", oldBase: true, wantLine: "differs: schedule: none -> exact",
+			wantField: "schedule", wantBase: "none", wantNew: "exact"},
+		{name: "exact base, old new", oldNew: true, wantLine: "differs: schedule: exact -> none",
+			wantField: "schedule", wantBase: "exact", wantNew: "none"},
+		{name: "old base, not exact new", oldBase: true, nw: []string{schedNoSleep, schedStep},
+			wantLine:  "differs: schedule: none -> not exact (no_precise_sleep, clock_step)",
+			wantField: "schedule", wantBase: "none", wantNew: "not exact (no_precise_sleep, clock_step)"},
+		{name: "not exact base, old new", oldNew: true, base: []string{schedProcs},
+			wantLine:  "differs: schedule: not exact (gomaxprocs) -> none",
+			wantField: "schedule", wantBase: "not exact (gomaxprocs)", wantNew: "none"},
+		{name: "both old", oldBase: true, oldNew: true, comparableAfterwards: true},
+		{name: "both old, whatever the engine said", oldBase: true, oldNew: true,
+			base: []string{schedProcs}, comparableAfterwards: true},
+	} {
+		for _, limits := range [][2]string{{"", ""}, {"20%", "1%"}} {
+			b, n := crBase(), crNew()
+			b.notExact, n.notExact = tc.base, tc.nw
+
+			base, nw := b.file(t, "base.json"), n.file(t, "new.json")
+			if tc.oldBase {
+				base = schedWithoutKey(t, base)
+			}
+
+			if tc.oldNew {
+				nw = schedWithoutKey(t, nw)
+			}
+
+			var out bytes.Buffer
+
+			got, rep := CompareRunsReport(&out, base, nw, crLimit(t, "-max-p99-rise", limits[0]), crLimit(t, "-max-errors-rise", limits[1]))
+
+			var wantLines []string
+			if tc.wantLine != "" {
+				wantLines = []string{tc.wantLine}
+			}
+
+			if diffs := crDiffs(out.String()); !slices.Equal(diffs, wantLines) {
+				t.Errorf("%s %v: difference lines %q, want %q\n%s", tc.name, limits, diffs, wantLines, out.String())
+			}
+
+			var wantDiffs [][3]string
+			if tc.wantField != "" {
+				wantDiffs = [][3]string{{tc.wantField, tc.wantBase, tc.wantNew}}
+			}
+
+			var gotDiffs [][3]string
+			for _, d := range rep.Differences {
+				gotDiffs = append(gotDiffs, schedDiff(d))
+			}
+
+			if !slices.Equal(gotDiffs, wantDiffs) {
+				t.Errorf("%s %v: differences in the JSON %q, want %q", tc.name, limits, gotDiffs, wantDiffs)
+			}
+
+			if got.Comparable != tc.comparableAfterwards {
+				t.Errorf("%s %v: comparable %v, want %v", tc.name, limits, got.Comparable, tc.comparableAfterwards)
+			}
+		}
+	}
+}
+
+// The compare report's JSON names a difference of schedules the way the text
+// line does: field `schedule`, and for each side `exact` or `not exact` with
+// the reasons in parentheses, in the engine's order. It stands in the order of
+// the text: the passport, the schedule, the methods.
+//
+// Ground: contract — differences[] is part of the compare report's schema;
+// the text and the JSON are built from one value.
+func TestCompareRuns_TheScheduleDifferenceIsInTheJSONReport(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		base, nw   []string
+		want       [][3]string
+		withOthers bool
+	}{
+		{"exact to not exact", nil, []string{schedNoSleep},
+			[][3]string{{"schedule", "exact", "not exact (no_precise_sleep)"}}, false},
+		{"not exact to exact", []string{schedProcs}, nil,
+			[][3]string{{"schedule", "not exact (gomaxprocs)", "exact"}}, false},
+		{"reasons in order", []string{schedStep}, []string{schedNoSleep, schedStep, schedProcs},
+			[][3]string{{"schedule", "not exact (clock_step)", "not exact (no_precise_sleep, clock_step, gomaxprocs)"}}, false},
+		{"the same reasons", []string{schedProcs}, []string{schedProcs}, nil, false},
+		{"between the passport and the methods", nil, []string{schedStep},
+			[][3]string{
+				{"passport.os", "linux", "darwin"},
+				{"schedule", "exact", "not exact (clock_step)"},
+				{"methods", "pkg.Svc/Do", "pkg.Svc/Do, pkg.Svc/Other"},
+			}, true},
+	} {
+		b, n := crBase(), crNew()
+		b.notExact, n.notExact = tc.base, tc.nw
+
+		if tc.withOthers {
+			n.passport.OS = "darwin"
+			n.methods = append(n.methods, crCall("pkg.Svc/Other", crExact(crMillis(10)), 0))
+		}
+
+		var out bytes.Buffer
+
+		_, rep := CompareRunsReport(&out, b.file(t, "base.json"), n.file(t, "new.json"), nil, nil)
+
+		var got [][3]string
+		for _, d := range rep.Differences {
+			got = append(got, schedDiff(d))
+		}
+
+		if !slices.Equal(got, tc.want) {
+			t.Errorf("%s: differences in the JSON %q, want %q", tc.name, got, tc.want)
 		}
 	}
 }

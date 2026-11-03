@@ -92,6 +92,57 @@ func TestNewDispatcher_OnePNamesTheReason(t *testing.T) {
 	}
 }
 
+// reasonsOfARun is the reasons the report of a short run names when the caller
+// measured the clock step as step (Options.ClockStep).
+func reasonsOfARun(t *testing.T, step time.Duration) []string {
+	t.Helper()
+
+	eng, err := New(Options{
+		Calls: []Call{
+			{Method: "a.B/One", Timeout: 100 * time.Millisecond, Stages: []Stage{{StartRPS: 100, TargetRPS: 100, Duration: 20 * time.Millisecond}}},
+		},
+		Sender:      FakeSender{Delay: time.Millisecond},
+		MaxInFlight: 64,
+		ClockStep:   step,
+	})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+
+	if err := eng.Run(context.Background()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	return eng.Report().ScheduleNotExact
+}
+
+// The step the caller measured is the step the verdict uses, the one the
+// report prints as the clock step before the run: a second measurement of the
+// engine's own could disagree with the line that prints the step. The other
+// reasons are the host's, so only clock_step is asserted, present or absent.
+//
+// Ground: contract — Options.ClockStep is the caller's measure; 0 means the
+// engine measures. The given step decides on every host: a coarse one names
+// clock_step on Linux, a fine one leaves it out on Windows, whatever the
+// engine would measure itself.
+func TestEngine_TheCallersClockStepDecidesClockStep(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		step time.Duration
+		want bool
+	}{
+		{"a coarse step", 2 * time.Microsecond, true},
+		{"exactly 1us", time.Microsecond, true},
+		{"a very coarse step", 15625 * time.Microsecond, true},
+		{"one nanosecond under 1us", 999 * time.Nanosecond, false},
+		{"a fine step", 40 * time.Nanosecond, false},
+	} {
+		if got := slices.Contains(reasonsOfARun(t, tc.step), "clock_step"); got != tc.want {
+			t.Errorf("%s: clock_step in the reasons %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
 // Ground: contract — Engine.Report hands the dispatcher's reasons on: the
 // report is where the CLI reads them. A run that did not wait exactly names
 // why; the dispatcher is built by Run, so the reasons are those of its moment.
