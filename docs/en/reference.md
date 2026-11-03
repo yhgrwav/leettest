@@ -537,6 +537,13 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 - The reasons stand in this order, each only if it holds: the host cannot sleep to a microsecond
   (`no microsecond sleep on <os>`), the clock steps by 1 µs or more, `GOMAXPROCS` is below 2. Without
   a passport the host reads `this host`.
+- Only Linux has a microsecond sleep. On macOS and Windows the first reason always holds, and on
+  macOS this comes from the code (the sleep is built for Linux only), not from a measurement.
+- `clock_step` here is not the `clock_step` of `invalid_reasons`. Here it means the step is 1 µs or
+  more, and it does not make the run invalid: a Windows run with a step of 0.5 ms and a p50 of 25 ms
+  has `invalid_reasons: []` and `not_exact_reasons: ["no_precise_sleep", "clock_step"]`. In
+  `invalid_reasons` it means the step is over a quarter of a method's p50, or grew by a quarter or
+  more during the run; at a p50 of 1 ms the name is in both lists.
 - The calls' latencies are measured from the scheduled moment, so a late start is inside them. The
   p99 without client-side waits takes the whole start lag off, and does not carry it.
 - The last sentence is the run's own start lag, the numbers of the start lag note; a run with no
@@ -625,7 +632,7 @@ measured calls only. The first column is the field's full path.
 | `start_lag.max` | percentile? | The maximum, always exact; `null` without calls |
 | `schedule` | object | Whether the generator waited to each call's moment exactly (not released yet) |
 | `schedule.exact` | bool | (not released yet) `true` — it did; the list below is empty |
-| `schedule.not_exact_reasons` | []string | (not released yet) Why not, in this order: `no_precise_sleep`, `clock_step`, `gomaxprocs`; `[]` when exact, never `null` |
+| `schedule.not_exact_reasons` | []string | (not released yet) Why not, in this order: `no_precise_sleep` (only Linux has a microsecond sleep), `clock_step` (the step is 1 µs or more; not the `clock_step` of `invalid_reasons`, and it does not make the run invalid), `gomaxprocs`; `[]` when exact, never `null` |
 | `connections` | object? | Connections; `null` when the sender does not report them |
 | `connections.open` | int | How many connections carried calls at once |
 | `connections.reconnects` | int | Successful handshakes after the first |

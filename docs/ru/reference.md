@@ -519,6 +519,13 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 - Причины идут в этом порядке, каждая только если она есть: хост не умеет спать с точностью до
   микросекунды (`no microsecond sleep on <os>`), шаг часов 1 мкс или больше, `GOMAXPROCS` меньше 2.
   Без паспорта хост назван `this host`.
+- Микросекундный sleep есть только на Linux. На macOS и Windows первая причина есть всегда, а на
+  macOS она следует из кода (sleep собран только для Linux), а не из замера.
+- `clock_step` здесь — не то же самое, что `clock_step` в `invalid_reasons`. Здесь это шаг 1 мкс и
+  больше, и прогон недействительным он не делает: прогон на Windows с шагом 0,5 мс и p50 25 мс даёт
+  `invalid_reasons: []` и `not_exact_reasons: ["no_precise_sleep", "clock_step"]`. В
+  `invalid_reasons` это шаг больше четверти p50 метода или шаг, выросший за прогон на четверть и
+  больше; при p50 1 мс имя стоит в обоих списках.
 - Задержка вызова считается от запланированного момента, поэтому поздний старт уже в ней. p99 без
   ожиданий на стороне клиента вычитает опоздание старта целиком и его не содержит.
 - Последнее предложение — собственное опоздание старта прогона, те же числа, что в заметке про
@@ -607,7 +614,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `start_lag.max` | перцентиль? | Максимум, всегда точный; `null` без вызовов |
 | `schedule` | object | Ждал ли генератор момента каждого вызова точно (не выпущено) |
 | `schedule.exact` | bool | (не выпущено) `true` — ждал; список ниже пуст |
-| `schedule.not_exact_reasons` | []string | (не выпущено) Почему нет, в этом порядке: `no_precise_sleep`, `clock_step`, `gomaxprocs`; `[]`, когда точно, никогда не `null` |
+| `schedule.not_exact_reasons` | []string | (не выпущено) Почему нет, в этом порядке: `no_precise_sleep` (микросекундный sleep есть только на Linux), `clock_step` (шаг 1 мкс и больше; это не `clock_step` из `invalid_reasons`, прогон недействительным он не делает), `gomaxprocs`; `[]`, когда точно, никогда не `null` |
 | `connections` | object? | Соединения; `null`, если отправитель о них не сообщает |
 | `connections.open` | int | Сколько соединений несли вызовы одновременно |
 | `connections.reconnects` | int | Успешные рукопожатия после первого |

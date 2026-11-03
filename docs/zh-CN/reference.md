@@ -430,6 +430,8 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 ```
 
 - 原因按此顺序列出，只列成立的：主机不能睡到微秒精度（`no microsecond sleep on <os>`）、时钟步长不小于 1 µs、`GOMAXPROCS` 小于 2。没有护照时主机写作 `this host`。
+- 只有 Linux 有微秒级 sleep。在 macOS 和 Windows 上第一个原因始终成立；macOS 上这是由代码得出的（该 sleep 只为 Linux 构建），不是测量结果。
+- 这里的 `clock_step` 与 `invalid_reasons` 中的 `clock_step` 不是同一条规则。这里指步长不小于 1 µs，不会使运行无效：步长 0.5 ms、p50 为 25 ms 的 Windows 运行，`invalid_reasons: []`，而 `not_exact_reasons: ["no_precise_sleep", "clock_step"]`。在 `invalid_reasons` 中指步长超过某个方法 p50 的四分之一，或运行期间步长增长了四分之一及以上；p50 为 1 ms 时，该名称同时出现在两个列表中。
 - 调用的延迟从计划时刻起算，所以晚启动已包含在内。不含客户端等待的 p99 会扣掉全部启动延迟，因此不包含它。
 - 最后一句是本次运行自己的启动延迟，数字与启动延迟说明中的相同；没有启动延迟时没有这一句。
 - 精确的计划不打印任何内容。
@@ -511,7 +513,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `start_lag.max` | percentile? | 最大值，始终精确；没有调用时为 `null` |
 | `schedule` | object | 生成器是否在每个调用的计划时刻精确等待（未发布） |
 | `schedule.exact` | bool | （未发布）`true` — 是；下面的列表为空 |
-| `schedule.not_exact_reasons` | []string | （未发布）原因，按此顺序：`no_precise_sleep`、`clock_step`、`gomaxprocs`；精确时为 `[]`，绝不为 `null` |
+| `schedule.not_exact_reasons` | []string | （未发布）原因，按此顺序：`no_precise_sleep`（只有 Linux 有微秒级 sleep）、`clock_step`（步长不小于 1 µs；不是 `invalid_reasons` 中的 `clock_step`，不会使运行无效）、`gomaxprocs`；精确时为 `[]`，绝不为 `null` |
 | `connections` | object? | 连接；发送方不报告时为 `null` |
 | `connections.open` | int | 同时承载调用的连接数 |
 | `connections.reconnects` | int | 第一次之后成功的握手次数 |
