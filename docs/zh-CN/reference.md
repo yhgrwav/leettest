@@ -421,6 +421,21 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 计，是下界）；方法行下 `warm-up: N calls, p50 …, p99 …`——`N calls` 是观测数（成功加下界），
 不是运行行里的 `warm-up N sent`。
 
+## 计划行（未发布）
+
+如果生成器没有在每个调用的计划时刻精确等待，报告头部会多一行，位于 `machine:` 之下（有标签时位于 `labels:` 之下）：
+
+```
+schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser, GOMAXPROCS below 2): calls may start late, and latencies include that delay (p99 without client-side waits does not). Start lag in this run: p99 1.30ms, max 2.10ms.
+```
+
+- 原因按此顺序列出，只列成立的：主机不能睡到微秒精度（`no microsecond sleep on <os>`）、时钟步长不小于 1 µs、`GOMAXPROCS` 小于 2。没有护照时主机写作 `this host`。
+- 调用的延迟从计划时刻起算，所以晚启动已包含在内。不含客户端等待的 p99 会扣掉全部启动延迟，因此不包含它。
+- 最后一句是本次运行自己的启动延迟，数字与启动延迟说明中的相同；没有启动延迟时没有这一句。
+- 精确的计划不打印任何内容。
+- 拐点搜索只为整个搜索打印一行：所有步骤的原因合并，每一步有自己的时钟。并非每一步都成立的原因会注明，例如 `clock step 1us or coarser in 2 of 5 steps`。这一行没有启动延迟这句话。
+- 同样的信息在 JSON 中是 `schedule`（见下）。`leettest compare` 这样表示计划的差异：`differs: schedule: exact -> not exact (clock_step)`；对于在该字段出现之前写成的报告，则是 `none`。
+
 ## JSON 字段
 
 契约的规则——结构版本、单位、用 `null` 而不是 `0`、未知字段——见
@@ -494,6 +509,9 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `start_lag` | object | 调用相对计划开始得晚了多少 |
 | `start_lag.p99` | percentile? | 延迟的 p99 |
 | `start_lag.max` | percentile? | 最大值，始终精确；没有调用时为 `null` |
+| `schedule` | object | 生成器是否在每个调用的计划时刻精确等待（未发布） |
+| `schedule.exact` | bool | （未发布）`true` — 是；下面的列表为空 |
+| `schedule.not_exact_reasons` | []string | （未发布）原因，按此顺序：`no_precise_sleep`、`clock_step`、`gomaxprocs`；精确时为 `[]`，绝不为 `null` |
 | `connections` | object? | 连接；发送方不报告时为 `null` |
 | `connections.open` | int | 同时承载调用的连接数 |
 | `connections.reconnects` | int | 第一次之后成功的握手次数 |
@@ -695,8 +713,8 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 | `base.labels`、`new.labels` | map | 护照的标签；没有护照或没有标签时为 `{}` |
 | `comparable` | bool | `true` — 两份报告没有任何使其不可比较的差异，并且运行有共同的方法 |
 | `differences` | []object | 使报告不可比较的差异，按比较顺序；没有则为 `[]` |
-| `differences[].field` | string | 字段名，与 `differs:` 行中一致（`target`、`method`、`leettest_version`、`passport.config_sha256`、`methods`、`dataset <方法>`）。没有护照——`passport` |
-| `differences[].base` | string | “之前”的值；`none` — 没有 `dataset` 或护照 |
+| `differences[].field` | string | 字段名，与 `differs:` 行中一致（`target`、`method`、`leettest_version`、`passport.config_sha256`、`schedule`（未发布）、`methods`、`dataset <方法>`）。没有护照——`passport` |
+| `differences[].base` | string | “之前”的值；`none` — 没有 `dataset`、护照或报告中没有 `schedule` |
 | `differences[].new` | string | “之后”的值；对 `passport` — 有护照的一侧为 `present` |
 | `verdict` | string? | 有限值的检查中最差的结论：`fail`，否则 `unknown`，否则 `pass`；`null` — 没有设限值 |
 | `checks` | []object | 检查，按文本顺序：搜索一项（`capacity`），运行对每个共同方法按“之前”的顺序先 `p99` 后 `errors`；没有可比较的则为 `[]` |

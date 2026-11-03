@@ -507,6 +507,30 @@ SIGTERM (`docker stop`, Kubernetes, отмена джоба в CI) сразу о
   прогона, где посчитан каждый отправленный вызов. При менее 100 наблюдений p99 печатается как
   `too few observations (N of 100)`.
 
+## Строка про расписание (не выпущено)
+
+Если генератор ждал момента каждого вызова не точно, в шапке отчёта появляется ещё одна строка:
+под `machine:` (под `labels:`, если метки есть):
+
+```
+schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser, GOMAXPROCS below 2): calls may start late, and latencies include that delay (p99 without client-side waits does not). Start lag in this run: p99 1.30ms, max 2.10ms.
+```
+
+- Причины идут в этом порядке, каждая только если она есть: хост не умеет спать с точностью до
+  микросекунды (`no microsecond sleep on <os>`), шаг часов 1 мкс или больше, `GOMAXPROCS` меньше 2.
+  Без паспорта хост назван `this host`.
+- Задержка вызова считается от запланированного момента, поэтому поздний старт уже в ней. p99 без
+  ожиданий на стороне клиента вычитает опоздание старта целиком и его не содержит.
+- Последнее предложение — собственное опоздание старта прогона, те же числа, что в заметке про
+  опоздание старта; без опоздания старта этого предложения нет.
+- Точное расписание ничего не печатает.
+- Поиск точки отказа печатает одну строку на весь поиск: причины всех его шагов, у каждого шага
+  свои часы. Причина, которой не было в каждом шаге, говорит об этом, например
+  `clock step 1us or coarser in 2 of 5 steps`. Предложения про опоздание старта в этой строке нет.
+- То же самое лежит в JSON как `schedule` (ниже). `leettest compare` называет разницу расписаний
+  так: `differs: schedule: exact -> not exact (clock_step)`, а для отчёта, записанного до появления
+  поля, — `none`.
+
 ## Поля JSON
 
 Правила контракта — версия схемы, единицы, `null` вместо `0`, неизвестные поля — в
@@ -581,6 +605,9 @@ SIGTERM (`docker stop`, Kubernetes, отмена джоба в CI) сразу о
 | `start_lag` | object | Опоздание старта вызовов против расписания |
 | `start_lag.p99` | перцентиль? | p99 опоздания |
 | `start_lag.max` | перцентиль? | Максимум, всегда точный; `null` без вызовов |
+| `schedule` | object | Ждал ли генератор момента каждого вызова точно (не выпущено) |
+| `schedule.exact` | bool | (не выпущено) `true` — ждал; список ниже пуст |
+| `schedule.not_exact_reasons` | []string | (не выпущено) Почему нет, в этом порядке: `no_precise_sleep`, `clock_step`, `gomaxprocs`; `[]`, когда точно, никогда не `null` |
 | `connections` | object? | Соединения; `null`, если отправитель о них не сообщает |
 | `connections.open` | int | Сколько соединений несли вызовы одновременно |
 | `connections.reconnects` | int | Успешные рукопожатия после первого |
@@ -787,8 +814,8 @@ SIGTERM (`docker stop`, Kubernetes, отмена джоба в CI) сразу о
 | `base.labels`, `new.labels` | map | Метки паспорта; `{}` без паспорта или без меток |
 | `comparable` | bool | `true` — отчёты не отличаются ничем, что делает их несравнимыми, и у прогонов есть общий метод |
 | `differences` | []object | Что делает отчёты несравнимыми, в порядке сравнения; `[]`, если ничего |
-| `differences[].field` | string | Имя поля, как в строке `differs:` (`target`, `method`, `leettest_version`, `passport.config_sha256`, `methods`, `dataset <метод>`). Нет паспорта — `passport` |
-| `differences[].base` | string | Значение «до»; `none` — нет набора данных или паспорта |
+| `differences[].field` | string | Имя поля, как в строке `differs:` (`target`, `method`, `leettest_version`, `passport.config_sha256`, `schedule` (не выпущено), `methods`, `dataset <метод>`). Нет паспорта — `passport` |
+| `differences[].base` | string | Значение «до»; `none` — нет набора данных, паспорта или `schedule` в отчёте |
 | `differences[].new` | string | Значение «после»; у `passport` — `present` там, где паспорт есть |
 | `verdict` | string? | Худший вердикт проверок, у которых есть предел: `fail`, иначе `unknown`, иначе `pass`; `null` — предел не задан |
 | `checks` | []object | Проверки в порядке текста: у поиска одна (`capacity`), у прогона для каждого общего метода в порядке «до» сначала `p99`, потом `errors`; `[]`, если сравнивать нечего |

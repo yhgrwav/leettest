@@ -489,6 +489,7 @@ func NewJSONReport(run JSONRun) JSONReport {
 
 	out := jsonRunFacts(run)
 	out.StartLag = startLagJSON(r)
+	out.Schedule = scheduleJSON(r.ScheduleNotExact)
 	out.CapHit = capHitJSON(r.CapHit)
 	out.Connections = connectionsOf(r.Connections)
 	out.Methods = methodsJSON(r.Methods, r.Warmup, out.Settings.Compression)

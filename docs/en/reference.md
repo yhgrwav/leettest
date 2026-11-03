@@ -525,6 +525,30 @@ the generator and the target goes into the latency and looks like the target's t
   `warm-up N sent` of the run's line, which counts every call sent. Under 100 observations p99 is
   told as `too few observations (N of 100)`.
 
+## The schedule line (not released yet)
+
+When the generator did not wait to each call's moment exactly, the header has one more line, under
+`machine:` (under `labels:` when there are labels):
+
+```
+schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser, GOMAXPROCS below 2): calls may start late, and latencies include that delay (p99 without client-side waits does not). Start lag in this run: p99 1.30ms, max 2.10ms.
+```
+
+- The reasons stand in this order, each only if it holds: the host cannot sleep to a microsecond
+  (`no microsecond sleep on <os>`), the clock steps by 1 µs or more, `GOMAXPROCS` is below 2. Without
+  a passport the host reads `this host`.
+- The calls' latencies are measured from the scheduled moment, so a late start is inside them. The
+  p99 without client-side waits takes the whole start lag off, and does not carry it.
+- The last sentence is the run's own start lag, the numbers of the start lag note; a run with no
+  start lag has no such sentence.
+- An exact schedule prints nothing.
+- A breaking-point search prints one line for the whole search: the reasons of all its steps, each
+  step having a clock of its own. A reason that did not hold in every step says so, for instance
+  `clock step 1us or coarser in 2 of 5 steps`. The line has no start lag sentence.
+- The same facts are in the JSON as `schedule` (below). `leettest compare` names a difference of
+  schedules as `differs: schedule: exact -> not exact (clock_step)`, and `none` for a report that
+  was written before the field.
+
 ## JSON fields
 
 The contract's rules — schema version, units, `null` rather than `0`, unknown fields — are in the
@@ -599,6 +623,9 @@ measured calls only. The first column is the field's full path.
 | `start_lag` | object | How late calls started against the schedule |
 | `start_lag.p99` | percentile? | p99 of the lag |
 | `start_lag.max` | percentile? | The maximum, always exact; `null` without calls |
+| `schedule` | object | Whether the generator waited to each call's moment exactly (not released yet) |
+| `schedule.exact` | bool | (not released yet) `true` — it did; the list below is empty |
+| `schedule.not_exact_reasons` | []string | (not released yet) Why not, in this order: `no_precise_sleep`, `clock_step`, `gomaxprocs`; `[]` when exact, never `null` |
 | `connections` | object? | Connections; `null` when the sender does not report them |
 | `connections.open` | int | How many connections carried calls at once |
 | `connections.reconnects` | int | Successful handshakes after the first |
@@ -808,8 +835,8 @@ a `p99` check has no others. A verdict exists only when the check has a limit.
 | `base.labels`, `new.labels` | map | The passport's labels; `{}` without a passport or labels |
 | `comparable` | bool | `true` — nothing makes the reports incomparable and, for runs, there is a method in common |
 | `differences` | []object | What makes the reports incomparable, in the order compared; `[]` if nothing |
-| `differences[].field` | string | The field's name as in the `differs:` line (`target`, `method`, `leettest_version`, `passport.config_sha256`, `methods`, `dataset <method>`). A missing passport is `passport` |
-| `differences[].base` | string | The "before" value; `none` — no dataset or no passport |
+| `differences[].field` | string | The field's name as in the `differs:` line (`target`, `method`, `leettest_version`, `passport.config_sha256`, `schedule` (not released yet), `methods`, `dataset <method>`). A missing passport is `passport` |
+| `differences[].base` | string | The "before" value; `none` — no dataset, no passport, or a report without `schedule` |
 | `differences[].new` | string | The "after" value; for `passport`, `present` on the side that has one |
 | `verdict` | string? | The worst verdict of the checks that have a limit: `fail`, else `unknown`, else `pass`; `null` — no limit given |
 | `checks` | []object | The checks in the text's order: a search has one (`capacity`), a run has, per method in common in the "before" order, `p99` then `errors`; `[]` if there is nothing to compare |

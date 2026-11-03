@@ -57,7 +57,19 @@ type Dispatcher struct {
 }
 
 func NewDispatcher(calls []Call) *Dispatcher {
-	return &Dispatcher{calls: calls, exact: exactSchedule()}
+	return newDispatcher(calls, 0)
+}
+
+// newDispatcher judges the schedule once, here, and nothing in Run asks again.
+// step is the clock step the caller measured; 0 measures it.
+func newDispatcher(calls []Call, step time.Duration) *Dispatcher {
+	if step <= 0 {
+		step = clock.StepOf(time.Now)
+	}
+
+	reasons := scheduleReasonsFor(preciseSleep, step, runtime.GOMAXPROCS(0))
+
+	return &Dispatcher{calls: calls, exact: len(reasons) == 0, notExact: reasons}
 }
 
 // Run sends each request to out at its scheduled moment until every call's
@@ -189,8 +201,19 @@ func exactScheduleFor(precise bool, step time.Duration, procs int) bool {
 // scheduleReasonsFor is why exactScheduleFor is false for the same inputs: one
 // name for each condition it fails, in the order no_precise_sleep, clock_step,
 // gomaxprocs; none when it is true.
-func scheduleReasonsFor(_ bool, _ time.Duration, _ int) []string {
-	return nil
+func scheduleReasonsFor(precise bool, step time.Duration, procs int) []string {
+	var reasons []string
+	if !precise {
+		reasons = append(reasons, ScheduleNoPreciseSleep)
+	}
+	if step >= time.Microsecond {
+		reasons = append(reasons, ScheduleClockStep)
+	}
+	if procs < 2 {
+		reasons = append(reasons, ScheduleGOMAXPROCS)
+	}
+
+	return reasons
 }
 
 // waitUntil returns at at, or when ctx ends with its error. Not exact: a plain
