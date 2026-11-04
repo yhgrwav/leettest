@@ -208,7 +208,7 @@ func openSearchScreen(s searchSetup, screen bool, method string, plan breakpoint
 		program, feed = cli.NewSearchProgram(s.target, method, plan, s.connect, s.cfg.Load.Ramp, settings, st)
 		obs = feed.Observer()
 	} else {
-		fmt.Fprintln(stderr, cli.PlanLine(plan, s.connect))
+		fmt.Fprintln(stderr, cli.PlanLineRamp(plan, s.connect, s.cfg.Load.Ramp))
 	}
 
 	return program, feed, obs, nil
@@ -231,14 +231,23 @@ type searchRunner struct {
 	stopSearch  context.CancelFunc
 	runs        []cli.RunReport
 	res         breakpoint.Result
+	// stepped is set by the first call of step: only that run ramps, a repeat
+	// of the first rate included. Told by the call, not by the rate.
+	stepped bool
 }
 
 func (r *searchRunner) step(_ context.Context, rps int, settle, hold time.Duration, need int) (engine.Report, error) {
+	var ramp time.Duration
+	if !r.stepped {
+		ramp = r.s.cfg.Load.Ramp
+		r.stepped = true
+	}
+
 	calls := slices.Clone(r.s.calls)
-	calls[0].Stages = []engine.Stage{{StartRPS: rps, TargetRPS: rps, Duration: hold}}
+	calls[0].Stages = stepStages(rps, hold, ramp)
 	before := clockStep()
 	eng, err := engine.New(engine.Options{
-		Calls: calls, Sender: r.s.sender, MaxInFlight: need, Warmup: settle, WaitFloor: engine.WaitFloorFor(before), ClockStep: before,
+		Calls: calls, Sender: r.s.sender, MaxInFlight: need, Warmup: ramp + settle, WaitFloor: engine.WaitFloorFor(before), ClockStep: before,
 	})
 	if err != nil {
 		return engine.Report{}, err
@@ -266,7 +275,7 @@ func (r *searchRunner) step(_ context.Context, rps int, settle, hold time.Durati
 		Report: report, Unchecked: r.s.unchecked, MaxResponse: r.maxResponse,
 		ClockStep: max(before, clockStep()), ClockStepBefore: before,
 		GeneratorCPU: meter.Result(report, r.cores),
-		Settings:     searchSettings(r.s, need, settle),
+		Settings:     searchSettings(r.s, need, settle, ramp),
 	}
 	r.runs = append(r.runs, run)
 	rp := run.Report
@@ -325,8 +334,9 @@ func newBreakpointRun(s searchSetup, method string, started time.Time, plan brea
 	report := cli.BreakpointRun{
 		StopReason: reason,
 		Target:     s.target, Name: cli.ServiceLabel(s.cfg, s.configPath), Version: versionString(version, info), Method: method,
-		StartedAt: started, Plan: plan, Result: res, Runs: aligned(res.Steps, runs, searchSettings(s, s.maxInFlight, plan.Settle)),
-		MethodsSource: s.source, Connections: s.cfg.App.Connections, Mode: s.cfg.App.Mode,
+		StartedAt: started, Plan: plan, Result: res, Runs: aligned(res.Steps, runs,
+			searchSettings(s, s.maxInFlight, plan.Settle, s.cfg.Load.Ramp), searchSettings(s, s.maxInFlight, plan.Settle, 0)),
+		MethodsSource: s.source, Connections: s.cfg.App.Connections, Mode: s.cfg.App.Mode, Ramp: s.cfg.Load.Ramp,
 		Compression: s.cfg.App.Compression, Passport: s.passport,
 	}
 	if b := s.cfg.Load.Breakpoint; b != nil && b.RawPass != nil {
@@ -355,10 +365,25 @@ func printSearchReport(stdout io.Writer, s searchSetup, report cli.BreakpointRun
 	return data, nil
 }
 
+// stepStages is the one constant stage of a step; the first step of a search
+// has the ramp from 0 to its rate in front of it (ramp 0 is no ramp).
+func stepStages(rps int, hold, ramp time.Duration) []engine.Stage {
+	stages := []engine.Stage{{StartRPS: rps, TargetRPS: rps, Duration: hold}}
+	if ramp > 0 {
+		stages = append([]engine.Stage{{StartRPS: 0, TargetRPS: rps, Duration: ramp}}, stages...)
+	}
+
+	return stages
+}
+
 // searchSettings are what a step of the search is started with: the cap, the
-// configured connections and the settle as its warm-up.
-func searchSettings(s searchSetup, maxInFlight int, settle time.Duration) *cli.RunSettings {
-	return &cli.RunSettings{MaxInFlight: maxInFlight, Connections: s.cfg.App.Connections, Warmup: settle, Compression: s.cfg.App.Compression, Mode: s.cfg.App.Mode}
+// configured connections, the settle as its warm-up and, for the first step,
+// the ramp before it.
+func searchSettings(s searchSetup, maxInFlight int, settle, ramp time.Duration) *cli.RunSettings {
+	return &cli.RunSettings{
+		MaxInFlight: maxInFlight, Connections: s.cfg.App.Connections, Warmup: settle, Ramp: ramp,
+		Compression: s.cfg.App.Compression, Mode: s.cfg.App.Mode,
+	}
 }
 
 // screenSettings are the screen's settings, set up on first use as for a
@@ -379,12 +404,17 @@ func screenSettings() (*cli.Settings, error) {
 
 // aligned pairs each step with the run it made, in order; a step that never
 // ran (a cap too low for it) gets its empty engine report.
-// A step that never ran carries refused, the settings it was tried with.
-func aligned(steps []breakpoint.Step, runs []cli.RunReport, refused *cli.RunSettings) []cli.RunReport {
+// A step that never ran carries the settings it was tried with: refusedFirst
+// for the first step (it would have ramped), refused for the rest.
+func aligned(steps []breakpoint.Step, runs []cli.RunReport, refusedFirst, refused *cli.RunSettings) []cli.RunReport {
 	out := make([]cli.RunReport, 0, len(steps))
 	for i := range steps {
 		if steps[i].Report.StartedAt.IsZero() || len(runs) == 0 {
-			out = append(out, cli.RunReport{Report: steps[i].Report, Settings: refused})
+			tried := refused
+			if i == 0 {
+				tried = refusedFirst
+			}
+			out = append(out, cli.RunReport{Report: steps[i].Report, Settings: tried})
 
 			continue
 		}
@@ -409,7 +439,7 @@ func firstRuns(cfg *config.MasterConfig, calls []engine.Call) []engine.Call {
 	}
 
 	first := slices.Clone(calls)
-	first[0].Stages = []engine.Stage{{StartRPS: rates[0], TargetRPS: rates[0], Duration: plan.Hold}}
+	first[0].Stages = stepStages(rates[0], plan.Hold, cfg.Load.Ramp)
 
 	return first
 }

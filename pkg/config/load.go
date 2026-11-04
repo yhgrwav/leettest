@@ -149,8 +149,12 @@ func (m *MasterConfig) Validate() error {
 	if err := m.App.validateProto(); err != nil {
 		errs = append(errs, err)
 	}
-	if m.App.Mode == ModeReal && m.Load.Breakpoint == nil && m.Load.Ramp == 0 {
-		errs = append(errs, ErrRealNeedsRamp)
+	if m.App.Mode == ModeReal && m.Load.Ramp == 0 {
+		if m.Load.Breakpoint != nil {
+			errs = append(errs, errSearchNeedsRamp{})
+		} else {
+			errs = append(errs, ErrRealNeedsRamp)
+		}
 	}
 	if m.App.Mode == ModeReal && m.Load.Breakpoint == nil && m.Load.StopOnErrors.Thousandths == 0 {
 		errs = append(errs, ErrRealNeedsStop)
