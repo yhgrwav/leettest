@@ -272,6 +272,7 @@ json methods[].request_error.p99
 json methods[].request_error.p99.lower_bound
 json methods[].request_error.p99.ns
 json methods[].request_error.p99.us
+json methods[].response_bytes
 json methods[].rps
 json methods[].seconds
 json methods[].seconds[].aborted
@@ -311,6 +312,17 @@ json methods[].timed_out_after_wait
 json methods[].timeout_us
 json methods[].unclassified
 json methods[].unreachable
+json methods[].warmup
+json methods[].warmup.calls
+json methods[].warmup.p50
+json methods[].warmup.p50.lower_bound
+json methods[].warmup.p50.ns
+json methods[].warmup.p50.us
+json methods[].warmup.p99
+json methods[].warmup.p99.lower_bound
+json methods[].warmup.p99.ns
+json methods[].warmup.p99.us
+json methods[].warmup.response_bytes
 json methods[].warmup_failed
 json methods[].warmup_not_sent
 json methods[].warmup_sent
@@ -341,6 +353,9 @@ json passport.labels
 json passport.num_cpu
 json passport.os
 json planned_us
+json schedule
+json schedule.exact
+json schedule.not_exact_reasons
 json schema_version
 json sent
 json seq_overflow
@@ -390,6 +405,9 @@ json thresholds[].value.lower_bound
 json thresholds[].value.ns
 json thresholds[].value.us
 json thresholds[].verdict
+json traffic
+json traffic.received_bits_per_second
+json traffic.sent_bits_per_second
 json unchecked
 json unchecked[].error
 json unchecked[].method

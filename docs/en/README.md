@@ -148,7 +148,7 @@ At the end — a report per method: sent, failed, `sent/s`, p50/p90/p95/p99.
   the first rows are the ramp: a low `sent/s` there is the plan, not a failure; look for the row
   where p99 or the failed share climbs before the rate has reached its plateau.
 - The `traffic:` line in the run's header is how many bits per second the message bodies moved,
-  sent and received (not released yet). It is a lower bound: no HTTP/2 frames, headers or TLS, and
+  sent and received. It is a lower bound: no HTTP/2 frames, headers or TLS, and
   received is counted by the size before decompression. Under a method, `response: N B per call`
   is the mean reply size of the successful calls, and in a run with a warm-up `warm-up: N calls,
   p50, p99` is its own numbers, apart from the run.
@@ -260,7 +260,7 @@ There is a report, but its numbers are not about the load on the target (exit 2)
   The note names the method, the cause and what to do.
 - **the host clock is coarser than a quarter of the p50** of some method, or the step grew during
   the run to 1 µs or more (`clock_step`). Measure from Linux.
-- **the generator's lag decided the p99 tail** (`generator_late`, not released yet): the latencies
+- **the generator's lag decided the p99 tail** (`generator_late`): the latencies
   include this machine's delay and do not measure the target. Give the generator more CPU, lower
   the rate, or split it over several machines. A method is judged from 100 observations. The report names the methods.
 - **a `pass` limit cannot be decided** (`thresholds_undecided`): too few observations, the
