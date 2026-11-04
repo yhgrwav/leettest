@@ -438,7 +438,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		return buildReport(reportParts{
 			eng: eng, stepBefore: stepBefore, stepAfter: &stepAfter, meter: meter, cores: cores,
 			cfg: cfg, configPath: flags.configPath, passport: passport, maxInFlight: flags.maxInFlight,
-			unchecked: unchecked, source: source, tripped: &tripped,
+			unchecked: unchecked, source: source, tripped: &tripped, calls: calls,
 		})
 	}
 
@@ -460,7 +460,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 	report := reportOf()
 
 	if report.Stop != nil {
-		fmt.Fprintln(stderr, cli.StopLine(*report.Stop))
+		fmt.Fprintln(stderr, cli.StopLine(*report.Stop, report.StopPlanned))
 	}
 
 	result := runResult(report, runErr)
@@ -760,6 +760,9 @@ type reportParts struct {
 	// tripped is where the stop watch left its trip; nil pointer inside until
 	// it trips.
 	tripped *tripBox
+	// calls are the run's methods with their stages: a stop names the rate
+	// the plan of its method offered at the moment of the stop.
+	calls []engine.Call
 }
 
 // startWatch runs the watch beside the engine, none when there is none, and
@@ -806,6 +809,7 @@ func buildReport(p reportParts) cli.RunReport {
 	}
 	if p.tripped != nil {
 		run.Stop = p.tripped.Of(report)
+		run.StopPlanned = stopPlannedRate(p.calls, run.Stop)
 	}
 	// The limits are checked against the run as it ended, the clock step
 	// included: it can make the run invalid.

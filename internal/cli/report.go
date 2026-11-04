@@ -66,6 +66,10 @@ type RunReport struct {
 	// Stop is the moment load.stop_on_errors ended the run; nil when it did
 	// not.
 	Stop *errstop.Trip
+	// StopPlanned is the rate the plan of the stopped method offered at the
+	// moment of the stop; nil when the plan had already ended. The caller
+	// computes it from the method's stages: the trip does not carry it.
+	StopPlanned *float64
 
 	// searchStep marks a step of a breaking-point search: the generator's lag
 	// ends the search there and does not make the step an invalid run.

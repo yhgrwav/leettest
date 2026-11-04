@@ -16,7 +16,7 @@ package engine
 
 import "time"
 
-// meanRate is the mean of rateAt over [from, to): the integral divided by the
+// meanRate is the mean of PlannedRate over [from, to): the integral divided by the
 // width. The part of the interval past the plan counts as 0 rate, so the mean
 // stays over the whole width; 0 for to <= from. Each stage is linear, so the
 // integral over its part of the interval is the width times the rate at the
@@ -67,14 +67,14 @@ func planLength(stages []Stage) time.Duration {
 	return total
 }
 
-// rateAt is the rate the plan offers elapsed after its start, in calls per
+// PlannedRate is the rate the plan offers elapsed after its start, in calls per
 // second: a constant stage holds its rate, a ramp moves linearly from its
 // StartRPS to its TargetRPS over its Duration, and a stage that has ended
 // hands over to the next one at exactly its end (the next stage's rate at the
 // boundary). A negative elapsed is the plan's first rate, a stage of zero
 // Duration is skipped, and 0 comes after the last stage and for a plan with
 // none. Pure: it reads nothing but its arguments.
-func rateAt(stages []Stage, elapsed time.Duration) float64 {
+func PlannedRate(stages []Stage, elapsed time.Duration) float64 {
 	var base time.Duration
 	for _, stage := range stages {
 		if stage.Duration <= 0 {

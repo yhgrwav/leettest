@@ -503,6 +503,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `stop.limit` | string | 按配置书写的限值：`"5%"`。 |
 | `stop.at_us` | int | 从运行开始到停止所经过的时间，单位为整微秒。 |
 | `stop.in_flight` | int | 此刻在途的调用数（已开始、未结束）：目标卡死时，这是窗口看不到的数字。 |
+| `stop.planned_rps` | float? | 停止那一刻该方法的计划给出的速率（未发布），每秒调用数，保留 3 位小数；停止行把它打印为整数个调用：`the plan offered 1700 rps at that moment`。停止发生在该方法计划结束时或之后则为 `null`，此时停止行写 `the plan had ended`。停止的时刻是判断的时刻，不是发送的时刻：失败的调用可能更早发出，最多早一个调用超时的长度；它们发出时的速率见 `ramp by second` 块。 |
 | `seq_overflow` | object? | `{{seq}}` 放不进字段而运行停止的位置；没有发生时为 `null`。此时 `stop_reason` 为 `seq_overflow`，运行平稳结束（退出码 3）。 |
 | `seq_overflow.method` | string | 字段溢出的方法，写法同 `methods[].method`，含开头的 `/`。 |
 | `seq_overflow.limit` | int | 该方法最窄的字段所能容纳的最大 `seq`。 |

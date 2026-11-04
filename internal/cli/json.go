@@ -540,7 +540,7 @@ func jsonRunFacts(run JSONRun) JSONReport {
 		WarmupFailed:      r.WarmupFailed,
 		WarmupNotSent:     r.WarmupNotSent,
 		StopReason:        stopReasonJSON(run.Run),
-		Stop:              stopJSON(run.Run.Stop),
+		Stop:              stopJSON(run.Run.Stop, run.Run.StopPlanned),
 		SeqOverflow:       seqOverflowJSON(r.SeqOverflow),
 		TailWaitCause:     tailWaitCause(*r),
 		GeneratorLimit:    generatorLimitJSON(run.Run),
