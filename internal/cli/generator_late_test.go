@@ -476,10 +476,15 @@ func TestGeneratorLate_ASearchStepIsNotInvalidForIt(t *testing.T) {
 // CPU and the schedule the report already has. The first match wins: the user
 // lowered GOMAXPROCS, then the cgroup quota is below the CPUs and the CPU was
 // busy, then the CPU was busy, then the schedule was not exact, else unknown.
+// Every branch needs the generator's CPU to be measured (read, and counted for
+// at least one whole second): without it the limit is unknown, and says so. A
+// lowered GOMAXPROCS is named only when the CPU was busy; the passport is
+// needed by the first two branches only.
 
 const (
-	limitFixes  = "lower the rate, or split it over several machines."
-	unknownLine = "The generator's CPU was not busy and the report cannot name the limit: " + limitFixes
+	limitFixes      = "lower the rate, or split it over several machines."
+	unknownLine     = "The generator's CPU was not busy and the report cannot name the limit: " + limitFixes
+	notMeasuredLine = "The generator's CPU was not measured for a whole second and the report cannot name the limit: " + limitFixes
 )
 
 func quota(q float64) *float64 { return &q }
@@ -537,8 +542,10 @@ func quotaLine(q string, n, busy, counted int) string {
 		strconv.Itoa(busy) + " of " + strconv.Itoa(counted) + " s: raise the quota, " + limitFixes
 }
 
+// coresLine takes the cores as the generator CPU line words them: "8 cores",
+// "7.5 cores", "1 core".
 func coresLine(a string, busy, counted int) string {
-	return "The generator used 90% or more of this machine's " + a + " cores in " +
+	return "The generator used 90% or more of the " + a + " available to it in " +
 		strconv.Itoa(busy) + " of " + strconv.Itoa(counted) + " s: " + limitFixes
 }
 
@@ -546,22 +553,27 @@ func coresLine(a string, busy, counted int) string {
 // sentence for it.
 func limitCases() []limitCase {
 	return []limitCase{
-		{"gomaxprocs lowered, CPU quiet",
-			limitRun(limitPassport("linux", 8, 2, nil), cpuSeconds(2, 0, 10)), "gomaxprocs", gomaxprocsLine(2, 8)},
-		{"gomaxprocs lowered beats a busy CPU",
+		{"gomaxprocs lowered, CPU busy",
 			limitRun(limitPassport("linux", 8, 2, nil), cpuSeconds(2, 7, 10)), "gomaxprocs", gomaxprocsLine(2, 8)},
+		{"gomaxprocs lowered, CPU quiet: idle Ps are not the limit",
+			limitRun(limitPassport("linux", 8, 2, nil), cpuSeconds(2, 0, 10)), "unknown", unknownLine},
 		{"gomaxprocs lowered beats a busy CPU and a quota",
 			limitRun(limitPassport("linux", 8, 1, quota(2)), cpuSeconds(1, 7, 10)), "gomaxprocs", gomaxprocsLine(1, 8)},
-		{"gomaxprocs lowered beats an inexact schedule",
-			limitRun(limitPassport("windows", 8, 4, nil), cpuSeconds(4, 0, 10), "no_precise_sleep"), "gomaxprocs", gomaxprocsLine(4, 8)},
+		{"gomaxprocs lowered, CPU quiet, schedule not exact: the schedule, not GOMAXPROCS",
+			limitRun(limitPassport("windows", 8, 4, nil), cpuSeconds(4, 0, 10), "no_precise_sleep"), "schedule",
+			scheduleLine("no microsecond sleep on windows", "run from Linux")},
+		{"gomaxprocs lowered beats an inexact schedule when the CPU is busy",
+			limitRun(limitPassport("windows", 8, 4, nil), cpuSeconds(4, 6, 10), "no_precise_sleep"), "gomaxprocs", gomaxprocsLine(4, 8)},
 		{"gomaxprocs below the quota rounded up (2 < ceil 2.5 = 3)",
 			limitRun(limitPassport("linux", 8, 2, quota(2.5)), cpuSeconds(2, 7, 10)), "gomaxprocs", gomaxprocsLine(2, 8)},
-		{"gomaxprocs below the CPUs with a quota above them",
-			limitRun(limitPassport("linux", 8, 6, quota(12)), cpuSeconds(6, 0, 10)), "gomaxprocs", gomaxprocsLine(6, 8)},
+		{"gomaxprocs below the CPUs with a quota above them, CPU busy",
+			limitRun(limitPassport("linux", 8, 6, quota(12)), cpuSeconds(6, 5, 10)), "gomaxprocs", gomaxprocsLine(6, 8)},
+		{"gomaxprocs below the CPUs with a quota above them, CPU quiet",
+			limitRun(limitPassport("linux", 8, 6, quota(12)), cpuSeconds(6, 0, 10)), "unknown", unknownLine},
 		{"gomaxprocs equal to the quota rounded up is not lowered",
 			limitRun(limitPassport("linux", 8, 3, quota(2.5)), cpuSeconds(2.5, 7, 10)), "cpu_quota", quotaLine("2.5", 8, 7, 10)},
 		{"gomaxprocs equal to the CPUs is not lowered",
-			limitRun(limitPassport("linux", 8, 8, nil), cpuSeconds(8, 9, 12)), "cpu", coresLine("8", 9, 12)},
+			limitRun(limitPassport("linux", 8, 8, nil), cpuSeconds(8, 9, 12)), "cpu", coresLine("8 cores", 9, 12)},
 		{"quota below the CPUs, CPU busy",
 			limitRun(limitPassport("linux", 8, 2, quota(2)), cpuSeconds(2, 7, 10)), "cpu_quota", quotaLine("2", 8, 7, 10)},
 		{"quota with a fraction below the CPUs, CPU busy",
@@ -569,13 +581,22 @@ func limitCases() []limitCase {
 		{"quota below the CPUs, CPU busy, schedule not exact: the busy CPU first",
 			limitRun(limitPassport("linux", 8, 2, quota(2)), cpuSeconds(2, 1, 10), "clock_step"), "cpu_quota", quotaLine("2", 8, 1, 10)},
 		{"quota whose ceiling is the CPUs is no limit",
-			limitRun(limitPassport("linux", 8, 8, quota(7.5)), cpuSeconds(7.5, 7, 10)), "cpu", coresLine("7.5", 7, 10)},
+			limitRun(limitPassport("linux", 8, 8, quota(7.5)), cpuSeconds(7.5, 7, 10)), "cpu", coresLine("7.5 cores", 7, 10)},
 		{"quota equal to the CPUs is no limit",
-			limitRun(limitPassport("linux", 8, 8, quota(8)), cpuSeconds(8, 7, 10)), "cpu", coresLine("8", 7, 10)},
+			limitRun(limitPassport("linux", 8, 8, quota(8)), cpuSeconds(8, 7, 10)), "cpu", coresLine("8 cores", 7, 10)},
 		{"busy CPU, no quota",
-			limitRun(limitPassport("linux", 4, 4, nil), cpuSeconds(4, 9, 12)), "cpu", coresLine("4", 9, 12)},
+			limitRun(limitPassport("linux", 4, 4, nil), cpuSeconds(4, 9, 12)), "cpu", coresLine("4 cores", 9, 12)},
+		{"busy CPU on one CPU: \"1 core\"",
+			limitRun(limitPassport("linux", 1, 1, nil), cpuSeconds(1, 8, 10)), "cpu", coresLine("1 core", 8, 10)},
 		{"busy CPU beats an inexact schedule",
-			limitRun(limitPassport("windows", 4, 4, nil), cpuSeconds(4, 9, 12), "no_precise_sleep", "clock_step"), "cpu", coresLine("4", 9, 12)},
+			limitRun(limitPassport("windows", 4, 4, nil), cpuSeconds(4, 9, 12), "no_precise_sleep", "clock_step"), "cpu", coresLine("4 cores", 9, 12)},
+		{"no passport, CPU busy: the cores come from the CPU reading",
+			limitRun(nil, cpuSeconds(8, 9, 12)), "cpu", coresLine("8 cores", 9, 12)},
+		{"no passport, CPU quiet, schedule not exact: the host is \"this host\"",
+			limitRun(nil, cpuSeconds(8, 0, 10), "no_precise_sleep"), "schedule",
+			scheduleLine("no microsecond sleep on this host", "run from Linux")},
+		{"no passport, CPU quiet, schedule exact",
+			limitRun(nil, cpuSeconds(8, 0, 10)), "unknown", unknownLine},
 		{"CPU quiet, schedule not exact (clock step)",
 			limitRun(limitPassport("windows", 8, 8, nil), cpuSeconds(8, 0, 10), "clock_step"), "schedule",
 			scheduleLine("clock step 1us or coarser", "run from Linux")},
@@ -584,6 +605,9 @@ func limitCases() []limitCase {
 			scheduleLine("no microsecond sleep on windows, clock step 1us or coarser", "run from Linux")},
 		{"CPU quiet, schedule not exact (GOMAXPROCS below 2 on one CPU)",
 			limitRun(limitPassport("linux", 1, 1, nil), cpuSeconds(1, 0, 10), "gomaxprocs"), "schedule",
+			scheduleLine("GOMAXPROCS below 2", "set GOMAXPROCS to 2 or more")},
+		{"GOMAXPROCS 1 on 8 CPUs, CPU quiet: the schedule reason names the fix",
+			limitRun(limitPassport("linux", 8, 1, nil), cpuSeconds(1, 0, 10), "gomaxprocs"), "schedule",
 			scheduleLine("GOMAXPROCS below 2", "set GOMAXPROCS to 2 or more")},
 		{"CPU quiet, schedule not exact: the fixes in the reasons' order",
 			limitRun(limitPassport("windows", 1, 1, nil), cpuSeconds(1, 0, 10), "no_precise_sleep", "clock_step", "gomaxprocs"), "schedule",
@@ -597,7 +621,19 @@ func limitCases() []limitCase {
 		{"nothing lowered, CPU quiet, schedule exact",
 			limitRun(limitPassport("linux", 8, 8, nil), cpuSeconds(8, 0, 10)), "unknown", unknownLine},
 		{"no passport, no CPU reading, schedule exact",
-			limitRun(nil, nil), "unknown", unknownLine},
+			limitRun(nil, nil), "unknown", notMeasuredLine},
+		{"no CPU reading, GOMAXPROCS lowered",
+			limitRun(limitPassport("linux", 8, 2, nil), nil), "unknown", notMeasuredLine},
+		{"no CPU reading, quota below the CPUs",
+			limitRun(limitPassport("linux", 8, 2, quota(2)), nil), "unknown", notMeasuredLine},
+		{"no CPU reading, schedule not exact",
+			limitRun(limitPassport("windows", 8, 8, nil), nil, "clock_step"), "unknown", notMeasuredLine},
+		{"CPU read but no whole second counted, GOMAXPROCS lowered",
+			limitRun(limitPassport("linux", 8, 2, nil), cpuSeconds(2, 0, 0)), "unknown", notMeasuredLine},
+		{"CPU read but no whole second counted, schedule not exact",
+			limitRun(limitPassport("windows", 8, 8, nil), cpuSeconds(8, 0, 0), "clock_step"), "unknown", notMeasuredLine},
+		{"CPU read but no whole second counted, nothing lowered",
+			limitRun(limitPassport("linux", 8, 8, nil), cpuSeconds(8, 0, 0)), "unknown", notMeasuredLine},
 	}
 }
 

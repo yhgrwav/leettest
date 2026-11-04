@@ -515,9 +515,11 @@ bei 2 ms.
 - Unter Windows springt die Uhr in Schritten von etwa 0,5 ms, und ein Lauf gegen einen schnellen
   Dienst wird für ungültig erklärt (`clock_step`, Exit-Code 2).
 - Hat die Verspätung des Generators selbst das p99-Ende bestimmt, ist der Lauf ungültig
-  (`generator_late`, Exit-Code 2, nicht veröffentlicht): Der Bericht nennt die Methoden und rät, dem
-  Generator mehr CPU zu geben, die Rate zu senken oder sie auf mehrere Rechner aufzuteilen.
-  Beurteilt werden Methoden ab 100 Beobachtungen; bei weniger ist p99 das Maximum, und der Lauf
+  (`generator_late`, Exit-Code 2, nicht veröffentlicht): Der Bericht nennt die Methoden, die Grenze, an die der
+  Generator gestoßen ist (`generator_limit`: `gomaxprocs`, `cpu_quota`, `cpu`, `schedule` oder
+  `unknown`), und das eine, was zu ändern ist, und rät dann, die Rate zu senken oder sie auf mehrere
+  Rechner aufzuteilen. Die Grenze wird nur aus einer CPU-Messung des Generators über eine volle
+  Sekunde genannt; sonst ist sie `unknown`. Beurteilt werden Methoden ab 100 Beobachtungen; bei weniger ist p99 das Maximum, und der Lauf
   bleibt gültig, mit dem Hinweis und `tail_wait_cause: generator`. Ein Ende, das Streams oder
   Verbindungen bestimmt haben, macht den Lauf nicht ungültig. Eine Suche nach dem Bruchpunkt ist
   nicht betroffen: Ihre Schritte behalten ihre eigene Ursache `generator`.

@@ -489,8 +489,10 @@ the generator and the target goes into the latency and looks like the target's t
 - On Windows the clock steps about 0.5 ms, and a run against a fast service will be declared invalid
   (`clock_step`, exit code 2).
 - If the generator's own lag decided the p99 tail, the run is invalid (`generator_late`, exit code
-  2, not released yet): the report names the methods and says to give the generator more CPU, lower
-  the rate or split it over several machines. It is judged on methods with at least 100
+  2, not released yet): the report names the methods and the limit the generator hit
+  (`generator_limit`: `gomaxprocs`, `cpu_quota`, `cpu`, `schedule` or `unknown`) and the one thing to
+  change, then says to lower the rate or split it over several machines. The limit is named only
+  from a generator CPU measured for a whole second; otherwise it is `unknown`. It is judged on methods with at least 100
   observations; with fewer, p99 is the maximum, and the run stays valid with the note and
   `tail_wait_cause: generator`. A tail decided by streams or connections does not make a run
   invalid. A
