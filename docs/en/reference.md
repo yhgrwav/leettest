@@ -494,8 +494,10 @@ the generator and the target goes into the latency and looks like the target's t
   change, then says to lower the rate or split it over several machines. The limit is named only
   from a generator CPU measured for a whole second; otherwise it is `unknown`. It is judged on methods with at least 100
   observations; with fewer, p99 is the maximum, and the run stays valid with the note and
-  `tail_wait_cause: generator`. A tail decided by streams or connections does not make a run
-  invalid. A
+  `tail_wait_cause: generator`. The run is also invalid when the generator never sent 1% or more
+  of some method's calls, whatever the tail's cause says: such calls are latency the generator
+  owes, and they are not the target's. Otherwise a tail decided by streams or connections does
+  not make a run invalid. A
   breaking-point search is not affected: its steps keep their own `generator` cause.
 - The generator's lag is warned of while the run goes on (not released yet). Once a second the last
   five whole seconds of the run are looked at, warm-up included, by the second a call was done in.

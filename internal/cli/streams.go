@@ -161,19 +161,25 @@ func streamVerdict(report engine.Report) string {
 // verdict (generatorLimitLine).
 func verdictText(report engine.Report, searchStep bool, limitLine string) string {
 	top, side, ok := verdictCause(report)
-	if !ok {
+
+	// A run the generator left a share of calls unsent in is invalid whoever
+	// the verdict names (engine.MethodReport.LeftShare); its words are about the
+	// generator, with no "limited by the run" in front of them.
+	lateRun := !searchStep && report.GeneratorDecidedTail()
+	if !ok && !lateRun {
 		return ""
 	}
 
 	var b strings.Builder
 
-	lateRun := top.what == causeGenerator && !searchStep && report.GeneratorDecidedTail()
 	if side == engine.SideRun && !lateRun {
 		b.WriteString("limited by the run, not the target: ")
 	}
 	switch {
-	case lateRun:
+	case lateRun && top.what == causeGenerator:
 		b.WriteString(generatorLateHeading(report, limitLine))
+	case lateRun:
+		b.WriteString(generatorShareHeading(report, limitLine))
 	case top.what == causeGenerator:
 		fmt.Fprintf(&b, "the generator fell behind for %s.", plural(top.n, "call"))
 	case top.what == causeConnection:
@@ -253,6 +259,10 @@ func streamHeading(report engine.Report) string {
 
 // shortStreamVerdict is streamVerdict in one ASCII phrase.
 func shortStreamVerdict(report engine.Report) string {
+	if report.GeneratorDecidedTail() {
+		return "invalid run: the generator fell behind"
+	}
+
 	top, side, ok := verdictCause(report)
 	if !ok {
 		return ""
@@ -264,10 +274,6 @@ func shortStreamVerdict(report engine.Report) string {
 	}
 	switch top.what {
 	case causeGenerator:
-		if report.GeneratorDecidedTail() {
-			return "invalid run: the generator fell behind"
-		}
-
 		return run + "the generator fell behind"
 	case causeConnection:
 		return run + "the connection to the target was not ready"

@@ -425,7 +425,7 @@ type droppingTarget struct {
 	gate chan struct{}
 }
 
-func dropping(t *testing.T) *droppingTarget {
+func dropping(t *testing.T, extra ...grpc.DialOption) *droppingTarget {
 	t.Helper()
 
 	lis := bufconn.Listen(1024 * 1024)
@@ -438,7 +438,7 @@ func dropping(t *testing.T) *droppingTarget {
 
 	d.sender = New(Options{
 		Target: "passthrough:///bufnet",
-		DialOptions: []grpc.DialOption{
+		DialOptions: append([]grpc.DialOption{
 			grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
 				d.mu.Lock()
 				gate := d.gate
@@ -459,7 +459,7 @@ func dropping(t *testing.T) *droppingTarget {
 
 				return conn, err
 			}),
-		},
+		}, extra...),
 	})
 	if err := d.sender.Connect(bounded(t)); err != nil {
 		t.Fatalf("connect: %v", err)
