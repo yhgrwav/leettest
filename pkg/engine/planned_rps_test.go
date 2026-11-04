@@ -55,7 +55,7 @@ func rampThenHold() []Stage {
 	}
 }
 
-// numericMean is the mean of rateAt over [from, to) by the midpoint rule with
+// numericMean is the mean of PlannedRate over [from, to) by the midpoint rule with
 // 1 µs steps: the reference the closed form is held to.
 func numericMean(stages []Stage, from, to time.Duration) float64 {
 	const step = time.Microsecond
@@ -68,7 +68,7 @@ func numericMean(stages []Stage, from, to time.Duration) float64 {
 
 	n := 0
 	for at := from; at < to; at += step {
-		sum += rateAt(stages, at+step/2)
+		sum += PlannedRate(stages, at+step/2)
 		n++
 	}
 
