@@ -616,6 +616,7 @@ unten den Typ „percentile?" hat.
 | `outcome` | string | `complete`, `invalid`, `incomplete` — entspricht Exit-Code `0`, `2`, `3`; ein beendeter Lauf, der eine `pass`-Grenze verfehlt hat, ist `complete` mit Code `4`; bei `-json-file` und fehlgeschlagenem Schreiben ist der Code `1`, und `outcome` bleibt der des Laufs |
 | `invalid_reasons` | []string | Warum der Lauf ungültig ist: `in_flight_cap`, `nothing_measured`, `clock_step`, `generator_late` (der Generator blieb hinter dem Plan zurück, seit v0.7; siehe „Wo man es ausführt“), `thresholds_undecided` (eine `pass`-Grenze lässt sich nicht entscheiden, und nicht, weil der Lauf angehalten oder schon ungültig war). Leer — gültig |
 | `tail_wait_cause` | string? | Die Wartezeit auf Client-Seite, die das Ende der Verteilung bestimmt hat: `generator`, `stream`, `connection`; `null` — kein Urteil |
+| `generator_limit` | string? | An welche eigene Grenze der Generator in einem `generator_late`-Lauf stieß (nicht veröffentlicht): `gomaxprocs`, `cpu_quota`, `cpu`, `schedule`, `unknown`; `null` — der Lauf ist nicht `generator_late` |
 | `clock_step_ns` | int | Der Uhrenschritt des Hosts, ns: Jede Latenz und Wartezeit ist ± dieser Wert |
 | `stop_reason` | string? | `error_spike`, wenn `load.stop_on_errors` den Lauf gestoppt hat; sonst `null`. |
 | `stop` | object? | Wo und auf welchen Zahlen `load.stop_on_errors` den Lauf gestoppt hat; `null`, wenn nicht. |

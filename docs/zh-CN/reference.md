@@ -491,6 +491,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `outcome` | string | `complete`、`invalid`、`incomplete`——对应退出码 `0`、`2`、`3`；已结束但没达到 `pass` 限值的运行是 `complete`，退出码 `4`；使用 `-json-file` 且写入失败时退出码为 `1`，`outcome` 仍是该次运行的 |
 | `invalid_reasons` | []string | 运行无效的原因：`in_flight_cap`、`nothing_measured`、`clock_step`、`generator_late`（生成器落后于计划，自 v0.7 起；见“在哪里运行”）、`thresholds_undecided`（某个 `pass` 限值无法判定，且原因不是运行被停止或已经无效）。为空——有效 |
 | `tail_wait_cause` | string? | 决定尾部的客户端侧等待：`generator`、`stream`、`connection`；`null`——没有结论 |
+| `generator_limit` | string? | 在 `generator_late` 运行中，生成器撞上了自身的哪个上限（未发布）：`gomaxprocs`、`cpu_quota`、`cpu`、`schedule`、`unknown`；`null`——该运行不是 `generator_late` |
 | `clock_step_ns` | int | 主机时钟步长，纳秒：每个延迟和等待都有 ± 这个值的误差 |
 | `stop_reason` | string? | 由 `load.stop_on_errors` 停止运行时为 `error_spike`；否则为 `null`。 |
 | `stop` | object? | `load.stop_on_errors` 在何处、依据哪些数字停止了运行；没有停止则为 `null`。 |

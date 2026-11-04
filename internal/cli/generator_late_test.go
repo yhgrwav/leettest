@@ -64,7 +64,11 @@ func lateRun(methods ...engine.MethodReport) RunReport {
 		r.Sent += methods[i].Sent
 	}
 
-	return RunReport{Report: r}
+	// An 8-CPU Linux machine, nothing lowered, the generator's CPU never busy
+	// and the schedule exact: the one case the report cannot name a limit for.
+	return RunReport{
+		Report: r, Passport: limitPassport("linux", 8, 8, nil), GeneratorCPU: cpuSeconds(8, 0, 10),
+	}
 }
 
 func noteOf(t *testing.T, run RunReport, prefix string) string {
@@ -205,16 +209,20 @@ func jsonRunOf(run RunReport) JSONRun {
 // <methods> are the ones the lag moved (and the ones that lost calls to the
 // generator), joined by ", "; the start lag p99 and max come from the run; the
 // tail ", N calls never sent" is there only when the generator left calls
-// unsent.
+// unsent. The last line is the limit's (limitCases): lateRun's machine gives
+// "unknown".
 func generatorLateSentence(run RunReport, methods string) string {
+	return generatorLateSentenceWith(run, methods, unknownLine)
+}
+
+func generatorLateSentenceWith(run RunReport, methods, limitLine string) string {
 	s := "invalid run: the generator fell behind its schedule and decided the p99 tail of " + methods +
 		": start lag p99 " + formatQuantile(run.StartLagP99) + ", max " + formatDuration(run.StartLagMax)
 	if n := run.NotSentGenerator; n > 0 {
 		s += ", " + strconv.Itoa(n) + " calls never sent"
 	}
 
-	return s + ". The latencies include this machine's delay and do not measure the target. " +
-		"Give the generator more CPU, lower the rate, or split it over several machines."
+	return s + ". The latencies include this machine's delay and do not measure the target. " + limitLine
 }
 
 func TestGeneratorLate_TheReportSaysInvalidAndWhatToChange(t *testing.T) {
@@ -460,5 +468,205 @@ func TestGeneratorLate_ASearchStepIsNotInvalidForIt(t *testing.T) {
 		return strings.Contains(flat(n), "limited by the run, not the target: the generator fell behind")
 	}) {
 		t.Errorf("a search step's notes lost \"limited by the run, not the target: the generator fell behind\": %v", notes)
+	}
+}
+
+// The limit the generator hit (GeneratorLimit): a generator_late run says which
+// limit of its own the generator ran into, from the passport, the generator's
+// CPU and the schedule the report already has. The first match wins: the user
+// lowered GOMAXPROCS, then the cgroup quota is below the CPUs and the CPU was
+// busy, then the CPU was busy, then the schedule was not exact, else unknown.
+
+const (
+	limitFixes  = "lower the rate, or split it over several machines."
+	unknownLine = "The generator's CPU was not busy and the report cannot name the limit: " + limitFixes
+)
+
+func quota(q float64) *float64 { return &q }
+
+// limitPassport is the machine of a run: logical CPUs, GOMAXPROCS and the
+// cgroup quota (nil: none).
+func limitPassport(goos string, numCPU, gomaxprocs int, cpuQuota *float64) *Passport {
+	return &Passport{
+		ConfigSHA256: "0123456789abcdef", OS: goos, Arch: "amd64", NumCPU: numCPU, GOMAXPROCS: gomaxprocs,
+		CPUQuota: cpuQuota, GoVersion: "go1.27.1",
+	}
+}
+
+// cpuSeconds is the generator's CPU over counted seconds, busy of them at 90%
+// or more of avail cores.
+func cpuSeconds(avail float64, busy, counted int) *GeneratorCPU {
+	g := &GeneratorCPU{AvailableCores: avail, BusySeconds: busy, Counted: counted}
+	if busy > 0 {
+		first := 2
+		g.FirstBusy = &first
+	}
+
+	return g
+}
+
+// limitRun is a generator_late run on the machine p, with the generator's CPU
+// cpu (nil: not read) and the reasons the schedule was not exact, in the
+// engine's order.
+func limitRun(p *Passport, cpu *GeneratorCPU, notExact ...string) RunReport {
+	run := lateRun()
+	run.Passport, run.GeneratorCPU, run.ScheduleNotExact = p, cpu, notExact
+
+	return run
+}
+
+type limitCase struct {
+	name string
+	run  RunReport
+	// limit is the name in the JSON; line the last line of the verdict, word
+	// for word.
+	limit, line string
+}
+
+func gomaxprocsLine(g, n int) string {
+	return "The generator ran on GOMAXPROCS " + strconv.Itoa(g) + " of " + strconv.Itoa(n) +
+		" CPUs: raise GOMAXPROCS, " + limitFixes
+}
+
+func scheduleLine(reasons, fix string) string {
+	return "The generator's CPU was not busy, and the schedule is not exact here (" + reasons + "): " + fix + ", or lower the rate."
+}
+
+func quotaLine(q string, n, busy, counted int) string {
+	return "The generator used 90% or more of its CPU quota (" + q + " of " + strconv.Itoa(n) + " CPUs) in " +
+		strconv.Itoa(busy) + " of " + strconv.Itoa(counted) + " s: raise the quota, " + limitFixes
+}
+
+func coresLine(a string, busy, counted int) string {
+	return "The generator used 90% or more of this machine's " + a + " cores in " +
+		strconv.Itoa(busy) + " of " + strconv.Itoa(counted) + " s: " + limitFixes
+}
+
+// limitCases are the branches and their edges; each row's line is the exact
+// sentence for it.
+func limitCases() []limitCase {
+	return []limitCase{
+		{"gomaxprocs lowered, CPU quiet",
+			limitRun(limitPassport("linux", 8, 2, nil), cpuSeconds(2, 0, 10)), "gomaxprocs", gomaxprocsLine(2, 8)},
+		{"gomaxprocs lowered beats a busy CPU",
+			limitRun(limitPassport("linux", 8, 2, nil), cpuSeconds(2, 7, 10)), "gomaxprocs", gomaxprocsLine(2, 8)},
+		{"gomaxprocs lowered beats a busy CPU and a quota",
+			limitRun(limitPassport("linux", 8, 1, quota(2)), cpuSeconds(1, 7, 10)), "gomaxprocs", gomaxprocsLine(1, 8)},
+		{"gomaxprocs lowered beats an inexact schedule",
+			limitRun(limitPassport("windows", 8, 4, nil), cpuSeconds(4, 0, 10), "no_precise_sleep"), "gomaxprocs", gomaxprocsLine(4, 8)},
+		{"gomaxprocs below the quota rounded up (2 < ceil 2.5 = 3)",
+			limitRun(limitPassport("linux", 8, 2, quota(2.5)), cpuSeconds(2, 7, 10)), "gomaxprocs", gomaxprocsLine(2, 8)},
+		{"gomaxprocs below the CPUs with a quota above them",
+			limitRun(limitPassport("linux", 8, 6, quota(12)), cpuSeconds(6, 0, 10)), "gomaxprocs", gomaxprocsLine(6, 8)},
+		{"gomaxprocs equal to the quota rounded up is not lowered",
+			limitRun(limitPassport("linux", 8, 3, quota(2.5)), cpuSeconds(2.5, 7, 10)), "cpu_quota", quotaLine("2.5", 8, 7, 10)},
+		{"gomaxprocs equal to the CPUs is not lowered",
+			limitRun(limitPassport("linux", 8, 8, nil), cpuSeconds(8, 9, 12)), "cpu", coresLine("8", 9, 12)},
+		{"quota below the CPUs, CPU busy",
+			limitRun(limitPassport("linux", 8, 2, quota(2)), cpuSeconds(2, 7, 10)), "cpu_quota", quotaLine("2", 8, 7, 10)},
+		{"quota with a fraction below the CPUs, CPU busy",
+			limitRun(limitPassport("linux", 8, 2, quota(1.5)), cpuSeconds(1.5, 4, 10)), "cpu_quota", quotaLine("1.5", 8, 4, 10)},
+		{"quota below the CPUs, CPU busy, schedule not exact: the busy CPU first",
+			limitRun(limitPassport("linux", 8, 2, quota(2)), cpuSeconds(2, 1, 10), "clock_step"), "cpu_quota", quotaLine("2", 8, 1, 10)},
+		{"quota whose ceiling is the CPUs is no limit",
+			limitRun(limitPassport("linux", 8, 8, quota(7.5)), cpuSeconds(7.5, 7, 10)), "cpu", coresLine("7.5", 7, 10)},
+		{"quota equal to the CPUs is no limit",
+			limitRun(limitPassport("linux", 8, 8, quota(8)), cpuSeconds(8, 7, 10)), "cpu", coresLine("8", 7, 10)},
+		{"busy CPU, no quota",
+			limitRun(limitPassport("linux", 4, 4, nil), cpuSeconds(4, 9, 12)), "cpu", coresLine("4", 9, 12)},
+		{"busy CPU beats an inexact schedule",
+			limitRun(limitPassport("windows", 4, 4, nil), cpuSeconds(4, 9, 12), "no_precise_sleep", "clock_step"), "cpu", coresLine("4", 9, 12)},
+		{"CPU quiet, schedule not exact (clock step)",
+			limitRun(limitPassport("windows", 8, 8, nil), cpuSeconds(8, 0, 10), "clock_step"), "schedule",
+			scheduleLine("clock step 1us or coarser", "run from Linux")},
+		{"CPU quiet, schedule not exact: the fix for two reasons is said once",
+			limitRun(limitPassport("windows", 8, 8, nil), cpuSeconds(8, 0, 10), "no_precise_sleep", "clock_step"), "schedule",
+			scheduleLine("no microsecond sleep on windows, clock step 1us or coarser", "run from Linux")},
+		{"CPU quiet, schedule not exact (GOMAXPROCS below 2 on one CPU)",
+			limitRun(limitPassport("linux", 1, 1, nil), cpuSeconds(1, 0, 10), "gomaxprocs"), "schedule",
+			scheduleLine("GOMAXPROCS below 2", "set GOMAXPROCS to 2 or more")},
+		{"CPU quiet, schedule not exact: the fixes in the reasons' order",
+			limitRun(limitPassport("windows", 1, 1, nil), cpuSeconds(1, 0, 10), "no_precise_sleep", "clock_step", "gomaxprocs"), "schedule",
+			scheduleLine("no microsecond sleep on windows, clock step 1us or coarser, GOMAXPROCS below 2",
+				"run from Linux, set GOMAXPROCS to 2 or more")},
+		{"quota below the CPUs, CPU quiet, schedule not exact",
+			limitRun(limitPassport("linux", 8, 2, quota(2)), cpuSeconds(2, 0, 10), "clock_step"), "schedule",
+			scheduleLine("clock step 1us or coarser", "run from Linux")},
+		{"quota below the CPUs, CPU quiet, schedule exact",
+			limitRun(limitPassport("linux", 8, 2, quota(2)), cpuSeconds(2, 0, 10)), "unknown", unknownLine},
+		{"nothing lowered, CPU quiet, schedule exact",
+			limitRun(limitPassport("linux", 8, 8, nil), cpuSeconds(8, 0, 10)), "unknown", unknownLine},
+		{"no passport, no CPU reading, schedule exact",
+			limitRun(nil, nil), "unknown", unknownLine},
+	}
+}
+
+func TestGeneratorLimit_PicksTheFirstMatchingLimit(t *testing.T) {
+	for _, tc := range limitCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			if !GeneratorLate(tc.run) {
+				t.Fatal("GeneratorLate = false: the fixture is not a generator_late run")
+			}
+
+			got, ok := GeneratorLimit(tc.run)
+			if !ok || got != tc.limit {
+				t.Errorf("GeneratorLimit = %q, %v; want %q, true", got, ok, tc.limit)
+			}
+		})
+	}
+}
+
+// Not a generator_late run: no limit, whatever the machine looks like.
+func TestGeneratorLimit_ARunThatIsNotGeneratorLateHasNone(t *testing.T) {
+	busy := func() RunReport { return limitRun(limitPassport("linux", 8, 2, quota(2)), cpuSeconds(2, 9, 10)) }
+
+	stream := busy()
+	stream.GeneratorCauseCalls, stream.GeneratorTailCalls = 0, 0
+	stream.StreamCauseCalls, stream.StreamTailCalls = 30, 30
+
+	quiet := busy()
+	quiet.GeneratorCauseCalls, quiet.GeneratorTailCalls = 0, 0
+	quiet.StartLagP99, quiet.StartLagMax = metrics.Quantile{}, 0
+	quiet.Methods[0] = lateMethod(lateA, 5*time.Millisecond, 5*time.Millisecond)
+
+	step := busy()
+	step.searchStep = true
+
+	few := busy()
+	few.Methods[0] = observed(few.Methods[0], 99)
+
+	for name, run := range map[string]RunReport{
+		"a stream leads the tail": stream, "no lag": quiet, "a step of a search": step, "fewer than 100 observations": few,
+	} {
+		if GeneratorLate(run) {
+			t.Fatalf("%s: GeneratorLate = true, the fixture is not what it names", name)
+		}
+		if got, ok := GeneratorLimit(run); ok || got != "" {
+			t.Errorf("%s: GeneratorLimit = %q, %v; want \"\", false", name, got, ok)
+		}
+	}
+}
+
+// The verdict's last line is the limit's, word for word, in place of the one
+// advice for every run.
+func TestGeneratorLimit_TheVerdictNamesWhatToChange(t *testing.T) {
+	for _, tc := range limitCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			want := generatorLateSentenceWith(tc.run, lateA, tc.line)
+
+			if got := noteOf(t, tc.run, "invalid run: the generator fell behind"); !strings.HasPrefix(got, want) {
+				t.Errorf("note:\n%s\nwant it to start:\n%s", got, want)
+			}
+			text := flat(printedRun(tc.run))
+			if !strings.Contains(text, want) {
+				t.Errorf("the printed report does not say it:\n%s", printedRun(tc.run))
+			}
+			if strings.Contains(text, "Give the generator more CPU") {
+				t.Errorf("the one advice for every run stays in the report:\n%s", printedRun(tc.run))
+			}
+			if n := strings.Count(text, "invalid run: the generator fell behind"); n != 1 {
+				t.Errorf("the invalid verdict is printed %d times, want once", n)
+			}
+		})
 	}
 }

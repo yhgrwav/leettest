@@ -36,6 +36,22 @@ func GeneratorLate(run RunReport) bool {
 	return !run.searchStep && run.GeneratorDecidedTail()
 }
 
+// GeneratorLimit names the limit of its own the generator hit in a
+// generator_late run: gomaxprocs, cpu_quota, cpu, schedule or unknown. ok is
+// false when the run is not generator_late.
+func GeneratorLimit(_ RunReport) (limit string, ok bool) {
+	return "", false
+}
+
+func generatorLimitJSON(run RunReport) *string {
+	limit, ok := GeneratorLimit(run)
+	if !ok {
+		return nil
+	}
+
+	return &limit
+}
+
 // generatorLateHeading is the verdict sentence of a late generator, up to the
 // advice. It names the methods engine.MethodReport.LateByGenerator picks: those
 // the lag moved with enough observations and those that lost calls to the

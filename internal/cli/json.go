@@ -77,6 +77,10 @@ type JSONReport struct {
 	// TailWaitCause is the client-side wait that set the tail: generator, stream
 	// or connection; null without that verdict.
 	TailWaitCause *string `json:"tail_wait_cause"`
+	// GeneratorLimit is the limit of its own the generator hit when the run is
+	// invalid for generator_late (GeneratorLimit): gomaxprocs, cpu_quota, cpu,
+	// schedule or unknown; null for any other run.
+	GeneratorLimit *string `json:"generator_limit"`
 	// StopReason is who ended the run before its end of its own accord:
 	// "error_spike" when load.stop_on_errors did; null otherwise. Stop says
 	// where and on what numbers, and is null with it.
@@ -531,6 +535,7 @@ func jsonRunFacts(run JSONRun) JSONReport {
 		Stop:              stopJSON(run.Run.Stop),
 		SeqOverflow:       seqOverflowJSON(r.SeqOverflow),
 		TailWaitCause:     tailWaitCause(*r),
+		GeneratorLimit:    generatorLimitJSON(run.Run),
 		ClockStepNS:       int64(run.Run.ClockStep),
 		ClientWaits: jsonClientWaits{
 			GeneratorCalls: r.GeneratorCauseCalls, StreamCalls: r.StreamCauseCalls, ConnectionCalls: r.ConnectionCauseCalls,

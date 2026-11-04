@@ -567,6 +567,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `outcome` | string | `complete`, `invalid`, `incomplete` — совпадает с кодом выхода `0`, `2`, `3`; законченный прогон, пропустивший предел `pass`, — `complete` с кодом `4`; при `-json-file` и неудачной записи код `1`, `outcome` остаётся прогонным |
 | `invalid_reasons` | []string | Почему прогон недействителен: `in_flight_cap`, `nothing_measured`, `clock_step`, `generator_late` (генератор отстал от расписания, с v0.7; см. «Где запускать»), `thresholds_undecided` (предел `pass` нельзя решить не из-за остановки и не из-за недействительного прогона). Пустой — действителен |
 | `tail_wait_cause` | string? | Ожидание на стороне клиента, которое задало хвост: `generator`, `stream`, `connection`; `null` — вердикта нет |
+| `generator_limit` | string? | В какой собственный предел упёрся генератор, в прогоне `generator_late` (не выпущено): `gomaxprocs`, `cpu_quota`, `cpu`, `schedule`, `unknown`; `null` — прогон не `generator_late` |
 | `clock_step_ns` | int | Шаг часов хоста, нс: каждая задержка и ожидание ± он |
 | `stop_reason` | string? | `error_spike`, если прогон остановил `load.stop_on_errors`; иначе `null`. |
 | `stop` | object? | Где и на каких числах `load.stop_on_errors` остановил прогон; `null`, если не останавливал. |
