@@ -788,6 +788,9 @@ etwas geschah. Anders als die Summen enthält sie jeden Aufruf. Zum Abgleich: `�
 | `methods[].seconds[].lag_calls`, `methods[].seconds[].lag_sum_us`, `methods[].seconds[].lag_max_us` | int | Über die in dieser Sekunde geplanten Aufrufe: Anzahl, Summe und Maximum der Startverspätung |
 | `methods[].seconds[].observed_calls` | int | Davon die erfolgreichen |
 | `methods[].seconds[].observed_lag_sum_us`, `methods[].seconds[].transport_wait_sum_us`, `methods[].seconds[].service_time_sum_us` | int | Über die erfolgreichen: Summe der Startverspätung, der Wartezeit vor dem Senden (Verbindung und Stream), der Zeit vom Senden bis zur Antwort. Zusammen — ihre Latenzen |
+| `methods[].seconds[].planned_rps` | float | Die Rate, die der Plan in dieser Sekunde vorsah (nicht veröffentlicht): Mittel über den Teil der Sekunde, den Plan und Senden abdeckten, auf 3 Stellen gerundet; `0`, wo der Plan schon vorbei war |
+| `methods[].seconds[].scheduled_sent` | int | Für diese Sekunde geplante Aufrufe, die hinausgingen (nicht veröffentlicht); nie gesendete zählen nicht |
+| `methods[].seconds[].scheduled_failed` | int | Davon die gescheiterten, also weder in `succeeded` noch in `aborted` beendet (nicht veröffentlicht). Nach der geplanten Sekunde gezählt, anders als die Kategoriefelder oben (nach der Sekunde des Endes); am Laufende noch fliegende Aufrufe fehlen, daher eine untere Grenze |
 
 ### Fenster: `methods[].windows[]`
 

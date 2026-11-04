@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -299,6 +300,58 @@ func TestRun_ARampedRunIsStoppedInsideTheRamp(t *testing.T) {
 	}
 	if measured := fieldNumber(t, js, "sent") + fieldNumber(t, js, "not_sent"); measured != 0 {
 		t.Errorf("sent + not_sent = %v, want 0: the ramp's calls are not in the totals", measured)
+	}
+}
+
+// Ground: contract — a run with a ramp prints the ramp second by second, and
+// the JSON carries the same plan: a 4 s ramp to 50 rps offers 6.25, 18.75,
+// 31.25 and 43.75 rps in its seconds (the mean of 12.5·t), printed rounded to
+// whole numbers, the last below the call's own 50. The run is not stopped (a
+// target that answers, a limit that is off), so the block has all its rows;
+// the stopped run above is too short to hold a stable count of them.
+func TestRun_ARampedRunPrintsItsRampBySecond(t *testing.T) {
+	cfg := spikeConfig(t, closedPort(t), "100%", "1s", "3s")
+	setRamp(t, cfg, "4s")
+	path := newJSONPath(t)
+
+	res := runCLI(t.Context(), t, 40*time.Second, "-fake", "-fake-delay", "1ms", "-json-file", path, "-c", cfg)
+	if errors.Is(res.err, ErrIncomplete) {
+		t.Fatalf("err = %v: the run was stopped\nstderr:\n%s", res.err, res.stderr)
+	}
+
+	lines := strings.Split(res.stdout, "\n")
+	header := -1
+	for i, line := range lines {
+		if strings.HasPrefix(line, "ramp by second, ") && strings.HasSuffix(line, ":") {
+			header = i
+		}
+	}
+	if header < 0 {
+		t.Fatalf("no ramp block in the report:\n%s", res.stdout)
+	}
+
+	var planned []string
+	for _, line := range lines[header+2:] {
+		fields := strings.Fields(line)
+		if len(fields) != 4 {
+			break
+		}
+		planned = append(planned, fields[1])
+		if sent, err := strconv.Atoi(fields[2]); err != nil || sent <= 0 {
+			t.Errorf("row %q: sent is not a positive number", line)
+		}
+	}
+	if want := []string{"6", "19", "31", "44"}; !slices.Equal(planned, want) {
+		t.Errorf("planned rps by row = %q, want %q\n%s", planned, want, res.stdout)
+	}
+
+	js := decodeOnly(t, string(readFile(t, path)))
+	secs, _ := jsonAt(t, jsonAt(t, js, "methods").([]any)[0], "seconds").([]any)
+	if len(secs) < 4 {
+		t.Fatalf("seconds = %d, want the ramp's 4 at least", len(secs))
+	}
+	if last := fieldNumber(t, secs[3], "planned_rps"); last != 43.75 {
+		t.Errorf("seconds[3].planned_rps = %v, want 43.75, under the call's 50", last)
 	}
 }
 

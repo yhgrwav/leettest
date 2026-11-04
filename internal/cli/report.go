@@ -119,6 +119,7 @@ func PrintReport(w io.Writer, target string, run RunReport) {
 
 	printRunHeader(w, target, run)
 	printMethodTable(w, run)
+	printRampBlocks(w, run)
 	printWindowsBlocks(w, run)
 	printRunNotes(w, run)
 	printConnectionsBlock(w, target, run.Connections)
