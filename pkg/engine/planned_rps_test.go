@@ -349,6 +349,40 @@ func TestTimeline_APlanThatEndsInsideASecondIsAveragedOverItsOwnEnd(t *testing.T
 	}
 }
 
+// Ground: contract — Engine.Run hands every method's stages to the stats before
+// the schedule starts, so the report of a real run (a fake sender, no network)
+// carries each method's own planned rate. Mutation "Run does not hand the
+// stages over" (every second 0) turns it red without a stand.
+func TestEngineRun_EveryMethodReportsItsPlannedRate(t *testing.T) {
+	eng, err := New(Options{
+		Calls: []Call{
+			{Method: "a.B/One", Timeout: time.Second, Stages: []Stage{{StartRPS: 100, TargetRPS: 100, Duration: 2 * time.Second}}},
+			{Method: "a.B/Two", Timeout: time.Second, Stages: []Stage{{StartRPS: 40, TargetRPS: 40, Duration: 2 * time.Second}}},
+		},
+		Sender:      FakeSender{Delay: time.Millisecond},
+		MaxInFlight: 256,
+	})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	if err := eng.Run(t.Context()); err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	want := map[string]float64{"a.B/One": 100, "a.B/Two": 40}
+	for _, m := range eng.Report().Methods {
+		if len(m.Seconds) < 2 {
+			t.Fatalf("%s: seconds = %d, want at least 2", m.Method, len(m.Seconds))
+		}
+
+		for i, s := range m.Seconds[:2] {
+			if !within(s.PlannedRPS, want[m.Method], 1e-9) {
+				t.Errorf("%s second %d planned %v, want %v", m.Method, i, s.PlannedRPS, want[m.Method])
+			}
+		}
+	}
+}
+
 // Ground: V1 — a call is counted in the second it was scheduled for, so that a
 // target which freezes under load shows the rate the failing calls went out at,
 // not the rate of the moment their timeout came. The outcome counters stay by

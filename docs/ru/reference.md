@@ -740,6 +740,9 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `methods[].seconds[].lag_calls`, `methods[].seconds[].lag_sum_us`, `methods[].seconds[].lag_max_us` | int | По вызовам, запланированным на эту секунду: сколько, сумма и максимум опоздания старта |
 | `methods[].seconds[].observed_calls` | int | Из них успешных |
 | `methods[].seconds[].observed_lag_sum_us`, `methods[].seconds[].transport_wait_sum_us`, `methods[].seconds[].service_time_sum_us` | int | По успешным: сумма опоздания старта, ожидания до отправки (соединение и стрим), времени от отправки до ответа. В сумме — их задержки |
+| `methods[].seconds[].planned_rps` | float | Темп, который план предлагал в эту секунду (не выпущено): среднее по той части секунды, которую покрывали план и отправка, округлено до 3 знаков; `0`, где план уже закончился |
+| `methods[].seconds[].scheduled_sent` | int | Вызовы, запланированные на эту секунду, которые ушли (не выпущено); не ушедшие не считаются |
+| `methods[].seconds[].scheduled_failed` | int | Из них вызовы, которые не удались, то есть закончились не в `succeeded` и не в `aborted` (не выпущено). Считается по запланированной секунде, в отличие от полей категорий выше, которые считают по секунде завершения; вызовы, ещё летевшие в конце прогона, сюда не входят, поэтому это нижняя граница |
 
 ### Окно: `methods[].windows[]`
 

@@ -141,6 +141,8 @@ func TestTimeline_OutcomesAreSplit(t *testing.T) {
 	want := Second{
 		Begun: 10, Succeeded: 1, Overload: 1, Failure: 1, TimedOut: 1, RequestFailed: 1, NotSentConnection: 1, NotSentGenerator: 1,
 		Unanswered: 1, Aborted: 1, Unclassified: 1,
+		// The 8 calls that went out; of them everything but the success and the abort failed.
+		ScheduledSent: 8, ScheduledFailed: 6,
 	}
 	got.LagSum, got.LagMax, got.LagCalls = 0, 0, 0
 	got.ObservedCalls, got.ObservedLagSum, got.TransportWaitSum, got.ServiceTimeSum = 0, 0, 0, 0

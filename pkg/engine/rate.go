@@ -17,9 +17,54 @@ package engine
 import "time"
 
 // meanRate is the mean of rateAt over [from, to): the integral divided by the
-// width. 0 past the plan and for to <= from.
+// width. The part of the interval past the plan counts as 0 rate, so the mean
+// stays over the whole width; 0 for to <= from. Each stage is linear, so the
+// integral over its part of the interval is the width times the rate at the
+// part's midpoint. Checked against a numeric integral in the tests.
 func meanRate(stages []Stage, from, to time.Duration) float64 {
-	return 0
+	if to <= from {
+		return 0
+	}
+
+	var calls float64
+
+	var base time.Duration
+
+	for _, stage := range stages {
+		if stage.Duration <= 0 {
+			continue
+		}
+
+		end := base + stage.Duration
+		lo, hi := max(from, base), min(to, end)
+
+		if lo < hi {
+			rate := float64(stage.StartRPS)
+			if stage.StartRPS != stage.TargetRPS {
+				slope := float64(stage.TargetRPS-stage.StartRPS) / float64(stage.Duration)
+				rate += slope * float64(lo+hi-2*base) / 2
+			}
+
+			calls += rate * float64(hi-lo)
+		}
+
+		base = end
+		if base >= to {
+			break
+		}
+	}
+
+	return calls / float64(to-from)
+}
+
+// planLength is how long the plan runs: the sum of its stages.
+func planLength(stages []Stage) time.Duration {
+	var total time.Duration
+	for _, stage := range stages {
+		total += max(stage.Duration, 0)
+	}
+
+	return total
 }
 
 // rateAt is the rate the plan offers elapsed after its start, in calls per
