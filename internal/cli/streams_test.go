@@ -125,11 +125,18 @@ func TestNotes_AClientWaitUnderATenthOfP99IsANoteNotAVerdict(t *testing.T) {
 		p99, without metrics.Quantile
 		verdict      bool
 		note         string
+		absent       string
 	}{
-		{"1.1ms of 21.9ms", q(ms(21.9), true), q(ms(20.8), true), false, "client-side waits added 1.10ms to p99 (5%)"},
-		{"5ms of 20ms", q(ms(20), true), q(ms(15), true), true, ""},
-		{"exactly a tenth", q(ms(20), true), q(ms(18), true), true, ""},
-		{"lower bounds 500 and 499", q(ms(500), false), q(ms(499), false), false, ""},
+		{"1.1ms of 21.9ms", q(ms(21.9), true), q(ms(20.8), true), false, "client-side waits added 1.10ms to p99 (5%)", ""},
+		{"5ms of 20ms", q(ms(20), true), q(ms(15), true), true, "", ""},
+		{"exactly a tenth", q(ms(20), true), q(ms(18), true), true, "", ""},
+		{"lower bounds 500 and 499", q(ms(500), false), q(ms(499), false), false, "", ""},
+		// The share is floored: 9.55% rounded up would print the threshold's own value on a run
+		// with no verdict, and under 1% would print as 1%.
+		{"9.55% floors to 9", q(ms(20), true), q(ms(18.09), true), false, "client-side waits added 1.91ms to p99 (9%)", "(10%)"},
+		{"under 1%", q(ms(20), true), q(ms(19.9), true), false, "to p99 (<1%)", "(0%)"},
+		// Whole nanoseconds, not ms(19.8): a float cut to 19799999ns would be 0.99999% and flip.
+		{"exactly 1%", q(20*time.Millisecond, true), q(19800*time.Microsecond, true), false, "client-side waits added 200us to p99 (1%)", "<1%"},
 	} {
 		report := engine.Report{
 			Duration: 40 * time.Second, Planned: 40 * time.Second, Sent: 11100,
@@ -152,6 +159,9 @@ func TestNotes_AClientWaitUnderATenthOfP99IsANoteNotAVerdict(t *testing.T) {
 		}
 		if tc.note != "" && !strings.Contains(text, tc.note) {
 			t.Errorf("%s: no %q in:\n%s", tc.name, tc.note, text)
+		}
+		if tc.absent != "" && strings.Contains(text, tc.absent) {
+			t.Errorf("%s: %q in:\n%s", tc.name, tc.absent, text)
 		}
 		// A verdict states the move itself; a lower bound moved by an
 		// unknown amount, and no note may say how much or that it did not.

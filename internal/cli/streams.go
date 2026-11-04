@@ -16,7 +16,6 @@ package cli
 
 import (
 	"fmt"
-	"math"
 	"slices"
 	"strings"
 
@@ -348,8 +347,17 @@ func streamNotes(report engine.Report) []string {
 	}
 	for _, m := range clientWaitsShifted(report) {
 		added := m.P99.Value - m.P99WithoutClientWaits.Value
-		notes = append(notes, fmt.Sprintf("%s: client-side waits added %s to p99 (%d%%).",
-			displayMethod(m.Method), formatLatency(added), int(math.Round(100*float64(added)/float64(m.P99.Value)))))
+		if m.P99.Value <= 0 {
+			continue
+		}
+		// Floored, not rounded: 9.55% rounded up would print the threshold's own 10% on a
+		// run with no verdict.
+		share := "<1%"
+		if n := 100 * added / m.P99.Value; n >= 1 {
+			share = fmt.Sprintf("%d%%", n)
+		}
+		notes = append(notes, fmt.Sprintf("%s: client-side waits added %s to p99 (%s).",
+			displayMethod(m.Method), formatLatency(added), share))
 	}
 
 	const unmoved = "client-side waits (generator, connection, stream) did not move p99."
