@@ -275,6 +275,35 @@ func TestStopLine_NamesThePlannedRate(t *testing.T) {
 	}
 }
 
+// Ground: contract — the text rounds the rate itself, once, to whole calls; the
+// JSON's three places are for the output only and never feed the text. 1.4996
+// is "1" in the line and 1.5 in the JSON; a text made from the JSON's rounded
+// number would say "2". Mutation "text from the 3-place value" turns it red.
+func TestStopLine_RoundsTheRateOnceNotTwice(t *testing.T) {
+	trip := spikeTrip(t, 35, 40)
+	planned := offered(1.4996)
+
+	if got := StopLine(trip, planned); !strings.Contains(got, "the plan offered 1 rps at that moment") {
+		t.Errorf("StopLine = %q, want it to say 1 rps for 1.4996", got)
+	}
+
+	report := echoReport()
+	report.Incomplete = true
+
+	run := jsonRun(report)
+	run.Outcome = OutcomeIncomplete
+	run.Run.Stop = &trip
+	run.Run.StopPlanned = planned
+
+	stop, ok := writeJSON(t, run)["stop"].(map[string]any)
+	if !ok {
+		t.Fatal("stop is not an object")
+	}
+	if got := stop["planned_rps"]; got != 1.5 {
+		t.Errorf("stop.planned_rps = %#v, want 1.5", got)
+	}
+}
+
 // Ground: boundary — a stop after the plan ended (the timeouts of the tail
 // come then) has no rate to name, and "the plan offered 0 rps" would say the
 // opposite of what happened. The line says the plan had ended, and no number.
