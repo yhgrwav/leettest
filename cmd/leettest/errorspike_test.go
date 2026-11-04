@@ -341,6 +341,31 @@ func TestRun_ARampedRunIsStoppedInsideTheRamp(t *testing.T) {
 	}
 }
 
+// Ground: contract — the rate in the stop is the plan's at the moment of the
+// stop, not at the end of the run. With 1 ms calls the end comes under a
+// millisecond after the stop (0.005 rps on a ramp of 5 rps per second), inside
+// any tolerance that survives rounding; calls of 200 ms keep the drain open for
+// that long, 1 rps, so the mutation "the rate at the end of the run" is red.
+func TestRun_TheStopRateIsTheRateAtTheStopNotAtTheRunsEnd(t *testing.T) {
+	cfg := spikeConfig(t, closedPort(t), "5%", "1s", "5s")
+	setRamp(t, cfg, "10s")
+	path := newJSONPath(t)
+
+	res := runCLI(t.Context(), t, 40*time.Second, "-fake", "-fake-delay", "200ms", "-fake-fail-ratio", "1", "-json-file", path, "-c", cfg)
+	wantExit(t, res, 3)
+
+	js := decodeOnly(t, string(readFile(t, path)))
+	at := fieldNumber(t, js, "stop", "at_us")
+	if drain := fieldNumber(t, js, "duration_us") - at; drain < 100_000 {
+		t.Fatalf("the run ended %v µs after the stop: no drain, the premise of the test is gone", drain)
+	}
+
+	planned := fieldNumber(t, js, "stop", "planned_rps")
+	if want := 5 * at / 1e6; math.Abs(planned-want) > 0.01 {
+		t.Errorf("stop.planned_rps = %v, want %v: the plan's rate at the stop, not at the end of the run", planned, want)
+	}
+}
+
 // Ground: contract — a run with a ramp prints the ramp second by second, and
 // the JSON carries the same plan: a 4 s ramp to 50 rps offers 6.25, 18.75,
 // 31.25 and 43.75 rps in its seconds (the mean of 12.5·t), printed rounded to
