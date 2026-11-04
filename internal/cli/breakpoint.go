@@ -318,6 +318,9 @@ func PrintBreakpoint(w io.Writer, run BreakpointRun) {
 		verdicts[i] = verdict(&res, i)
 	}
 	fmt.Fprint(w, runsTable(run.Plan, res.Steps, verdicts, "  "))
+	for i := range run.Runs {
+		printRampBlocks(w, run.Runs[i])
+	}
 
 	if notes := searchNotes(res); len(notes) > 0 {
 		fmt.Fprintln(w, "\nnotes:")

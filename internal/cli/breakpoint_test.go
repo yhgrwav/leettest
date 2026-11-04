@@ -362,6 +362,89 @@ func TestBreakpoint_JSONHasNoPlainRunFields(t *testing.T) {
 	}
 }
 
+// searchOfRuns is a search of three held steps (100, 125 and 156 rps) whose
+// runs are the given reports, one per step, as the CLI aligns them.
+func searchOfRuns(runs ...RunReport) BreakpointRun {
+	res := breakpoint.Result{
+		Outcome: breakpoint.HeldThroughout, Held: 156,
+		Steps: []breakpoint.Step{held(100), held(125), held(156)},
+	}
+
+	return BreakpointRun{Target: "t:1", Method: "pkg.Svc/Do", Plan: bpPlan, Result: res, Runs: runs}
+}
+
+// Ground: contract — a search whose first step ramps (load.ramp) prints the
+// ramp block a plain run prints, so that a failure on the way to `from` is in
+// the text and not only in the JSON. The block is the plain run's byte for
+// byte (printRampBlocks of the first run's report, no new wording), it comes
+// directly after the runs table and before the notes, and once: the steps
+// after the first carry no ramp and print nothing. The first run ramps 4s with
+// a failing second; the rates and counts are not round on purpose.
+// Mutations "no call", "only the last run" and "before the table" turn it red.
+func TestBreakpoint_TheFirstStepShowsItsRampBySecond(t *testing.T) {
+	first := blockRun(4*time.Second, time.Second, secondsOf(5, func(i int) engine.Second {
+		return blockSecond(float64(20+i*20), 17+i*21, i*i)
+	})...)
+	run := searchOfRuns(first, blockRun(0, time.Second), blockRun(0, time.Second))
+	run.Ramp = 4 * time.Second
+	run.Result.Notes = []string{"a note of the search"}
+
+	var want bytes.Buffer
+	printRampBlocks(&want, first)
+	if !strings.Contains(want.String(), "by second") {
+		t.Fatalf("the fixture's ramp block is empty, the test proves nothing:\n%s", want.String())
+	}
+
+	var out bytes.Buffer
+	PrintBreakpoint(&out, run)
+	got := out.String()
+
+	if n := strings.Count(got, "by second"); n != 1 {
+		t.Fatalf("%d ramp blocks in the search's text, want 1:\n%s", n, got)
+	}
+
+	verdicts := make([]string, len(run.Result.Steps))
+	for i := range run.Result.Steps {
+		verdicts[i] = verdict(&run.Result, i)
+	}
+
+	table := runsTable(run.Plan, run.Result.Steps, verdicts, "  ")
+	at := strings.Index(got, table)
+	if at < 0 {
+		t.Fatalf("no runs table in the search's text:\n%s", got)
+	}
+
+	after := got[at+len(table):]
+	if !strings.HasPrefix(after, want.String()) {
+		t.Errorf("the text after the runs table does not begin with the plain run's ramp block\nwant prefix:\n%s\ngot:\n%s", want.String(), after)
+	}
+
+	rest := strings.TrimPrefix(after, want.String())
+	if !strings.HasPrefix(rest, "\nnotes:\n") {
+		t.Errorf("the notes do not follow the block directly:\n%s", rest)
+	}
+}
+
+// Ground: boundary — a search with no ramp (load.ramp absent or 0, so no run
+// has a ramp in its settings) has no ramp block: the text is the release's.
+// Green from the start; it guards the rule that only a run with a ramp prints
+// the block. Mutation "ramp() < 0 for ramp() <= 0" turns it red.
+func TestBreakpoint_ASearchWithoutARampHasNoRampBlock(t *testing.T) {
+	plain := func() RunReport {
+		// A warm-up of 3s: a ramp of 0 would print a block if the guard let it.
+		return blockRun(0, 3*time.Second, secondsOf(5, func(i int) engine.Second {
+			return blockSecond(float64(100+i*10), 100, 0)
+		})...)
+	}
+
+	var out bytes.Buffer
+	PrintBreakpoint(&out, searchOfRuns(plain(), plain(), plain()))
+
+	if strings.Contains(out.String(), "by second") {
+		t.Errorf("a search without a ramp prints a block by second:\n%s", out.String())
+	}
+}
+
 // A plain run says its mode too, so a consumer can tell the two apart.
 func TestJSON_APlainRunSaysItsMode(t *testing.T) {
 	out := writeJSON(t, JSONRun{Target: "t", Outcome: OutcomeComplete, Run: clockRun(0, time.Millisecond)})
