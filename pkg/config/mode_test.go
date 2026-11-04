@@ -18,6 +18,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/yhgrwav/leettest/pkg/config"
 )
@@ -178,36 +179,59 @@ func TestLoad_AnInvalidModeDoesNotAlsoAskForARamp(t *testing.T) {
 	}
 }
 
-// Ground: contract — a search already steps up from breakpoint.from, and
-// load.ramp is refused with it (decisions «Разгон»): real asks no ramp of a
-// search, and a ramp of 0 is as acceptable as before. A ramp above 0 stays the
-// search's own refusal, not a second error about real. The search is not a
-// ramp (the first step jumps to breakpoint.from): the protection of a search in
-// real is the confirmation of unit 3, which this unit does not have.
-func TestLoad_RealWithASearchNeedsNoRamp(t *testing.T) {
-	inReal := func(ramp string) []byte {
-		text := strings.Replace(searchYAML, "app:\n", "app:\n  mode: real\n", 1)
+// Ground: contract — a search in real asks for a ramp as a run does (it hits a
+// live system with breakpoint.from rps in its first second otherwise), and says
+// what to write: the ramp goes from 0 to breakpoint.from. A ramp of 0 is no
+// ramp. The text is the brief's, word for word; the plain run's text is
+// unchanged. Local asks for nothing, with a search too. The search stays free of
+// load.stop_on_errors (its errors_limit is its own limit): a search in real
+// without a ramp is the ramp's error alone.
+func TestLoad_RealWithASearchNeedsARamp(t *testing.T) {
+	const (
+		searchWant = "app.mode: real needs load.ramp (a ramp from 0 to breakpoint.from), e.g. load.ramp: 30s"
+		plainWant  = "app.mode: real needs load.ramp (a ramp from 0 to rps), e.g. load.ramp: 30s"
+	)
+
+	withMode := func(mode, ramp string) []byte {
+		text := strings.Replace(searchYAML, "app:\n", "app:\n"+mode, 1)
 
 		return []byte(strings.Replace(text, "load:\n", "load:\n"+ramp, 1))
 	}
 
 	for _, ramp := range []string{"", "  ramp: 0s\n"} {
-		cfg, err := config.Parse(inReal(ramp))
-		if err != nil {
-			t.Errorf("a search in real, ramp %q: %v, want none", ramp, err)
+		_, err := config.Parse(withMode("  mode: real\n", ramp))
+		if !errors.Is(err, config.ErrRealNeedsRamp) {
+			t.Errorf("a search in real, ramp %q: error %v, want ErrRealNeedsRamp", ramp, err)
 
 			continue
 		}
-		if cfg.App.Mode != config.ModeReal {
-			t.Errorf("a search in real, ramp %q: Mode = %q, want real", ramp, cfg.App.Mode)
+		if !strings.Contains(err.Error(), searchWant) {
+			t.Errorf("a search in real, ramp %q: error %q, want it to say %q", ramp, err, searchWant)
+		}
+		if strings.Contains(err.Error(), plainWant) {
+			t.Errorf("a search in real, ramp %q: error %q has the plain run's text, which names rps", ramp, err)
+		}
+		if errors.Is(err, config.ErrRealNeedsStop) {
+			t.Errorf("a search in real, ramp %q: error %v also asks for a stop, a search has its own limit", ramp, err)
 		}
 	}
 
-	_, err := config.Parse(inReal("  ramp: 30s\n"))
-	if !errors.Is(err, config.ErrBreakpoint) {
-		t.Fatalf("a ramp with a search in real: error %v, want ErrBreakpoint", err)
+	cfg, err := config.Parse(withMode("  mode: real\n", "  ramp: 30s\n"))
+	if err != nil {
+		t.Fatalf("a search in real with a ramp: %v, want none", err)
 	}
-	if errors.Is(err, config.ErrRealNeedsRamp) {
-		t.Errorf("error %v also says real needs a ramp, which the search may not have", err)
+	if cfg.App.Mode != config.ModeReal || cfg.Load.Ramp != 30*time.Second {
+		t.Errorf("a search in real: Mode %q, Ramp %s; want real and 30s", cfg.App.Mode, cfg.Load.Ramp)
+	}
+
+	for _, mode := range []string{"", "  mode: local\n"} {
+		if _, perr := config.Parse(withMode(mode, "")); perr != nil {
+			t.Errorf("a search in local (mode %q), no ramp: %v, want none", mode, perr)
+		}
+	}
+
+	_, err = config.Parse(modeConfig("  mode: real\n", ""))
+	if !errors.Is(err, config.ErrRealNeedsRamp) || !strings.Contains(err.Error(), plainWant) {
+		t.Errorf("a plain run in real, no ramp: error %v, want the text %q", err, plainWant)
 	}
 }

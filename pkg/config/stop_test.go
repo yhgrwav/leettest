@@ -229,23 +229,18 @@ func TestLoad_RealWithAnInvalidStopSaysTheStopIsWrong(t *testing.T) {
 }
 
 // Ground: contract — a search in real asks for no stop: its own errors_limit
-// is the limit (the default 1% when left out), so a real search config
-// written for unit 1 runs as before. GUARD: green before the implementation
-// too; it is here so that the rule «real needs a stop» is never applied to a
-// search.
+// is the limit (the default 1% when left out). It asks for a ramp now
+// (TestLoad_RealWithASearchNeedsARamp), so the config here has one; the rule
+// «real needs a stop» is never applied to a search.
 func TestLoad_RealWithASearchDoesNotRequireAStopOnErrors(t *testing.T) {
-	for _, load := range []string{"", "  ramp: 0s\n"} {
-		cfg, err := config.Parse(searchConfig("  mode: real\n", load))
-		if err != nil {
-			t.Errorf("a search in real, load %q: %v, want none", load, err)
-
-			continue
-		}
-		if cfg.App.Mode != config.ModeReal {
-			t.Errorf("a search in real: Mode = %q, want real", cfg.App.Mode)
-		}
-		if cfg.Load.StopOnErrors.Thousandths != 0 {
-			t.Errorf("a search in real: StopOnErrors = %d, want none", cfg.Load.StopOnErrors.Thousandths)
-		}
+	cfg, err := config.Parse(searchConfig("  mode: real\n", "  ramp: 30s\n"))
+	if err != nil {
+		t.Fatalf("a search in real with a ramp: %v, want none", err)
+	}
+	if cfg.App.Mode != config.ModeReal {
+		t.Errorf("a search in real: Mode = %q, want real", cfg.App.Mode)
+	}
+	if cfg.Load.StopOnErrors.Thousandths != 0 {
+		t.Errorf("a search in real: StopOnErrors = %d, want none", cfg.Load.StopOnErrors.Thousandths)
 	}
 }

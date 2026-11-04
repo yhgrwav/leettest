@@ -65,6 +65,9 @@ type BreakpointRun struct {
 	Compression string
 	// Mode is app.mode: "local" or "real". Empty prints nothing.
 	Mode string
+	// Ramp is load.ramp as configured: the rise from 0 to Plan.From before the
+	// first step. 0 prints no ramp.
+	Ramp time.Duration
 	// Passport is the config and the machine of the search; nil prints no
 	// machine line and leaves the passport out of the JSON.
 	Passport *Passport
