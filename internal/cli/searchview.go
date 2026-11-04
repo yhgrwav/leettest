@@ -68,13 +68,13 @@ type searchModel struct {
 	result    *breakpoint.Result
 }
 
-func newSearchModel(target, method string, plan breakpoint.Plan, connect, _ time.Duration, settings *Settings, stopper *Stopper) *searchModel {
+func newSearchModel(target, method string, plan breakpoint.Plan, connect, ramp time.Duration, settings *Settings, stopper *Stopper) *searchModel {
 	base := &model{target: target, stopper: stopper, runPanel: newRunPanel(plan.Settle), settings: settings}
 	base.search = true
 	base.applySettings()
 	base.tabs = []string{base.text.Summary(), base.text.Settings()}
 
-	_, worst, _ := strings.Cut(PlanLine(plan, connect), "at most ")
+	_, worst, _ := strings.Cut(PlanLineRamp(plan, connect, ramp), "at most ")
 
 	return &searchModel{base: base, method: method, plan: plan, worst: worst, now: time.Now, start: time.Now()}
 }
