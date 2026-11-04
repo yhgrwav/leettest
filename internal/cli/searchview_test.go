@@ -41,8 +41,14 @@ func testSearchModel(t *testing.T) *searchModel {
 func testSearchModelOf(t *testing.T, plan breakpoint.Plan) *searchModel {
 	t.Helper()
 
+	return testSearchModelRamp(t, plan, 0)
+}
+
+func testSearchModelRamp(t *testing.T, plan breakpoint.Plan, ramp time.Duration) *searchModel {
+	t.Helper()
+
 	base := testModel(t)
-	m := newSearchModel("localhost:50051", "pkg.Svc/Do", plan, 10*time.Second, base.settings,
+	m := newSearchModel("localhost:50051", "pkg.Svc/Do", plan, 10*time.Second, ramp, base.settings,
 		NewStopper(func() {}, func() {}, func() {}, time.Hour))
 	m.start = searchStart
 	m.now = func() time.Time { return searchStart.Add(72 * time.Second) }
@@ -110,6 +116,27 @@ func TestSearchView_ElapsedAgainstTheWorstCase(t *testing.T) {
 		if want := formatDuration(elapsed) + " of at most " + worst; !strings.Contains(m.View(), want) {
 			t.Errorf("no %q in\n%s", want, m.View())
 		}
+	}
+}
+
+// Ground: contract — the screen's "of at most" is the plan line's promise, and
+// the plan line counts the ramp before the first step: a screen that took the
+// ramp-less worst case would show a bound the run can pass by the whole ramp.
+// The ramp reaches the screen with the model, as the plan line gets it.
+func TestSearchView_ElapsedAgainstTheWorstCaseCountsTheRamp(t *testing.T) {
+	const ramp = 10 * time.Second
+
+	m := testSearchModelRamp(t, bpPlan, ramp)
+	send(m, searchRunMsg{eng: stepEngine(t, 100), run: breakpoint.Run{RPS: 100, Kind: breakpoint.RateStep, Step: 1, Steps: 6}})
+	_, worst, _ := strings.Cut(PlanLineRamp(bpPlan, 10*time.Second, ramp), "at most ")
+	_, noRamp, _ := strings.Cut(PlanLine(bpPlan, 10*time.Second), "at most ")
+	if worst == noRamp {
+		t.Fatalf("the plan line says %q with and without a ramp of %v: the premise of the test is gone", worst, ramp)
+	}
+
+	want := formatDuration(72*time.Second) + " of at most " + worst
+	if screen := m.View(); !strings.Contains(screen, want) {
+		t.Errorf("no %q in\n%s", want, screen)
 	}
 }
 

@@ -205,7 +205,7 @@ func openSearchScreen(s searchSetup, screen bool, method string, plan breakpoint
 		if err != nil {
 			return nil, nil, breakpoint.Observer{}, err
 		}
-		program, feed = cli.NewSearchProgram(s.target, method, plan, s.connect, settings, st)
+		program, feed = cli.NewSearchProgram(s.target, method, plan, s.connect, s.cfg.Load.Ramp, settings, st)
 		obs = feed.Observer()
 	} else {
 		fmt.Fprintln(stderr, cli.PlanLine(plan, s.connect))

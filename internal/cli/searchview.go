@@ -68,7 +68,7 @@ type searchModel struct {
 	result    *breakpoint.Result
 }
 
-func newSearchModel(target, method string, plan breakpoint.Plan, connect time.Duration, settings *Settings, stopper *Stopper) *searchModel {
+func newSearchModel(target, method string, plan breakpoint.Plan, connect, _ time.Duration, settings *Settings, stopper *Stopper) *searchModel {
 	base := &model{target: target, stopper: stopper, runPanel: newRunPanel(plan.Settle), settings: settings}
 	base.search = true
 	base.applySettings()
@@ -81,10 +81,10 @@ func newSearchModel(target, method string, plan breakpoint.Plan, connect time.Du
 
 // NewSearchProgram builds the full-screen view of a search and the feed that
 // drives it.
-func NewSearchProgram(target, method string, plan breakpoint.Plan, connect time.Duration, settings *Settings,
+func NewSearchProgram(target, method string, plan breakpoint.Plan, connect, ramp time.Duration, settings *Settings,
 	stopper *Stopper,
 ) (*tea.Program, *SearchFeed) {
-	m := newSearchModel(target, method, plan, connect, settings, stopper)
+	m := newSearchModel(target, method, plan, connect, ramp, settings, stopper)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithOutput(os.Stderr))
 
 	return p, NewSearchFeed(func(msg any) { p.Send(msg) })
