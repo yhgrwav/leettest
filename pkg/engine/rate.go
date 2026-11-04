@@ -96,3 +96,9 @@ func rateAt(stages []Stage, elapsed time.Duration) float64 {
 
 	return 0
 }
+
+// PlannedRate is the rate the plan offers elapsed after its start, in calls
+// per second; 0 after the last stage.
+func PlannedRate(stages []Stage, elapsed time.Duration) float64 {
+	return 0
+}

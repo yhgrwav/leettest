@@ -242,3 +242,30 @@ func TestRateAt_AgreesWithTheTicksTheScheduleLaysOut(t *testing.T) {
 		}
 	}
 }
+
+// Ground: contract — the rate of a plan at a moment is a public question: the
+// stop line of a run asks it for the method that was stopped. A ramp to 2000
+// over 20 s and a hold of 10 s offers the line, then the hold, and nothing
+// after its last stage.
+func TestPlannedRate_IsTheRateThePlanOffersAtAMoment(t *testing.T) {
+	stages := []Stage{
+		{StartRPS: 0, TargetRPS: 2000, Duration: 20 * time.Second},
+		{StartRPS: 2000, TargetRPS: 2000, Duration: 10 * time.Second},
+	}
+
+	for _, c := range []struct {
+		at   time.Duration
+		want float64
+	}{
+		{0, 0},
+		{5 * time.Second, 500},
+		{17 * time.Second, 1700},
+		{20 * time.Second, 2000},
+		{25 * time.Second, 2000},
+		{30 * time.Second, 0},
+	} {
+		if got := PlannedRate(stages, c.at); !within(got, c.want, 1e-9) {
+			t.Errorf("PlannedRate(ramp then hold, %v) = %v, want %v", c.at, got, c.want)
+		}
+	}
+}

@@ -42,7 +42,7 @@ type jsonStop struct {
 // report's notes: when, which method, its share to the digit that puts it
 // over the limit, the counts and the number in flight. The time is told by
 // one rule, in seconds with one decimal place.
-func StopLine(t errstop.Trip) string {
+func StopLine(t errstop.Trip, planned *float64) string {
 	return fmt.Sprintf("stopped at %.1fs: %s failed %s (%d of %d calls in the last %ds), over stop_on_errors %s; %d in flight",
 		t.At.Seconds(), displayMethod(t.Method), shr.Format(t.Failed, t.Total, t.Limit, shr.Breaks),
 		t.Failed, t.Total, errstop.Window, t.Limit.Text, t.InFlight)
@@ -55,7 +55,7 @@ func stopNotes(run RunReport) []string {
 		return nil
 	}
 
-	return []string{StopLine(*run.Stop)}
+	return []string{StopLine(*run.Stop, run.StopPlanned)}
 }
 
 // stopLimitLine is the settings echo of the limit; empty when nobody wrote
@@ -72,7 +72,9 @@ func stopLimitLine(written string) string {
 }
 
 // stopJSON is the stop of the report; nil for a run nobody stopped.
-func stopJSON(t *errstop.Trip) *jsonStop {
+func stopJSON(t *errstop.Trip, planned *float64) *jsonStop {
+	_ = planned
+
 	if t == nil {
 		return nil
 	}

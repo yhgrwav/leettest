@@ -17,6 +17,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
@@ -29,6 +30,8 @@ import (
 )
 
 var inFlightInTheLine = regexp.MustCompile(`; (\d+) in flight\b`)
+
+var plannedInTheLine = regexp.MustCompile(`; the plan offered (\d+) rps at that moment; `)
 
 // stopLineOf is the line of a stop in a text: the one that starts «stopped at ».
 func stopLineOf(t *testing.T, text string) string {
@@ -125,6 +128,9 @@ func TestRun_AnErrorSpikeStopsTheRunAndSaysWhy(t *testing.T) {
 		if !strings.Contains(got, "stopped at ") || !strings.Contains(got, "over stop_on_errors 5%") {
 			t.Errorf("%s has no stop line:\n%s", name, got)
 		}
+		if !strings.Contains(got, "the plan offered 50 rps at that moment") {
+			t.Errorf("%s: the stop line does not name the planned rate:\n%s", name, got)
+		}
 		// share.Format tells a share to a tenth: 100.0%, as the report tells all.
 		if !strings.Contains(got, checkMethod+" failed 100.0%") {
 			t.Errorf("%s does not name the method and its share:\n%s", name, got)
@@ -179,8 +185,14 @@ func TestRun_AnErrorSpikeStopsTheRunAndSaysWhy(t *testing.T) {
 	if m := inFlightInTheLine.FindStringSubmatch(line); m == nil || !strings.HasSuffix(line, " in flight") {
 		t.Errorf("the stop line does not end with «; N in flight»: %q", line)
 	}
-	if strings.Contains(line, "rps") {
-		t.Errorf("the stop line tells a send rate: %q", line)
+	// Without a ramp the plan offers the call's own rate the whole time: the
+	// line and the JSON name it (50 rps in spikeConfig), as a planned rate and
+	// never as a rate sent.
+	if want := "; the plan offered 50 rps at that moment; "; !strings.Contains(line, want) {
+		t.Errorf("the stop line does not say %q: %q", want, line)
+	}
+	if got := fieldNumber(t, js, "stop", "planned_rps"); got != 50 {
+		t.Errorf("stop.planned_rps = %v, want 50", got)
 	}
 }
 
@@ -300,6 +312,29 @@ func TestRun_ARampedRunIsStoppedInsideTheRamp(t *testing.T) {
 	}
 	if measured := fieldNumber(t, js, "sent") + fieldNumber(t, js, "not_sent"); measured != 0 {
 		t.Errorf("sent + not_sent = %v, want 0: the ramp's calls are not in the totals", measured)
+	}
+
+	// The stop names the rate the plan offered at the moment of the stop: the
+	// ramp climbs from 0 to the call's 50 rps over 10 s (5 rps per second), so
+	// the number is on that line at stop.at_us, not 50 (the end of the ramp) and
+	// not 0. The tolerance is half a second of the line, for the start lag
+	// between the run's clock and the plan's. The line says the same number,
+	// to whole calls, on stderr and in the report.
+	at := fieldNumber(t, js, "stop", "at_us") / 1e6
+	planned := fieldNumber(t, js, "stop", "planned_rps")
+	if planned <= 0 || planned >= 50 || math.Abs(planned-5*at) > 2.5 {
+		t.Errorf("stop.planned_rps = %v at %.2f s, want about %v inside (0, 50)", planned, at, 5*at)
+	}
+	for name, got := range map[string]string{"stderr": res.stderr, "the report": res.stdout} {
+		m := plannedInTheLine.FindStringSubmatch(got)
+		if m == nil {
+			t.Errorf("%s: the stop line does not say «the plan offered N rps at that moment»:\n%s", name, got)
+
+			continue
+		}
+		if n, _ := strconv.ParseFloat(m[1], 64); math.Abs(n-planned) > 0.5+1e-3 {
+			t.Errorf("%s: the line says %v rps, stop.planned_rps = %v", name, n, planned)
+		}
 	}
 }
 

@@ -460,7 +460,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 	report := reportOf()
 
 	if report.Stop != nil {
-		fmt.Fprintln(stderr, cli.StopLine(*report.Stop))
+		fmt.Fprintln(stderr, cli.StopLine(*report.Stop, report.StopPlanned))
 	}
 
 	result := runResult(report, runErr)
