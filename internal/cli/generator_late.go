@@ -31,7 +31,9 @@ const reasonGeneratorLate = "generator_late"
 // GeneratorLate says the generator's lag decided the run's p99 tail
 // (engine.Report.GeneratorDecidedTail): the wait verdict names the generator
 // and a method with enough observations for its p99 to be more than the
-// maximum was moved by it, or the generator left calls unsent. Such latencies
+// maximum was moved by it, or the generator left calls unsent; or the generator
+// left a hundredth of some method's calls unsent (engine.MethodReport.LeftShare)
+// whoever the verdict names. Such latencies
 // include the delay of this machine, so the run is invalid. A step of a
 // breaking-point search is never late in this sense: the search ends on the
 // generator with its own cause.
@@ -185,4 +187,22 @@ func generatorLateHeading(report engine.Report, limitLine string) string {
 		limitLine)
 
 	return b.String()
+}
+
+// generatorShareHeading is the verdict sentence of a run the generator left
+// calls unsent in at the share (engine.MethodReport.LeftShare) while the wait
+// verdict names another cause: it says what the generator did, not that it
+// decided the p99 tail, which tail_wait_cause would contradict. It names the
+// methods at the share by their own counts.
+func generatorShareHeading(report engine.Report, limitLine string) string {
+	var list []string
+	for i := range report.Methods {
+		if m := &report.Methods[i]; m.LeftShare() {
+			list = append(list, fmt.Sprintf("%s (%d of %d)", displayMethod(m.Method), m.NotSentGenerator, m.Sent+m.NotSent))
+		}
+	}
+
+	return fmt.Sprintf("invalid run: the generator fell behind its schedule and never sent 1%% or more of the calls of %s: start lag p99 %s, max %s.\n"+
+		"The latencies include this machine's delay and do not measure the target.\n%s",
+		strings.Join(list, ", "), formatQuantile(report.StartLagP99), formatDuration(report.StartLagMax), limitLine)
 }
