@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // skipRecorder stands in for *testing.T: Skipf on a real one ends the goroutine.
@@ -214,6 +215,50 @@ func TestSkipIfStarved_WithoutAFileSkipsAnyway(t *testing.T) {
 	}
 	if entries, err := os.ReadDir(dir); err != nil || len(entries) != 0 {
 		t.Errorf("files appeared in the working directory: %v, %v", entries, err)
+	}
+}
+
+// Ground: contract — the helper reads what the command really writes: a run
+// invalid for a coarse clock leaves ErrInvalidRun and invalid_reasons
+// clock_step in both its stdout JSON and its -json-file, and both skip; the
+// report of a search carries no top-level invalid_reasons, so a search is not
+// skipped (its runs' reports do, and the helper does not read them).
+func TestSkipIfStarved_ReadsTheCommandsOwnReports(t *testing.T) {
+	saved := clockStep
+	clockStep = func() time.Duration { return 15625 * time.Microsecond }
+	t.Cleanup(func() { clockStep = saved })
+	underStress(t)
+
+	path := newJSONPath(t)
+	res := runCLI(t.Context(), t, 10*time.Second,
+		"-fake", "-output", "json", "-json-file", path, "-c", writeConfig(t, closedPort(t), checkMethod, plaintext))
+	if !errors.Is(res.err, ErrInvalidRun) {
+		t.Fatalf("run: %v, want ErrInvalidRun: the premise is an invalid run", res.err)
+	}
+	for name, doc := range map[string][]byte{"stdout": []byte(res.stdout), "-json-file": readFile(t, path)} {
+		r := &skipRecorder{}
+
+		skipIfStarved(r, res.err, doc)
+
+		if !r.skipped || !strings.Contains(r.message, "clock_step") {
+			t.Errorf("%s: skipped = %v, message %q, want a skip naming clock_step", name, r.skipped, r.message)
+		}
+	}
+
+	search := runCLI(t.Context(), t, 60*time.Second,
+		"-fake", "-output", "json", "-c", writeSearch(t, closedPort(t), checkMethod))
+	if !errors.Is(search.err, ErrInvalidRun) {
+		t.Fatalf("search: %v, want ErrInvalidRun: the premise is an invalid search", search.err)
+	}
+	if _, has := decodeOnly(t, search.stdout)["invalid_reasons"]; has {
+		t.Fatalf("the search report now carries a top-level invalid_reasons: decide whether a search is skipped, then change this test")
+	}
+	r := &skipRecorder{}
+
+	skipIfStarved(r, search.err, []byte(search.stdout))
+
+	if r.skipped {
+		t.Errorf("a search was skipped on a report without a top-level invalid_reasons")
 	}
 }
 
