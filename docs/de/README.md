@@ -154,7 +154,7 @@ Am Ende — ein Bericht je Methode: gesendet, fehlgeschlagen, `sent/s`, p50/p90/
   die ersten Zeilen der Hochlauf: ein niedriges `sent/s` dort ist der Plan, kein Fehler; suchen Sie
   die Zeile, in der p99 oder der Fehleranteil steigt, bevor die Rate ihr Plateau erreicht hat.
 - Die Zeile `traffic:` im Kopf des Laufs zeigt, wie viele Bit pro Sekunde die Nachrichtenkörper
-  bewegt haben: gesendet und empfangen (nicht veröffentlicht). Das ist eine Untergrenze: ohne
+  bewegt haben: gesendet und empfangen. Das ist eine Untergrenze: ohne
   HTTP/2-Frames, Header und TLS; der Empfang wird nach der Größe vor dem Entpacken gezählt. Unter
   der Methode ist `response: N B per call` die mittlere Antwortgröße der erfolgreichen Aufrufe, und
   bei einem Warm-up sind `warm-up: N calls, p50, p99` dessen eigene Zahlen, getrennt vom Lauf.
@@ -274,8 +274,7 @@ Es gibt einen Bericht, aber seine Zahlen handeln nicht von der Last auf das Ziel
   `bad response` ist.** Der Hinweis nennt Methode, Ursache und was zu tun ist.
 - **die Uhr des Hosts gröber ist als ein Viertel des p50** einer Methode, oder der Schritt während
   des Laufs auf 1 µs oder mehr wuchs (`clock_step`). Messen Sie von Linux aus.
-- **die Verspätung des Generators das p99-Ende bestimmt hat** (`generator_late`, nicht
-  veröffentlicht): Die Latenzen enthalten die Verspätung dieses Rechners und messen nicht das Ziel.
+- **die Verspätung des Generators das p99-Ende bestimmt hat** (`generator_late`): Die Latenzen enthalten die Verspätung dieses Rechners und messen nicht das Ziel.
   Geben Sie dem Generator mehr CPU, senken Sie die Rate oder teilen Sie sie auf mehrere Rechner auf.
   Beurteilt wird eine Methode ab 100 Beobachtungen. Der Bericht nennt die Methoden.
 - **sich eine `pass`-Grenze nicht entscheiden lässt** (`thresholds_undecided`): zu wenige
