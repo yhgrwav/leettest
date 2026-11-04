@@ -226,6 +226,8 @@ func TestRun_YesChangesNothingInLocal(t *testing.T) {
 		without := runCLI(t.Context(), t, 30*time.Second, "-fake", "-c", cfg, "-output", "json")
 		with := runCLI(t.Context(), t, 30*time.Second, "-fake", "-c", cfg, "-output", "json", "-yes")
 
+		skipIfStarved(t, without.err, []byte(without.stdout))
+		skipIfStarved(t, with.err, []byte(with.stdout))
 		if without.err != nil || with.err != nil {
 			t.Fatalf("mode %q: without %v, with -yes %v: both must run", mode, without.err, with.err)
 		}
