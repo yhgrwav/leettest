@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/yhgrwav/leettest/pkg/engine"
 	"github.com/yhgrwav/leettest/pkg/errstop"
 	shr "github.com/yhgrwav/leettest/pkg/share"
 )
@@ -330,6 +331,59 @@ func TestStopLine_AfterThePlanEndedSaysSo(t *testing.T) {
 
 	if !strings.Contains(out.String(), "over stop_on_errors 5%; the plan had ended; 800 in flight") {
 		t.Errorf("the notes of a stop with no planned rate do not say the plan had ended:\n%s", out.String())
+	}
+}
+
+// Ground: boundary — the same with two methods: both plans were over when the
+// watch tripped (the tail's timeouts), so the tripped one, the second of the
+// report, has no rate either, and neither the line nor the JSON borrows the
+// other method's. The line names the second method and says the plan had
+// ended; stop.planned_rps is null, the key present. Green from the start (the
+// line is #389's). Mutation "the last method's final rate for a nil rate"
+// turns it red.
+func TestStopLine_AfterThePlanEndedInATwoMethodRun(t *testing.T) {
+	report := engine.Report{
+		Duration: 14 * time.Second, Sent: 246, Incomplete: true,
+		Methods: []engine.MethodReport{
+			{Method: "a.S/Other", Sent: 123, RPS: 12.3, RPSLow: 50, RPSHigh: 50, PlannedDuration: 10 * time.Second},
+			{Method: "a.S/One", Sent: 123, RPS: 12.3, RPSLow: 200, RPSHigh: 200, PlannedDuration: 12 * time.Second},
+		},
+	}
+	trip := spikeTrip(t, 35, 40)
+
+	const want = "stopped at 12.3s: a.S/One failed 87.5% (35 of 40 calls in the last 5s), over stop_on_errors 5%; " +
+		"the plan had ended; 800 in flight"
+
+	if got := StopLine(trip, nil); got != want {
+		t.Errorf("StopLine =\n%q\nwant\n%q", got, want)
+	}
+
+	var out strings.Builder
+	PrintReport(&out, "localhost:50051", RunReport{Report: report, Stop: &trip})
+
+	if !strings.Contains(out.String(), "over stop_on_errors 5%; the plan had ended; 800 in flight") {
+		t.Errorf("the notes of a two-method stop do not say the plan had ended:\n%s", out.String())
+	}
+	if strings.Contains(out.String(), "the plan offered") {
+		t.Errorf("a two-method stop after the plans' end names a rate:\n%s", out.String())
+	}
+
+	run := jsonRun(report)
+	run.Outcome = OutcomeIncomplete
+	run.Run.Stop = &trip
+	run.Run.StopPlanned = nil
+
+	stop, ok := writeJSON(t, run)["stop"].(map[string]any)
+	if !ok {
+		t.Fatal("stop is not an object")
+	}
+
+	got, present := stop["planned_rps"]
+	if !present {
+		t.Fatalf("stop has no planned_rps key: %v", stop)
+	}
+	if got != nil {
+		t.Errorf("stop.planned_rps = %#v, want null", got)
 	}
 }
 

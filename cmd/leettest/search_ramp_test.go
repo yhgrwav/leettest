@@ -225,6 +225,41 @@ func TestRun_ASearchTextNamesTheRampOfItsConfig(t *testing.T) {
 	}
 }
 
+// Ground: contract — a search whose first step ramps shows that ramp by second
+// in its text, as a plain run does: a failure on the way to `from` is visible
+// there and not only in the JSON. One block, directly after the runs table,
+// headed like the plain run's («ramp by second, <method>:», or «ramp and
+// warm-up by second» when a settle follows the ramp, as it does here) and ended
+// by its footnote. The 2s ramp and the 50ms settle give two whole seconds,
+// the least a block has.
+func TestRun_ARampedSearchPrintsItsRampBySecond(t *testing.T) {
+	cfg := writeSearchOf(t, closedPort(t), rampSearch, "200ms", checkMethod)
+	setRamp(t, cfg, "2s")
+
+	text, _ := echoRun(t, 90*time.Second, "-output", "text", "-c", cfg)
+
+	table := strings.Index(text, "  kind")
+	if table < 0 {
+		t.Fatalf("no runs table in the search's text:\n%s", text)
+	}
+
+	// Nothing after the table (today's text, when the search has no notes) is no block.
+	var after string
+	if end := strings.Index(text[table:], "\n\n"); end >= 0 {
+		after = text[table+end+2:]
+	}
+
+	if !regexp.MustCompile(`^ramp( and warm-up)? by second, \S+:\n`).MatchString(after) {
+		t.Errorf("the runs table is not followed by a ramp block:\n%s", after)
+	}
+	if n := strings.Count(text, "by second"); n != 1 {
+		t.Errorf("%d blocks by second in the search's text, want 1 (only the first step ramps):\n%s", n, text)
+	}
+	if !strings.Contains(after, "calls still in flight when the run ended are not counted as failed") {
+		t.Errorf("the block lacks its footnote:\n%s", after)
+	}
+}
+
 // Ground: contract — a search in real without a ramp is a config error before
 // anything is asked or sent: exit 1, the text for the search (it names
 // breakpoint.from), not the plain run's. The question of the confirmation is not
