@@ -41,7 +41,7 @@ func reportWith(reasons string) []byte {
 	return []byte(`{"schema_version":1,"mode":"run","outcome":"invalid","invalid_reasons":` + reasons + `}`)
 }
 
-var invalidRun = fmt.Errorf("run: %w", ErrInvalidRun)
+var errInvalidRun = fmt.Errorf("run: %w", ErrInvalidRun)
 
 // Ground: contract — under make stress, a run that ended invalid for the
 // generator's sake (late, or a coarse clock) and nothing else is no verdict on
@@ -55,7 +55,7 @@ func TestSkipIfStarved_SkipsAStarvedGenerator(t *testing.T) {
 		underStress(t)
 		r := &skipRecorder{name: "TestX"}
 
-		skipIfStarved(r, invalidRun, reportWith(reasons))
+		skipIfStarved(r, errInvalidRun, reportWith(reasons))
 
 		if !r.skipped {
 			t.Errorf("invalid_reasons %s: not skipped", reasons)
@@ -97,7 +97,7 @@ func TestSkipIfStarved_NeedsTheStressFlag(t *testing.T) {
 		t.Setenv(stressSkipsEnv, "")
 		r := &skipRecorder{}
 
-		skipIfStarved(r, invalidRun, reportWith(`["generator_late"]`))
+		skipIfStarved(r, errInvalidRun, reportWith(`["generator_late"]`))
 
 		if r.skipped {
 			t.Errorf("%s=%q: skipped, want the test to run on and fail", stressEnv, value)
@@ -122,7 +122,7 @@ func TestSkipIfStarved_EveryReasonMustBeStarvation(t *testing.T) {
 		underStress(t)
 		r := &skipRecorder{}
 
-		skipIfStarved(r, invalidRun, reportWith(reasons))
+		skipIfStarved(r, errInvalidRun, reportWith(reasons))
 
 		if r.skipped {
 			t.Errorf("invalid_reasons %s: skipped, want the test to fail", reasons)
@@ -151,7 +151,7 @@ func TestSkipIfStarved_NoReasonNoSkip(t *testing.T) {
 		underStress(t)
 		r := &skipRecorder{}
 
-		skipIfStarved(r, invalidRun, doc)
+		skipIfStarved(r, errInvalidRun, doc)
 
 		if r.skipped {
 			t.Errorf("%s: skipped, want the test to fail", name)
@@ -167,11 +167,11 @@ func TestSkipIfStarved_RecordsEachSkip(t *testing.T) {
 	t.Setenv(stressEnv, "1")
 	t.Setenv(stressSkipsEnv, path)
 
-	skipIfStarved(&skipRecorder{name: "TestA"}, invalidRun, reportWith(`["generator_late"]`))
-	skipIfStarved(&skipRecorder{name: "TestB/sub"}, invalidRun, reportWith(`["clock_step","generator_late"]`))
-	skipIfStarved(&skipRecorder{name: "TestC"}, invalidRun, reportWith(`["in_flight_cap"]`))
+	skipIfStarved(&skipRecorder{name: "TestA"}, errInvalidRun, reportWith(`["generator_late"]`))
+	skipIfStarved(&skipRecorder{name: "TestB/sub"}, errInvalidRun, reportWith(`["clock_step","generator_late"]`))
+	skipIfStarved(&skipRecorder{name: "TestC"}, errInvalidRun, reportWith(`["in_flight_cap"]`))
 	skipIfStarved(&skipRecorder{name: "TestD"}, nil, reportWith(`["generator_late"]`))
-	skipIfStarved(&skipRecorder{name: "TestA"}, invalidRun, reportWith(`["generator_late"]`))
+	skipIfStarved(&skipRecorder{name: "TestA"}, errInvalidRun, reportWith(`["generator_late"]`))
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -190,7 +190,7 @@ func TestSkipIfStarved_DoesNotSkipWhatItCannotRecord(t *testing.T) {
 	t.Setenv(stressSkipsEnv, filepath.Join(t.TempDir(), "no-such-dir", "stress-skips.txt"))
 	r := &skipRecorder{}
 
-	skipIfStarved(r, invalidRun, reportWith(`["generator_late"]`))
+	skipIfStarved(r, errInvalidRun, reportWith(`["generator_late"]`))
 
 	if r.skipped {
 		t.Errorf("skipped, but the skip was not recorded")
@@ -208,7 +208,7 @@ func TestSkipIfStarved_WithoutAFileSkipsAnyway(t *testing.T) {
 	underStress(t)
 	r := &skipRecorder{}
 
-	skipIfStarved(r, invalidRun, reportWith(`["clock_step"]`))
+	skipIfStarved(r, errInvalidRun, reportWith(`["clock_step"]`))
 
 	if !r.skipped {
 		t.Errorf("not skipped")
