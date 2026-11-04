@@ -67,7 +67,11 @@ race:
 # the generator is behind its schedule (generator_late) on a 50 to 4000 rps run
 # of a fake target. That is the right verdict on a starved generator under
 # -race, so there is no start lag left to check.
-STRESS_SKIP := ^TestReport_SlotsHeldWithinTheAllowanceDoNotHitTheCap$$|^TestSearchFeed_ASlowScreenKeepsTheLagUnderTwentyMilliseconds$$|^TestRun_ASearchNamesTheStandsCapacity$$|^TestBreakpoint_FindsTheStandsCapacity$$|^TestBreakpoint_ATargetThatDoesNotRecoverIsNamedSo$$|^TestRun_ASearchOnTheFakeTarget$$|^TestRun_OnceSearchStopsWhenTheFileRunsOut$$|^TestRun_NoLagNoWarning$$|^TestRun_JSONCarriesTheGeneratorCPUOnTheGridOfTheRun$$|^TestExportRun_AScrapeStormDoesNotChangeTheReportAndRendersOncePerSecond$$|^TestRun_AHealthyRunUnderALimitRunsToTheEnd$$|^TestRun_ARampWithoutAWarmUpNamesTheRampAlone$$|^TestRun_LocalNeverAsks$$|^TestExportRun_AScrapeMidRunSeesThePlannedRateAndGrowingCalls$$
+# Report_AnOnTimeStarterIsNotLate (run 41830566342, generator_late_test.go:215,
+# start lag p99 518.399us): a starved runner makes one call of the p99 tail
+# start over the wait floor, and the rule calls that generator_late (reproduced
+# 5 of 600 under load in Docker, branch Moved with 200 observations).
+STRESS_SKIP := ^TestReport_SlotsHeldWithinTheAllowanceDoNotHitTheCap$$|^TestSearchFeed_ASlowScreenKeepsTheLagUnderTwentyMilliseconds$$|^TestRun_ASearchNamesTheStandsCapacity$$|^TestBreakpoint_FindsTheStandsCapacity$$|^TestBreakpoint_ATargetThatDoesNotRecoverIsNamedSo$$|^TestRun_ASearchOnTheFakeTarget$$|^TestRun_OnceSearchStopsWhenTheFileRunsOut$$|^TestRun_NoLagNoWarning$$|^TestRun_JSONCarriesTheGeneratorCPUOnTheGridOfTheRun$$|^TestExportRun_AScrapeStormDoesNotChangeTheReportAndRendersOncePerSecond$$|^TestRun_AHealthyRunUnderALimitRunsToTheEnd$$|^TestRun_ARampWithoutAWarmUpNamesTheRampAlone$$|^TestRun_LocalNeverAsks$$|^TestExportRun_AScrapeMidRunSeesThePlannedRateAndGrowingCalls$$|^TestReport_AnOnTimeStarterIsNotLate$$
 
 # LEETTEST_STRESS=1 lets an end-to-end test in cmd/leettest skip itself when its
 # run ended invalid for generator_late or clock_step alone (skipIfStarved): the
