@@ -628,6 +628,7 @@ unten den Typ „percentile?" hat.
 | `stop.limit` | string | Die Grenze, wie in der Konfiguration geschrieben: `"5%"`. |
 | `stop.at_us` | int | Die Zeit vom Start des Laufs bis zum Stopp, in ganzen Mikrosekunden. |
 | `stop.in_flight` | int | Die Aufrufe im Flug in diesem Moment (begonnen, nicht beendet): bei einem hängenden Ziel das, was das Fenster nicht zeigt. |
+| `stop.planned_rps` | float? | Die Rate, die der Plan dieser Methode im Moment des Stopps vorsah (nicht veröffentlicht), Aufrufe pro Sekunde, auf 3 Stellen gerundet; die Stopp-Zeile druckt sie auf ganze Aufrufe: `the plan offered 1700 rps at that moment`. `null`, wenn der Stopp am Ende des Plans der Methode oder danach kam; die Zeile sagt dann `the plan had ended`. Der Moment des Stopps ist der Moment des Urteils, nicht des Sendens: Die fehlgeschlagenen Aufrufe können früher hinausgegangen sein, um bis zu den Timeout des Aufrufs; die Rate, mit der sie hinausgingen, zeigt der Block `ramp by second`. |
 | `seq_overflow` | object? | Wo ein `{{seq}}` nicht in sein Feld passte und der Lauf anhielt; `null`, wenn das nicht geschah. `stop_reason` ist dann `seq_overflow`, und der Lauf endet sanft (Exit 3). |
 | `seq_overflow.method` | string | Die Methode, deren Feld überlief, geschrieben wie in `methods[].method`, mit führendem `/`. |
 | `seq_overflow.limit` | int | Das größte `seq`, das das schmalste Feld der Methode fasst. |
