@@ -16,6 +16,9 @@ package cli
 
 import (
 	"fmt"
+	"math"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/yhgrwav/leettest/pkg/engine"
@@ -36,11 +39,127 @@ func GeneratorLate(run RunReport) bool {
 	return !run.searchStep && run.GeneratorDecidedTail()
 }
 
+// The names of the limits in GeneratorLimit and in the JSON.
+const (
+	limitGOMAXPROCS = "gomaxprocs"
+	limitCPUQuota   = "cpu_quota"
+	limitCPU        = "cpu"
+	limitSchedule   = "schedule"
+	limitUnknown    = "unknown"
+)
+
+const limitAdvice = "lower the rate, or split it over several machines."
+
+// cpuNotMeasuredLine is the verdict's last line when the generator's CPU is not
+// known: nothing can be said of what limited it.
+const cpuNotMeasuredLine = "The generator's CPU was not measured for a whole second and the report cannot name the limit: " + limitAdvice
+
+// GeneratorLimit names the limit of its own the generator hit in a
+// generator_late run: gomaxprocs, cpu_quota, cpu, schedule or unknown. ok is
+// false when the run is not generator_late. Every limit but unknown needs the
+// generator's CPU measured for at least one whole second.
+func GeneratorLimit(run RunReport) (limit string, ok bool) {
+	limit, _, ok = generatorLimitLine(run)
+
+	return limit, ok
+}
+
+// generatorLimitLine is GeneratorLimit and the last line of the verdict for
+// it. The first match wins: the user lowered GOMAXPROCS and the CPU was busy;
+// the cgroup quota is below the CPUs and the CPU was busy; the CPU was busy;
+// the CPU was quiet and the schedule not exact; else unknown. A lowered
+// GOMAXPROCS with a quiet CPU is no limit: the Ps that were there stood idle.
+func generatorLimitLine(run RunReport) (limit, line string, ok bool) {
+	if !GeneratorLate(run) {
+		return "", "", false
+	}
+
+	cpu := run.GeneratorCPU
+	if cpu == nil || cpu.Counted == 0 {
+		return limitUnknown, cpuNotMeasuredLine, true
+	}
+
+	busy := cpu.BusySeconds > 0
+
+	if p := run.Passport; p != nil {
+		reach := p.NumCPU
+		belowCPUs := false
+
+		var rounded int
+		if q := p.CPUQuota; q != nil {
+			rounded = int(math.Ceil(*q))
+			belowCPUs = rounded < p.NumCPU
+			reach = min(reach, rounded)
+		}
+
+		if busy && p.GOMAXPROCS < reach {
+			return limitGOMAXPROCS, fmt.Sprintf("The generator ran on GOMAXPROCS %d of %d CPUs: raise GOMAXPROCS, %s",
+				p.GOMAXPROCS, p.NumCPU, limitAdvice), true
+		}
+
+		if busy && belowCPUs {
+			return limitCPUQuota, fmt.Sprintf("The generator used 90%% or more of its CPU quota (%s of %d CPUs) in %d of %d s: raise the quota, %s",
+				strconv.FormatFloat(*p.CPUQuota, 'f', -1, 64), p.NumCPU, cpu.BusySeconds, cpu.Counted, limitAdvice), true
+		}
+	}
+
+	if busy {
+		return limitCPU, fmt.Sprintf("The generator used 90%% or more of the %s available to it in %d of %d s: %s",
+			coresText(cpu.AvailableCores), cpu.BusySeconds, cpu.Counted, limitAdvice), true
+	}
+
+	if reasons, fixes := scheduleAdvice(run); reasons != "" {
+		return limitSchedule, "The generator's CPU was not busy, and the schedule is not exact here (" + reasons + "): " +
+			fixes + ", or lower the rate.", true
+	}
+
+	return limitUnknown, "The generator's CPU was not busy and the report cannot name the limit: " + limitAdvice, true
+}
+
+// scheduleAdvice is the reasons the run's schedule was not exact in the words
+// of the schedule line, and what to change for them, once for each fix, both
+// in the order of the line; "" for an exact schedule.
+func scheduleAdvice(run RunReport) (reasons, fixes string) {
+	host := scheduleHost(run.Passport)
+
+	var words, fix []string
+
+	for _, reason := range scheduleOrder {
+		if !slices.Contains(run.ScheduleNotExact, reason) {
+			continue
+		}
+
+		words = append(words, scheduleWords(reason, host))
+
+		text := "run from Linux"
+		if reason == engine.ScheduleGOMAXPROCS {
+			text = "set GOMAXPROCS to 2 or more"
+		}
+		if !slices.Contains(fix, text) {
+			fix = append(fix, text)
+		}
+	}
+
+	return strings.Join(words, ", "), strings.Join(fix, ", ")
+}
+
+// generatorLimitJSON is the generator_limit key: nil when the run is not
+// generator_late.
+func generatorLimitJSON(run RunReport) *string {
+	limit, ok := GeneratorLimit(run)
+	if !ok {
+		return nil
+	}
+
+	return &limit
+}
+
 // generatorLateHeading is the verdict sentence of a late generator, up to the
 // advice. It names the methods engine.MethodReport.LateByGenerator picks: those
 // the lag moved with enough observations and those that lost calls to the
-// generator, in the report's order.
-func generatorLateHeading(report engine.Report) string {
+// generator, in the report's order. limitLine is the last line, the limit the
+// generator hit (generatorLimitLine).
+func generatorLateHeading(report engine.Report, limitLine string) string {
 	var names []string
 	for i := range report.Methods {
 		if m := &report.Methods[i]; m.LateByGenerator() {
@@ -63,7 +182,7 @@ func generatorLateHeading(report engine.Report) string {
 		fmt.Fprintf(&b, ", %d calls never sent", n)
 	}
 	b.WriteString(".\nThe latencies include this machine's delay and do not measure the target.\n" +
-		"Give the generator more CPU, lower the rate, or split it over several machines.")
+		limitLine)
 
 	return b.String()
 }

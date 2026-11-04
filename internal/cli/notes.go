@@ -30,15 +30,17 @@ const silencePlanTolerancePercent = 10
 // what the generator did, and the verdicts. One source for both the text
 // report and the final screen of the live view, so what the screen shows and
 // what the log keeps cannot drift apart. It knows nothing of the ramp in the
-// engine's excluded window: reportNotesAfter does.
+// engine's excluded window: reportNotesAfter does. It knows nothing of the
+// machine either: a late generator's verdict says its CPU was not measured.
 func reportNotes(report engine.Report, maxResponse string) []string {
-	return reportNotesAfter(report, maxResponse, 0, false)
+	return reportNotesAfter(report, maxResponse, 0, false, cpuNotMeasuredLine)
 }
 
 // reportNotesAfter is reportNotes for a run whose config had load.ramp: ramp
 // is the part of the engine's excluded window that was the ramp. searchStep
-// says the report is a step of a breaking-point search.
-func reportNotesAfter(report engine.Report, maxResponse string, ramp time.Duration, searchStep bool) []string {
+// says the report is a step of a breaking-point search. limitLine is the last
+// line of a late generator's verdict (generatorLimitLine).
+func reportNotesAfter(report engine.Report, maxResponse string, ramp time.Duration, searchStep bool, limitLine string) []string {
 	notes := make([]string, 0, 8)
 	notes = append(notes, warmUpNote(report, ramp)...)
 
@@ -52,7 +54,7 @@ func reportNotesAfter(report engine.Report, maxResponse string, ramp time.Durati
 	notes = append(notes, capHitNote(report)...)
 	notes = append(notes, incompleteNote(report)...)
 	notes = append(notes, seqOverflowNote(report)...)
-	if v := verdictText(report, searchStep); v != "" {
+	if v := verdictText(report, searchStep, limitLine); v != "" {
 		notes = append(notes, v)
 	}
 	notes = append(notes, cutOffNote(totals)...)
@@ -401,7 +403,8 @@ func invalidMeasurementNote(totals noteTotals) []string {
 // runNotes are reportNotes and what the CLI measured beside the engine: the
 // CPU the process used and the host clock.
 func runNotes(run RunReport) []string {
-	notes := reportNotesAfter(run.Report, run.MaxResponse, run.ramp(), run.searchStep)
+	_, limitLine, _ := generatorLimitLine(run)
+	notes := reportNotesAfter(run.Report, run.MaxResponse, run.ramp(), run.searchStep, limitLine)
 	notes = append(notes, stopNotes(run)...)
 	notes = append(notes, connectionNotes(run.Target, run.Connections)...)
 

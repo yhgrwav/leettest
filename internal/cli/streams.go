@@ -152,13 +152,14 @@ func verdictCause(report engine.Report) (cause, engine.Side, bool) {
 // connection, or "" when nothing moved. It is about the run: the numbers of
 // single methods go to streamNotes.
 func streamVerdict(report engine.Report) string {
-	return verdictText(report, false)
+	return verdictText(report, false, cpuNotMeasuredLine)
 }
 
 // verdictText is streamVerdict; for a step of a breaking-point search the
 // generator's lag is the run's limit, not an invalid run (the search ends on
-// it with its own cause).
-func verdictText(report engine.Report, searchStep bool) string {
+// it with its own cause). limitLine is the last line of the late generator's
+// verdict (generatorLimitLine).
+func verdictText(report engine.Report, searchStep bool, limitLine string) string {
 	top, side, ok := verdictCause(report)
 	if !ok {
 		return ""
@@ -172,7 +173,7 @@ func verdictText(report engine.Report, searchStep bool) string {
 	}
 	switch {
 	case lateRun:
-		b.WriteString(generatorLateHeading(report))
+		b.WriteString(generatorLateHeading(report, limitLine))
 	case top.what == causeGenerator:
 		fmt.Fprintf(&b, "the generator fell behind for %s.", plural(top.n, "call"))
 	case top.what == causeConnection:

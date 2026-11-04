@@ -489,8 +489,10 @@ the generator and the target goes into the latency and looks like the target's t
 - On Windows the clock steps about 0.5 ms, and a run against a fast service will be declared invalid
   (`clock_step`, exit code 2).
 - If the generator's own lag decided the p99 tail, the run is invalid (`generator_late`, exit code
-  2, not released yet): the report names the methods and says to give the generator more CPU, lower
-  the rate or split it over several machines. It is judged on methods with at least 100
+  2, not released yet): the report names the methods and the limit the generator hit
+  (`generator_limit`: `gomaxprocs`, `cpu_quota`, `cpu`, `schedule` or `unknown`) and the one thing to
+  change, then says to lower the rate or split it over several machines. The limit is named only
+  from a generator CPU measured for a whole second; otherwise it is `unknown`. It is judged on methods with at least 100
   observations; with fewer, p99 is the maximum, and the run stays valid with the note and
   `tail_wait_cause: generator`. A tail decided by streams or connections does not make a run
   invalid. A
@@ -585,6 +587,7 @@ measured calls only. The first column is the field's full path.
 | `outcome` | string | `complete`, `invalid`, `incomplete` — matches exit code `0`, `2`, `3`; a finished run that missed a `pass` limit is `complete` with code `4`; with `-json-file` and a failed write the code is `1` and `outcome` stays the run's |
 | `invalid_reasons` | []string | Why the run is invalid: `in_flight_cap`, `nothing_measured`, `clock_step`, `generator_late` (the generator fell behind, since v0.7; see "Where to run"), `thresholds_undecided` (a `pass` limit cannot be decided, and not because the run was stopped or already invalid). Empty — valid |
 | `tail_wait_cause` | string? | The client-side wait that set the tail: `generator`, `stream`, `connection`; `null` — no verdict |
+| `generator_limit` | string? | Which limit of its own the generator hit, in a `generator_late` run (not released yet): `gomaxprocs`, `cpu_quota`, `cpu`, `schedule`, `unknown`; `null` — the run is not `generator_late` |
 | `clock_step_ns` | int | The host clock step, ns: every latency and wait is ± it |
 | `stop_reason` | string? | `error_spike` when `load.stop_on_errors` stopped the run; otherwise `null`. |
 | `stop` | object? | Where and on which numbers `load.stop_on_errors` stopped the run; `null` when it did not. |

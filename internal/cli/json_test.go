@@ -20,12 +20,14 @@ import (
 	"math"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"google.golang.org/grpc/codes"
 
+	"github.com/yhgrwav/leettest/pkg/breakpoint"
 	"github.com/yhgrwav/leettest/pkg/engine"
 	"github.com/yhgrwav/leettest/pkg/metrics"
 	"github.com/yhgrwav/leettest/pkg/threshold"
@@ -503,6 +505,79 @@ func TestJSON_TailWaitCause(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// generator_limit is GeneratorLimit's name for a generator_late run, and null
+// for every other run; the key is there either way, and schema_version stays 1
+// (a key added, none changed).
+func TestJSON_GeneratorLimit(t *testing.T) {
+	for _, tc := range limitCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			run := jsonRunOf(tc.run)
+			run.Outcome = OutcomeInvalid
+
+			out := writeJSON(t, run)
+			if got := field(t, out, "generator_limit"); got != tc.limit {
+				t.Errorf("generator_limit = %v, want %q", got, tc.limit)
+			}
+			if got := anyStrings(field(t, out, "invalid_reasons")); !slices.Contains(got, "generator_late") {
+				t.Fatalf("invalid_reasons = %v: the fixture is not a generator_late run", got)
+			}
+			if got := field(t, out, "schema_version"); got != 1.0 {
+				t.Errorf("schema_version = %v, want 1", got)
+			}
+		})
+	}
+}
+
+func TestJSON_GeneratorLimitIsNullWithoutGeneratorLate(t *testing.T) {
+	busy := func() RunReport { return limitRun(limitPassport("linux", 8, 2, quota(2)), cpuSeconds(2, 9, 10)) }
+
+	stream := busy()
+	stream.GeneratorCauseCalls, stream.GeneratorTailCalls = 0, 0
+	stream.StreamCauseCalls, stream.StreamTailCalls = 30, 30
+
+	valid := jsonRunOf(busy())
+	valid.Run.Methods[0] = lateMethod(lateA, 5*time.Millisecond, 5*time.Millisecond)
+	valid.Run.GeneratorCauseCalls, valid.Run.GeneratorTailCalls = 0, 0
+
+	for name, run := range map[string]JSONRun{
+		"a valid run": valid, "a stream leads the tail": jsonRunOf(stream), "a run with no machine data": jsonRun(engine.Report{}),
+	} {
+		out := writeJSON(t, run)
+		if got := field(t, out, "generator_limit"); got != nil {
+			t.Errorf("%s: generator_limit = %v, want null", name, got)
+		}
+		if got := anyStrings(field(t, out, "invalid_reasons")); slices.Contains(got, "generator_late") {
+			t.Fatalf("%s: invalid_reasons = %v: the fixture is a generator_late run", name, got)
+		}
+	}
+}
+
+// A step of a breaking-point search is never generator_late (the search ends on
+// the generator with its own cause): its report carries the key, null.
+func TestJSON_GeneratorLimitIsNullInASearchStep(t *testing.T) {
+	step := bpRun(breakpoint.RateStep, 125, 400, 21*time.Millisecond, true, breakpoint.CauseGenerator, "the generator fell behind")
+	step.Report = lateRun().Report
+	res := breakpoint.Result{
+		Outcome: breakpoint.RunLimit, Held: 100, Broke: 125, Cause: breakpoint.CauseGenerator,
+		Steps: []breakpoint.Step{bpRun(breakpoint.RateStep, 100, 400, 21*time.Millisecond, false, breakpoint.NoCause, ""), step},
+	}
+
+	bp, _ := searchJSON(t, res)["breakpoint"].(map[string]any)
+	runs, _ := bp["runs"].([]any)
+	if len(runs) != 2 {
+		t.Fatalf("%d runs, want 2", len(runs))
+	}
+	for i, r := range runs {
+		report := field(t, r, "report")
+		if got := field(t, report, "generator_limit"); got != nil {
+			t.Errorf("step %d: generator_limit = %v, want null", i, got)
+		}
+	}
+	if got := field(t, field(t, runs[1], "report"), "tail_wait_cause"); got != "generator" {
+		t.Errorf("tail_wait_cause = %v: the fixture is not a generator-limited step", got)
 	}
 }
 
