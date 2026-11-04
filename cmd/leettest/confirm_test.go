@@ -293,18 +293,19 @@ func TestRun_TheQuestionStatesThePlannedPeakAndDuration(t *testing.T) {
 }
 
 // Ground: contract — a search in real is asked too, and its line gives the
-// range and says it goes on until the system breaks: a search has no duration
-// to promise.
+// ramp and the range and says it goes on until the system breaks: a search has
+// no duration to promise. The ramp is the config's, printed as a run's is.
 func TestRun_ASearchInRealStatesItsRangeAndAsks(t *testing.T) {
 	addr, seen := countingTarget(t)
 	cfg := writeSearch(t, addr, checkMethod)
 	setMode(t, cfg, "real")
+	setRamp(t, cfg, "30s")
 	withTerminals(t, true, true, strings.NewReader("n\n"))
 
 	res := runCLI(t.Context(), t, 10*time.Second, "-plain", "-c", cfg)
 
 	wantExit(t, res, 1)
-	want := "real mode: " + addr + ", search from 50 to 80 rps until it breaks, duration not promised"
+	want := "real mode: " + addr + ", ramp 30s to 50 rps, then search from 50 to 80 rps until it breaks, duration not promised"
 	if !strings.Contains(res.stderr, want) || !strings.Contains(res.stderr, askText) {
 		t.Errorf("stderr lacks %q and %q:\n%s", want, askText, res.stderr)
 	}
@@ -321,6 +322,7 @@ func TestRun_ASearchInRealNeedsYesOffATerminal(t *testing.T) {
 	addr, seen := countingTarget(t)
 	cfg := writeSearch(t, addr, checkMethod)
 	setMode(t, cfg, "real")
+	setRamp(t, cfg, "30s")
 	withTerminals(t, false, false, strings.NewReader(""))
 
 	res := runCLI(t.Context(), t, 10*time.Second, "-plain", "-c", cfg)
@@ -342,11 +344,12 @@ func TestRun_YesInASearchPrintsItsLineAndDoesNotAsk(t *testing.T) {
 		addr := closedPort(t)
 		cfg := writeSearch(t, addr, checkMethod)
 		setMode(t, cfg, "real")
+		setRamp(t, cfg, "1s")
 		in := withTerminals(t, terminal, terminal, strings.NewReader("n\n"))
 
 		res := runCLI(t.Context(), t, 60*time.Second, "-plain", "-yes", "-c", cfg)
 
-		want := "real mode: " + addr + ", search from 50 to 80 rps until it breaks, duration not promised"
+		want := "real mode: " + addr + ", ramp 1s to 50 rps, then search from 50 to 80 rps until it breaks, duration not promised"
 		if !strings.Contains(res.stderr, want) {
 			t.Errorf("terminal %v: stderr lacks %q:\n%s", terminal, want, res.stderr)
 		}

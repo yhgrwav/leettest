@@ -67,7 +67,7 @@ func confirmReal(ctx context.Context, stderr io.Writer, cfg *config.MasterConfig
 // the duration is the longest call's stages (the ramp is the first of them).
 func realPlan(cfg *config.MasterConfig, calls []engine.Call, target string) cli.RealPlan {
 	if bp := cfg.Load.Breakpoint; bp != nil {
-		return cli.RealPlan{Target: target, Search: true, From: int(bp.From), To: int(bp.To)}
+		return cli.RealPlan{Target: target, Search: true, Ramp: cfg.Load.Ramp, From: int(bp.From), To: int(bp.To)}
 	}
 
 	plan := cli.RealPlan{Target: target, Ramp: cfg.Load.Ramp}

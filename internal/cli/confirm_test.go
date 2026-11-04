@@ -58,6 +58,34 @@ func TestConfirmText_ASearchDoesNotPromiseADuration(t *testing.T) {
 	}
 }
 
+// Ground: contract — a search that starts with a ramp says so before its range:
+// the ramp goes from 0 to the first step's rate (From), the search starts
+// there, and it still promises no duration and no planned numbers. The ramp is
+// printed as the plain line prints its own (30s, 1m30s). A search with no ramp
+// keeps the line above, byte for byte (config refuses that in real; the text is
+// not the place that decides).
+func TestConfirmText_ASearchStatesItsRampBeforeItsRange(t *testing.T) {
+	for _, tc := range []struct {
+		ramp time.Duration
+		want string
+	}{
+		{30 * time.Second, "real mode: 10.0.0.5:50051, ramp 30s to 50 rps, then search from 50 to 800 rps until it breaks, duration not promised"},
+		{90 * time.Second, "real mode: 10.0.0.5:50051, ramp 1m30s to 50 rps, then search from 50 to 800 rps until it breaks, duration not promised"},
+		{0, "real mode: 10.0.0.5:50051, search from 50 to 800 rps until it breaks, duration not promised"},
+	} {
+		plan := aSearchPlan
+		plan.Ramp = tc.ramp
+
+		got := ConfirmText(plan)
+		if got != tc.want {
+			t.Errorf("ramp %s: ConfirmText =\n%q\nwant\n%q", tc.ramp, got, tc.want)
+		}
+		if strings.Contains(got, "planned") {
+			t.Errorf("ramp %s: a search's line has planned numbers: %q", tc.ramp, got)
+		}
+	}
+}
+
 // Ground: contract — only y and yes, in any case and with the spaces and the
 // carriage return a console adds, start the run. Anything else, an empty line
 // and the end of input included, does not: the default of [y/N] is no. The

@@ -224,6 +224,32 @@ func TestBreakpoint_ThePlanLine(t *testing.T) {
 	}
 }
 
+// Ground: contract — "at most" is a promise of an upper bound. The ramp before
+// the first step is run time the plan has to count: once (a repeat of the first
+// step starts at its rate, no second ramp), before the rounding up to a second
+// (the same rounding as without the ramp, the second not added when the sum is
+// whole), and a ramp of 0 is the release's line byte for byte.
+func TestBreakpoint_ThePlanLineCountsTheRamp(t *testing.T) {
+	p := breakpoint.Plan{From: 100, To: 156, Settle: 100 * time.Millisecond, Hold: time.Second, Timeout: 500 * time.Millisecond}
+	// Plan.Worst 67.1s + connect 5s = 72.1s, plus the ramp, rounded up.
+	for _, tc := range []struct {
+		ramp time.Duration
+		want string
+	}{
+		{0, PlanLine(p, 5*time.Second)},
+		{10 * time.Second, "breakpoint: up to 3 steps, at most 1m23s"},
+		{1500 * time.Millisecond, "breakpoint: up to 3 steps, at most 1m14s"},
+		{2900 * time.Millisecond, "breakpoint: up to 3 steps, at most 1m15s"},
+	} {
+		if got := PlanLineRamp(p, 5*time.Second, tc.ramp); got != tc.want {
+			t.Errorf("ramp %v: plan line %q, want %q", tc.ramp, got, tc.want)
+		}
+	}
+	if got, want := PlanLine(p, 5*time.Second), "breakpoint: up to 3 steps, at most 1m13s"; got != want {
+		t.Errorf("plan line without a ramp %q, want the release's %q", got, want)
+	}
+}
+
 // The search's JSON: mode breakpoint, outcome and why from closed lists,
 // rates null where the outcome has none, every run with its kind, planned and
 // sent rps and its full report.

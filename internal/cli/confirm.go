@@ -34,12 +34,14 @@ var ErrNotConfirmed = errors.New("not confirmed: nothing was sent")
 type RealPlan struct {
 	Target string
 	// PeakRPS is the sum of the calls' rps. Ramp is inside Duration, which is
-	// the longest call's ramp and duration together. Both are zero for a search.
+	// the longest call's ramp and duration together. PeakRPS and Duration are
+	// zero for a search.
 	PeakRPS  int
 	Ramp     time.Duration
 	Duration time.Duration
 	// Search is a breakpoint search: its steps go from From to To rps and it
-	// ends when the system breaks, so no duration is promised.
+	// ends when the system breaks, so no duration is promised. Ramp is then
+	// the rise from 0 to From before the first step.
 	Search   bool
 	From, To int
 }
@@ -47,6 +49,11 @@ type RealPlan struct {
 // ConfirmText is the line that tells what the run will do, without the
 // question.
 func ConfirmText(p RealPlan) string {
+	if p.Search && p.Ramp > 0 {
+		return fmt.Sprintf("real mode: %s, ramp %s to %d rps, then search from %d to %d rps until it breaks, duration not promised",
+			p.Target, p.Ramp, p.From, p.From, p.To)
+	}
+
 	if p.Search {
 		return fmt.Sprintf("real mode: %s, search from %d to %d rps until it breaks, duration not promised",
 			p.Target, p.From, p.To)

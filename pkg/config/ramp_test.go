@@ -38,11 +38,9 @@ RAMP  calls:
       duration: 20s
 `
 
-// Ground: contract — load.ramp is a duration, optional, never negative, and
-// the search sets the rates itself so a ramp with it is refused by the key's
-// name (the text follows load.warmup with load.breakpoint). The rows other than
-// the negative ramp are green on the stub (the field exists so that the test
-// builds); the search is the next test.
+// Ground: contract — load.ramp is a duration, optional, never negative. The
+// rows other than the negative ramp are green on the stub (the field exists so
+// that the test builds); the search with a ramp is TestLoad_ARampWithABreakpointIsAccepted.
 func TestLoad_Ramp(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
@@ -95,20 +93,55 @@ func TestLoad_ARampDoesNotStretchTheDuration(t *testing.T) {
 	}
 }
 
-// Ground: boundary — the search sets the rate of every step, and a ramp would
-// move it from under the search. The refusal is ErrBreakpoint, by the key's
-// name, in the words of the neighbouring load.warmup with load.breakpoint. A
-// ramp of 0 is no ramp and is as acceptable as a warm-up of 0.
-func TestLoad_RampWithABreakpointIsRefused(t *testing.T) {
-	_, err := config.Parse([]byte(strings.Replace(searchYAML, "load:\n", "load:\n  ramp: 30s\n", 1)))
-	if !errors.Is(err, config.ErrBreakpoint) {
-		t.Fatalf("a ramp with a search: error %v, want ErrBreakpoint", err)
-	}
-	if want := "load.ramp with load.breakpoint: the search sets the rates"; !strings.Contains(err.Error(), want) {
-		t.Errorf("error %q, want it to say %q", err, want)
+// Ground: contract — a search takes a ramp, in both modes: it rises from 0 to
+// breakpoint.from before the first step, and the key has that one meaning. The
+// value is the config's, as everywhere (30s is 30s, 0 is none). A ramp of 0 is
+// as acceptable with a search as it was. A negative ramp is still the ramp's
+// own error, not a search error. load.warmup stays refused beside a search
+// (each step has its settle), and a ramp does not lift that.
+func TestLoad_ARampWithABreakpointIsAccepted(t *testing.T) {
+	inMode := func(mode, ramp string) []byte {
+		text := strings.Replace(searchYAML, "app:\n", "app:\n"+mode, 1)
+
+		return []byte(strings.Replace(text, "load:\n", "load:\n"+ramp, 1))
 	}
 
-	if _, err := config.Parse([]byte(strings.Replace(searchYAML, "load:\n", "load:\n  ramp: 0s\n", 1))); err != nil {
-		t.Errorf("a ramp of 0 with a search: %v, want none", err)
+	for _, tc := range []struct {
+		name string
+		mode string
+		ramp string
+		want time.Duration
+	}{
+		{"local, a ramp", "", "  ramp: 30s\n", 30 * time.Second},
+		{"local, mode written", "  mode: local\n", "  ramp: 30s\n", 30 * time.Second},
+		{"real, a ramp", "  mode: real\n", "  ramp: 30s\n", 30 * time.Second},
+		{"local, a ramp of 0", "", "  ramp: 0s\n", 0},
+		{"local, no ramp", "", "", 0},
+	} {
+		cfg, err := config.Parse(inMode(tc.mode, tc.ramp))
+		if err != nil {
+			t.Errorf("%s: %v, want none", tc.name, err)
+
+			continue
+		}
+		if cfg.Load.Ramp != tc.want {
+			t.Errorf("%s: Ramp = %s, want %s", tc.name, cfg.Load.Ramp, tc.want)
+		}
+		if cfg.Load.Breakpoint == nil {
+			t.Errorf("%s: the search section was lost", tc.name)
+		}
+	}
+
+	_, err := config.Parse(inMode("", "  ramp: -1s\n"))
+	if !errors.Is(err, config.ErrInvalidRamp) {
+		t.Errorf("a negative ramp with a search: error %v, want ErrInvalidRamp", err)
+	}
+	if errors.Is(err, config.ErrBreakpoint) {
+		t.Errorf("a negative ramp with a search: error %v is a search error, the category is the ramp", err)
+	}
+
+	_, err = config.Parse(inMode("", "  ramp: 30s\n  warmup: 2s\n"))
+	if !errors.Is(err, config.ErrBreakpoint) || !strings.Contains(err.Error(), "load.warmup with load.breakpoint") {
+		t.Errorf("a warm-up beside a search and a ramp: error %v, want the load.warmup refusal", err)
 	}
 }
