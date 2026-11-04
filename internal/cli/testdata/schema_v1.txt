@@ -7,6 +7,7 @@ methods_source string?
 outcome string
 invalid_reasons []string
 tail_wait_cause string?
+generator_limit string?
 stop_reason string?
 stop object?
 stop.method string

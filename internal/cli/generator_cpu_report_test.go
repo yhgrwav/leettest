@@ -149,7 +149,10 @@ func TestGeneratorCPULine_IsAbsentWithoutABusyCountedSecond(t *testing.T) {
 
 // The line states; it never changes what else the report says, the exit
 // code's inputs or the verdict. The same run with and without the object
-// differs by the line and the object, nothing else.
+// differs by the line and the object, nothing else. The one exception is by
+// design: a late generator's verdict names the limit it hit, and that depends
+// on the CPU (generator_limit, the verdict's last line); the test stands those
+// two in for each other and checks them on their own.
 func TestGeneratorCPU_ChangesNoVerdictAndNoOtherNote(t *testing.T) {
 	report := reportOf(t, times(200, waitCall{lag: 20 * ms, served: 2 * ms}))
 	plain := RunReport{Report: report}
@@ -161,10 +164,23 @@ func TestGeneratorCPU_ChangesNoVerdictAndNoOtherNote(t *testing.T) {
 	if cpuLine(runNotes(busy)) == "" {
 		t.Fatal("no generator CPU line in the notes of the run with busy seconds")
 	}
+	const (
+		busyLimit  = "The generator used 90% or more of the 1 core available to it in 3 of 3 s: lower the rate, or split it over several machines."
+		plainLimit = "The generator's CPU was not measured for a whole second and the report cannot name the limit: lower the rate, or split it over several machines."
+	)
 	without := func(notes []string) []string {
-		return slices.DeleteFunc(slices.Clone(notes), func(n string) bool { return strings.HasPrefix(n, cpuLinePrefix) })
+		kept := slices.DeleteFunc(slices.Clone(notes), func(n string) bool { return strings.HasPrefix(n, cpuLinePrefix) })
+		for i, n := range kept {
+			kept[i] = strings.NewReplacer(busyLimit, "<limit>", plainLimit, "<limit>").Replace(n)
+		}
+
+		return kept
 	}
-	if got, want := without(runNotes(busy)), runNotes(plain); !slices.Equal(got, want) {
+	if !strings.Contains(strings.Join(runNotes(busy), "\n"), busyLimit) ||
+		!strings.Contains(strings.Join(runNotes(plain), "\n"), plainLimit) {
+		t.Error("the verdict does not name the limit the CPU reading gives")
+	}
+	if got, want := without(runNotes(busy)), without(runNotes(plain)); !slices.Equal(got, want) {
 		t.Errorf("notes differ beyond the line:\ngot:\n%q\nwant:\n%q", got, want)
 	}
 	if ClockTooCoarse(busy) != ClockTooCoarse(plain) {
@@ -176,8 +192,20 @@ func TestGeneratorCPU_ChangesNoVerdictAndNoOtherNote(t *testing.T) {
 	if got := field(t, b, "tail_wait_cause"); got != "generator" {
 		t.Errorf("tail_wait_cause = %v, want generator: the run waited on the generator", got)
 	}
+	if got, want := field(t, a, "generator_limit"), field(t, b, "generator_limit"); got != "unknown" || want != "cpu" {
+		t.Errorf("generator_limit = %v without the reading and %v with it, want unknown and cpu", got, want)
+	}
 	dropCPU(b)
 	dropCPU(a)
+	delete(a, "generator_limit")
+	delete(b, "generator_limit")
+	for _, report := range []map[string]any{a, b} {
+		notes, _ := report["notes"].([]any)
+		for i, n := range notes {
+			s, _ := n.(string)
+			notes[i] = strings.NewReplacer(busyLimit, "<limit>", plainLimit, "<limit>").Replace(s)
+		}
+	}
 	if !reflect.DeepEqual(a, b) {
 		t.Errorf("the JSON differs beyond generator_cpu and its note:\nwithout: %v\nwith: %v", a, b)
 	}
