@@ -65,7 +65,7 @@ func TestGeneratorDecidedTail_AShareOfUnsentCallsDecidesWhoeverLeads(t *testing.
 		// the connection.
 		{"the measured shape, a near tie with the connection",
 			connectionLedReport(unsentMethod("/a.B/C", 1365168, 37380, 37452)), true},
-		{"the share is the method's, not the run's: two methods at 0.9%",
+		{"two methods each under 1%",
 			connectionLedReport(unsentMethod("/a.B/C", 700, 9, 291), unsentMethod("/a.B/D", 700, 9, 291)), false},
 		{"one method at 1% among methods under it",
 			connectionLedReport(unsentMethod("/a.B/C", 700, 10, 290), unsentMethod("/a.B/D", 1000, 1, 299)), true},

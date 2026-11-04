@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 
 	"github.com/yhgrwav/leettest/pkg/engine"
 )
@@ -61,5 +62,97 @@ func TestSend_UnsentOnAReadyConnectionIsBlockedOnTheGenerator(t *testing.T) {
 	}
 	if out.NotSentOn != engine.BlockedOnGenerator {
 		t.Errorf("blocked on %v, want the generator: the connection was READY the whole time", out.NotSentOn)
+	}
+}
+
+// holdsUntil stands in for a generator that hands a call over late, with the
+// target blinking meanwhile: the call tells the test it has begun waiting,
+// waits for go-ahead, then waits out its deadline and goes to the invoker.
+func holdsUntil(started chan<- struct{}, proceed <-chan struct{}) grpc.DialOption {
+	return grpc.WithUnaryInterceptor(func(ctx context.Context, method string, req, reply any,
+		cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption,
+	) error {
+		started <- struct{}{}
+		<-proceed
+		<-ctx.Done()
+
+		return invoker(ctx, method, req, reply, cc, opts...)
+	})
+}
+
+// Ground: boundary — the connection was READY when the call was handed over
+// and READY again at its deadline, but not in between: the target blinked, and
+// the call is the connection's (#91). A rule that looks at the state now, or
+// from the call's Begin (there is none), would put it on the generator and turn
+// a verdict on the target into generator_late. Green before the change and
+// after it. Mutation "READY now instead of throughout since the call was
+// handed over" must turn this red.
+func TestSend_UnsentAfterABlinkOfTheConnectionIsBlockedOnTheConnection(t *testing.T) {
+	started, proceed := make(chan struct{}, 1), make(chan struct{})
+	target := dropping(t, holdsUntil(started, proceed))
+	link := target.sender.link
+
+	req := request(time.Now())
+	req.Deadline = time.Now().Add(time.Second)
+
+	type result struct {
+		out engine.Outcome
+		err error
+	}
+
+	done := make(chan result, 1)
+
+	go func() {
+		out, err := target.sender.Send(context.Background(), req)
+		done <- result{out, err}
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the call never reached the interceptor")
+	}
+
+	dropped := time.Now()
+
+	target.drop(t)
+	waitUntil(t, "the watcher to see the connection leave READY", func() bool { return !link.ready.throughout(time.Now()) })
+
+	// The clock may tick coarsely: a re-entry stamped in the tick of the exit
+	// would not read as one.
+	time.Sleep(20 * time.Millisecond)
+	target.open()
+	target.sender.conn.Connect()
+	waitUntil(t, "the watcher to see the connection READY again", func() bool {
+		link.ready.mu.Lock()
+		defer link.ready.mu.Unlock()
+
+		return target.sender.conn.GetState() == connectivity.Ready && link.ready.enterAt.After(dropped)
+	})
+
+	close(proceed)
+
+	got := <-done
+	if got.err != nil {
+		t.Fatalf("send: %v", got.err)
+	}
+
+	if !got.out.NotSent {
+		t.Fatalf("not sent = false, category %v: the deadline passed before the call began", got.out.Category)
+	}
+	if got.out.NotSentOn != engine.BlockedOnConnection {
+		t.Errorf("blocked on %v, want the connection: it left READY while the call waited", got.out.NotSentOn)
+	}
+}
+
+func waitUntil(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+
+	for deadline := time.Now().Add(5 * time.Second); !cond(); {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+
+		time.Sleep(time.Millisecond)
 	}
 }
