@@ -2,7 +2,7 @@
 
 [← Zur Übersicht](README.md)
 
-> Übersetzt aus [docs/ru/pitfalls.md](../ru/pitfalls.md) bei 67f8732, 2026-10-08. Bei
+> Übersetzt aus [docs/ru/pitfalls.md](../ru/pitfalls.md) bei bfd24aa, 2026-11-03. Bei
 > Abweichungen gilt die russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/pitfalls.md).
@@ -25,7 +25,7 @@ kommt noch.
 | Ein Tippfehler in der Konfiguration ergibt einen leeren grünen Lauf | fertig |
 | Kaltstart verzerrt Perzentile | fertig |
 | Der Generator stirbt vor dem Ziel an hängenden Anfragen | fertig |
-| Der Generator stößt an seine Grenze, und der Bericht beschuldigt den Dienst | geplant |
+| Der Generator stößt an seine Grenze, und der Bericht beschuldigt den Dienst | fertig (nicht veröffentlicht) |
 | Rate-Limits des Ziels zählen als Dienstfehler | fertig |
 | Aufrufe lassen sich nicht über Daten verketten | geplant |
 | Unklar, was während des Laufs passiert | fertig |
@@ -114,9 +114,11 @@ der Dienst: Der Lauf hält mit Bericht an und wird als ungültig markiert.
 
 Schafft die Maschine die angeforderte RPS nicht, gehen Anfragen verspätet raus, die Latenz steigt
 — und der Bericht beschuldigt den Dienst, obwohl der Generator schuld ist. Die Verspätung des
-Generators messen wir bereits getrennt von der Antwortzeit des Dienstes. Geplant ist, daraus ein
-Urteil zu machen: Ein Lauf, in dem der Generator an seine Grenze stieß, wird für ungültig erklärt,
-mit Angabe, was zu ändern ist.
+Generators messen wir bereits getrennt von der Antwortzeit des Dienstes und machen daraus ein Urteil
+(nicht veröffentlicht): Ein Lauf, in dem die Verspätung des Generators das p99-Ende bestimmt hat,
+wird für ungültig erklärt (`generator_late`, Exit-Code 2), und der Bericht nennt die Methoden und
+was zu ändern ist. Solange der Lauf geht, warnt eine Zeile auf stderr, dass der Generator hinter
+seinem Plan zurückbleibt. Einzelheiten stehen in der [Referenz](reference.md#wo-man-es-ausführt).
 
 ## Fehler nach Kategorien
 

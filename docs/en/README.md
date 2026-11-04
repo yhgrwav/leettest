@@ -15,7 +15,7 @@
 
 ---
 
-> Translated from [README.md](../../README.md) at ebf39ff, 2026-10-13. If they differ, the Russian
+> Translated from [README.md](../../README.md) at bfd24aa, 2026-11-03. If they differ, the Russian
 > one is right. Plus an index of English docs, not in the Russian source.
 
 The tool answers the question people bring to a load test: **at what load does the service stop

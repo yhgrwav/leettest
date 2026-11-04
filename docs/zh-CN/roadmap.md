@@ -2,7 +2,7 @@
 
 [← 返回文档](README.md)
 
-> 译自 [docs/ru/roadmap.md](../ru/roadmap.md)，对应 e4663f1，2026-10-27。如有出入，以俄文版为准。
+> 译自 [docs/ru/roadmap.md](../ru/roadmap.md)，对应 bfd24aa，2026-11-03。如有出入，以俄文版为准。
 > **可能滞后：** 中文版在每次发布前同步，最新内容请看[英文版](../en/roadmap.md)。
 
 > **缺少某项功能？[提交 issue](https://github.com/yhgrwav/leettest/issues/new/choose)**——
