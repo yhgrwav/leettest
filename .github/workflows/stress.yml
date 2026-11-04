@@ -73,6 +73,26 @@ jobs:
       # default 10 min per test binary would cut it short.
       - run: make stress 2>&1 | tee stress.log
         shell: bash -o pipefail {0}
+      # make stress writes one line per test that skipped itself as an invalid
+      # run of a starved generator (cmd/leettest skipIfStarved); go test says
+      # nothing about a skip without -v. A test that skips in all 20 repeats
+      # shows here, not as a green nothing. A branch whose Makefile does not
+      # write the file yet prints "none". A skip does not turn the job red.
+      - name: count the skipped tests
+        if: always()
+        shell: bash {0}
+        run: |
+          {
+            echo
+            echo "Skipped as an invalid run of a starved generator (skips of 20 repeats, test, reasons):"
+            echo '```'
+            if [ -s stress-skips.txt ]; then
+              sort stress-skips.txt | uniq -c | sort -rn
+            else
+              echo "none"
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: keep the failures
         if: failure()
         run: |
