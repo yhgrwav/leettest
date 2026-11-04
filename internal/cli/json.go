@@ -442,6 +442,14 @@ type jsonSecond struct {
 	ObservedLagSumUS   int64 `json:"observed_lag_sum_us"`
 	TransportWaitSumUS int64 `json:"transport_wait_sum_us"`
 	ServiceTimeSumUS   int64 `json:"service_time_sum_us"`
+	// PlannedRPS is the rate the plan offered, the mean over the second, to
+	// three places so that the same number prints on every platform.
+	// ScheduledSent and ScheduledFailed count the calls scheduled for this
+	// second that went out and that failed: by the moment of scheduling, where
+	// the category counters above are by the moment of finishing.
+	PlannedRPS      float64 `json:"planned_rps"`
+	ScheduledSent   int     `json:"scheduled_sent"`
+	ScheduledFailed int     `json:"scheduled_failed"`
 }
 
 type jsonUnchecked struct {
@@ -755,6 +763,7 @@ func jsonMethodOf(m *engine.MethodReport, warmup time.Duration) jsonMethod {
 			LagCalls: s.LagCalls, LagSumUS: micros(s.LagSum), LagMaxUS: micros(s.LagMax),
 			ObservedCalls: s.ObservedCalls, ObservedLagSumUS: micros(s.ObservedLagSum),
 			TransportWaitSumUS: micros(s.TransportWaitSum), ServiceTimeSumUS: micros(s.ServiceTimeSum),
+			PlannedRPS: math.Round(s.PlannedRPS*1000) / 1000, ScheduledSent: s.ScheduledSent, ScheduledFailed: s.ScheduledFailed,
 		})
 	}
 	for _, w := range m.Windows {

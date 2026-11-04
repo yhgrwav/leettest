@@ -62,6 +62,15 @@ type Second struct {
 	ObservedLagSum   time.Duration
 	TransportWaitSum time.Duration
 	ServiceTimeSum   time.Duration
+	// PlannedRPS is the plan's mean rate over the part of this second the
+	// schedule covered: 0 past the end of the plan or of the schedule.
+	// ScheduledSent is the calls scheduled for this second that went out, and
+	// ScheduledFailed those of them that failed (not a success or our own abort):
+	// by the moment of scheduling, unlike the outcome counters above, so a call
+	// that timed out ten seconds later is counted at the rate it was sent at.
+	PlannedRPS      float64
+	ScheduledSent   int
+	ScheduledFailed int
 }
 
 type second struct {
@@ -81,6 +90,9 @@ type second struct {
 	unknownNotSent                                      int64
 	lagCalls, observedCalls                             int64
 	lagSum, lagMax, observedLag, transportWait, service time.Duration
+	// scheduledSent and scheduledFailed count by the second a call was
+	// scheduled for.
+	scheduledSent, scheduledFailed int64
 }
 
 // timeline never grows while recording: growing means copying it under the
@@ -139,20 +151,29 @@ func (t *timeline) record(start time.Time, r Result) {
 		}
 	}
 
+	// The rule of Report.WarmupSent and WarmupFailed, outside the lag's branch.
+	sched := &t.secs[scheduled]
+	if !r.NotSent {
+		sched.scheduledSent++
+
+		if r.Category != CategorySuccess && r.Category != CategoryAborted {
+			sched.scheduledFailed++
+		}
+	}
+
 	lag := r.QueueTime()
 	if lag < 0 {
 		t.invalidLag++
 	} else {
-		s := &t.secs[scheduled]
-		s.lagCalls++
-		s.lagSum += lag
-		s.lagMax = max(s.lagMax, lag)
+		sched.lagCalls++
+		sched.lagSum += lag
+		sched.lagMax = max(sched.lagMax, lag)
 
 		if r.Category == CategorySuccess {
-			s.observedCalls++
-			s.observedLag += lag
-			s.transportWait += r.TransportWait()
-			s.service += r.ServiceTime()
+			sched.observedCalls++
+			sched.observedLag += lag
+			sched.transportWait += r.TransportWait()
+			sched.service += r.ServiceTime()
 		}
 	}
 
@@ -232,7 +253,10 @@ func notSentCause(r Result) Blocker {
 	}
 }
 
-func (t *timeline) export() []Second {
+// export copies the seconds out. stages is the method's plan and covered how
+// long the schedule ran (min of the schedule's end and the plan's length), for
+// PlannedRPS: each second's mean is over the part of it that was covered.
+func (t *timeline) export(stages []Stage, covered time.Duration) []Second {
 	out := make([]Second, t.used)
 
 	var inFlight int64
@@ -266,7 +290,12 @@ func (t *timeline) export() []Second {
 			ObservedLagSum:    s.observedLag,
 			TransportWaitSum:  s.transportWait,
 			ServiceTimeSum:    s.service,
+			ScheduledSent:     int(s.scheduledSent),
+			ScheduledFailed:   int(s.scheduledFailed),
 		}
+
+		from := time.Duration(i) * time.Second
+		out[i].PlannedRPS = meanRate(stages, from, min(from+time.Second, covered))
 	}
 
 	return out

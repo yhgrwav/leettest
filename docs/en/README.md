@@ -147,6 +147,10 @@ At the end — a report per method: sent, failed, `sent/s`, p50/p90/p95/p99.
   per window, that is the plan, not a failure: compare with the method's `plan:`. With a `ramp`
   the first rows are the ramp: a low `sent/s` there is the plan, not a failure; look for the row
   where p99 or the failed share climbs before the rate has reached its plateau.
+- With a `ramp` the report also has a `ramp by second` block per method (not released yet): the
+  seconds of the excluded window, each with the planned rate, the calls scheduled for it that went
+  out, and the share of those that failed. Only whole seconds, at most 20 rows. The failed share
+  is a lower bound: calls still in flight when the run ended are not counted as failed.
 - The `traffic:` line in the run's header is how many bits per second the message bodies moved,
   sent and received (not released yet). It is a lower bound: no HTTP/2 frames, headers or TLS, and
   received is counted by the size before decompression. Under a method, `response: N B per call`

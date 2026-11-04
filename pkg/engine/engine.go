@@ -623,6 +623,7 @@ func (e *Engine) Run(ctx context.Context) error {
 	methods := make([]string, 0, len(e.opts.Calls))
 	for _, call := range e.opts.Calls {
 		methods = append(methods, call.Method)
+		e.stats.setMethodStages(call.Method, call.Stages)
 	}
 	if e.opts.Windows {
 		e.stats.SetWindows(max(0, e.plannedDuration()-e.opts.Warmup))

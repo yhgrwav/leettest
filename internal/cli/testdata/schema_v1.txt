@@ -314,6 +314,9 @@ methods[].seconds[].observed_calls int
 methods[].seconds[].observed_lag_sum_us int
 methods[].seconds[].transport_wait_sum_us int
 methods[].seconds[].service_time_sum_us int
+methods[].seconds[].planned_rps float
+methods[].seconds[].scheduled_sent int
+methods[].seconds[].scheduled_failed int
 methods[].windows []object
 methods[].windows[].start_us int
 methods[].windows[].width_us int

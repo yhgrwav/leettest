@@ -456,6 +456,8 @@ type Stats struct {
 	windowWidth time.Duration
 	windowCount int
 	windowPlans map[string]time.Duration
+	// methodStages is each method's load plan, for the planned rate per second.
+	methodStages map[string][]Stage
 	// windowMeasured is the planned measured part the windows were cut for;
 	// planDone says the schedule walked all of it.
 	windowMeasured time.Duration
@@ -1152,6 +1154,10 @@ func (s *Stats) Report() Report {
 	waited := s.waited
 	timelines := make(map[string]MethodReport, len(s.byMethod))
 	windowViews := s.windowViewsLocked()
+	var sendingEnded time.Duration
+	if !s.sendingEndedAt.IsZero() {
+		sendingEnded = s.sendingEndedAt.Sub(s.startedAt)
+	}
 	// Bytes of the measured part that went out and came back, for the traffic.
 	var sentBytes, receivedBytes int64
 	warmupReplyMean := make(map[string]float64, len(s.byMethod))
@@ -1161,8 +1167,9 @@ func (s *Stats) Report() Report {
 		if method.warmupReplies > 0 {
 			warmupReplyMean[name] = float64(method.warmupReplyBytes) / float64(method.warmupReplies)
 		}
+		stages := s.methodStages[name]
 		entry := MethodReport{
-			Seconds:           method.timeline.export(),
+			Seconds:           method.timeline.export(stages, min(sendingEnded, planLength(stages))),
 			OutsideTimeline:   method.timeline.outside,
 			InvalidLag:        method.timeline.invalidLag,
 			TimedOut:          method.timedOut,
@@ -1199,10 +1206,6 @@ func (s *Stats) Report() Report {
 	startLag := s.startLag.Snapshot()
 	streamWait := s.streamWait.Snapshot()
 	startLagMax, lateCancelMax := s.startLagMax, s.lateCancelMax
-	var sendingEnded time.Duration
-	if !s.sendingEndedAt.IsZero() {
-		sendingEnded = s.sendingEndedAt.Sub(s.startedAt)
-	}
 	s.mu.Unlock()
 
 	report := Report{

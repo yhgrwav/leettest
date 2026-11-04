@@ -661,6 +661,9 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `methods[].seconds[].lag_calls`、`methods[].seconds[].lag_sum_us`、`methods[].seconds[].lag_max_us` | int | 对计划在该秒的调用：数量、启动延迟之和与最大值 |
 | `methods[].seconds[].observed_calls` | int | 其中成功的调用 |
 | `methods[].seconds[].observed_lag_sum_us`、`methods[].seconds[].transport_wait_sum_us`、`methods[].seconds[].service_time_sum_us` | int | 对成功的调用：启动延迟之和、发送前等待（连接和流）之和、从发送到应答的时间之和。三者相加即为它们的延迟 |
+| `methods[].seconds[].planned_rps` | float | 计划在该秒给出的速率（未发布）：计划与发送所覆盖的那部分秒内的平均值，保留 3 位小数；计划已结束处为 `0` |
+| `methods[].seconds[].scheduled_sent` | int | 计划在该秒且已发出的调用（未发布）；从未发出的不计入 |
+| `methods[].seconds[].scheduled_failed` | int | 其中失败的调用，即既不在 `succeeded` 也不在 `aborted` 中结束（未发布）。按计划的秒计数，不同于上面按结束的秒计数的类别字段；运行结束时仍在途的调用不计入，因此是下界 |
 
 ### 窗口：`methods[].windows[]`
 
