@@ -748,9 +748,23 @@ func timestamps(call callTimes, category engine.Category) (sentAt, doneAt time.T
 // connection. On a ready one it is a stream only if the connection was full at
 // some moment of the wait; otherwise the delay was ours. Of the connection the
 // call was sent on, not of another.
+//
+// A call grpc-go never began (no Begin: it refused the call at its deadline
+// before it picked a transport) is judged from the moment Send handed it over.
+// Ready since then it waited for no connection and for no stream, which opens
+// only after Begin: the delay was ours. The resolver was done too: a channel
+// READY when Send handed the call over has resolved already.
 func (l *link) blocker(conn *grpc.ClientConn, t callTimes) engine.Blocker {
+	if t.begunAt.IsZero() {
+		if !t.invokedAt.IsZero() && l.ready.throughout(t.invokedAt) && conn.GetState() == connectivity.Ready {
+			return engine.BlockedOnGenerator
+		}
+
+		return engine.BlockedOnConnection
+	}
+
 	switch {
-	case t.begunAt.IsZero() || !l.ready.throughout(t.begunAt) || conn.GetState() != connectivity.Ready:
+	case !l.ready.throughout(t.begunAt) || conn.GetState() != connectivity.Ready:
 		return engine.BlockedOnConnection
 	case l.streams.fullSince(t.waitFrom()):
 		return engine.BlockedOnStream

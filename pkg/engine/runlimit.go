@@ -100,9 +100,15 @@ var p99Observations = metrics.MinCount(0.99)
 
 // GeneratorDecidedTail says the generator's lag decided the run's p99 tail:
 // the wait verdict names the generator, and some method was late by it
-// (MethodReport.LateByGenerator) or the generator left calls unsent. The one
-// answer for the exit code, the text and the JSON of generator_late.
+// (MethodReport.LateByGenerator) or the generator left calls unsent; or the
+// generator left a share of some method's calls unsent whoever the verdict
+// names (MethodReport.LeftShare). The one answer for the exit code, the text
+// and the JSON of generator_late.
 func (r Report) GeneratorDecidedTail() bool {
+	if r.GeneratorLeftShare() {
+		return true
+	}
+
 	cause, _, ok := r.WaitVerdict()
 	if !ok || cause != WaitGenerator {
 		return false
@@ -119,6 +125,31 @@ func (r Report) GeneratorDecidedTail() bool {
 	}
 
 	return false
+}
+
+// GeneratorLeftShare says some method has MethodReport.LeftShare.
+func (r Report) GeneratorLeftShare() bool {
+	for i := range r.Methods {
+		if r.Methods[i].LeftShare() {
+			return true
+		}
+	}
+
+	return false
+}
+
+// leftShareDivisor makes the share 1%: the p99's own, the tail the percentile
+// is read from (docs/decisions.md, «Unsent by the generator: a share, not a
+// vote»).
+const leftShareDivisor = 100
+
+// LeftShare says the generator left at least a hundredth of this method's
+// calls, sent and unsent, unsent. Calls the generator left unsent are its
+// failure to keep the plan, and no leader of the causes makes them the
+// target's. The comparison is whole numbers: n/100 rounded up, without a float
+// that could land a call off.
+func (m *MethodReport) LeftShare() bool {
+	return m.NotSentGenerator > 0 && leftShareDivisor*m.NotSentGenerator >= m.Sent+m.NotSent
 }
 
 // LateByGenerator says the generator's lag decided this method's numbers: the
