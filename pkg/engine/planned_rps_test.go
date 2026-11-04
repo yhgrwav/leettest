@@ -326,6 +326,29 @@ func TestPlannedRPS_AgreesWithTheTicksThePacerPlaces(t *testing.T) {
 	}
 }
 
+// Ground: V5 — the covered part of the last second ends at the earlier of the
+// schedule's end and the method's own plan: with two methods of different
+// length the schedule runs to the longer plan, and the shorter one's plan ends
+// inside its second. The plan {50 for 2.5 s} under a schedule that ran 10 s
+// offered 50 in [2, 2.5): second 2 is 50, not the 25 of a mean over the whole
+// second, and second 3 has no plan. Mutation "the covered end is the schedule's
+// end, without the min with the plan's" (second 2 = 25) turns it red.
+func TestTimeline_APlanThatEndsInsideASecondIsAveragedOverItsOwnEnd(t *testing.T) {
+	stages := []Stage{{StartRPS: 50, TargetRPS: 50, Duration: 2500 * time.Millisecond}}
+
+	secs := plannedSeconds(t, stages, 10*time.Second, everySecond(4)...)
+
+	if len(secs) != 4 {
+		t.Fatalf("seconds = %d, want 4", len(secs))
+	}
+
+	for i, want := range []float64{50, 50, 50, 0} {
+		if !within(secs[i].PlannedRPS, want, 1e-9) {
+			t.Errorf("second %d planned %v, want %v", i, secs[i].PlannedRPS, want)
+		}
+	}
+}
+
 // Ground: V1 — a call is counted in the second it was scheduled for, so that a
 // target which freezes under load shows the rate the failing calls went out at,
 // not the rate of the moment their timeout came. The outcome counters stay by

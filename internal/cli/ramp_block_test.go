@@ -182,6 +182,36 @@ func TestReport_TheRampFailedShareFollowsTheFloorRule(t *testing.T) {
 	}
 }
 
+// Ground: contract — the planned rate is printed as a whole number of calls,
+// rounded to the nearest (%.0f): 18.75 is 19, 6.25 is 6, 0.4 is 0, 2999.6 is
+// 3000. The fixtures above hold whole numbers, so only this one tells the
+// rounding from a cut (18, 2999), an integer verb or a decimal. No value ends in
+// .5: %.0f rounds a tie to even, and a test of it would pin that, not the rule.
+// Mutations "truncate", "%d" and "%.1f" turn it red.
+func TestReport_TheRampPlannedRateIsRoundedToWholeCalls(t *testing.T) {
+	cases := []struct {
+		planned float64
+		want    string
+	}{
+		{18.75, "19"},
+		{6.25, "6"},
+		{0.4, "0"},
+		{2999.6, "3000"},
+	}
+
+	secs := secondsOf(len(cases), func(i int) engine.Second { return blockSecond(cases[i].planned, 100, 0) })
+	_, rows := rampBlock(t, blockRun(time.Duration(len(cases))*time.Second, 0, secs...), "ramp by second, a.B/One:")
+
+	if len(rows) != len(cases) {
+		t.Fatalf("rows = %d, want %d", len(rows), len(cases))
+	}
+	for i, tc := range cases {
+		if got := rows[i][1]; got != tc.want {
+			t.Errorf("planned %v printed %q, want %q", tc.planned, got, tc.want)
+		}
+	}
+}
+
 // Ground: V7 — with a warm-up after the ramp the window the block covers is
 // both, and the header says so by the same condition as the warm-up note: the
 // engine's window is longer than the ramp. A ramp alone says ramp.
