@@ -317,12 +317,15 @@ func TestRun_ARampedRunIsStoppedInsideTheRamp(t *testing.T) {
 	// The stop names the rate the plan offered at the moment of the stop: the
 	// ramp climbs from 0 to the call's 50 rps over 10 s (5 rps per second), so
 	// the number is on that line at stop.at_us, not 50 (the end of the ramp) and
-	// not 0. The tolerance is half a second of the line, for the start lag
-	// between the run's clock and the plan's. The line says the same number,
-	// to whole calls, on stderr and in the report.
+	// not 0. Both numbers come from the same Trip.At, so they differ only by the
+	// rounding of the output: at_us is whole microseconds (5 rps/s · 1 µs) and
+	// planned_rps is rounded to 3 places (5e-4); 0.01 is that, with room, and
+	// nothing more: a rate taken at the end of the run (tens of milliseconds
+	// after the stop, 0.05 rps and more) is not inside it. The line says the
+	// same number, to whole calls, on stderr and in the report.
 	at := fieldNumber(t, js, "stop", "at_us") / 1e6
 	planned := fieldNumber(t, js, "stop", "planned_rps")
-	if planned <= 0 || planned >= 50 || math.Abs(planned-5*at) > 2.5 {
+	if planned <= 0 || planned >= 50 || math.Abs(planned-5*at) > 0.01 {
 		t.Errorf("stop.planned_rps = %v at %.2f s, want about %v inside (0, 50)", planned, at, 5*at)
 	}
 	for name, got := range map[string]string{"stderr": res.stderr, "the report": res.stdout} {
