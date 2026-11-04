@@ -90,6 +90,13 @@ func PlanLine(p breakpoint.Plan, connect time.Duration) string {
 	return fmt.Sprintf("breakpoint: up to %d steps, at most %v", len(rates), at)
 }
 
+// PlanLineRamp is PlanLine for a search whose first step is preceded by a ramp
+// from 0: the ramp is added once, before the rounding up to a second. A ramp of
+// 0 is PlanLine's line.
+func PlanLineRamp(p breakpoint.Plan, connect, _ time.Duration) string {
+	return PlanLine(p, connect)
+}
+
 // outcomeNames are the JSON names of the outcomes: a closed list.
 var outcomeNames = map[breakpoint.Outcome]string{
 	breakpoint.BrokeBetween:   "broke",

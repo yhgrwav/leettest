@@ -73,6 +73,31 @@ func begunBySecond(t *testing.T, run any) (begun []float64, warmup []bool) {
 	return begun, warmup
 }
 
+// runNotes is report.notes of a run of the search's JSON.
+func runNotes(t *testing.T, run any) []string {
+	t.Helper()
+
+	raw, _ := jsonAt(t, run, "report", "notes").([]any)
+	notes := make([]string, 0, len(raw))
+	for _, n := range raw {
+		s, _ := n.(string)
+		notes = append(notes, s)
+	}
+
+	return notes
+}
+
+// noteBetween is the first note that starts with prefix and ends with suffix.
+func noteBetween(notes []string, prefix, suffix string) (string, bool) {
+	for _, n := range notes {
+		if strings.HasPrefix(n, prefix) && strings.HasSuffix(n, suffix) {
+			return n, true
+		}
+	}
+
+	return "", false
+}
+
 // Ground: contract — the whole path of the ramp of a search: config to JSON. A
 // search from 50 rps with a ramp of 2s rises from 0 to 50 in the first step's
 // excluded window and starts its steps there. The first step only: its first
@@ -120,7 +145,23 @@ func TestRun_ASearchStartsWithItsRamp(t *testing.T) {
 		}
 	}
 
+	// The step's report shows the ramp as a plain run's warm-up line does: one
+	// note, naming the ramp with the warm-up (the window is the ramp and the
+	// settle, longer than the ramp), and no word of a ramp on the later steps.
+	if _, ok := noteBetween(runNotes(t, runs[0]), "ramp and warm-up ", ", excluded from stats"); !ok {
+		t.Errorf("runs[0].report.notes has no %q ... %q line: %q", "ramp and warm-up ", ", excluded from stats", runNotes(t, runs[0]))
+	}
+
 	for i := 1; i < len(runs); i++ {
+		notes := runNotes(t, runs[i])
+		if _, ok := noteBetween(notes, "warm-up ", ", excluded from stats"); !ok {
+			t.Errorf("runs[%d].report.notes has no %q ... %q line: %q", i, "warm-up ", ", excluded from stats", notes)
+		}
+		for _, n := range notes {
+			if strings.HasPrefix(n, "ramp") {
+				t.Errorf("runs[%d].report.notes names a ramp: %q, want none: only the first step ramps", i, n)
+			}
+		}
 		if got := fieldNumber(t, runs[i], "report", "settings", "ramp_us"); got != 0 {
 			t.Errorf("runs[%d].report.settings.ramp_us = %v, want 0: only the first step ramps", i, got)
 		}
@@ -266,5 +307,91 @@ func TestRun_OnceSearchCountsTheRampInItsFirstRun(t *testing.T) {
 	}
 	if strings.Contains(res.stderr, "rps: sent") {
 		t.Errorf("a run was made before the error:\n%s", res.stderr)
+	}
+}
+
+// Ground: contract — the ramp is before the first step only, and the first
+// step's repeat after a cooldown is a run like the others: the same rate, held
+// from its first second, no ramp in its settings and its warm-up the settle
+// alone. The target here fails every call, so the first rate breaks and is
+// repeated (outcome broke_at_first); a runner that tells the first step by its
+// rate would ramp the repeat too. The delay is 20ms: with 1ms the clock step of
+// a Windows host passes a quarter of the median and the repeat is an invalid run.
+func TestRun_TheRepeatOfARampedFirstStepHasNoRamp(t *testing.T) {
+	cfg := writeSearchOf(t, closedPort(t), rampSearch, "200ms", checkMethod)
+	setRamp(t, cfg, "2s")
+
+	res := runCLI(t.Context(), t, 90*time.Second, "-fake", "-fake-delay", "20ms", "-fake-fail-ratio", "1", "-output", "json", "-c", cfg)
+	if res.err != nil {
+		t.Fatalf("run: %v\n%s", res.err, res.stderr)
+	}
+	doc := decodeOnly(t, res.stdout)
+
+	if got := jsonAt(t, doc, "breakpoint", "outcome"); got != "broke_at_first" {
+		t.Fatalf("outcome = %v, want broke_at_first: the premise is a first rate that breaks and is repeated", got)
+	}
+	runs, _ := jsonAt(t, doc, "breakpoint", "runs").([]any)
+	if len(runs) < 2 {
+		t.Fatalf("the search has %d runs, want 2 (the step and its repeat)", len(runs))
+	}
+
+	if got := jsonAt(t, runs[1], "kind"); got != "repeat" {
+		t.Fatalf("runs[1].kind = %v, want repeat", got)
+	}
+	rps := fieldNumber(t, runs[0], "planned_rps")
+	if got := fieldNumber(t, runs[1], "planned_rps"); got != rps {
+		t.Fatalf("runs[1].planned_rps = %v, want %v: the repeat is of the first rate", got, rps)
+	}
+	if got := fieldNumber(t, runs[0], "report", "settings", "ramp_us"); got != 2_000_000 {
+		t.Errorf("runs[0].report.settings.ramp_us = %v, want 2000000: the first step ramps", got)
+	}
+	if got := fieldNumber(t, runs[1], "report", "settings", "ramp_us"); got != 0 {
+		t.Errorf("runs[1].report.settings.ramp_us = %v, want 0: the repeat has no second ramp", got)
+	}
+	if got := fieldNumber(t, runs[1], "report", "warmup_us"); got != 50_000 {
+		t.Errorf("runs[1].report.warmup_us = %v, want 50000: the settle alone", got)
+	}
+	begun, _ := begunBySecond(t, runs[1])
+	if len(begun) == 0 || begun[0] < 0.8*rps {
+		t.Errorf("runs[1] began %v calls in its first second, want %v or more (0.8 of its %v rps): no ramp", begun, 0.8*rps, rps)
+	}
+}
+
+// planLineSeconds is the seconds the plan line of the search's stderr promises
+// ("at most 1m13s").
+func planLineSeconds(t *testing.T, stderr string) time.Duration {
+	t.Helper()
+
+	m := regexp.MustCompile(`breakpoint: up to \d+ steps, at most (\S+)`).FindStringSubmatch(stderr)
+	if m == nil {
+		t.Fatalf("stderr has no plan line:\n%s", stderr)
+	}
+	d, err := time.ParseDuration(m[1])
+	if err != nil {
+		t.Fatalf("the plan line's %q is not a duration: %v", m[1], err)
+	}
+
+	return d
+}
+
+// Ground: contract — "at most" stays an upper bound with a ramp: the plan line
+// of a search with `ramp: 2s` promises at least 2s more than the same search
+// without it (the ramp is added once, in front of the first step).
+func TestRun_ThePlanLineOfARampedSearchCountsTheRamp(t *testing.T) {
+	plain := runCLI(t.Context(), t, 60*time.Second, "-fake", "-c", writeSearch(t, closedPort(t), checkMethod))
+	if plain.err != nil {
+		t.Fatalf("run without a ramp: %v\n%s", plain.err, plain.stderr)
+	}
+	cfg := writeSearch(t, closedPort(t), checkMethod)
+	setRamp(t, cfg, "2s")
+	ramped := runCLI(t.Context(), t, 60*time.Second, "-fake", "-c", cfg)
+	if ramped.err != nil {
+		t.Fatalf("run with a ramp: %v\n%s", ramped.err, ramped.stderr)
+	}
+
+	without, with := planLineSeconds(t, plain.stderr), planLineSeconds(t, ramped.stderr)
+	if with < without+2*time.Second {
+		t.Errorf("the plan line says at most %v with a ramp of 2s and %v without: the promise is %v short of the run", with, without,
+			without+2*time.Second-with)
 	}
 }
