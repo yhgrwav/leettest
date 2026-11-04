@@ -69,6 +69,15 @@ race:
 # -race, so there is no start lag left to check.
 STRESS_SKIP := ^TestReport_SlotsHeldWithinTheAllowanceDoNotHitTheCap$$|^TestSearchFeed_ASlowScreenKeepsTheLagUnderTwentyMilliseconds$$|^TestRun_ASearchNamesTheStandsCapacity$$|^TestBreakpoint_FindsTheStandsCapacity$$|^TestBreakpoint_ATargetThatDoesNotRecoverIsNamedSo$$|^TestRun_ASearchOnTheFakeTarget$$|^TestRun_OnceSearchStopsWhenTheFileRunsOut$$|^TestRun_NoLagNoWarning$$|^TestRun_JSONCarriesTheGeneratorCPUOnTheGridOfTheRun$$|^TestExportRun_AScrapeStormDoesNotChangeTheReportAndRendersOncePerSecond$$|^TestRun_AHealthyRunUnderALimitRunsToTheEnd$$|^TestRun_ARampWithoutAWarmUpNamesTheRampAlone$$|^TestRun_LocalNeverAsks$$|^TestExportRun_AScrapeMidRunSeesThePlannedRateAndGrowingCalls$$
 
+# LEETTEST_STRESS=1 lets an end-to-end test in cmd/leettest skip itself when its
+# run ended invalid for generator_late or clock_step alone (skipIfStarved): the
+# detector starves the generator on a shared runner, and that verdict is not
+# about the code. Every skip appends a line to stress-skips.txt (delete the file
+# before a local run); the stress job prints the count per test. Plain `make
+# test`, `make race` and the CI of a PR do not set it. Target-specific export:
+# it means the same in sh and cmd.
+stress: export LEETTEST_STRESS = 1
+stress: export LEETTEST_STRESS_SKIPS = $(CURDIR)/stress-skips.txt
 stress:
 	go test -race -count=20 -timeout 90m -skip "$(STRESS_SKIP)" ./...
 

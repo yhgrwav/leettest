@@ -69,6 +69,8 @@ func echoRun(t *testing.T, limit time.Duration, args ...string) (text string, js
 	path := newJSONPath(t)
 	res := runCLI(t.Context(), t, limit, append([]string{"-fake", "-json-file", path}, args...)...)
 	if res.err != nil {
+		doc, _ := os.ReadFile(path)
+		skipIfStarved(t, res.err, doc)
 		t.Fatalf("run: %v\n%s", res.err, res.stderr)
 	}
 
