@@ -3,7 +3,7 @@
 [Русский](../ru/reference.md) · [English](../en/reference.md) · [Deutsch](reference.md) · [简体中文](../zh-CN/reference.md)
 [← Startseite](README.md)
 
-> Übersetzt aus [docs/ru/reference.md](../ru/reference.md) bei 4c1eb2e, 2026-10-29. Bei
+> Übersetzt aus [docs/ru/reference.md](../ru/reference.md) bei bfd24aa, 2026-11-03. Bei
 > Abweichungen gilt die russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/reference.md).
@@ -383,6 +383,7 @@ russisch; die englische Fassung ist [`examples/export.yaml`](../../examples/expo
 | `leettest_excluded_total` | counter | `method`, `category` | `unreachable`, `cut_off`, `client_error`, `unclassified`: keine brauchbare Latenz, im Histogramm sind sie nicht. Dieselben Aufrufe stehen auch in `leettest_calls_total` |
 | `leettest_not_sent_total` | counter | `method`, `cause` | Aufrufe, die den Generator nie verlassen haben, nach der Ursache auf der Client-Seite: `generator`, `connection`, `stream` |
 | `leettest_in_flight` | gauge | — | Aufrufe, die jetzt unterwegs sind, alle Methoden |
+| `leettest_start_lag_seconds` | histogram | `le` | Wie spät Aufrufe gegenüber ihrem Plan begannen, alle Methoden zusammen (nicht veröffentlicht). Das Warm-up zählt nicht mit, Aufrufe, die nie hinausgingen, schon. Ein Aufruf zählt, wenn er abgeschlossen ist |
 | `leettest_warmup_sent_total` | counter | `method` | Während des Aufwärmens gesendet. In keinem anderen Zähler sind diese Aufrufe |
 | `leettest_warmup` | gauge | — | `1`, solange der Lauf im Aufwärmen ist, sonst `0` |
 
@@ -407,6 +408,14 @@ Schlüssel mit `.` und `-` an, der Export nicht.
   p99 des Berichts, er ist aus HDR berechnet und hängt nicht von den Buckets ab; Grafana zeigt die
   Form der Verteilung. Eine Beispielabfrage:
   `histogram_quantile(0.99, sum by (le, method) (rate(leettest_latency_seconds_bucket[30s])))`.
+- `leettest_start_lag_seconds` zeigt auf derselben Achse wie `leettest_planned_rps`, wann der
+  Generator zu spät war: Ein Einbruch der Last zusammen mit einem Anstieg dieser Serie geht auf den
+  Generator, nicht auf das Ziel. Es ist eine Serie pro Lauf, ohne Label `method`, alle Methoden
+  stecken darin. Sie hält dieselben Aufrufe wie das p99 der Startverspätung im Bericht
+  (`start_lag.p99`): ohne Warm-up, mit den Aufrufen, die nie hinausgingen. Ein Aufruf geht in die
+  Serie, wenn er abgeschlossen ist (ein ungesendeter an seiner eigenen Deadline), die Spitze ist
+  also um die Dauer des Aufrufs verschoben. Nehmen Sie die Zahl für eine Schlussfolgerung aus dem
+  p99 des Berichts: `histogram_quantile` ist eine Schätzung innerhalb eines Buckets.
 
 ## Prüfen vor der Last
 
@@ -505,14 +514,45 @@ bei 2 ms.
   [den Bericht lesen](README.md#den-bericht-lesen).
 - Unter Windows springt die Uhr in Schritten von etwa 0,5 ms, und ein Lauf gegen einen schnellen
   Dienst wird für ungültig erklärt (`clock_step`, Exit-Code 2).
+- Hat die Verspätung des Generators selbst das p99-Ende bestimmt, ist der Lauf ungültig
+  (`generator_late`, Exit-Code 2, nicht veröffentlicht): Der Bericht nennt die Methoden und rät, dem
+  Generator mehr CPU zu geben, die Rate zu senken oder sie auf mehrere Rechner aufzuteilen.
+  Beurteilt werden Methoden ab 100 Beobachtungen; bei weniger ist p99 das Maximum, und der Lauf
+  bleibt gültig, mit dem Hinweis und `tail_wait_cause: generator`. Ein Ende, das Streams oder
+  Verbindungen bestimmt haben, macht den Lauf nicht ungültig. Eine Suche nach dem Bruchpunkt ist
+  nicht betroffen: Ihre Schritte behalten ihre eigene Ursache `generator`.
+- Vor der Verspätung des Generators wird gewarnt, solange der Lauf geht (nicht veröffentlicht).
+  Einmal pro Sekunde werden die letzten fünf vollen Sekunden des Laufs betrachtet, das Warm-up
+  eingeschlossen, nach der Sekunde, in der ein Aufruf endete. Starteten mehr als 1 % der Aufrufe
+  später als die Warteschwelle (standardmäßig 1 ms; die Regel des p99: mindestens 100 Starts, und
+  2 von 100, 3 von 200, 11 von 1000) oder ließ der Generator überhaupt einen Aufruf ungesendet, geht
+  eine Zeile an stderr, einmal pro Lauf, im Text- und im JSON-Modus gleich: `warning: the generator
+  is behind its schedule: 2140 of 60000 calls in the last 5 s (warm-up) started more than 1.00ms
+  late, at 12000 rps scheduled. If this holds, the latency measures this machine, not the target,
+  and the run may end invalid (generator_late).` Der Live-Bildschirm zeigt die Zeile und wiederholt
+  sie nach dem Schließen auf stderr. Das ist ein Hinweis, kein Urteil: Ob der Lauf gültig ist,
+  entscheidet der Bericht. Eine Suche nach dem Bruchpunkt druckt sie nicht.
 
 ## Antwortgröße, Traffic und Warm-up im Bericht (nicht veröffentlicht)
 
-Kurz, die Übersetzung folgt vor dem Release: unter der Methode `response: N B per call` (Mittel der
-Antwortkörper erfolgreicher Aufrufe, nach dem Entpacken); im Kopf des Laufs `traffic: sent …,
-received …` (nur Nachrichtenkörper, ohne HTTP/2, Header und TLS; gesendet zählt den letzten Versuch,
-eine Untergrenze); unter der Methode `warm-up: N calls, p50 …, p99 …` — `N calls` sind die
-Beobachtungen (Erfolge und Untergrenzen), nicht das `warm-up N sent` der Laufzeile.
+- Unter der Zeile einer Methode `response: N B per call`: der mittlere Antwortkörper der gemessenen
+  erfolgreichen Aufrufe, nach dem Entpacken, ganze Bytes. Eine leere Antwort ist `0 B`, das ist
+  eine Größe; eine Methode ohne Erfolg hat keine Zeile.
+- Im Kopfblock des Laufs `traffic: sent X, received Y (message bodies only, without HTTP/2, headers
+  and TLS)`, in bit/s, kbit/s, Mbit/s oder Gbit/s (Schritte von 10^3, drei signifikante Stellen).
+  Sent zählt die Anfragekörper aller gemessenen Aufrufe, die hinausgingen, nach ihrer Größe auf der
+  Leitung; received zählt die Antworten erfolgreicher Aufrufe nach ihrer Größe vor dem Entpacken.
+  Beide gelten pro Sekunde des gemessenen Sendefensters und sind eine Untergrenze dessen, was durch
+  das Netz ging. Sent nimmt den letzten Versuch eines Aufrufs: Ein transparenter Wiederholversuch
+  nach `REFUSED_STREAM` kann schon einen ersten Körper auf die Leitung gelegt haben, daher ist es
+  ebenfalls eine Untergrenze.
+- Unter der Zeile einer Methode in einem Lauf mit Warm-up `warm-up: N calls, p50 …, p99 …,
+  response …`: das Warm-up, getrennt vom Lauf in einem eigenen Histogramm gemessen, nach derselben
+  Regel wie die gemessene Latenz (ab dem geplanten Zeitpunkt, durch Timeout beendete und
+  abgebrochene Aufrufe als Untergrenzen, `>`). `N calls` sind die Beobachtungen hinter den
+  Perzentilen (Erfolge plus diese Untergrenzen), nicht das `warm-up N sent` der Laufzeile, in dem
+  jeder gesendete Aufruf gezählt ist. Bei weniger als 100 Beobachtungen steht p99 als `too few
+  observations (N of 100)`.
 
 ## Die Zeile zum Zeitplan (nicht veröffentlicht)
 
@@ -574,7 +614,7 @@ unten den Typ „percentile?" hat.
 | `name` | string | Der Name des Laufs: `name` aus der Konfiguration, sonst der Dienstname, sonst der Name der Konfigurationsdatei; immer ein String |
 | `methods_source` | string? | Woher die Methoden stammen: `reflection`, `proto` (die Dateien aus `app.proto`) oder `protoset`; `null` mit `-fake` |
 | `outcome` | string | `complete`, `invalid`, `incomplete` — entspricht Exit-Code `0`, `2`, `3`; ein beendeter Lauf, der eine `pass`-Grenze verfehlt hat, ist `complete` mit Code `4`; bei `-json-file` und fehlgeschlagenem Schreiben ist der Code `1`, und `outcome` bleibt der des Laufs |
-| `invalid_reasons` | []string | Warum der Lauf ungültig ist: `in_flight_cap`, `nothing_measured`, `clock_step`, `thresholds_undecided` (eine `pass`-Grenze lässt sich nicht entscheiden, und nicht, weil der Lauf angehalten oder schon ungültig war). Leer — gültig |
+| `invalid_reasons` | []string | Warum der Lauf ungültig ist: `in_flight_cap`, `nothing_measured`, `clock_step`, `generator_late` (der Generator blieb hinter dem Plan zurück, seit v0.7; siehe „Wo man es ausführt“), `thresholds_undecided` (eine `pass`-Grenze lässt sich nicht entscheiden, und nicht, weil der Lauf angehalten oder schon ungültig war). Leer — gültig |
 | `tail_wait_cause` | string? | Die Wartezeit auf Client-Seite, die das Ende der Verteilung bestimmt hat: `generator`, `stream`, `connection`; `null` — kein Urteil |
 | `clock_step_ns` | int | Der Uhrenschritt des Hosts, ns: Jede Latenz und Wartezeit ist ± dieser Wert |
 | `stop_reason` | string? | `error_spike`, wenn `load.stop_on_errors` den Lauf gestoppt hat; sonst `null`. |

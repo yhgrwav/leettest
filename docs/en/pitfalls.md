@@ -2,7 +2,7 @@
 
 [← Back to docs](README.md)
 
-> Translated from [docs/ru/pitfalls.md](../ru/pitfalls.md) at b7a685c, 2026-10-12. If they
+> Translated from [docs/ru/pitfalls.md](../ru/pitfalls.md) at bfd24aa, 2026-11-03. If they
 > differ, the Russian one is right.
 
 A list of places where load tools lie or get in the way, and where we stand on each.
@@ -22,7 +22,7 @@ Statuses are honest: `done` — works now; `planned` — the decision is made, t
 | A config typo gives an empty green run | done |
 | Cold start skews percentiles | done |
 | The generator dies before the target on hanging requests | done |
-| The generator hits its own limit and the report blames the service | planned |
+| The generator hits its own limit and the report blames the service | done (not released yet) |
 | Target rate limits counted as service errors | done |
 | Calls can't be chained on data | planned |
 | No idea what is happening during the run | done |
@@ -104,8 +104,11 @@ generator held the slots, not the service: the run stops with a report and is ma
 
 If the machine can't keep up with the requested RPS, requests go out late, latency grows — and the
 report blames the service when the generator is at fault. We already measure the generator's lag
-separately from the service's response time. The plan is to turn it into a verdict: a run in which
-the generator hit its limit is declared invalid, with what to change.
+separately from the service's response time and turn it into a verdict (not released): a run in
+which the generator's lag decided the p99 tail is declared invalid (`generator_late`, exit code 2),
+and the report names the methods and what to change. While the run is going, one line on stderr
+warns that the generator is behind its schedule. Details are in the
+[reference](reference.md#where-to-run).
 
 ## Errors by category
 
