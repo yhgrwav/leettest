@@ -30,8 +30,8 @@ func TestRateAt_AConstantStageHoldsItsRate(t *testing.T) {
 	stages := []Stage{{StartRPS: 50, TargetRPS: 50, Duration: 10 * time.Second}}
 
 	for _, at := range []time.Duration{0, time.Nanosecond, 3 * time.Second, 10*time.Second - time.Millisecond} {
-		if got := rateAt(stages, at); got != 50 {
-			t.Errorf("rateAt(50 rps for 10s, %v) = %v, want 50", at, got)
+		if got := PlannedRate(stages, at); got != 50 {
+			t.Errorf("PlannedRate(50 rps for 10s, %v) = %v, want 50", at, got)
 		}
 	}
 }
@@ -57,8 +57,8 @@ func TestRateAt_ARampMovesLinearly(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := rateAt([]Stage{c.stage}, c.at); !within(got, c.want, 1e-9) {
-				t.Errorf("rateAt(%+v, %v) = %v, want %v", c.stage, c.at, got, c.want)
+			if got := PlannedRate([]Stage{c.stage}, c.at); !within(got, c.want, 1e-9) {
+				t.Errorf("PlannedRate(%+v, %v) = %v, want %v", c.stage, c.at, got, c.want)
 			}
 		})
 	}
@@ -73,11 +73,11 @@ func TestRateAt_AtAStageBoundaryTheNextStageTakesOver(t *testing.T) {
 		{StartRPS: 80, TargetRPS: 80, Duration: 5 * time.Second},
 	}
 
-	if got := rateAt(stages, 5*time.Second); got != 80 {
-		t.Errorf("rateAt at exactly 5s = %v, want 80 (the second stage's)", got)
+	if got := PlannedRate(stages, 5*time.Second); got != 80 {
+		t.Errorf("PlannedRate at exactly 5s = %v, want 80 (the second stage's)", got)
 	}
-	if got := rateAt(stages, 5*time.Second-time.Nanosecond); got != 50 {
-		t.Errorf("rateAt a nanosecond before 5s = %v, want 50 (the first stage's)", got)
+	if got := PlannedRate(stages, 5*time.Second-time.Nanosecond); got != 50 {
+		t.Errorf("PlannedRate a nanosecond before 5s = %v, want 50 (the first stage's)", got)
 	}
 }
 
@@ -89,11 +89,11 @@ func TestRateAt_ARampHandsOverToTheNextStageAtItsEnd(t *testing.T) {
 		{StartRPS: 20, TargetRPS: 20, Duration: 10 * time.Second},
 	}
 
-	if got := rateAt(stages, 10*time.Second); got != 20 {
-		t.Errorf("rateAt at the end of the ramp = %v, want 20 (the next stage's)", got)
+	if got := PlannedRate(stages, 10*time.Second); got != 20 {
+		t.Errorf("PlannedRate at the end of the ramp = %v, want 20 (the next stage's)", got)
 	}
-	if got := rateAt(stages, 10*time.Second-time.Millisecond); !within(got, 99.99, 0.001) {
-		t.Errorf("rateAt a millisecond before the end of the ramp = %v, want 99.99", got)
+	if got := PlannedRate(stages, 10*time.Second-time.Millisecond); !within(got, 99.99, 0.001) {
+		t.Errorf("PlannedRate a millisecond before the end of the ramp = %v, want 99.99", got)
 	}
 }
 
@@ -103,8 +103,8 @@ func TestRateAt_AfterThePlanItIsZero(t *testing.T) {
 	stages := []Stage{{StartRPS: 50, TargetRPS: 50, Duration: 10 * time.Second}}
 
 	for _, at := range []time.Duration{10 * time.Second, 10*time.Second + time.Nanosecond, time.Hour} {
-		if got := rateAt(stages, at); got != 0 {
-			t.Errorf("rateAt(10s plan, %v) = %v, want 0", at, got)
+		if got := PlannedRate(stages, at); got != 0 {
+			t.Errorf("PlannedRate(10s plan, %v) = %v, want 0", at, got)
 		}
 	}
 }
@@ -114,8 +114,8 @@ func TestRateAt_AfterThePlanItIsZero(t *testing.T) {
 func TestRateAt_JustBeforeTheLastRampEnds(t *testing.T) {
 	stages := []Stage{{StartRPS: 0, TargetRPS: 50, Duration: 10 * time.Second}}
 
-	if got := rateAt(stages, 10*time.Second-time.Millisecond); !within(got, 49.995, 0.001) {
-		t.Errorf("rateAt a millisecond before the end of 0→50 = %v, want 49.995", got)
+	if got := PlannedRate(stages, 10*time.Second-time.Millisecond); !within(got, 49.995, 0.001) {
+		t.Errorf("PlannedRate a millisecond before the end of 0→50 = %v, want 49.995", got)
 	}
 }
 
@@ -124,16 +124,16 @@ func TestRateAt_JustBeforeTheLastRampEnds(t *testing.T) {
 func TestRateAt_ARampDownIsNeverNegative(t *testing.T) {
 	stages := []Stage{{StartRPS: 100, TargetRPS: 0, Duration: 10 * time.Second}}
 
-	if got := rateAt(stages, 10*time.Second-time.Nanosecond); math.IsNaN(got) || got < 0 {
-		t.Errorf("rateAt a nanosecond before the end of 100→0 = %v, want ≥ 0", got)
+	if got := PlannedRate(stages, 10*time.Second-time.Nanosecond); math.IsNaN(got) || got < 0 {
+		t.Errorf("PlannedRate a nanosecond before the end of 100→0 = %v, want ≥ 0", got)
 	}
 }
 
 // Ground: edge — empty. No stages, no plan, no rate.
 func TestRateAt_NoStagesIsZero(t *testing.T) {
 	for _, stages := range [][]Stage{nil, {}} {
-		if got := rateAt(stages, time.Second); got != 0 {
-			t.Errorf("rateAt(%v, 1s) = %v, want 0", stages, got)
+		if got := PlannedRate(stages, time.Second); got != 0 {
+			t.Errorf("PlannedRate(%v, 1s) = %v, want 0", stages, got)
 		}
 	}
 }
@@ -146,11 +146,11 @@ func TestRateAt_AZeroRateStageIsAPause(t *testing.T) {
 		{StartRPS: 30, TargetRPS: 30, Duration: 5 * time.Second},
 	}
 
-	if got := rateAt(stages, 2*time.Second); got != 0 {
-		t.Errorf("rateAt inside the pause = %v, want 0", got)
+	if got := PlannedRate(stages, 2*time.Second); got != 0 {
+		t.Errorf("PlannedRate inside the pause = %v, want 0", got)
 	}
-	if got := rateAt(stages, 6*time.Second); got != 30 {
-		t.Errorf("rateAt after the pause = %v, want 30", got)
+	if got := PlannedRate(stages, 6*time.Second); got != 30 {
+		t.Errorf("PlannedRate after the pause = %v, want 30", got)
 	}
 }
 
@@ -161,8 +161,8 @@ func TestRateAt_AStageOfZeroLengthIsSkipped(t *testing.T) {
 		{StartRPS: 10, TargetRPS: 10, Duration: 0},
 		{StartRPS: 20, TargetRPS: 20, Duration: 5 * time.Second},
 	}
-	if got := rateAt(first, 0); got != 20 {
-		t.Errorf("rateAt(0) with a zero-length first stage = %v, want 20", got)
+	if got := PlannedRate(first, 0); got != 20 {
+		t.Errorf("PlannedRate(0) with a zero-length first stage = %v, want 20", got)
 	}
 
 	middle := []Stage{
@@ -170,8 +170,8 @@ func TestRateAt_AStageOfZeroLengthIsSkipped(t *testing.T) {
 		{StartRPS: 99, TargetRPS: 99, Duration: 0},
 		{StartRPS: 20, TargetRPS: 20, Duration: 5 * time.Second},
 	}
-	if got := rateAt(middle, 5*time.Second); got != 20 {
-		t.Errorf("rateAt at 5s with a zero-length stage in the middle = %v, want 20", got)
+	if got := PlannedRate(middle, 5*time.Second); got != 20 {
+		t.Errorf("PlannedRate at 5s with a zero-length stage in the middle = %v, want 20", got)
 	}
 }
 
@@ -179,11 +179,11 @@ func TestRateAt_AStageOfZeroLengthIsSkipped(t *testing.T) {
 // view is taken before the first tick of a coarse clock): the plan has not
 // started, its first rate is the honest answer, not 0 and not a panic.
 func TestRateAt_ANegativeElapsedIsTheFirstRate(t *testing.T) {
-	if got := rateAt([]Stage{{StartRPS: 40, TargetRPS: 40, Duration: 5 * time.Second}}, -time.Second); got != 40 {
-		t.Errorf("rateAt(-1s) of a constant stage = %v, want 40", got)
+	if got := PlannedRate([]Stage{{StartRPS: 40, TargetRPS: 40, Duration: 5 * time.Second}}, -time.Second); got != 40 {
+		t.Errorf("PlannedRate(-1s) of a constant stage = %v, want 40", got)
 	}
-	if got := rateAt([]Stage{{StartRPS: 10, TargetRPS: 20, Duration: 5 * time.Second}}, -time.Second); got != 10 {
-		t.Errorf("rateAt(-1s) of a ramp 10→20 = %v, want 10", got)
+	if got := PlannedRate([]Stage{{StartRPS: 10, TargetRPS: 20, Duration: 5 * time.Second}}, -time.Second); got != 10 {
+		t.Errorf("PlannedRate(-1s) of a ramp 10→20 = %v, want 10", got)
 	}
 }
 
@@ -235,10 +235,37 @@ func TestRateAt_AgreesWithTheTicksTheScheduleLaysOut(t *testing.T) {
 		for _, at := range plan.at {
 			t.Run(plan.name+" at "+at.String(), func(t *testing.T) {
 				ticks := ticksBetween(plan.stages, at-500*time.Millisecond, at+500*time.Millisecond)
-				if got := rateAt(plan.stages, at); !within(got, float64(ticks), 1) {
-					t.Errorf("rateAt = %v, but the schedule places %d ticks in the second around %v", got, ticks, at)
+				if got := PlannedRate(plan.stages, at); !within(got, float64(ticks), 1) {
+					t.Errorf("PlannedRate = %v, but the schedule places %d ticks in the second around %v", got, ticks, at)
 				}
 			})
+		}
+	}
+}
+
+// Ground: contract — the rate of a plan at a moment is a public question: the
+// stop line of a run asks it for the method that was stopped. A ramp to 2000
+// over 20 s and a hold of 10 s offers the line, then the hold, and nothing
+// after its last stage.
+func TestPlannedRate_IsTheRateThePlanOffersAtAMoment(t *testing.T) {
+	stages := []Stage{
+		{StartRPS: 0, TargetRPS: 2000, Duration: 20 * time.Second},
+		{StartRPS: 2000, TargetRPS: 2000, Duration: 10 * time.Second},
+	}
+
+	for _, c := range []struct {
+		at   time.Duration
+		want float64
+	}{
+		{0, 0},
+		{5 * time.Second, 500},
+		{17 * time.Second, 1700},
+		{20 * time.Second, 2000},
+		{25 * time.Second, 2000},
+		{30 * time.Second, 0},
+	} {
+		if got := PlannedRate(stages, c.at); !within(got, c.want, 1e-9) {
+			t.Errorf("PlannedRate(ramp then hold, %v) = %v, want %v", c.at, got, c.want)
 		}
 	}
 }

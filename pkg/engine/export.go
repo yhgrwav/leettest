@@ -182,7 +182,7 @@ func (s *Stats) ExportInto(dst *ExportView, buf *metrics.Buffer, bounds []time.D
 		m.PlannedRPS = 0
 		if !ended && (!sendingEnded || elapsed < sendingEnd) {
 			if call := callOf(calls, src.name); call != nil {
-				m.PlannedRPS = rateAt(call.Stages, elapsed)
+				m.PlannedRPS = PlannedRate(call.Stages, elapsed)
 			}
 		}
 

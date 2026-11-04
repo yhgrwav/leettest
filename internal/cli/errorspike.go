@@ -16,6 +16,7 @@ package cli
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/yhgrwav/leettest/pkg/errstop"
 	shr "github.com/yhgrwav/leettest/pkg/share"
@@ -28,24 +29,34 @@ const StopErrorSpike = "error_spike"
 // jsonStop is where load.stop_on_errors ended a run, on whose numbers: the
 // method, its failed and total calls over the last five seconds, the limit as
 // written, the time since the start in whole microseconds and the calls in
-// flight at that moment.
+// flight at that moment, and the rate the method's plan offered then (calls
+// per second, three places); null when the plan had already ended.
 type jsonStop struct {
-	Method   string `json:"method"`
-	Failed   int    `json:"failed"`
-	Total    int    `json:"total"`
-	Limit    string `json:"limit"`
-	AtUS     int64  `json:"at_us"`
-	InFlight int    `json:"in_flight"`
+	Method     string   `json:"method"`
+	Failed     int      `json:"failed"`
+	Total      int      `json:"total"`
+	Limit      string   `json:"limit"`
+	AtUS       int64    `json:"at_us"`
+	InFlight   int      `json:"in_flight"`
+	PlannedRPS *float64 `json:"planned_rps"`
 }
 
 // StopLine is the line printed when the run is stopped, and again in the
 // report's notes: when, which method, its share to the digit that puts it
-// over the limit, the counts and the number in flight. The time is told by
-// one rule, in seconds with one decimal place.
-func StopLine(t errstop.Trip) string {
-	return fmt.Sprintf("stopped at %.1fs: %s failed %s (%d of %d calls in the last %ds), over stop_on_errors %s; %d in flight",
+// over the limit, the counts, the rate the plan offered at that moment and
+// the number in flight. The time is told by one rule, in seconds with one
+// decimal place. planned is the rate of the method's plan at the moment of
+// the stop, to whole calls; nil says the plan had ended (the trip is the
+// moment of judging, not of sending: the failed calls may have left earlier).
+func StopLine(t errstop.Trip, planned *float64) string {
+	plan := "the plan had ended"
+	if planned != nil {
+		plan = fmt.Sprintf("the plan offered %.0f rps at that moment", *planned)
+	}
+
+	return fmt.Sprintf("stopped at %.1fs: %s failed %s (%d of %d calls in the last %ds), over stop_on_errors %s; %s; %d in flight",
 		t.At.Seconds(), displayMethod(t.Method), shr.Format(t.Failed, t.Total, t.Limit, shr.Breaks),
-		t.Failed, t.Total, errstop.Window, t.Limit.Text, t.InFlight)
+		t.Failed, t.Total, errstop.Window, t.Limit.Text, plan, t.InFlight)
 }
 
 // stopNotes is the stop line as a note of the report, none for a run nobody
@@ -55,7 +66,7 @@ func stopNotes(run RunReport) []string {
 		return nil
 	}
 
-	return []string{StopLine(*run.Stop)}
+	return []string{StopLine(*run.Stop, run.StopPlanned)}
 }
 
 // stopLimitLine is the settings echo of the limit; empty when nobody wrote
@@ -71,15 +82,22 @@ func stopLimitLine(written string) string {
 	}
 }
 
-// stopJSON is the stop of the report; nil for a run nobody stopped.
-func stopJSON(t *errstop.Trip) *jsonStop {
+// stopJSON is the stop of the report; nil for a run nobody stopped. The planned
+// rate is rounded here, at the output, to three places like the seconds' one.
+func stopJSON(t *errstop.Trip, planned *float64) *jsonStop {
 	if t == nil {
 		return nil
 	}
 
+	var rate *float64
+	if planned != nil {
+		rounded := math.Round(*planned*1000) / 1000
+		rate = &rounded
+	}
+
 	return &jsonStop{
 		Method: t.Method, Failed: t.Failed, Total: t.Total, Limit: t.Limit.Text,
-		AtUS: micros(t.At), InFlight: t.InFlight,
+		AtUS: micros(t.At), InFlight: t.InFlight, PlannedRPS: rate,
 	}
 }
 

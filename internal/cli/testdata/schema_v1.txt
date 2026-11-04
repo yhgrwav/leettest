@@ -16,6 +16,7 @@ stop.total int
 stop.limit string
 stop.at_us int
 stop.in_flight int
+stop.planned_rps float?
 seq_overflow object?
 seq_overflow.method string
 seq_overflow.limit int

@@ -43,16 +43,20 @@ func spikeTrip(t *testing.T, failed, total int) errstop.Trip {
 	}
 }
 
+// offered is a planned rate for a stop line.
+func offered(v float64) *float64 { return &v }
+
 // Ground: contract — the stop line is the one place a user reads why the run
 // ended: when (from the start), which method, its share, the counts it comes
-// from, the limit and how many calls hung. There is no send rate in it: the
-// engine keeps no count of calls begun. The text is the contract; the words
-// are the reviewer's to change in this test.
+// from, the limit, the rate the plan offered at that moment and how many calls
+// hung. There is no send rate in it: the engine keeps no count of calls begun,
+// and the rate is the plan's, not what went out. The text is the contract; the
+// words are the reviewer's to change in this test.
 func TestStopLine_SaysWhenWhoHowMuchAndAgainstWhat(t *testing.T) {
 	const want = "stopped at 12.3s: a.S/One failed 87.5% (35 of 40 calls in the last 5s), over stop_on_errors 5%; " +
-		"800 in flight"
+		"the plan offered 1700 rps at that moment; 800 in flight"
 
-	if got := StopLine(spikeTrip(t, 35, 40)); got != want {
+	if got := StopLine(spikeTrip(t, 35, 40), offered(1700)); got != want {
 		t.Errorf("StopLine =\n%q\nwant\n%q", got, want)
 	}
 }
@@ -74,7 +78,7 @@ func TestStopLine_TheTimeHasOneFormat(t *testing.T) {
 		trip := spikeTrip(t, 35, 40)
 		trip.At = tc.at
 
-		if got := StopLine(trip); !strings.HasPrefix(got, tc.want) {
+		if got := StopLine(trip, offered(1700)); !strings.HasPrefix(got, tc.want) {
 			t.Errorf("At %v: StopLine = %q, want it to start with %q", tc.at, got, tc.want)
 		}
 	}
@@ -84,7 +88,7 @@ func TestStopLine_TheTimeHasOneFormat(t *testing.T) {
 // share a hair over the limit is never rounded down onto it. 5001 of 100000
 // is 5.001%, which "5.0%" would show as being at the limit it has passed.
 func TestStopLine_ShareJustOverTheLimitIsNotRoundedOntoIt(t *testing.T) {
-	got := StopLine(spikeTrip(t, 5001, 100000))
+	got := StopLine(spikeTrip(t, 5001, 100000), offered(1700))
 
 	if !strings.Contains(got, "failed 5.001% (") {
 		t.Errorf("StopLine = %q, want the share as 5.001%%", got)
@@ -102,11 +106,15 @@ func TestPrintReport_AStoppedRunCarriesTheStopLine(t *testing.T) {
 	trip := spikeTrip(t, 35, 40)
 
 	var stopped, plain strings.Builder
-	PrintReport(&stopped, "localhost:50051", RunReport{Report: report, Stop: &trip})
+	PrintReport(&stopped, "localhost:50051", RunReport{Report: report, Stop: &trip, StopPlanned: offered(1700)})
 	PrintReport(&plain, "localhost:50051", RunReport{Report: report})
 
-	if line := StopLine(trip); !strings.Contains(stopped.String(), "stopped at 12.3s") || !strings.Contains(stopped.String(), line) {
+	// The note is the line on stderr word for word, the planned rate included.
+	if line := StopLine(trip, offered(1700)); !strings.Contains(stopped.String(), "stopped at 12.3s") || !strings.Contains(stopped.String(), line) {
 		t.Errorf("the report of a stopped run has no stop line:\n%s", stopped.String())
+	}
+	if !strings.Contains(stopped.String(), "; the plan offered 1700 rps at that moment; ") {
+		t.Errorf("the stop line in the report's notes does not name the planned rate:\n%s", stopped.String())
 	}
 	if strings.Contains(plain.String(), "stopped at") {
 		t.Errorf("a run nobody stopped says it was stopped:\n%s", plain.String())
@@ -163,6 +171,7 @@ func TestJSON_AStoppedRunSaysWhyAndWhere(t *testing.T) {
 	run := jsonRun(report)
 	run.Outcome = OutcomeIncomplete
 	run.Run.Stop = &trip
+	run.Run.StopPlanned = offered(1700)
 
 	out := writeJSON(t, run)
 
@@ -175,7 +184,10 @@ func TestJSON_AStoppedRunSaysWhyAndWhere(t *testing.T) {
 		t.Fatalf("stop = %#v, want an object", out["stop"])
 	}
 
-	want := map[string]any{"method": "a.S/One", "failed": 35.0, "total": 40.0, "limit": "5%", "at_us": 12_300_000.0, "in_flight": 800.0}
+	want := map[string]any{
+		"method": "a.S/One", "failed": 35.0, "total": 40.0, "limit": "5%", "at_us": 12_300_000.0, "in_flight": 800.0,
+		"planned_rps": 1700.0,
+	}
 	for key, w := range want {
 		if stop[key] != w {
 			t.Errorf("stop.%s = %#v, want %#v", key, stop[key], w)
@@ -224,6 +236,141 @@ func TestJSON_ARunNobodyStoppedHasNullStopFields(t *testing.T) {
 		v, present := out[key]
 		if !present || v != nil {
 			t.Errorf("%s = %#v (present %v), want null", key, v, present)
+		}
+	}
+}
+
+// Ground: contract — the stop line names the rate the plan offered at the
+// moment the watch judged, in whole calls per second, by the one rule of the
+// settings line's "planned rps" (rounded to the nearest, as %.0f). The words
+// say "the plan offered ... at that moment", not "sent" and not "broke at": the
+// failed calls may have gone out a timeout earlier, and the watch judges by
+// the calls that ended. The clause sits between the limit and the calls in
+// flight. No value ends in .5: %.0f rounds a tie to even, and a test of it
+// would pin that, not the rule. Mutations "truncate", "%d" and "%.1f" turn it
+// red (18, 2999; "18" is not "19").
+func TestStopLine_NamesThePlannedRate(t *testing.T) {
+	for _, tc := range []struct {
+		planned float64
+		want    string
+	}{
+		{1700, "; the plan offered 1700 rps at that moment; "},
+		{18.75, "; the plan offered 19 rps at that moment; "},
+		{6.25, "; the plan offered 6 rps at that moment; "},
+		{2999.6, "; the plan offered 3000 rps at that moment; "},
+		{50, "; the plan offered 50 rps at that moment; "},
+	} {
+		got := StopLine(spikeTrip(t, 35, 40), offered(tc.planned))
+
+		if !strings.Contains(got, tc.want) {
+			t.Errorf("planned %v: StopLine = %q, want it to contain %q", tc.planned, got, tc.want)
+		}
+
+		limit := strings.Index(got, "over stop_on_errors 5%")
+		planned := strings.Index(got, "the plan offered")
+		inFlight := strings.Index(got, "800 in flight")
+		if limit < 0 || planned < limit || inFlight < planned {
+			t.Errorf("planned %v: clauses out of order in %q, want limit, planned rate, calls in flight", tc.planned, got)
+		}
+	}
+}
+
+// Ground: contract — the text rounds the rate itself, once, to whole calls; the
+// JSON's three places are for the output only and never feed the text. 1.4996
+// is "1" in the line and 1.5 in the JSON; a text made from the JSON's rounded
+// number would say "2". Mutation "text from the 3-place value" turns it red.
+func TestStopLine_RoundsTheRateOnceNotTwice(t *testing.T) {
+	trip := spikeTrip(t, 35, 40)
+	planned := offered(1.4996)
+
+	if got := StopLine(trip, planned); !strings.Contains(got, "the plan offered 1 rps at that moment") {
+		t.Errorf("StopLine = %q, want it to say 1 rps for 1.4996", got)
+	}
+
+	report := echoReport()
+	report.Incomplete = true
+
+	run := jsonRun(report)
+	run.Outcome = OutcomeIncomplete
+	run.Run.Stop = &trip
+	run.Run.StopPlanned = planned
+
+	stop, ok := writeJSON(t, run)["stop"].(map[string]any)
+	if !ok {
+		t.Fatal("stop is not an object")
+	}
+	if got := stop["planned_rps"]; got != 1.5 {
+		t.Errorf("stop.planned_rps = %#v, want 1.5", got)
+	}
+}
+
+// Ground: boundary — a stop after the plan ended (the timeouts of the tail
+// come then) has no rate to name, and "the plan offered 0 rps" would say the
+// opposite of what happened. The line says the plan had ended, and no number.
+func TestStopLine_AfterThePlanEndedSaysSo(t *testing.T) {
+	const want = "stopped at 12.3s: a.S/One failed 87.5% (35 of 40 calls in the last 5s), over stop_on_errors 5%; " +
+		"the plan had ended; 800 in flight"
+
+	got := StopLine(spikeTrip(t, 35, 40), nil)
+	if got != want {
+		t.Errorf("StopLine =\n%q\nwant\n%q", got, want)
+	}
+	if strings.Contains(got, "rps") || strings.Contains(got, "offered") {
+		t.Errorf("a plan that had ended is told as a rate: %q", got)
+	}
+
+	// The same through the report's notes.
+	report := echoReport()
+	report.Incomplete = true
+
+	trip := spikeTrip(t, 35, 40)
+
+	var out strings.Builder
+	PrintReport(&out, "localhost:50051", RunReport{Report: report, Stop: &trip})
+
+	if !strings.Contains(out.String(), "over stop_on_errors 5%; the plan had ended; 800 in flight") {
+		t.Errorf("the notes of a stop with no planned rate do not say the plan had ended:\n%s", out.String())
+	}
+}
+
+// Ground: contract — JSON: stop.planned_rps is the rate the plan of the stopped
+// method offered at the moment of the stop, a float rounded to three places at
+// the output (the same number on every platform), additive within schema 1. A
+// stop after the plan ended writes null, never 0: the key is there, the value
+// says "no rate". Mutations "0 for null" and "no rounding" turn it red.
+func TestJSON_TheStopCarriesItsPlannedRate(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		planned *float64
+		want    any
+	}{
+		{"a rate", offered(1700), 1700.0},
+		{"rounded to three places", offered(123.4567), 123.457},
+		{"a fraction", offered(2.0 / 3.0), 0.667},
+		{"the plan had ended", nil, nil},
+	} {
+		report := echoReport()
+		report.Incomplete = true
+
+		trip := spikeTrip(t, 35, 40)
+		run := jsonRun(report)
+		run.Outcome = OutcomeIncomplete
+		run.Run.Stop = &trip
+		run.Run.StopPlanned = tc.planned
+
+		stop, ok := writeJSON(t, run)["stop"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s: stop is not an object", tc.name)
+		}
+
+		got, present := stop["planned_rps"]
+		if !present {
+			t.Errorf("%s: stop has no planned_rps key: %v", tc.name, stop)
+
+			continue
+		}
+		if got != tc.want {
+			t.Errorf("%s: stop.planned_rps = %#v, want %#v", tc.name, got, tc.want)
 		}
 	}
 }
