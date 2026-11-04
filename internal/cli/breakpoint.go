@@ -65,6 +65,9 @@ type BreakpointRun struct {
 	Compression string
 	// Mode is app.mode: "local" or "real". Empty prints nothing.
 	Mode string
+	// Ramp is load.ramp as configured: the rise from 0 to Plan.From before the
+	// first step. 0 prints no ramp.
+	Ramp time.Duration
 	// Passport is the config and the machine of the search; nil prints no
 	// machine line and leaves the passport out of the JSON.
 	Passport *Passport
@@ -77,12 +80,20 @@ type BreakpointRun struct {
 // longest the search can take, connecting within connect included, rounded
 // up to a second.
 func PlanLine(p breakpoint.Plan, connect time.Duration) string {
+	return PlanLineRamp(p, connect, 0)
+}
+
+// PlanLineRamp is PlanLine for a search whose first step is preceded by a ramp
+// from 0: the ramp is added once, before the rounding up to a second (a repeat
+// of the first step starts at its rate and ramps no more). A ramp of 0 is
+// PlanLine's line.
+func PlanLineRamp(p breakpoint.Plan, connect, ramp time.Duration) string {
 	rates, err := p.Rates()
 	if err != nil {
 		return ""
 	}
 	worst, _ := p.Worst()
-	at := (worst + connect + time.Second - 1).Truncate(time.Second)
+	at := (worst + connect + ramp + time.Second - 1).Truncate(time.Second)
 
 	return fmt.Sprintf("breakpoint: up to %d steps, at most %v", len(rates), at)
 }
@@ -295,8 +306,12 @@ func PrintBreakpoint(w io.Writer, run BreakpointRun) {
 	if run.Mode != "" {
 		fmt.Fprintf(w, "mode: %s\n", run.Mode)
 	}
-	fmt.Fprintf(w, "settings: settle %s, hold %s, max in flight %s, connections %d%s\n\n",
-		run.Plan.Settle, run.Plan.Hold, searchCap(run.Plan), run.Connections, compressionSuffix(run.Compression))
+	var ramp string
+	if run.Ramp > 0 {
+		ramp = fmt.Sprintf("first step after a %s ramp, ", run.Ramp)
+	}
+	fmt.Fprintf(w, "settings: settle %s, hold %s, %smax in flight %s, connections %d%s\n\n",
+		run.Plan.Settle, run.Plan.Hold, ramp, searchCap(run.Plan), run.Connections, compressionSuffix(run.Compression))
 
 	verdicts := make([]string, len(res.Steps))
 	for i := range res.Steps {
@@ -400,12 +415,14 @@ type BreakpointReport struct {
 
 // jsonSearch is the search's own settings: the flag's cap, null when the
 // flag is not set and each step takes the smallest it can run with; the
-// settle as warmup_us.
+// settle as warmup_us and the ramp before the first step as ramp_us (0
+// without one).
 type jsonSearch struct {
 	Mode        string `json:"mode"`
 	MaxInFlight *int   `json:"max_in_flight"`
 	Connections int    `json:"connections"`
 	WarmupUS    int64  `json:"warmup_us"`
+	RampUS      int64  `json:"ramp_us"`
 	// Compression is "gzip" or null.
 	Compression *string `json:"compression"`
 }
@@ -500,7 +517,7 @@ func NewBreakpointReport(run BreakpointRun) BreakpointReport {
 		})
 	}
 
-	settings := jsonSearch{Mode: run.Mode, Connections: run.Connections, WarmupUS: micros(run.Plan.Settle), Compression: compressionOf(run.Compression)}
+	settings := jsonSearch{Mode: run.Mode, Connections: run.Connections, WarmupUS: micros(run.Plan.Settle), RampUS: micros(run.Ramp), Compression: compressionOf(run.Compression)}
 	if run.Plan.MaxInFlight > 0 {
 		settings.MaxInFlight = &run.Plan.MaxInFlight
 	}

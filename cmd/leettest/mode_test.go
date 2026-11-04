@@ -184,13 +184,14 @@ func TestRun_TheReportTellsTheMode(t *testing.T) {
 }
 
 // Ground: contract — a search tells its mode the same way. real asks the search
-// for no ramp: it steps up from breakpoint.from by itself (the confirmation
-// that protects it is unit 3's).
+// for a ramp (a ramp of 1s is written for both modes, it changes the settings
+// line but not the lines above it).
 func TestRun_ASearchTellsTheMode(t *testing.T) {
 	for _, mode := range []string{"local", "real"} {
 		cfg := writeSearch(t, closedPort(t), checkMethod)
 		withName(t, cfg, "name: wallet\n")
 		setMode(t, cfg, mode)
+		setRamp(t, cfg, "1s")
 
 		text, js := echoRun(t, 60*time.Second, "-c", cfg, "-yes")
 

@@ -190,6 +190,63 @@ func TestJSON_TheRampIsInTheSettings(t *testing.T) {
 	}
 }
 
+// Ground: contract — the text report of a search names its ramp on the settings
+// line, worded like the plain run's plan line («after a 30s ramp»): the ramp
+// comes before the first step only, so the line says «first step after». It sits
+// between the hold and the cap. A ramp of 0 prints nothing, and the line is the
+// release's, byte for byte. The ramp is printed as a duration is elsewhere
+// (1m30s, not 90s).
+func TestEcho_ASearchSettingsLineNamesTheRamp(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		ramp time.Duration
+		want string
+	}{
+		{"a ramp of 30s", 30 * time.Second, "settings: settle 1s, hold 5s, first step after a 30s ramp, max in flight per step, connections 2\n\n"},
+		{"a ramp of 90s", 90 * time.Second, "settings: settle 1s, hold 5s, first step after a 1m30s ramp, max in flight per step, connections 2\n\n"},
+		{"no ramp", 0, "settings: settle 1s, hold 5s, max in flight per step, connections 2\n\n"},
+	} {
+		run := echoSearch(bpPlan, 2)
+		run.Ramp = tc.ramp
+
+		if out := echoSearchText(run); !strings.Contains(out, "\nname: wallet\n"+tc.want) {
+			t.Errorf("%s: the settings line is not %q:\n%s", tc.name, tc.want, out)
+		}
+	}
+
+	run := echoSearch(bpPlan, 2)
+	run.Ramp = 30 * time.Second
+	run.Compression = "gzip"
+	want := "settings: settle 1s, hold 5s, first step after a 30s ramp, max in flight per step, connections 2, compression gzip\n"
+	if out := echoSearchText(run); !strings.Contains(out, want) {
+		t.Errorf("the ramp is not before the compression: no %q in:\n%s", want, out)
+	}
+}
+
+// Ground: contract — JSON (schema_version 1, additive): the search's top-level
+// settings.ramp_us is the config's ramp in whole microseconds, always present,
+// 0 without one. The ramp of a run is that of its own report's settings, set by
+// the CLI per run, so this field is the search's.
+func TestJSON_ASearchHasTheRampInItsSettings(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		ramp time.Duration
+		want float64
+	}{
+		{"a ramp of 30s", 30 * time.Second, 30_000_000},
+		{"a ramp of 1.5s", 1500 * time.Millisecond, 1_500_000},
+		{"no ramp", 0, 0},
+	} {
+		run := echoSearch(bpPlan, 2)
+		run.Ramp = tc.ramp
+
+		got, ok := field(t, searchJSONOf(t, run), "settings").(map[string]any)["ramp_us"]
+		if !ok || got != tc.want {
+			t.Errorf("%s: settings.ramp_us = %v (present %v), want %v", tc.name, got, ok, tc.want)
+		}
+	}
+}
+
 // rampJSON is the JSON input of a finished ramp run.
 func rampJSON(run RunReport) JSONRun {
 	out := jsonRun(run.Report)

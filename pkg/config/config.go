@@ -88,6 +88,16 @@ var (
 	ErrRealNeedsStop = errors.New("app.mode: real needs load.stop_on_errors (the run stops when failures pass this share), e.g. load.stop_on_errors: 5%")
 )
 
+// errSearchNeedsRamp is ErrRealNeedsRamp for a search: the same error to
+// errors.Is, the text names breakpoint.from as the rate the ramp reaches.
+type errSearchNeedsRamp struct{}
+
+func (errSearchNeedsRamp) Error() string {
+	return "app.mode: real needs load.ramp (a ramp from 0 to breakpoint.from), e.g. load.ramp: 30s"
+}
+
+func (errSearchNeedsRamp) Unwrap() error { return ErrRealNeedsRamp }
+
 // The values of app.mode. Left out, a config is local.
 const (
 	ModeLocal = "local"
@@ -288,7 +298,8 @@ func (b Breakpoint) validate() error {
 }
 
 // validateSearch refuses what a search cannot run with: more than one call,
-// a warm-up or a ramp of its own, the rate or length a search sets per step.
+// a warm-up of its own, the rate or length a search sets per step. A ramp is
+// allowed: it runs from 0 to breakpoint.from before the first step.
 func (l Load) validateSearch() []error {
 	var errs []error
 	if len(l.Calls) > 1 {
@@ -296,9 +307,6 @@ func (l Load) validateSearch() []error {
 	}
 	if l.Warmup != 0 {
 		errs = append(errs, fmt.Errorf("%w: load.warmup with load.breakpoint: each step has its breakpoint.settle", ErrBreakpoint))
-	}
-	if l.Ramp > 0 {
-		errs = append(errs, fmt.Errorf("%w: load.ramp with load.breakpoint: the search sets the rates", ErrBreakpoint))
 	}
 	for i := range l.Calls {
 		call := &l.Calls[i]
