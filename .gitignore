@@ -78,3 +78,6 @@ dist/
 
 # The reference stand writes its TLS certificates here at start
 /test/stand/certs/
+
+# The skips make stress counts (cmd/leettest skipIfStarved)
+/stress-skips.txt
