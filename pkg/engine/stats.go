@@ -456,6 +456,8 @@ type Stats struct {
 	windowWidth time.Duration
 	windowCount int
 	windowPlans map[string]time.Duration
+	// methodStages is each method's load plan, for the planned rate per second.
+	methodStages map[string][]Stage
 	// windowMeasured is the planned measured part the windows were cut for;
 	// planDone says the schedule walked all of it.
 	windowMeasured time.Duration

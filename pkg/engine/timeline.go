@@ -62,6 +62,11 @@ type Second struct {
 	ObservedLagSum   time.Duration
 	TransportWaitSum time.Duration
 	ServiceTimeSum   time.Duration
+	// PlannedRPS is the plan's mean rate over this second. ScheduledSent and
+	// ScheduledFailed are the calls scheduled for it, by their outcome.
+	PlannedRPS      float64
+	ScheduledSent   int
+	ScheduledFailed int
 }
 
 type second struct {

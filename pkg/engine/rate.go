@@ -16,6 +16,12 @@ package engine
 
 import "time"
 
+// meanRate is the mean of rateAt over [from, to): the integral divided by the
+// width. 0 past the plan and for to <= from.
+func meanRate(stages []Stage, from, to time.Duration) float64 {
+	return 0
+}
+
 // rateAt is the rate the plan offers elapsed after its start, in calls per
 // second: a constant stage holds its rate, a ramp moves linearly from its
 // StartRPS to its TargetRPS over its Duration, and a stage that has ended

@@ -128,6 +128,18 @@ func (s *Stats) setMethodPlan(method string, planned time.Duration) {
 	s.windowPlans[method] = max(0, planned)
 }
 
+// setMethodStages hands the stats a method's load plan, so the report can say
+// what rate the plan offered in each second.
+func (s *Stats) setMethodStages(method string, stages []Stage) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.methodStages == nil {
+		s.methodStages = make(map[string][]Stage)
+	}
+	s.methodStages[method] = stages
+}
+
 // allocateWindows takes the memory of every window of one method in one piece.
 // Callers hold Stats.mu; without windows it allocates nothing.
 func (s *Stats) allocateWindows(method *methodStats) {
