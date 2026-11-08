@@ -344,14 +344,17 @@ func TestRun_ARampedRunIsStoppedInsideTheRamp(t *testing.T) {
 // Ground: contract — the rate in the stop is the plan's at the moment of the
 // stop, not at the end of the run. With 1 ms calls the end comes under a
 // millisecond after the stop (0.005 rps on a ramp of 5 rps per second), inside
-// any tolerance that survives rounding; calls of 200 ms keep the drain open for
-// that long, 1 rps, so the mutation "the rate at the end of the run" is red.
+// any tolerance that survives rounding; calls of 500 ms keep the drain open for
+// at least 500 ms minus one send interval of the ramp (at most 200 ms after the
+// first second), so 300 ms or more, three times the premise of 100 ms, and the
+// mutation "the rate at the end of the run" is red. At 200 ms the floor was
+// 100 ms, exactly the premise: stress runs read 96 068-99 995 µs.
 func TestRun_TheStopRateIsTheRateAtTheStopNotAtTheRunsEnd(t *testing.T) {
 	cfg := spikeConfig(t, closedPort(t), "5%", "1s", "5s")
 	setRamp(t, cfg, "10s")
 	path := newJSONPath(t)
 
-	res := runCLI(t.Context(), t, 40*time.Second, "-fake", "-fake-delay", "200ms", "-fake-fail-ratio", "1", "-json-file", path, "-c", cfg)
+	res := runCLI(t.Context(), t, 40*time.Second, "-fake", "-fake-delay", "500ms", "-fake-fail-ratio", "1", "-json-file", path, "-c", cfg)
 	wantExit(t, res, 3)
 
 	js := decodeOnly(t, string(readFile(t, path)))
