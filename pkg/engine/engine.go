@@ -33,6 +33,8 @@ var (
 	ErrFakeFailure     = errors.New("fake sender failure")
 	// ErrScenarioNeedsName is a call with Next and no Scenario.
 	ErrScenarioNeedsName = errors.New("a call with steps needs a scenario name")
+	// ErrScenario is a call with a Scenario name and no Next.
+	ErrScenario = errors.New("scenario needs next steps: add them or drop the name")
 )
 
 type Call struct {

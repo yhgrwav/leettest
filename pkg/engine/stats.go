@@ -354,14 +354,16 @@ type ScenarioReport struct {
 // ScenarioStepReport is how far the iterations got. Reached counts those that
 // launched the step, or were aborted just before it; FailedHere those it
 // ended in a failure of the target or the client; AbortedHere those our abort
-// ended there; NotReached those that never got to it. Reached(k+1) is
-// Reached(k) − FailedHere(k) − AbortedHere(k), and Reached(k) + NotReached(k)
-// is Iterations.
+// ended there; NotSentHere those where the step was never sent; NotReached
+// those that never got to it. Reached(k+1) is Reached(k) − FailedHere(k) −
+// AbortedHere(k) − NotSentHere(k), and Reached(k) + NotReached(k) is
+// Iterations.
 type ScenarioStepReport struct {
 	Method      string
 	Reached     int
 	FailedHere  int
 	AbortedHere int
+	NotSentHere int
 	NotReached  int
 }
 

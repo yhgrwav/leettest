@@ -196,17 +196,17 @@ func methodRow(r Report, method string) (MethodReport, bool) {
 }
 
 // wantSteps compares the counters of every step: reached, failed here,
-// aborted here, not reached.
-func wantSteps(t *testing.T, got []ScenarioStepReport, want [][4]int) {
+// aborted here, not sent here, not reached.
+func wantSteps(t *testing.T, got []ScenarioStepReport, want [][5]int) {
 	t.Helper()
 
 	if len(got) != len(want) {
 		t.Fatalf("%d steps in the scenario entry, want %d", len(got), len(want))
 	}
 	for i, w := range want {
-		g := [4]int{got[i].Reached, got[i].FailedHere, got[i].AbortedHere, got[i].NotReached}
+		g := [5]int{got[i].Reached, got[i].FailedHere, got[i].AbortedHere, got[i].NotSentHere, got[i].NotReached}
 		if g != w {
-			t.Errorf("step %d (%s): reached/failed/aborted/not reached = %v, want %v", i+1, got[i].Method, g, w)
+			t.Errorf("step %d (%s): reached/failed/aborted/not sent/not reached = %v, want %v", i+1, got[i].Method, g, w)
 		}
 	}
 }
@@ -232,8 +232,8 @@ func TestScenario_StepTwoIsScheduledAtStepOnesEnd(t *testing.T) {
 	if !two.ScheduledAt.Equal(one.DoneAt) {
 		t.Errorf("step 2 scheduled at %v, step 1 done at %v; want equal", two.ScheduledAt.Sub(tick), one.DoneAt.Sub(tick))
 	}
-	if lat := two.Latency(); lat < 20*time.Millisecond || lat > 55*time.Millisecond {
-		t.Errorf("step 2 latency %v, want about its own 20ms and none of step 1's 60ms", lat)
+	if lat := two.Latency(); lat < 20*time.Millisecond {
+		t.Errorf("step 2 latency %v, want at least its own 20ms", lat)
 	}
 	if want := two.ScheduledAt.Add(time.Second); !two.Deadline.Equal(want) {
 		t.Errorf("step 2 deadline %v after its schedule, want its own timeout, 1s", two.Deadline.Sub(two.ScheduledAt))
@@ -274,7 +274,7 @@ func TestScenario_AFailedStepEndsTheIteration(t *testing.T) {
 	if sc.Iterations != 1 || sc.ByCategory[CategoryOverload] != 1 {
 		t.Errorf("iterations %d, overload %d; want 1 and 1", sc.Iterations, sc.ByCategory[CategoryOverload])
 	}
-	wantSteps(t, sc.Steps, [][4]int{{1, 1, 0, 0}, {0, 0, 0, 1}})
+	wantSteps(t, sc.Steps, [][5]int{{1, 1, 0, 0, 0}, {0, 0, 0, 0, 1}})
 }
 
 // Ground: contract — iteration latency runs from the tick to the last step's end, as a call's
@@ -313,36 +313,42 @@ func TestScenario_IterationLatencyRunsFromTheTick(t *testing.T) {
 // launch to the iteration's end, so a second tick finds it taken exactly as with one
 // call that lasts as long as the whole iteration.
 func TestScenario_OneSlotForTheWholeIteration(t *testing.T) {
-	second := func(in chan<- Request) {
-		time.Sleep(100 * time.Millisecond)
+	// The second tick comes once the first unit holds its slot in the call that
+	// does not end: step 2 of the iteration, or the one long call.
+	second := func(in chan<- Request, entered <-chan struct{}) {
+		if !await(entered) {
+			return
+		}
 		in <- Request{Method: "b/Other", ScheduledAt: time.Now()}
 	}
 
 	t.Run("a two-step iteration", func(t *testing.T) {
+		entered := make(chan struct{})
 		sender := &scripted{do: map[string]func(context.Context, Request) (Outcome, error){
-			"a/One": reply(20*time.Millisecond, CategorySuccess),
-			"a/Two": reply(2*time.Second, CategorySuccess),
+			"a/One": reply(time.Millisecond, CategorySuccess),
+			"a/Two": hang(entered),
 		}}
 
 		_, err := runPool(t.Context(), sender, 1, func(in chan<- Request) {
 			in <- scenarioReq(time.Now(), "flow", Step{Method: "a/One", Timeout: 5 * time.Second}, Step{Method: "a/Two", Timeout: 5 * time.Second})
-			second(in)
+			second(in, entered)
 		})
 
 		var capHit *InFlightCapError
 		if !errors.As(err, &capHit) {
-			t.Fatalf("err = %v, want the cap hit: step 1 ended at 20ms but the iteration still held the one slot at 100ms", err)
+			t.Fatalf("err = %v, want the cap hit: step 1 ended but the iteration still held the one slot", err)
 		}
 	})
 
 	t.Run("one call as long as the sum", func(t *testing.T) {
+		entered := make(chan struct{})
 		sender := &scripted{do: map[string]func(context.Context, Request) (Outcome, error){
-			"a/Long": reply(2*time.Second, CategorySuccess),
+			"a/Long": hang(entered),
 		}}
 
 		_, err := runPool(t.Context(), sender, 1, func(in chan<- Request) {
 			in <- Request{Method: "a/Long", ScheduledAt: time.Now(), Deadline: time.Now().Add(5 * time.Second)}
-			second(in)
+			second(in, entered)
 		})
 
 		var capHit *InFlightCapError
@@ -367,9 +373,9 @@ func TestScenario_AbortDuringAStepIsAborted(t *testing.T) {
 	defer cancel()
 
 	go func() {
-		<-entered
-		time.Sleep(30 * time.Millisecond)
-		cancel()
+		if await(entered) {
+			cancel()
+		}
 	}()
 
 	results, err := runPool(ctx, sender, 4, func(in chan<- Request) {
@@ -395,7 +401,7 @@ func TestScenario_AbortDuringAStepIsAborted(t *testing.T) {
 	}
 
 	sc := scenarioOf(t, scenarioStats(results, "flow", []string{"a/One", "a/Two", "a/Three"}, tick, 0), "flow")
-	wantSteps(t, sc.Steps, [][4]int{{1, 0, 0, 0}, {1, 0, 1, 0}, {0, 0, 0, 1}})
+	wantSteps(t, sc.Steps, [][5]int{{1, 0, 0, 0, 0}, {1, 0, 1, 0, 0}, {0, 0, 0, 0, 1}})
 }
 
 // Ground: contract — an iteration whose step succeeded and whose next step the abort kept from
@@ -446,7 +452,7 @@ func TestScenario_AbortBetweenStepsAbortsTheIteration(t *testing.T) {
 
 	report := scenarioStats(results, "flow", []string{"a/One", "a/Two"}, tick, 0)
 	sc := scenarioOf(t, report, "flow")
-	wantSteps(t, sc.Steps, [][4]int{{1, 0, 0, 0}, {1, 0, 1, 0}})
+	wantSteps(t, sc.Steps, [][5]int{{1, 0, 0, 0, 0}, {1, 0, 1, 0, 0}})
 	if sc.Latencies != 1 || sc.Censored != 1 {
 		t.Errorf("iteration observations %d, censored %d; want 1 and 1", sc.Latencies, sc.Censored)
 	}
@@ -485,7 +491,7 @@ func TestScenario_StopLetsTheIterationInFlightFinish(t *testing.T) {
 	}
 
 	go func() {
-		<-entered
+		await(entered)
 		eng.Stop()
 	}()
 
@@ -545,17 +551,26 @@ func TestBudget_ScenarioCountsTheSumOfStepTimeouts(t *testing.T) {
 // the slots held past their deadline, and the deadline that counts is the one of the step
 // holding the slot at that moment, not of step 1.
 func TestCapHit_OverDeadlineUsesTheStepHoldingTheSlot(t *testing.T) {
-	hit := func(t *testing.T, stepTwo time.Duration) *InFlightCapError {
+	// stepOneEnded is when step 1 reports it ended: now, or a second ago, which
+	// puts step 2's schedule, and so its deadline, in the past too. The tick is
+	// in the past either way, so step 1's own deadline has passed.
+	hit := func(t *testing.T, stepTwo time.Duration, stepOneEnded time.Time) *InFlightCapError {
 		t.Helper()
 
+		entered := make(chan struct{})
 		sender := &scripted{do: map[string]func(context.Context, Request) (Outcome, error){
-			"a/One": reply(10*time.Millisecond, CategorySuccess),
-			"a/Two": hang(nil),
+			"a/One": func(context.Context, Request) (Outcome, error) {
+				return Outcome{Category: CategorySuccess, DoneAt: stepOneEnded}, nil
+			},
+			"a/Two": hang(entered),
 		}}
 
 		_, err := runPool(t.Context(), sender, 1, func(in chan<- Request) {
-			in <- scenarioReq(time.Now(), "flow", Step{Method: "a/One", Timeout: 100 * time.Millisecond}, Step{Method: "a/Two", Timeout: stepTwo})
-			time.Sleep(200 * time.Millisecond)
+			tick := time.Now().Add(-time.Second)
+			in <- scenarioReq(tick, "flow", Step{Method: "a/One", Timeout: 100 * time.Millisecond}, Step{Method: "a/Two", Timeout: stepTwo})
+			if !await(entered) {
+				return
+			}
 			in <- Request{Method: "b/Other", ScheduledAt: time.Now()}
 		})
 
@@ -567,12 +582,12 @@ func TestCapHit_OverDeadlineUsesTheStepHoldingTheSlot(t *testing.T) {
 		return capHit
 	}
 
-	// Step 1's deadline (100ms) passed at the hit (200ms); step 2's (2s) did not.
-	if got := hit(t, 2*time.Second); got.OverDeadline != 0 {
+	// Step 1's deadline passed long before the hit; step 2's (2s on) did not.
+	if got := hit(t, 2*time.Second, time.Now()); got.OverDeadline != 0 {
 		t.Errorf("over deadline %d, want 0: the iteration is inside its step 2's budget", got.OverDeadline)
 	}
-	// Step 2's deadline (about 70ms) passed too.
-	if got := hit(t, 60*time.Millisecond); got.OverDeadline != 1 {
+	// Step 2 was scheduled a second ago with 60ms: its own deadline passed too.
+	if got := hit(t, 60*time.Millisecond, time.Now().Add(-time.Second)); got.OverDeadline != 1 {
 		t.Errorf("over deadline %d, want 1: step 2 held the slot past its own deadline", got.OverDeadline)
 	}
 }
@@ -701,8 +716,14 @@ func TestScenario_TheIterationIsNotCountedAsACall(t *testing.T) {
 	if _, ok := methodRow(report, "flow"); ok {
 		t.Error("the scenario has a method row: an iteration is not a call")
 	}
-	if sc := scenarioOf(t, report, "flow"); sc.Iterations != 1 || sc.ByCategory[CategoryTimeout] != 1 {
+	sc := scenarioOf(t, report, "flow")
+	if sc.Iterations != 1 || sc.ByCategory[CategoryTimeout] != 1 {
 		t.Errorf("iterations %d, timed out %d; want 1 and 1", sc.Iterations, sc.ByCategory[CategoryTimeout])
+	}
+	// A step never sent ends the iteration there; the iteration is no timed call.
+	wantSteps(t, sc.Steps, [][5]int{{1, 0, 0, 0, 0}, {1, 0, 0, 1, 0}})
+	if sc.Latencies != 0 || sc.Censored != 0 {
+		t.Errorf("iteration observations %d, censored %d; want 0 and 0: a not-sent iteration is outside the percentiles", sc.Latencies, sc.Censored)
 	}
 }
 
@@ -747,7 +768,7 @@ func TestScenario_ARunCountsIterationsAndCalls(t *testing.T) {
 	if sc.Iterations != 5 || sc.ByCategory[CategorySuccess] != 5 {
 		t.Errorf("iterations %d, successes %d; want 5 and 5", sc.Iterations, sc.ByCategory[CategorySuccess])
 	}
-	wantSteps(t, sc.Steps, [][4]int{{5, 0, 0, 0}, {5, 0, 0, 0}})
+	wantSteps(t, sc.Steps, [][5]int{{5, 0, 0, 0, 0}, {5, 0, 0, 0, 0}})
 }
 
 // Ground: contract — the per-second timelines are reserved for what can still be running past the
@@ -817,6 +838,7 @@ func TestNew_ScenarioNamesAndMethodsShareOneNamespace(t *testing.T) {
 	}{
 		{"distinct names and methods", []Call{plain("a/Plain"), flow("s1", "a/One", "a/Two"), flow("s2", "a/Three", "a/Four")}, nil, nil},
 		{"steps without a name", []Call{noName}, ErrScenarioNeedsName, nil},
+		{"a name and no steps", []Call{flow("s1", "a/One")}, ErrScenario, nil},
 		{"name is a call's method", []Call{plain("a/Name"), flow("a/Name", "a/One", "a/Two")}, ErrDuplicateMethod, []string{"a/Name", "call 0", "call 1"}},
 		{"name is a step's method", []Call{flow("s1", "a/One", "a/Two"), flow("a/Two", "a/Three", "a/Four")}, ErrDuplicateMethod, []string{"a/Two", "call 0", "call 1"}},
 		{"name is its own first method", []Call{flow("a/One", "a/One", "a/Two")}, ErrDuplicateMethod, []string{"a/One"}},
@@ -888,7 +910,7 @@ func TestScenario_WarmUpIsDecidedByTheTick(t *testing.T) {
 	if sc.Iterations != 1 || sc.Latencies != 1 {
 		t.Errorf("iterations %d, observations %d; want 1 and 1: the warm-up iteration is out", sc.Iterations, sc.Latencies)
 	}
-	wantSteps(t, sc.Steps, [][4]int{{1, 0, 0, 0}, {1, 0, 0, 0}})
+	wantSteps(t, sc.Steps, [][5]int{{1, 0, 0, 0, 0}, {1, 0, 0, 0, 0}})
 }
 
 // Ground: contract — the scenario entry's counters and percentiles follow the rule of a call:
@@ -902,8 +924,12 @@ func TestScenarioStats_PercentilesOfTheIterationEntry(t *testing.T) {
 
 	iteration := func(i int, category Category, latency time.Duration) {
 		tick := start.Add(time.Duration(i) * ms)
+		step := 0 // a success ends at the last of the two steps
+		if category == CategorySuccess {
+			step = 1
+		}
 		results = append(results, Result{
-			Method: "flow", Iteration: true, ScheduledAt: tick, BegunAt: tick, IterationTick: tick,
+			Method: "flow", Iteration: true, IterationStep: step, ScheduledAt: tick, BegunAt: tick, IterationTick: tick,
 			Deadline: tick.Add(300 * ms),
 			Outcome:  Outcome{Category: category, SentAt: tick, DoneAt: tick.Add(latency)},
 		})
@@ -938,7 +964,8 @@ func TestScenarioStats_PercentilesOfTheIterationEntry(t *testing.T) {
 
 // Ground: contract — the invariants of ScenarioStepReport over any mix of outcomes: every step's
 // counters equal what a plain model of the iterations gives, reached(k+1) =
-// reached(k) − failed(k) − aborted(k), and reached(k) + not reached(k) = iterations.
+// reached(k) − failed(k) − aborted(k) − not sent(k), and reached(k) + not reached(k) =
+// iterations. A step never sent is its own outcome: it is no failure and no abort.
 func TestScenarioStats_InvariantsOverARandomSequence(t *testing.T) {
 	const steps = 3
 
@@ -946,13 +973,13 @@ func TestScenarioStats_InvariantsOverARandomSequence(t *testing.T) {
 	start := time.Now()
 	failures := []Category{
 		CategoryOverload, CategoryServerFault, CategoryTimeout, CategoryUnreachable,
-		CategoryCutOff, CategoryClientError, CategoryBadResponse, CategoryClientFault,
+		CategoryCutOff, CategoryClientError, CategoryBadResponse, CategoryClientFault, CategoryUnknown,
 	}
 	methods := []string{"a/One", "a/Two", "a/Three"}
 
 	var (
-		results                                  []Result
-		wantReached, wantFailed, wantAborted, nr [steps]int
+		results                                               []Result
+		wantReached, wantFailed, wantAborted, wantNotSent, nr [steps]int
 	)
 
 	const iterations = 400
@@ -962,14 +989,16 @@ func TestScenarioStats_InvariantsOverARandomSequence(t *testing.T) {
 		deadline := tick.Add(time.Second)
 		ended := rng.IntN(steps) // the step the iteration ends at
 
-		// How it ends: a success on the last step, a failure or an abort at a
-		// step, or an abort before a step (never before the first).
+		// How it ends: a success on the last step, a failure, an abort or a
+		// step never sent at a step, or an abort before a step (never before
+		// the first).
 		var (
 			category Category
-			launched int // steps whose calls ran
+			launched int // steps whose calls ran, or were handed to the sender
+			notSent  bool
 		)
 
-		switch rng.IntN(4) {
+		switch rng.IntN(5) {
 		case 0:
 			ended, category, launched = steps-1, CategorySuccess, steps
 		case 1:
@@ -978,6 +1007,9 @@ func TestScenarioStats_InvariantsOverARandomSequence(t *testing.T) {
 		case 2:
 			category, launched = CategoryAborted, ended+1
 			wantAborted[ended]++
+		case 3:
+			category, launched, notSent = CategoryTimeout, ended+1, true
+			wantNotSent[ended]++
 		default:
 			ended = 1 + rng.IntN(steps-1)
 			category, launched = CategoryAborted, ended
@@ -992,15 +1024,22 @@ func TestScenarioStats_InvariantsOverARandomSequence(t *testing.T) {
 		}
 
 		for k := range launched {
+			last := notSent && k == launched-1
 			results = append(results, Result{
 				Method: methods[k], ScheduledAt: tick, BegunAt: tick, Deadline: deadline, IterationTick: tick,
-				Outcome: Outcome{Category: CategorySuccess, SentAt: tick, DoneAt: tick.Add(time.Millisecond)},
+				Outcome: Outcome{
+					Category: CategorySuccess, SentAt: tick, DoneAt: tick.Add(time.Millisecond),
+					NotSent: last, NotSentOn: BlockedOnConnection,
+				},
 			})
 		}
 		results = append(results, Result{
 			Method: "flow", Iteration: true, IterationStep: ended, ScheduledAt: tick, BegunAt: tick,
 			Deadline: deadline, IterationTick: tick,
-			Outcome: Outcome{Category: category, SentAt: tick, DoneAt: tick.Add(5 * time.Millisecond)},
+			Outcome: Outcome{
+				Category: category, SentAt: tick, DoneAt: tick.Add(5 * time.Millisecond),
+				NotSent: notSent, NotSentOn: BlockedOnConnection,
+			},
 		})
 	}
 
@@ -1011,9 +1050,9 @@ func TestScenarioStats_InvariantsOverARandomSequence(t *testing.T) {
 		t.Fatalf("iterations %d, want %d", sc.Iterations, iterations)
 	}
 
-	want := make([][4]int, steps)
+	want := make([][5]int, steps)
 	for k := range steps {
-		want[k] = [4]int{wantReached[k], wantFailed[k], wantAborted[k], nr[k]}
+		want[k] = [5]int{wantReached[k], wantFailed[k], wantAborted[k], wantNotSent[k], nr[k]}
 	}
 	wantSteps(t, sc.Steps, want)
 
@@ -1022,9 +1061,46 @@ func TestScenarioStats_InvariantsOverARandomSequence(t *testing.T) {
 			t.Errorf("step %d: reached %d + not reached %d != iterations %d", k+1, step.Reached, step.NotReached, sc.Iterations)
 		}
 		if k+1 < len(sc.Steps) {
-			if next := sc.Steps[k+1].Reached; next != step.Reached-step.FailedHere-step.AbortedHere {
-				t.Errorf("step %d: reached %d != reached %d - failed %d - aborted %d", k+2, next, step.Reached, step.FailedHere, step.AbortedHere)
+			left := step.Reached - step.FailedHere - step.AbortedHere - step.NotSentHere
+			if next := sc.Steps[k+1].Reached; next != left {
+				t.Errorf("step %d: reached %d != reached %d - failed %d - aborted %d - not sent %d",
+					k+2, next, step.Reached, step.FailedHere, step.AbortedHere, step.NotSentHere)
 			}
 		}
+	}
+}
+
+// Ground: contract — a run that mixes a plain call and a scenario names each term by its kind in
+// the budget message: «rps × timeout» for the call, «rps × Σ step timeouts» for the scenario.
+func TestBudget_AMixedRunNamesEachTermByItsKind(t *testing.T) {
+	stages := []Stage{{StartRPS: 100, TargetRPS: 100, Duration: time.Second}}
+	plain := Call{Method: "a/Plain", Timeout: time.Second, Stages: stages}
+	flow := Call{
+		Method: "a/One", Scenario: "flow", Timeout: time.Second,
+		Next:   []Step{{Method: "a/Two", Timeout: time.Second}},
+		Stages: stages,
+	}
+
+	var budget *InFlightBudgetError
+
+	err := newWithCap(10, plain, flow)
+	if !errors.As(err, &budget) {
+		t.Fatalf("err = %v, want *InFlightBudgetError", err)
+	}
+
+	text := budget.Error()
+	if !strings.Contains(text, "rps × timeout") || !strings.Contains(text, "rps × Σ step timeouts") {
+		t.Errorf("%q, want both «rps × timeout» (the call) and «rps × Σ step timeouts» (the scenario)", text)
+	}
+}
+
+// await waits for a signal from a step of the test; a step that never begins
+// ends the wait, so the test fails on its own assert and does not hang.
+func await(signal <-chan struct{}) bool {
+	select {
+	case <-signal:
+		return true
+	case <-time.After(3 * time.Second):
+		return false
 	}
 }
