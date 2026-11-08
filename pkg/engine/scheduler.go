@@ -44,6 +44,10 @@ type Request struct {
 	// KeepResponse says whether to keep the response body; needed for the
 	// dependency graph, always false in the MVP.
 	KeepResponse bool
+	// Scenario and Next are the call's, carried to the worker: it runs Next
+	// one after another inside this request's in-flight slot.
+	Scenario string
+	Next     []Step
 }
 
 type Scheduler struct {

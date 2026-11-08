@@ -28,6 +28,11 @@ import (
 
 var ErrPlan = errors.New("breaking-point plan")
 
+// ErrScenario is the search refusing a run whose report holds a scenario:
+// Sent counts step calls and Scheduled iterations, so the search's judgements
+// would compare unlike things.
+var ErrScenario = errors.New("the breaking-point search does not run scenarios")
+
 // Plan is a rising profile: rates from From up to To, each step Factor times
 // the last (or Step more, when Step is set), each held for Hold, of which the
 // first Settle is out of the step's verdict.

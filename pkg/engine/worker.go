@@ -58,6 +58,18 @@ type Result struct {
 	// past the deadline nobody was listening, so a later DoneAt would claim
 	// more than was observed. Zero when the call had no deadline.
 	Deadline time.Time
+	// IterationTick is the tick of the scenario iteration this result belongs
+	// to, on the result of each of its steps and on the iteration's own; zero
+	// for a plain call. Warm-up is decided by it when set.
+	IterationTick time.Time
+	// Iteration marks the result of a whole scenario iteration, filed under
+	// the scenario's name in its own entry and never as a call. ScheduledAt is
+	// the tick; Deadline, DoneAt and the category are the ending step's.
+	Iteration bool
+	// IterationStep is the index of the step an iteration ended at, 0 for
+	// step 1: the one that failed, was aborted, or the last on success. An
+	// abort between steps names the step that was not launched.
+	IterationStep int
 	Outcome
 }
 

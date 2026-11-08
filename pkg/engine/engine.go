@@ -31,6 +31,8 @@ var (
 	// stating one call's rate and timeout for both.
 	ErrDuplicateMethod = errors.New("method appears in more than one call")
 	ErrFakeFailure     = errors.New("fake sender failure")
+	// ErrScenarioNeedsName is a call with Next and no Scenario.
+	ErrScenarioNeedsName = errors.New("a call with steps needs a scenario name")
 )
 
 type Call struct {
@@ -51,6 +53,19 @@ type Call struct {
 	Timeout      time.Duration
 	Stages       []Stage
 	KeepResponse bool
+	// Scenario names the scenario this call opens: a fixed sequence of calls
+	// run as one scheduled iteration. The call itself is step 1, Next are the
+	// steps after it. Empty for a plain call; Next needs it.
+	Scenario string
+	Next     []Step
+}
+
+// Step is a call of a scenario after its first. Each step is sent when the
+// one before it ended in success, and is judged by its own Timeout.
+type Step struct {
+	Method  string
+	Payload []byte
+	Timeout time.Duration
 }
 
 // payload is the body of the call's next request: the record at S mod n, where
@@ -392,6 +407,12 @@ func (e *Engine) plannedDuration() time.Duration {
 // that far behind is invalid by its lag anyway.
 const timelineSlack = 10 * time.Second
 
+// timelineSpan is how long the per-second timelines are reserved for: the plan,
+// the longest a call can live past it, and the slack.
+func (e *Engine) timelineSpan() time.Duration {
+	return e.plannedDuration() + e.longestTimeout() + timelineSlack
+}
+
 func (e *Engine) longestTimeout() time.Duration {
 	var longest time.Duration
 	for _, call := range e.opts.Calls {
@@ -635,7 +656,7 @@ func (e *Engine) Run(ctx context.Context) error {
 			e.stats.setMethodPlan(call.Method, max(0, planned-e.opts.Warmup))
 		}
 	}
-	e.stats.Reserve(e.plannedDuration()+e.longestTimeout()+timelineSlack, methods...)
+	e.stats.Reserve(e.timelineSpan(), methods...)
 	// Measured before moment zero: on a coarse clock it takes milliseconds.
 	dispatcher := newDispatcher(e.opts.Calls, e.opts.ClockStep)
 	e.notExact = dispatcher.notExact

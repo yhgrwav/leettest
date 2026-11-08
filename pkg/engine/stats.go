@@ -330,6 +330,41 @@ type RefusalLatency struct {
 	Max   metrics.Quantile
 }
 
+// ScenarioReport is a scenario's iterations as a unit. Latency runs from the
+// iteration's tick to the end of its last step, by the rule of a call:
+// successes are measured, a timed-out or aborted iteration is a lower bound,
+// any other failure is counted in ByCategory and not timed. Warm-up iterations
+// are in none of it.
+type ScenarioReport struct {
+	Name string
+	// Iterations counts the measured iterations that ended; ByCategory splits
+	// them by how they ended, success included.
+	Iterations int
+	ByCategory map[Category]int
+	P50        metrics.Quantile
+	P99        metrics.Quantile
+	// Latencies counts the observations behind the percentiles, Censored how
+	// many of them only have a lower bound.
+	Latencies int
+	Censored  int
+	// Steps is one entry per step, in order.
+	Steps []ScenarioStepReport
+}
+
+// ScenarioStepReport is how far the iterations got. Reached counts those that
+// launched the step, or were aborted just before it; FailedHere those it
+// ended in a failure of the target or the client; AbortedHere those our abort
+// ended there; NotReached those that never got to it. Reached(k+1) is
+// Reached(k) − FailedHere(k) − AbortedHere(k), and Reached(k) + NotReached(k)
+// is Iterations.
+type ScenarioStepReport struct {
+	Method      string
+	Reached     int
+	FailedHere  int
+	AbortedHere int
+	NotReached  int
+}
+
 type Report struct {
 	// StartedAt is when the schedule began, warmup included: the moment every
 	// offset in the report counts from.
@@ -350,6 +385,10 @@ type Report struct {
 	// WarmupNotSent counts the warmup's calls that timed out before going out.
 	WarmupNotSent int
 	Methods       []MethodReport
+	// Scenarios is one entry per scenario of the run, in the order of the
+	// calls: the iteration as a unit, apart from the calls of its steps, which
+	// are in Methods.
+	Scenarios []ScenarioReport
 	// Aborted counts calls cut off by an abort of the run. They are no fault
 	// of the target, so they are not in Failed; each is censored at the abort.
 	Aborted int
@@ -604,6 +643,10 @@ func NewStats() *Stats {
 		floor:      StreamWaitFloor,
 	}
 }
+
+// setScenario tells the stats a scenario's steps, in order, before any of its
+// results is recorded: the entry is made from them.
+func (s *Stats) setScenario(name string, methods []string) {}
 
 // Reserve fixes the span of the timeline: calls with a moment past it are
 // counted in OutsideTimeline instead. The space for the named methods is
