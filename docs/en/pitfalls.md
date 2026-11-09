@@ -74,7 +74,7 @@ count as failures but stay out of the percentiles.
 
 The average of two p99s is not a p99 — they must not be averaged. Only distributions can be added,
 so the summary across methods is computed from merged histograms, not from ready-made
-percentiles. The same will be needed when several machines apply the load.
+percentiles.
 
 Separately — the cost of recording metrics. A mutex around a shared latency slice makes the
 generator its own bottleneck at high RPS. We record into HDR histograms: a write costs tens of

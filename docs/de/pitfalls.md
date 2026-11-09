@@ -77,8 +77,7 @@ Beschleunigung. Solche Anfragen zählen als Fehler, bleiben aber aus den Perzent
 
 Der Mittelwert zweier p99 ist kein p99 — sie dürfen nicht gemittelt werden. Addieren lassen sich
 nur Verteilungen, daher wird die Zusammenfassung über Methoden aus zusammengeführten Histogrammen
-berechnet, nicht aus fertigen Perzentilen. Dasselbe wird nötig, wenn mehrere Maschinen die Last
-erzeugen.
+berechnet, nicht aus fertigen Perzentilen.
 
 Dazu die Kosten der Metrikerfassung. Ein Mutex um ein gemeinsames Latenz-Slice macht den Generator
 bei hoher RPS zu seinem eigenen Engpass. Wir schreiben in HDR-Histogramme: ein Schreibvorgang
