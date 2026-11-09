@@ -602,7 +602,7 @@ die Warnungen in diesem Abschnitt.
 | Warum dieses Werkzeug? | [Lesen](why.md) |
 | Welche Probleme von Lasttests behebt es? | [Lesen](pitfalls.md) |
 | Was ist Verkettung von Aufrufen, und wozu? | [Lesen](chaining.md) |
-| Wie sieht die kommerzielle Nutzung aus? | [Lesen](commercial.md) |
+| Wird es eine kostenpflichtige Version geben? | [Lesen](commercial.md) |
 | Wo stelle ich Fragen oder gebe Feedback? | [Lesen](feedback.md) |
 | Was kommt als Nächstes? | [Lesen](roadmap.md) |
 

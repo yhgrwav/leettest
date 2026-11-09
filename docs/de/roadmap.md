@@ -20,3 +20,8 @@ Das sind Pläne, keine zugesagten Termine. Was heute funktioniert, steht im [REA
   einer anderen.
 - **Token-Erneuerung** während eines langen Laufs.
 - ~~**Metrik-Export** nach Prometheus.~~ Fertig in v0.6: [Prometheus-Metriken](reference.md#prometheus-metriken).
+
+## Kostenpflichtige Version
+
+Für die Zukunft ist eine kostenpflichtige Enterprise-Version von LeetTest für Teams und
+Organisationen geplant. Mehr dazu unter [Wird es eine kostenpflichtige Version geben?](commercial.md).
