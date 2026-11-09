@@ -38,12 +38,26 @@ race:
 	go test -race ./...
 
 # Tests whose premise needs an unloaded machine; ordinary CI runs them as is.
+# Each STRESS_SKIP test is left out of the -race stress run for the reason below,
+# in three groups; each runs without -race in stress-timing and release-test-plain.
+#
+# 1. Timing by design: the test's own check compares a start lag or a duration.
 # SlotsHeldWithinTheAllowanceDoNotHitTheCap: a starved scheduler releases the
 # slots 120-160ms past their deadline, beyond the 100ms allowance, so the cap
 # is right to fire and there is nothing to check.
 # SearchFeed_ASlowScreenKeepsTheLagUnderTwentyMilliseconds: under -race with a
 # loaded CPU the host's start lag is 45-59ms with or without the screen
 # (Docker, 4x yes), so there is nothing to check.
+# Report_AnOnTimeStarterIsNotLate (run 41830566342, generator_late_test.go:215,
+# start lag p99 518.399us): a starved runner makes one call of the p99 tail
+# start over the wait floor, and the rule calls that generator_late (reproduced
+# 5 of 600 under load in Docker, branch Moved with 200 observations).
+# EarlyWarning_AnOnTimeStarterIsNotWarnedOf (run 42183791170,
+# early_warning_test.go:95, "start lag p99 1.275903ms, want under the wait
+# floor 1ms"): a premise on a duration under -race.
+#
+# 2. Needs a non-loaded stand: a breaking-point search names the target's
+# capacity only if the generator keeps its schedule.
 # Run_ASearchNamesTheStandsCapacity (14 of 120, 1 to 3 per job; held 125/0,
 # broke 156/100) and Breakpoint_FindsTheStandsCapacity (8 of 120, 0 to 3 per
 # job): the search names "the generator fell behind", which is the right
@@ -54,6 +68,10 @@ race:
 # Run_OnceSearchStopsWhenTheFileRunsOut (run 40372477080, dataset_once_test.go:175):
 # exit 0, want 3, after one run of "50 rps: sent 12 of 12" of the planned 15 —
 # the search ends at the first step before the file can run out.
+#
+# 3. Covered by the no-race pass: under -race the run ends invalid (exit 2) or
+# warns generator_late, the right verdict on a starved generator, so there is no
+# start lag left to check; the pass without -race runs the test.
 # Run_NoLagNoWarning (runs 41535965010, 41599248531, 41658167545 and
 # 41709124092, lagwatch_test.go:247: "stderr has a warning on a 50 rps run",
 # 2 to 26 of 149 calls started more than 1ms late),
@@ -66,16 +84,7 @@ race:
 # ExportRun_AScrapeMidRunSeesThePlannedRateAndGrowingCalls (41709124092,
 # export_test.go:354): all seven end "the run is invalid" (exit 2) or warn that
 # the generator is behind its schedule (generator_late) on a 50 to 4000 rps run
-# of a fake target. That is the right verdict on a starved generator under
-# -race, so there is no start lag left to check.
-# Report_AnOnTimeStarterIsNotLate (run 41830566342, generator_late_test.go:215,
-# start lag p99 518.399us): a starved runner makes one call of the p99 tail
-# start over the wait floor, and the rule calls that generator_late (reproduced
-# 5 of 600 under load in Docker, branch Moved with 200 observations).
-# EarlyWarning_AnOnTimeStarterIsNotWarnedOf (run 42183791170,
-# early_warning_test.go:95, "start lag p99 1.275903ms, want under the wait
-# floor 1ms"): a premise on a duration under -race; it still runs in the
-# timing job.
+# of a fake target.
 STRESS_SKIP := ^TestReport_SlotsHeldWithinTheAllowanceDoNotHitTheCap$$|^TestSearchFeed_ASlowScreenKeepsTheLagUnderTwentyMilliseconds$$|^TestRun_ASearchNamesTheStandsCapacity$$|^TestBreakpoint_FindsTheStandsCapacity$$|^TestBreakpoint_ATargetThatDoesNotRecoverIsNamedSo$$|^TestRun_ASearchOnTheFakeTarget$$|^TestRun_OnceSearchStopsWhenTheFileRunsOut$$|^TestRun_NoLagNoWarning$$|^TestRun_JSONCarriesTheGeneratorCPUOnTheGridOfTheRun$$|^TestExportRun_AScrapeStormDoesNotChangeTheReportAndRendersOncePerSecond$$|^TestRun_AHealthyRunUnderALimitRunsToTheEnd$$|^TestRun_ARampWithoutAWarmUpNamesTheRampAlone$$|^TestRun_LocalNeverAsks$$|^TestExportRun_AScrapeMidRunSeesThePlannedRateAndGrowingCalls$$|^TestReport_AnOnTimeStarterIsNotLate$$|^TestEarlyWarning_AnOnTimeStarterIsNotWarnedOf$$
 
 # LEETTEST_STRESS=1 lets an end-to-end test in cmd/leettest skip itself when its
