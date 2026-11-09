@@ -579,6 +579,7 @@ is no default address, and a `linger` of 15 s delays the exit: read the warnings
 | How does it differ from ghz, k6 and JMeter? | [Read](why.md) |
 | Which load-testing problems does it fix? | [Read](pitfalls.md) |
 | What does it not do, and where do its numbers stop holding? | [Read](limitations.md) |
+| What will not change within version 1.x? | [Read](stability.md) |
 | What is call chaining and why does it matter? | [Read](chaining.md) |
 | Will there be a paid version? | [Read](commercial.md) |
 | Where do I ask a question or leave feedback? | [Read](feedback.md) |
