@@ -289,19 +289,28 @@ func (r *poolRun) launch(p *WorkerPool, req Request, out chan<- Result) error {
 	go func() {
 		defer r.wg.Done()
 
-		release := func() {
-			p.inFlight.Add(-1)
-			<-r.slots
-			// Held means the slot was still taken, not that Send had not
-			// returned: the cap sees slots, so a call that left Send before
-			// the hit but gave its slot back at or after it did hold one.
-			r.countIfHeldPastDeadline(req, time.Now())
+		if len(req.Next) > 0 {
+			p.iterate(r, req, out)
+
+			return
 		}
+
+		release := func() { p.release(r, req) }
 
 		p.send(r, req, out, release)
 	}()
 
 	return nil
+}
+
+// release gives a slot back; held is the request that was holding it.
+func (p *WorkerPool) release(r *poolRun, held Request) {
+	p.inFlight.Add(-1)
+	<-r.slots
+	// Held means the slot was still taken, not that Send had not
+	// returned: the cap sees slots, so a call that left Send before
+	// the hit but gave its slot back at or after it did hold one.
+	r.countIfHeldPastDeadline(held, time.Now())
 }
 
 // countIfHeldPastDeadline records a slot that was still held when the cap was
@@ -322,10 +331,123 @@ func (r *poolRun) countIfHeldPastDeadline(req Request, releasedAt time.Time) {
 // returns, before the result is handed to out, so a slow result consumer
 // never holds a slot open.
 func (p *WorkerPool) send(r *poolRun, req Request, out chan<- Result, release func()) {
+	result, ok := p.call(r, req, release)
+	if !ok {
+		return
+	}
+
+	// Delivered after an abort too: the collector reads until the pool has
+	// returned. Only a fatal failure, after which nobody may read, drops it.
+	select {
+	case out <- result:
+	case <-r.failed:
+	}
+}
+
+// iterate runs a scenario iteration: step 1 is first, the steps after it follow
+// one at a time, each when the one before ended in success and scheduled at
+// that step's end. The iteration holds one slot from its start to its end, and
+// its results go to out only after the slot is back, so a slow collector never
+// delays a step. A fatal failure anywhere drops the whole iteration.
+func (p *WorkerPool) iterate(r *poolRun, first Request, out chan<- Result) {
+	results := make([]Result, 0, len(first.Next)+2)
+	req := first
+
+	var end Result
+
+	for k := 0; ; k++ {
+		step, ok := p.call(r, req, nil)
+		if !ok {
+			p.release(r, req)
+
+			return
+		}
+		step.IterationTick = first.ScheduledAt
+		results = append(results, step)
+
+		if step.Category != CategorySuccess || k == len(first.Next) {
+			end = iterationResult(first, results[0], step, k)
+
+			break
+		}
+
+		if r.sendCtx.Err() != nil {
+			// Aborted between two steps: the iteration is censored at the abort
+			// moment, and no step is in flight to carry a deadline.
+			at, aborted := r.aborted()
+			if !aborted {
+				p.release(r, req)
+
+				return
+			}
+			end = Result{
+				Method: first.Scenario, ScheduledAt: first.ScheduledAt, BegunAt: results[0].BegunAt,
+				IterationTick: first.ScheduledAt, Iteration: true, IterationStep: k + 1,
+				Outcome: Outcome{
+					Category: CategoryAborted, Err: r.sendCtx.Err(),
+					SentAt: results[0].SentAt, DoneAt: laterOf(at, step.DoneAt),
+				},
+			}
+
+			break
+		}
+
+		next := first.Next[k]
+		req = Request{Method: next.Method, Payload: next.Payload, ScheduledAt: step.DoneAt}
+		if next.Timeout > 0 {
+			req.Deadline = req.ScheduledAt.Add(next.Timeout)
+		}
+	}
+
+	p.release(r, req)
+
+	results = append(results, end)
+	for i := range results {
+		select {
+		case out <- results[i]:
+		case <-r.failed:
+			return
+		}
+	}
+}
+
+// iterationResult is the result of an iteration that ended at step index k with
+// last, the result of the step that ended it: the tick as its schedule, and the
+// deadline, end and outcome of that step.
+func iterationResult(first Request, one, last Result, k int) Result {
+	return Result{
+		Method:        first.Scenario,
+		ScheduledAt:   first.ScheduledAt,
+		BegunAt:       one.BegunAt,
+		Deadline:      last.Deadline,
+		IterationTick: first.ScheduledAt,
+		Iteration:     true,
+		IterationStep: k,
+		Outcome: Outcome{
+			Category: last.Category, Err: last.Err, SentAt: one.SentAt, DoneAt: last.DoneAt,
+			NotSent: last.NotSent, NotSentOn: last.NotSentOn,
+			Code: last.Code, CodeFromTarget: last.CodeFromTarget,
+		},
+	}
+}
+
+func laterOf(a, b time.Time) time.Time {
+	if b.After(a) {
+		return b
+	}
+
+	return a
+}
+
+// call sends req and returns its result, or false when the call is lost to a
+// fatal failure. release, when set, gives the slot back as soon as Send returns.
+func (p *WorkerPool) call(r *poolRun, req Request, release func()) (Result, bool) {
 	begunAt := time.Now()
 
 	outcome, err := p.Sender.Send(r.sendCtx, req)
-	release()
+	if release != nil {
+		release()
+	}
 
 	if err != nil {
 		at, aborted := r.aborted()
@@ -333,7 +455,7 @@ func (p *WorkerPool) send(r *poolRun, req Request, out chan<- Result, release fu
 			if r.sendCtx.Err() == nil {
 				r.fail(err)
 			}
-			return
+			return Result{}, false
 		}
 
 		// The caller aborted the run: the call is not lost, it is known to
@@ -356,18 +478,11 @@ func (p *WorkerPool) send(r *poolRun, req Request, out chan<- Result, release fu
 		outcome.DoneAt = time.Now()
 	}
 
-	result := Result{
+	return Result{
 		Method:      req.Method,
 		ScheduledAt: req.ScheduledAt,
 		BegunAt:     begunAt,
 		Deadline:    req.Deadline,
 		Outcome:     outcome,
-	}
-
-	// Delivered after an abort too: the collector reads until the pool has
-	// returned. Only a fatal failure, after which nobody may read, drops it.
-	select {
-	case out <- result:
-	case <-r.failed:
-	}
+	}, true
 }

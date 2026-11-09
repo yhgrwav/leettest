@@ -298,12 +298,38 @@ func CheckOptions(opts Options) error {
 	if opts.MaxInFlight < 1 {
 		return fmt.Errorf("%w: %d", ErrInvalidInFlightCap, opts.MaxInFlight)
 	}
+	// Scenario names, methods and steps' methods are one namespace: all of them
+	// are keys of the report.
 	first := make(map[string]int, len(opts.Calls))
-	for i, call := range opts.Calls {
-		if j, ok := first[call.Method]; ok {
-			return fmt.Errorf("call %d: %w: %s, as call %d", i, ErrDuplicateMethod, call.Method, j)
+	claim := func(i int, name string) error {
+		if j, ok := first[name]; ok {
+			return fmt.Errorf("call %d: %w: %s, as call %d", i, ErrDuplicateMethod, name, j)
 		}
-		first[call.Method] = i
+		first[name] = i
+
+		return nil
+	}
+	for i := range opts.Calls {
+		call := &opts.Calls[i]
+		switch {
+		case len(call.Next) > 0 && call.Scenario == "":
+			return fmt.Errorf("call %d: %w: %s", i, ErrScenarioNeedsName, call.Method)
+		case len(call.Next) == 0 && call.Scenario != "":
+			return fmt.Errorf("call %d: %w: %s", i, ErrScenario, call.Scenario)
+		}
+		if call.Scenario != "" {
+			if err := claim(i, call.Scenario); err != nil {
+				return err
+			}
+		}
+		if err := claim(i, call.Method); err != nil {
+			return err
+		}
+		for k := range call.Next {
+			if err := claim(i, call.Next[k].Method); err != nil {
+				return err
+			}
+		}
 	}
 
 	return checkInFlightBudget(opts.Calls, opts.MaxInFlight)
@@ -415,10 +441,17 @@ func (e *Engine) timelineSpan() time.Duration {
 	return e.plannedDuration() + e.longestTimeout() + timelineSlack
 }
 
+// longestTimeout is the longest a call can live: a scenario's iteration lives
+// the sum of its steps' timeouts.
 func (e *Engine) longestTimeout() time.Duration {
 	var longest time.Duration
-	for _, call := range e.opts.Calls {
-		longest = max(longest, call.Timeout)
+	for i := range e.opts.Calls {
+		call := &e.opts.Calls[i]
+		held := call.Timeout
+		for k := range call.Next {
+			held += call.Next[k].Timeout
+		}
+		longest = max(longest, held)
 	}
 
 	return longest
@@ -447,6 +480,11 @@ func (e *Engine) Report() Report {
 	for i := range report.Methods {
 		m := &report.Methods[i]
 		for _, call := range e.opts.Calls {
+			for _, step := range call.Next {
+				if step.Method == m.Method {
+					m.Timeout = step.Timeout
+				}
+			}
 			if call.Method != m.Method {
 				continue
 			}
@@ -644,9 +682,20 @@ func (e *Engine) Run(ctx context.Context) error {
 	results := make(chan Result, e.opts.MaxInFlight)
 
 	methods := make([]string, 0, len(e.opts.Calls))
-	for _, call := range e.opts.Calls {
+	for i := range e.opts.Calls {
+		call := &e.opts.Calls[i]
 		methods = append(methods, call.Method)
 		e.stats.setMethodStages(call.Method, call.Stages)
+
+		if call.Scenario != "" {
+			steps := make([]string, 0, len(call.Next)+1)
+			steps = append(steps, call.Method)
+			for k := range call.Next {
+				steps = append(steps, call.Next[k].Method)
+			}
+			methods = append(methods, steps[1:]...)
+			e.stats.setScenario(call.Scenario, steps)
+		}
 	}
 	if e.opts.Windows {
 		e.stats.SetWindows(max(0, e.plannedDuration()-e.opts.Warmup))

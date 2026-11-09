@@ -446,6 +446,8 @@ func (s *search) step(ctx context.Context, rps int, hold time.Duration, kind Kin
 		return step, ctx.Err()
 	case err != nil:
 		return step, err
+	case len(report.Scenarios) > 0:
+		return step, ErrScenario
 	}
 	step.Broken, step.Cause, step.Why = s.waits(rps, report)
 	if step.Why == "" {

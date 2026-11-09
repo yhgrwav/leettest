@@ -138,6 +138,8 @@ func (s *Scheduler) newRequest(scheduledAt time.Time) Request {
 		Method:       s.Call.Method,
 		ScheduledAt:  scheduledAt,
 		KeepResponse: s.Call.KeepResponse,
+		Scenario:     s.Call.Scenario,
+		Next:         s.Call.Next,
 	}
 	if s.Call.Template != nil {
 		req.Payload = s.Call.Template.body()

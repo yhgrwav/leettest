@@ -72,8 +72,10 @@ func reply(d time.Duration, category Category) func(context.Context, Request) (O
 	}
 }
 
-// hang never answers: the call ends only when the run cuts it off. entered is
-// closed when it begins.
+// hang does not answer: the call ends when the run cuts it off. entered is
+// closed when it begins. A ceiling of 5 s keeps a regression that never cuts it
+// off from hanging the package: the call then succeeds and the test fails on
+// its own assert.
 func hang(entered chan<- struct{}) func(context.Context, Request) (Outcome, error) {
 	var once sync.Once
 
@@ -81,9 +83,12 @@ func hang(entered chan<- struct{}) func(context.Context, Request) (Outcome, erro
 		if entered != nil {
 			once.Do(func() { close(entered) })
 		}
-		<-ctx.Done()
-
-		return Outcome{}, fmt.Errorf("send: %w", ctx.Err())
+		select {
+		case <-ctx.Done():
+			return Outcome{}, fmt.Errorf("send: %w", ctx.Err())
+		case <-time.After(5 * time.Second):
+			return Outcome{Category: CategorySuccess}, nil
+		}
 	}
 }
 

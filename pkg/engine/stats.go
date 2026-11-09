@@ -15,6 +15,7 @@
 package engine
 
 import (
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -522,6 +523,10 @@ type Stats struct {
 	// run; nil with one connection, and then nothing is counted per
 	// connection.
 	links []*linkStats
+	// scenarios holds the iterations of each scenario by name, scenarioOrder
+	// the names in the order of the calls.
+	scenarios     map[string]*scenarioTally
+	scenarioOrder []string
 }
 
 // linkStats is what one connection carried, counted by the rules of the run's
@@ -648,7 +653,127 @@ func NewStats() *Stats {
 
 // setScenario tells the stats a scenario's steps, in order, before any of its
 // results is recorded: the entry is made from them.
-func (s *Stats) setScenario(name string, methods []string) {}
+func (s *Stats) setScenario(name string, methods []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.scenarios == nil {
+		s.scenarios = make(map[string]*scenarioTally)
+	}
+	if _, ok := s.scenarios[name]; !ok {
+		s.scenarioOrder = append(s.scenarioOrder, name)
+	}
+
+	s.scenarios[name] = &scenarioTally{
+		steps:      slices.Clone(methods),
+		counters:   make([][4]int, len(methods)),
+		byCategory: make(map[Category]int),
+		latency:    metrics.NewLatencies(),
+	}
+}
+
+// scenarioTally is one scenario's iterations. counters holds, per step, the
+// iterations that reached it and ended in a failure, an abort and a step never
+// sent there. The latency has a lock of its own, like a method's.
+type scenarioTally struct {
+	steps      []string
+	counters   [][4]int
+	iterations int
+	byCategory map[Category]int
+	latency    *metrics.Latencies
+}
+
+const (
+	stepReached = iota
+	stepFailed
+	stepAborted
+	stepNotSent
+)
+
+// recordIteration files the result of a whole iteration. Locked on entry,
+// unlocks before the distribution is written.
+func (s *Stats) recordIteration(r Result) {
+	sc := s.scenarios[r.Method]
+	if sc == nil || r.IterationTick.Before(s.startedAt.Add(s.warmup)) {
+		s.mu.Unlock()
+
+		return
+	}
+
+	sc.iterations++
+	sc.byCategory[r.Category]++
+
+	for k := range sc.counters {
+		switch {
+		case k < r.IterationStep:
+			sc.counters[k][stepReached]++
+		case k == r.IterationStep:
+			sc.counters[k][stepReached]++
+
+			switch {
+			case r.NotSent:
+				sc.counters[k][stepNotSent]++
+			case r.Category == CategoryAborted:
+				sc.counters[k][stepAborted]++
+			case r.Category != CategorySuccess:
+				sc.counters[k][stepFailed]++
+			}
+		}
+	}
+	s.mu.Unlock()
+
+	switch {
+	case r.NotSent:
+	case r.Category == CategorySuccess:
+		sc.latency.Record(r.Latency())
+	case r.Category == CategoryTimeout || r.Category == CategoryAborted:
+		sc.latency.RecordCensored(r.CensorThreshold())
+	}
+}
+
+// scenarioReports copies the scenario entries, in the order of the calls.
+func (s *Stats) scenarioReports() []ScenarioReport {
+	s.mu.Lock()
+	type copied struct {
+		name       string
+		sc         *scenarioTally
+		iterations int
+		byCategory map[Category]int
+		counters   [][4]int
+	}
+
+	all := make([]copied, 0, len(s.scenarioOrder))
+	for _, name := range s.scenarioOrder {
+		sc := s.scenarios[name]
+		all = append(all, copied{name, sc, sc.iterations, maps.Clone(sc.byCategory), slices.Clone(sc.counters)})
+	}
+	s.mu.Unlock()
+
+	if len(all) == 0 {
+		return nil
+	}
+
+	out := make([]ScenarioReport, 0, len(all))
+	for _, c := range all {
+		dist := c.sc.latency.Snapshot()
+		entry := ScenarioReport{
+			Name: c.name, Iterations: c.iterations, ByCategory: c.byCategory,
+			P50: dist.Percentile(0.50), P99: dist.Percentile(0.99),
+			Latencies: int(dist.Count()), Censored: int(dist.CensoredCount()),
+		}
+		for k, method := range c.sc.steps {
+			n := c.counters[k]
+			entry.Steps = append(entry.Steps, ScenarioStepReport{
+				Method: method, Reached: n[stepReached], FailedHere: n[stepFailed],
+				AbortedHere: n[stepAborted], NotSentHere: n[stepNotSent],
+				NotReached: c.iterations - n[stepReached],
+			})
+		}
+		out = append(out, entry)
+	}
+
+	return out
+}
 
 // Reserve fixes the span of the timeline: calls with a moment past it are
 // counted in OutsideTimeline instead. The space for the named methods is
@@ -734,6 +859,12 @@ func (s *Stats) Finish(at time.Time) {
 func (s *Stats) Record(r Result) {
 	s.mu.Lock()
 
+	if r.Iteration {
+		s.recordIteration(r)
+
+		return
+	}
+
 	method, ok := s.byMethod[r.Method]
 	if !ok {
 		method = s.newMethod()
@@ -752,7 +883,14 @@ func (s *Stats) Record(r Result) {
 		method.lastAnswer = max(method.lastAnswer, r.SentAt.Sub(s.startedAt))
 	}
 
-	if r.ScheduledAt.Before(s.startedAt.Add(s.warmup)) {
+	// A step of an iteration is warm-up by the iteration's tick: its own
+	// schedule is the end of the step before it.
+	scheduled := r.ScheduledAt
+	if !r.IterationTick.IsZero() {
+		scheduled = r.IterationTick
+	}
+
+	if scheduled.Before(s.startedAt.Add(s.warmup)) {
 		// The distribution has a lock of its own: written after this one is
 		// released, as the measured one is.
 		var observed *metrics.Latencies
@@ -1369,6 +1507,8 @@ func (s *Stats) Report() Report {
 			ReceivedBitsPerSecond: float64(receivedBytes) * bits,
 		}
 	}
+
+	report.Scenarios = s.scenarioReports()
 
 	return report
 }
