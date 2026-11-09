@@ -47,8 +47,11 @@ type InFlightBudgetError struct {
 	// and the ReleaseMargin of every call. Each of the Calls rounds its own
 	// rps × timeout up, so a timeout surely fits when
 	// PeakRPS × timeout ≤ Cap − Reserved − Calls.
-	Reserved  int
-	Calls     int
+	Reserved int
+	Calls    int
+	// Scenarios is how many of the Calls are scenarios: their wait is the sum
+	// of their steps' timeouts, and the margin is counted per step.
+	Scenarios int
 	Unbounded []string
 }
 
@@ -65,10 +68,19 @@ func (e *InFlightBudgetError) Error() string {
 		edge = ", one per configured call for the call on its window's edge"
 	}
 
+	// A scenario waits the sum of its steps' timeouts, a call its own.
+	term := "rps × timeout"
+	switch {
+	case e.Scenarios == e.Calls && e.Scenarios > 0:
+		term = "rps × Σ step timeouts"
+	case e.Scenarios > 0:
+		term = "rps × timeout for calls, rps × Σ step timeouts for scenarios"
+	}
+
 	return fmt.Sprintf("%v: a target that stops answering could hold up to %d requests in flight "+
-		"(rps × timeout = %d, plus %d for calls released up to %v past their deadline, plus %d%s), "+
+		"(%s = %d, plus %d for calls released up to %v past their deadline, plus %d%s), "+
 		"and the cap is %d",
-		ErrInFlightBudget, e.Need, e.Need-e.Reserved, e.Reserved-e.Calls, ReleaseMargin, e.Calls, edge, e.Cap)
+		ErrInFlightBudget, e.Need, term, e.Need-e.Reserved, e.Reserved-e.Calls, ReleaseMargin, e.Calls, edge, e.Cap)
 }
 
 func (e *InFlightBudgetError) Unwrap() error { return ErrInFlightBudget }
@@ -96,8 +108,8 @@ func InFlightNeed(calls []Call) int {
 // is released, and ⌈rps × ReleaseMargin⌉ for late release.
 func checkInFlightBudget(calls []Call, maxInFlight int) error {
 	var (
-		need, peak, reserved, bounded int
-		unbounded                     []string
+		need, peak, reserved, bounded, scenarios int
+		unbounded                                []string
 	)
 
 	for _, call := range calls {
@@ -114,8 +126,29 @@ func checkInFlightBudget(calls []Call, maxInFlight int) error {
 			continue
 		}
 
-		reserve := saturatingAdd(1, inFlightFor(rps, ReleaseMargin))
-		need = saturatingAdd(need, saturatingAdd(inFlightFor(rps, call.Timeout), reserve))
+		// An iteration holds its slot for every step in turn, each of which may
+		// give the slot back late: the wait is Σ step timeouts, the margin one
+		// per step.
+		hold, margin, stepless := call.Timeout, ReleaseMargin, true
+		for _, step := range call.Next {
+			if step.Timeout <= 0 {
+				unbounded = append(unbounded, step.Method)
+				stepless = false
+
+				continue
+			}
+			hold += step.Timeout
+			margin += ReleaseMargin
+		}
+		if !stepless {
+			continue
+		}
+		if len(call.Next) > 0 {
+			scenarios++
+		}
+
+		reserve := saturatingAdd(1, inFlightFor(rps, margin))
+		need = saturatingAdd(need, saturatingAdd(inFlightFor(rps, hold), reserve))
 		reserved = saturatingAdd(reserved, reserve)
 		bounded++
 		peak = saturatingAdd(peak, rps)
@@ -125,7 +158,7 @@ func checkInFlightBudget(calls []Call, maxInFlight int) error {
 		return &InFlightBudgetError{Need: math.MaxInt, Cap: maxInFlight, PeakRPS: peak, Unbounded: unbounded}
 	}
 	if need > maxInFlight {
-		return &InFlightBudgetError{Need: need, Cap: maxInFlight, PeakRPS: peak, Reserved: reserved, Calls: bounded}
+		return &InFlightBudgetError{Need: need, Cap: maxInFlight, PeakRPS: peak, Reserved: reserved, Calls: bounded, Scenarios: scenarios}
 	}
 
 	return nil
