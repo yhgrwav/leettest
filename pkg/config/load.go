@@ -55,6 +55,9 @@ func LoadFile(path string) (*MasterConfig, error) {
 
 // Parse reads the config from raw YAML, applies defaults and validates the result.
 func Parse(raw []byte) (*MasterConfig, error) {
+	if err := checkEmpty(raw); err != nil {
+		return nil, err
+	}
 	if err := checkNumbers(raw); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrReadConfig, err)
 	}
