@@ -601,3 +601,24 @@ func TestSearch_CriteriaAtTheirEdges(t *testing.T) {
 		}
 	}
 }
+
+// Ground: contract — the search reads per-method rows and knows nothing of
+// iterations, so a run whose report holds a scenario entry is refused with
+// ErrScenario instead of being judged on step calls alone.
+func TestSearch_RefusesAReportWithAScenario(t *testing.T) {
+	var asked []int
+	withScenario := func(rps int) engine.Report {
+		r := capacity(10000)(rps)
+		r.Scenarios = []engine.ScenarioReport{{Name: "flow", Iterations: rps * 10}}
+
+		return r
+	}
+
+	_, err := Search(t.Context(), plan, fake(withScenario, &asked))
+	if !errors.Is(err, ErrScenario) {
+		t.Fatalf("err = %v, want ErrScenario", err)
+	}
+	if len(asked) != 1 {
+		t.Errorf("%d steps run, want 1: the first report is refused", len(asked))
+	}
+}

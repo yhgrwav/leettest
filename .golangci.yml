@@ -40,6 +40,10 @@ linters:
         - style
       disabled-checks:
         - hugeParam
+      settings:
+        # engine.Call crossed the default 128 bytes with Scenario and Next.
+        rangeValCopy:
+          sizeThreshold: 256
 
   exclusions:
     presets:
