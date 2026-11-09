@@ -40,7 +40,7 @@ func (t *Template) body() []byte {
 		return nil
 	}
 
-	return t.Build(uint64(t.Counter.Handed()) + 1)
+	return t.Build(uint64(t.Counter.Handed()) + 1) //nolint:gosec // Handed counts Add(1) calls from zero, never negative
 }
 
 // handedOut counts one request of the call as handed to a worker.

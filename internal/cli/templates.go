@@ -56,7 +56,7 @@ func CheckTemplatesFit(calls []engine.Call) error {
 			continue
 		}
 
-		total := uint64(call.Template.Counter.Handed())
+		total := uint64(call.Template.Counter.Handed()) //nolint:gosec // Handed counts Add(1) calls from zero, never negative
 		for _, stage := range call.Stages {
 			ticks := stage.Ticks()
 			if total > math.MaxUint64-ticks {

@@ -559,7 +559,7 @@ func (s *Sender) Send(ctx context.Context, req engine.Request) (engine.Outcome, 
 	// on one connection would make that one look worse than it is.
 	l, index := s.link, 0
 	if len(links) > 1 {
-		index = int((s.next.Add(1) - 1) % uint64(len(links)))
+		index = int((s.next.Add(1) - 1) % uint64(len(links))) //nolint:gosec // the remainder is below len(links), which is an int
 		l, conn = links[index], links[index].client
 	}
 

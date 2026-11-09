@@ -263,14 +263,14 @@ func cumulative(h *hdrhistogram.Histogram) []cumBar {
 // trackable value of 1 and 3 significant figures the histograms keep 2048
 // sub-buckets: below 2048 a bucket is one value, above it 2^(bits(v)-11).
 func lowestEquivalent(v int64) int64 {
-	shift := max(0, bits.Len64(uint64(v))-11)
+	shift := max(0, bits.Len64(uint64(v))-11) //nolint:gosec // v is a recorded latency or a threshold: the histogram rejects negatives
 
 	return v >> shift << shift
 }
 
 // highestEquivalent is the largest value stored in v's bucket.
 func highestEquivalent(v int64) int64 {
-	shift := max(0, bits.Len64(uint64(v))-11)
+	shift := max(0, bits.Len64(uint64(v))-11) //nolint:gosec // v is a recorded latency or a threshold: the histogram rejects negatives
 
 	return lowestEquivalent(v) + 1<<shift - 1
 }
