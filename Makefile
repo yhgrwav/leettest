@@ -166,3 +166,10 @@ proto:
 # git, not rm: cmd.exe has no rm. -X removes only ignored files there.
 clean:
 	git clean -fdX -- bin dist reports
+
+# The measurement in test/accuracy/accuracy.sh: LeetTest and ghz at the stand, one
+# table, nothing asserted. It runs in a Linux container (about 7 minutes). The cd
+# is inside the command, as in proto.
+.PHONY: accuracy
+accuracy:
+	docker run --rm -v "$(CURDIR):/src" golang:1.27.1 sh -c "cd /src && sh test/accuracy/accuracy.sh"
