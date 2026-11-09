@@ -2,7 +2,7 @@
 
 [← Back to docs](README.md)
 
-> Translated from [docs/ru/commercial.md](../ru/commercial.md) at c67a5df, 2026-11-09. If they
+> Translated from [docs/ru/commercial.md](../ru/commercial.md) at 462eacb, 2026-11-09. If they
 > differ, the Russian one is right.
 
 In the future a paid Enterprise version of LeetTest for teams and organizations is planned.

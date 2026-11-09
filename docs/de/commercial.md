@@ -2,7 +2,7 @@
 
 [← Zur Übersicht](README.md)
 
-> Übersetzt aus [docs/ru/commercial.md](../ru/commercial.md) bei c67a5df, 2026-11-09. Bei Abweichungen gilt die
+> Übersetzt aus [docs/ru/commercial.md](../ru/commercial.md) bei 462eacb, 2026-11-09. Bei Abweichungen gilt die
 > russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/commercial.md).

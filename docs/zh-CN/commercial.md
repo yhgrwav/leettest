@@ -2,7 +2,7 @@
 
 [← 返回文档](README.md)
 
-> 译自 [docs/ru/commercial.md](../ru/commercial.md)，对应 c67a5df，2026-11-09。如有出入，以俄文版为准。
+> 译自 [docs/ru/commercial.md](../ru/commercial.md)，对应 462eacb，2026-11-09。如有出入，以俄文版为准。
 > **可能滞后：** 中文版在每次发布前同步，最新内容请看[英文版](../en/commercial.md)。
 
 未来计划推出面向团队和组织的付费 Enterprise 版 LeetTest。
