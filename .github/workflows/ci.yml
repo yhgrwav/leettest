@@ -144,6 +144,20 @@ jobs:
           bin/leettest -c examples/pass.yaml -output json > pass.json
           jq -e '(.thresholds | length) == 8 and all(.thresholds[]; .verdict == "pass")' pass.json
 
+  # Known vulnerabilities in the standard library and the modules we reach, by
+  # call graph: a finding fails the job only when our code can call the flaw.
+  # A CI-only tool, not a dependency in go.mod (BSD-3-Clause).
+  vulncheck:
+    name: govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_LATEST }}
+      - run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+      - run: govulncheck ./...
+
   # The workflow on the CI page (docs/en/ci.md, docs/ru/ci.md) runs here. The steps between the
   # two markers are the page's text, byte for byte: examples/ci_page_test.go fails when they
   # differ. Around them the page installs the latest release and starts the reader's service;
