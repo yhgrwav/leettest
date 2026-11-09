@@ -326,7 +326,7 @@ seed 在启动时选取，每个调用各有一个。
 | `leettest_excluded_total` | counter | `method`, `category` | `unreachable`、`cut_off`、`client_error`、`unclassified`：没有可用的延迟，不在直方图中。这些调用同样计入 `leettest_calls_total` |
 | `leettest_not_sent_total` | counter | `method`, `cause` | 未离开生成器的调用，按客户端一侧的原因分：`generator`、`connection`、`stream` |
 | `leettest_in_flight` | gauge | — | 此刻在途的调用，所有方法合计 |
-| `leettest_start_lag_seconds` | histogram | `le` | 调用比计划晚开始多久，所有方法合计（未发布）。预热不计入，从未发出的调用计入。调用在结束时计入 |
+| `leettest_start_lag_seconds` | histogram | `le` | 调用比计划晚开始多久，所有方法合计。预热不计入，从未发出的调用计入。调用在结束时计入 |
 | `leettest_warmup_sent_total` | counter | `method` | 预热期间发出的调用。这些调用不在任何其他计数器中 |
 | `leettest_warmup` | gauge | — | 运行处于预热时为 `1`，否则为 `0` |
 
@@ -425,8 +425,8 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
   一整秒时才会给出上限，否则为 `unknown`。只评判有 100 个及以上
   观测的方法；少于 100 个时 p99 就是最大值，运行仍然有效，只给出提示和 `tail_wait_cause: generator`。
   由流或连接决定的尾部不会使运行无效。断点搜索不受影响：它的各步保留自己的原因 `generator`。
-- 运行进行中就会预警生成器的延迟（未发布）。每秒查看一次运行最近五个完整的秒，包含预热，按调用
-  结束所在的那一秒计。如果超过 1% 的调用比等待阈值（默认 1 ms）更晚开始（按 p99 的规则：至少
+- 运行进行中就会预警生成器的延迟。每秒查看一次运行最近五个完整的秒，包含预热，按调用
+  结束所在的那一秒计。如果超过 1% 的调用比等待阈值（至少 1 ms；时钟粗糙时更大：max(1 ms, 4 × 时钟步长)）更晚开始（按 p99 的规则：至少
   100 次启动，100 次中 2 次、200 次中 3 次、1000 次中 11 次），或者生成器有调用根本没发出，就会向
   stderr 输出一行，每次运行一次，文本和 JSON 模式相同：`warning: the generator is behind its
   schedule: 2140 of 60000 calls in the last 5 s (warm-up) started more than 1.00ms late, at 12000
@@ -434,7 +434,7 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
   end invalid (generator_late).` 实时画面显示这一行，并在关闭后再向 stderr 重复一次。这是提示，
   不是裁决：运行是否有效由报告决定。断点搜索不输出这一行。
 
-## 报告中的响应大小、流量和预热（未发布）
+## 报告中的响应大小、流量和预热
 
 - 方法行下的 `response: N B per call`：被测成功调用的平均响应体大小，解压后，整数字节。空响应是
   `0 B`，这是一个大小；没有成功调用的方法没有这一行。
@@ -448,7 +448,7 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
   `N calls` 是百分位背后的观测数（成功加这些下界），不是运行行里的 `warm-up N sent`，后者统计每个
   已发出的调用。观测少于 100 个时，p99 显示为 `too few observations (N of 100)`。
 
-## 计划行（未发布）
+## 计划行
 
 如果生成器没有在每个调用的计划时刻精确等待，报告头部会多一行，位于 `machine:` 之下（有标签时位于 `labels:` 之下）：
 
@@ -540,9 +540,9 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `start_lag` | object | 调用相对计划开始得晚了多少 |
 | `start_lag.p99` | percentile? | 延迟的 p99 |
 | `start_lag.max` | percentile? | 最大值，始终精确；没有调用时为 `null` |
-| `schedule` | object | 生成器是否在每个调用的计划时刻精确等待（未发布） |
-| `schedule.exact` | bool | （未发布）`true` — 是；下面的列表为空 |
-| `schedule.not_exact_reasons` | []string | （未发布）原因，按此顺序：`no_precise_sleep`（只有 Linux 有微秒级 sleep）、`clock_step`（步长不小于 1 µs；不是 `invalid_reasons` 中的 `clock_step`，不会使运行无效）、`gomaxprocs`；精确时为 `[]`，绝不为 `null` |
+| `schedule` | object | 生成器是否在每个调用的计划时刻精确等待 |
+| `schedule.exact` | bool | `true` — 是；下面的列表为空 |
+| `schedule.not_exact_reasons` | []string | 原因，按此顺序：`no_precise_sleep`（只有 Linux 有微秒级 sleep）、`clock_step`（步长不小于 1 µs；不是 `invalid_reasons` 中的 `clock_step`，不会使运行无效）、`gomaxprocs`；精确时为 `[]`，绝不为 `null` |
 | `connections` | object? | 连接；发送方不报告时为 `null` |
 | `connections.open` | int | 同时承载调用的连接数 |
 | `connections.reconnects` | int | 第一次之后成功的握手次数 |
@@ -567,8 +567,8 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `generator_cpu.busy_seconds` | int | 其中 `share` 不低于 0.90 的秒数（按四舍五入后的值比较）。这些秒加起来不足一秒时为 `0` |
 | `generator_cpu.first_busy_s` | int? | 第一个这样的秒，从运行开始算起，预热计入；没有则为 `null` |
 | `generator_cpu.seconds` | []float | 从运行开始算起每一秒的占比，预热和超时尾部都包含：条目数与最长的 `methods[].seconds` 相同。没有任何读数覆盖的秒为 `null`，与前一秒合并计算的不足半秒的最后一秒也为 `null` |
-| `traffic` | object? | 发送窗口内每秒的消息体流量（未发布）；无窗口时为 `null` |
-| `traffic.sent_bits_per_second`, `traffic.received_bits_per_second` | float | （未发布）每秒比特数，未换算单位：请求体按线上大小，成功调用的响应体按解压前大小。不含 HTTP/2 帧、头部和 TLS |
+| `traffic` | object? | 发送窗口内每秒的消息体流量；无窗口时为 `null` |
+| `traffic.sent_bits_per_second`, `traffic.received_bits_per_second` | float | 每秒比特数，未换算单位：请求体按线上大小，成功调用的响应体按解压前大小。不含 HTTP/2 帧、头部和 TLS |
 | `methods` | []object | 方法，见下文 |
 | `unchecked` | []object | 无法通过 reflection 检查的方法 |
 | `unchecked[].method` | string | 方法 |
@@ -602,11 +602,11 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `methods[].planned_duration_us` | int | 该方法计划运行多久，按配置，包括爬升 |
 | `methods[].request_bytes` | object? | 已发出的被测调用的请求体平均大小；无压缩时为 `null` |
 | `methods[].request_bytes.raw`, `methods[].request_bytes.wire` | float | 压缩前与线上的字节数（不含 5 字节帧头） |
-| `methods[].response_bytes` | float? | 已测成功调用的响应体平均大小，解压后（未发布）；无成功时为 `null` |
-| `methods[].warmup` | object? | 与运行分开测量的预热（未发布）；没有任何观测时为 `null` |
-| `methods[].warmup.calls` | int | （未发布）百分位背后的观测数（成功，以及超时或中止的调用作为下界），不是 `warmup_sent` 的计数 |
-| `methods[].warmup.p50`, `methods[].warmup.p99` | percentile? | （未发布）自计划时刻起的延迟，`lower_bound` 同 `methods[].latency`；观测少于 100 时 `p99` 为 `null` |
-| `methods[].warmup.response_bytes` | float? | （未发布）预热成功调用的响应体平均大小；无成功时为 `null` |
+| `methods[].response_bytes` | float? | 已测成功调用的响应体平均大小，解压后；无成功时为 `null` |
+| `methods[].warmup` | object? | 与运行分开测量的预热；没有任何观测时为 `null` |
+| `methods[].warmup.calls` | int | 百分位背后的观测数（成功，以及超时或中止的调用作为下界），不是 `warmup_sent` 的计数 |
+| `methods[].warmup.p50`, `methods[].warmup.p99` | percentile? | 自计划时刻起的延迟，`lower_bound` 同 `methods[].latency`；观测少于 100 时 `p99` 为 `null` |
+| `methods[].warmup.response_bytes` | float? | 预热成功调用的响应体平均大小；无成功时为 `null` |
 | `methods[].latency` | object | 成功调用的延迟，超时和被截断的调用作为下界 |
 | `methods[].latency.min`、`methods[].latency.p50`、`methods[].latency.p90`、`methods[].latency.p95`、`methods[].latency.p99`、`methods[].latency.max` | percentile? | 最小值、百分位、最大值 |
 | `methods[].latency.p999` | percentile? | 按同一规则得出的 p99.9；方法的观测数（`observations`）少于 1000 时为 null，此时 p99.9 只会是最大值 |
@@ -747,7 +747,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `base.labels`、`new.labels` | map | 护照的标签；没有护照或没有标签时为 `{}` |
 | `comparable` | bool | `true` — 两份报告没有任何使其不可比较的差异，并且运行有共同的方法 |
 | `differences` | []object | 使报告不可比较的差异，按比较顺序；没有则为 `[]` |
-| `differences[].field` | string | 字段名，与 `differs:` 行中一致（`target`、`method`、`leettest_version`、`passport.config_sha256`、`schedule`（未发布）、`methods`、`dataset <方法>`）。没有护照——`passport` |
+| `differences[].field` | string | 字段名，与 `differs:` 行中一致（`target`、`method`、`leettest_version`、`passport.config_sha256`、`schedule`、`methods`、`dataset <方法>`）。没有护照——`passport` |
 | `differences[].base` | string | “之前”的值；`none` — 没有 `dataset`、护照或报告中没有 `schedule` |
 | `differences[].new` | string | “之后”的值；对 `passport` — 有护照的一侧为 `present` |
 | `verdict` | string? | 有限值的检查中最差的结论：`fail`，否则 `unknown`，否则 `pass`；`null` — 没有设限值 |
