@@ -16,6 +16,7 @@ help:
 	$(info make race          tests under -race (needs gcc in PATH))
 	$(info make stress        the nightly run: -race -count=20, takes long)
 	$(info make stress-timing the tests stress skips: -count=20, no -race, go test -json)
+	$(info make release-test  what release.yml runs: -race minus the STRESS_SKIP tests, then those without -race)
 	$(info make lint          golangci-lint, gofmt and goimports included)
 	$(info make fmt           gofmt the tree)
 	$(info make check         what must pass before a push: vet, test, lint)
@@ -92,6 +93,23 @@ stress:
 # rate or a capacity; write the failing line and the run number above.
 stress-timing:
 	go test -json -count=20 -timeout 90m -run "$(STRESS_SKIP)" ./...
+
+# What release.yml runs as its test step. The same split as stress: every test
+# but the STRESS_SKIP ones under -race (with LEETTEST_STRESS, so skipIfStarved
+# applies), then the STRESS_SKIP ones once without -race and without
+# LEETTEST_STRESS. Either part red makes the target red; the second part runs
+# only after the first passed. The export is on release-test-race alone: a
+# target-specific export does not reach its sibling prerequisite.
+.PHONY: release-test release-test-race release-test-plain
+release-test: release-test-race release-test-plain
+
+release-test-race: export LEETTEST_STRESS = 1
+release-test-race: export LEETTEST_STRESS_SKIPS = $(CURDIR)/stress-skips.txt
+release-test-race:
+	go test -race -count=1 -timeout 30m -skip "$(STRESS_SKIP)" ./...
+
+release-test-plain: | release-test-race
+	go test -count=1 -timeout 30m -run "$(STRESS_SKIP)" ./...
 
 lint:
 	$(LINT) run ./...
