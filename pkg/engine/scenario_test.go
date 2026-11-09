@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand/v2"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -688,6 +689,73 @@ func TestScenario_ASlowCollectorDoesNotDelayTheNextStep(t *testing.T) {
 	}
 	if lag := only(t, got, "a/Two").QueueTime(); lag > 50*time.Millisecond {
 		t.Errorf("step 2 queue time %v, want about 0", lag)
+	}
+}
+
+// Ground: contract — an iteration gives its slot back before its results go to the collector: with
+// one slot, the next request goes out while nobody reads the results.
+func TestScenario_TheSlotIsBackBeforeTheResultsAreDelivered(t *testing.T) {
+	entered := make(chan struct{})
+	sender := &scripted{do: map[string]func(context.Context, Request) (Outcome, error){
+		"a/Plain": func(context.Context, Request) (Outcome, error) {
+			close(entered)
+
+			return Outcome{Category: CategorySuccess}, nil
+		},
+	}}
+
+	two := make(chan struct{})
+	sender.do["a/Two"] = func(context.Context, Request) (Outcome, error) {
+		close(two)
+
+		return Outcome{Category: CategorySuccess}, nil
+	}
+
+	pool := NewWorkerPool(sender, 1)
+	in := make(chan Request)
+
+	go func() {
+		defer close(in)
+
+		in <- scenarioReq(time.Now(), "flow", Step{Method: "a/One", Timeout: time.Second}, Step{Method: "a/Two", Timeout: time.Second})
+
+		// The second request is sent once the slot is back, not while the results
+		// wait: with one slot, a request that finds it taken stops the run.
+		<-two
+
+		for end := time.Now().Add(time.Second); pool.inFlight.Load() != 0 && time.Now().Before(end); {
+			runtime.Gosched()
+		}
+		in <- Request{Method: "a/Plain", ScheduledAt: time.Now()}
+	}()
+
+	out := make(chan Result) // nobody reads until the plain request is in the sender
+
+	var reached bool
+
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		select {
+		case <-entered:
+			reached = true
+		case <-time.After(2 * time.Second):
+		}
+
+		for range out {
+		}
+	}()
+
+	if err := pool.Run(t.Context(), in, out); err != nil {
+		t.Errorf("run: %v: the iteration still held the slot when the next request came", err)
+	}
+	close(out)
+	<-done
+
+	if !reached {
+		t.Error("the next request did not go out while the collector was not reading: the iteration still held the slot")
 	}
 }
 
