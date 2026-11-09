@@ -59,6 +59,26 @@ Windows: архив `.zip` со [страницы релизов](https://github
 go install github.com/yhgrwav/leettest/cmd/leettest@latest
 ```
 
+**Проверить скачанное.** У каждого релиза есть `checksums.txt`, подписанный workflow'ом релиза без
+ключа (`checksums.txt.sigstore.json`, [cosign](https://docs.sigstore.dev/cosign/installation/)), и SBOM
+на каждый архив (`<архив>.sbom.json`, SPDX JSON; контрольные суммы покрывают и его). Скачайте со
+[страницы релизов](https://github.com/yhgrwav/leettest/releases/latest) `checksums.txt`,
+`checksums.txt.sigstore.json` и свой архив в одну папку и выполните в ней. Сначала проверка, что
+подпись принадлежит workflow'у релиза:
+
+```sh
+cosign verify-blob --bundle checksums.txt.sigstore.json --certificate-identity-regexp 'https://github.com/yhgrwav/leettest/.github/workflows/release.yml@refs/tags/v.*' --certificate-oidc-issuer https://token.actions.githubusercontent.com checksums.txt
+```
+
+Затем что архив тот, что в списке (на macOS: `shasum -a 256 -c --ignore-missing checksums.txt`):
+
+```sh
+sha256sum -c --ignore-missing checksums.txt
+```
+
+`install.sh` сверяет архив с `checksums.txt`, но не подпись: эти две команды и проверяют, что файл
+выпущен workflow'ом релиза.
+
 Сохраните конфиг как `leettest.yaml`; адрес, порт и метод здесь для примера, подставьте свои:
 
 ```yaml

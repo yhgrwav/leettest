@@ -59,6 +59,28 @@ add the directory to your `PATH`:
 export PATH="$PATH:$(go env GOPATH)/bin"
 ```
 
+### Verify the download
+
+Each release carries `checksums.txt`, signed by the release workflow without a key
+(`checksums.txt.sigstore.json`, [cosign](https://docs.sigstore.dev/cosign/installation/)), and an
+SBOM per archive (`<archive>.sbom.json`, SPDX JSON; the checksums cover it too). From the
+[releases page](https://github.com/yhgrwav/leettest/releases/latest) download `checksums.txt`,
+`checksums.txt.sigstore.json` and your archive into one directory, and run there. First, that the
+signature is the release workflow's:
+
+```sh
+cosign verify-blob --bundle checksums.txt.sigstore.json --certificate-identity-regexp 'https://github.com/yhgrwav/leettest/.github/workflows/release.yml@refs/tags/v.*' --certificate-oidc-issuer https://token.actions.githubusercontent.com checksums.txt
+```
+
+Then, that the archive is the one listed (`shasum -a 256 -c --ignore-missing checksums.txt` on macOS):
+
+```sh
+sha256sum -c --ignore-missing checksums.txt
+```
+
+`install.sh` checks the archive against `checksums.txt` but not the signature: the two commands
+above are the check that the file came from the release workflow.
+
 **Where to run:** on Linux next to the target — in the same network, cluster or on a CI runner.
 Everything between the generator and the target goes into the latency. More in the
 [reference](reference.md#where-to-run).
