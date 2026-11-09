@@ -62,8 +62,9 @@ func FuzzParse(f *testing.F) {
 	}
 	f.Add([]byte("app:\n  target:\n    ip: localhost\n    port: 50051\nload:\n  calls:\n    - method: a.B/C\n      rps: 10\n      duration: 1s\n      templates: true\n      data:\n        id: \"{{uuid}}\"\n"))
 	f.Add([]byte("app:\n  target:\n    ip: localhost\n    port: 1\n  metadata:\n    authorization: Bearer ${" + fuzzSecretName + "}\n"))
-	f.Add([]byte("# a comment and no document\n"))
 	f.Add([]byte("a: &x [*x]\n"))
+	// The error path of the secret check: a value that is not printable ASCII.
+	f.Add([]byte("app:\n  target:\n    ip: localhost\n    port: 1\n  metadata:\n    x-key: \"${" + fuzzSecretName + "} é\"\n"))
 
 	f.Fuzz(func(t *testing.T, raw []byte) {
 		cfg, err := Parse(raw)
@@ -164,7 +165,67 @@ func FuzzExpandEnvRefs(f *testing.F) {
 		if names := SubstitutedEnvNames(value); len(names) != len(asked) {
 			t.Fatalf("SubstitutedEnvNames %v and expandEnvRefs %v disagree", names, asked)
 		}
+		if want := referenceExpand(value); got != want {
+			t.Fatalf("%q expands to %q, the reference gives %q", value, got, want)
+		}
 	})
+}
+
+// referenceExpand is expandEnvRefs written as a scan, without a regular
+// expression: ${NAME} becomes <NAME>, $${ becomes ${ when it opens a full
+// $${NAME}.
+func referenceExpand(value string) string {
+	var out strings.Builder
+
+	for i := 0; i < len(value); {
+		escaped := strings.HasPrefix(value[i:], "$${")
+		start := i
+		if escaped {
+			start++
+		}
+		if !strings.HasPrefix(value[start:], "${") {
+			out.WriteByte(value[i])
+			i++
+
+			continue
+		}
+
+		end := strings.IndexByte(value[start:], '}')
+		name := ""
+		if end > 2 {
+			name = value[start+2 : start+end]
+		}
+		if !isVariableName(name) {
+			out.WriteByte(value[i])
+			i++
+
+			continue
+		}
+
+		if escaped {
+			out.WriteString(value[start : start+end+1])
+		} else {
+			out.WriteString("<" + name + ">")
+		}
+		i = start + end + 1
+	}
+
+	return out.String()
+}
+
+func isVariableName(name string) bool {
+	if name == "" || (name[0] >= '0' && name[0] <= '9') {
+		return false
+	}
+
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if c != '_' && (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9') {
+			return false
+		}
+	}
+
+	return true
 }
 
 func FuzzReadDataset(f *testing.F) {
