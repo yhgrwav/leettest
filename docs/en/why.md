@@ -1,15 +1,13 @@
-# Why this tool?
+# LeetTest, ghz, k6 and JMeter: comparison
 
 [← Back to docs](README.md)
 
 > Translated from [docs/ru/why.md](../ru/why.md) at b7a685c, 2026-10-12. If they differ, the
 > Russian one is right.
 
-LeetTest is built on one principle: a load test result is worth something only when it can
-be trusted without caveats. Everything else in the tool follows from that.
-
-The priorities are ordered: **measurement correctness**, then **usability**, then **speed**. On
-conflict the first wins — an optimisation that hurts accuracy is rejected.
+LeetTest is a tool for gRPC. The main question it answers: at what load does the service stop
+coping. This page compares it with ghz, k6 and JMeter point by point; each point has a source. The
+project's priorities: measurement correctness first, then usability, then speed.
 
 ## Comparison with ghz, k6 and JMeter
 
@@ -35,7 +33,7 @@ gRPC plugin: JMeter itself does not do gRPC [20][21].
 
 | What we check | ghz | k6 | JMeter | LeetTest |
 |---|---|---|---|---|
-| Load does not drop when the target slows down (open model) | 🟡 `--async`, not the default [4] | 🟡 its own executor, not the default [11] | 🟡 experimental, not the default [23] | 🟢 the only model |
+| Load does not drop when the target slows down (open model) | 🟡 `--async`, not the default [4] | 🟡 its own executor, not the default [11] | 🟡 experimental, not the default [23] | 🟢 the open model only |
 | The generator's own lag is counted in latency | 🔴 no: from the send [5] | 🔴 no: from the send, unsent ones in `dropped_iterations` [12][13] | 🔴 no: from the send [24] | 🟢 |
 | Failed and timed-out calls are in the percentiles | 🟡 `--count-errors`, not the default [6] | 🟢 [13] | 🟢 [25] | 🟢 failed ones in their own per-category percentiles, timed-out ones as a lower bound |
 
@@ -43,14 +41,18 @@ gRPC plugin: JMeter itself does not do gRPC [20][21].
 
 | What we measure | ghz | k6 | LeetTest |
 |---|---|---|---|
-| Requests a second one core holds; the target answers at once (more is better) | 9,300 | 4,750 | **35,550** |
-| Evenness of the schedule at 1000 requests a second: the gap between neighbouring requests at the target, median / p99 / p99.9 / maximum; the ideal is 1 ms (median: closer to 1 ms is better; p99 / p99.9 / maximum: less is better) ² | **1.1** / 1.75 / 3.5 / 9.3 ms | 0.59 / 1.8 / 2.05 / 14.7 ms | 1.5 / **1.68 / 1.88 / 3.1 ms** |
-| What the tool adds to latency; the target answers in 20 ms, 500 requests a second; p50 / p99 (less is better) | **0.33 / 0.31 ms** | **0.33** / 0.49 ms | 0.98 / 1.3 ms ¹ |
+| Requests a second one core holds; the target answers at once (more is better) | 9,300 | 4,750 | 35,550 |
+| Evenness of the schedule at 1000 requests a second: the gap between neighbouring requests at the target, median / p99 / p99.9 / maximum; the ideal is 1 ms (median: closer to 1 ms is better; p99 / p99.9 / maximum: less is better) ² | 1.1 / 1.75 / 3.5 / 9.3 ms | 0.59 / 1.8 / 2.05 / 14.7 ms | 1.5 / 1.68 / 1.88 / 3.1 ms |
+| What the tool adds to latency; the target answers in 20 ms, 500 requests a second; p50 / p99 (less is better) | 0.33 / 0.31 ms | 0.33 / 0.49 ms | 0.98 / 1.3 ms ¹ |
 
-JMeter was not measured. ¹ LeetTest counts latency from the moment the call was due, ghz and k6
-from the send (the row "The generator's own lag is counted in latency" above); with
-`GOMAXPROCS=1` LeetTest starts calls late: p99 about 1.1 ms, single calls up to 2.5 ms, and that
-lateness lands in its number only. ² All three tools send 999–1001 requests in every steady second, so the average gap is 1 ms;
+These three rows measure different things and there is no overall score. Throughput per core is
+higher for LeetTest; the median gap is closer to 1 ms for ghz, while p99 and the tail of the gap
+are better for LeetTest; the latency the tool adds is lower for ghz and k6. JMeter was not
+measured. ¹ LeetTest counts latency from the moment the call was due, ghz and k6 from the send
+(the row "The generator's own lag is counted in latency" above); with `GOMAXPROCS=1` LeetTest
+started calls late in this run (p99 about 1.1 ms, single calls up to 2.5 ms), and that lateness
+lands in its number only. The source of this estimate is the `compare-perf` run described below;
+there is no separate output for it in the repository. ² In the run the tools sent 999–1001 requests in every steady second, so the average gap is 1 ms;
 a median away from 1 ms means the requests come unevenly, not at another rate.
 
 How it was measured. Each tool runs in its own Docker container with one core (`--cpus=1`,
@@ -74,26 +76,28 @@ go run ./test/compare-perf -runs 3 -duration 20s
 At the end it prints the tables and saves them to `test/compare-perf/out/summary.md`; a full run
 takes up to three hours. `-plan` prints every setting and command without running anything.
 
-The open model by default, counting the generator's lag and breakpoint search are the rows
-where none of ghz, k6 and JMeter has a 🟢. LeetTest does not yet have call
-chaining; the order is in the [roadmap](roadmap.md). Ramp-up to a target RPS (`load.ramp`), CI
-thresholds (`pass`) and running without reflection (`.proto`, protoset) are there.
+In the table only LeetTest has 🟢 on: the open model as the only model, counting the generator's
+lag, and breakpoint search. Where LeetTest has 🔴 is call chaining (a response field goes into the
+next request): k6 and JMeter have it, LeetTest does not yet; the order is in the
+[roadmap](roadmap.md). Ramp-up to a target RPS (`load.ramp`), CI thresholds (`pass`) and running
+without reflection (`.proto`, protoset) are in LeetTest.
 
-## Load that mirrors production
+## Several methods in one run
 
-The tool describes load the way it exists in reality: several methods at once, each with its own
-rate and duration, all in one run and one report. It is on the mix of calls that contention for
-the connection pool, database locks and cache fights show up — effects you never see while
-methods are measured one at a time.
+Load is described as several methods at once, each with its own rate and duration, all in one run
+and one report. ghz runs one method per run [1]; k6 and JMeter describe several methods with
+scenarios or thread groups [10][22].
 
-## Measurement that resists distortion
+## Latency counted from the schedule
 
 Latency is counted from the moment the request was scheduled for, not from the moment it could be
-sent. That captures the whole delay, including time spent queued on the generator side. When the
-target hangs for one second, the tool reports `1005ms` — the delay a real user would have seen —
-instead of `5ms`, which only reflects how fast replies came after recovery.
+sent, and includes time queued on the generator side. Example: the target hangs for one second, a
+request is due at the start of the pause and is answered after 1005 ms. Counting from the schedule
+gives `1005ms`; counting from the send (ghz, k6, JMeter [5][13][24]) gives a smaller number for a
+request that waited in the generator's queue. The experiment on a stand is on the
+[LeetTest and ghz](compare-ghz.md) page.
 
-Load is applied on a schedule: the requested RPS holds whether or not the service keeps up.
+Load is applied on a schedule: the requested RPS does not depend on whether the service keeps up.
 
 A request cut off by the timeout is not replaced with a number. All we know is that it took
 longer than the timeout, and if such requests could occupy a percentile's place, the report
@@ -109,17 +113,14 @@ before the start.
 ## Declarative description
 
 Load is defined by a config file, not a program. The file lives next to the service code, goes
-through code review and stays readable six months later. It needs no debugging and cannot itself
-become a source of measurement error.
+through code review. There is no script program, so no bugs of one; mistakes in the file itself
+(wrong limits, wrong method) remain possible.
 
-## Care for the person using it
+## Error messages and run progress
 
 Error messages name the place and the reason. An unknown config key or a zero rate is an error,
-not silently accepted: a run that sent no requests must not look successful. The run's state is
-visible live — current rate, requests in flight, error share, percentiles.
-
-Interface quality is treated on a par with measurement correctness: an unclear error message is a
-defect.
+not silently accepted: a run that sent no requests does not look successful. The run's state is
+visible live: current rate, requests in flight, error share, percentiles.
 
 ## Sources
 

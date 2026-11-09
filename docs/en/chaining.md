@@ -19,8 +19,8 @@ creation itself. And a thousand transfers between the same two wallets are not l
 they are load on one database row and its lock.
 
 The second way out is a script that creates a wallet and transfers from it right away. Then you
-measure not the transfer but the sequence "create plus transfer", and the two can no longer be
-told apart in the latency.
+measure the sequence "create plus transfer", not a single transfer; the share of each step cannot
+be taken from the combined latency unless the script times the steps separately.
 
 We solve it with pools. One call is declared a producer: a field is taken from its replies and
 collected into a named pool. Another call is a consumer: it puts values from the pool into its
@@ -47,6 +47,6 @@ run, not garbage replies in the middle of the load.
 
 An open question, settled with the implementation, is what to do when the consumer is faster than
 the producer and the pool runs dry: wait, reduce load or fail. Silently reusing the last value is
-the one answer known to be wrong.
+rejected as an option: the run would stop matching the stated plan without it being visible.
 
 Its place in the plan — after ramp-up and datasets.

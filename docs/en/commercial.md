@@ -10,8 +10,8 @@
 
 ## What stays free
 
-The core and the CLI are distributed under the Apache License 2.0 and will remain open. This is
-a complete tool, not a demo: single-machine runs, any number of methods at any rate, reports, CI
+The core and the CLI are distributed under the Apache License 2.0 and will remain open. The open part
+has no feature limits: single-machine runs, any number of methods at any rate, reports, CI
 thresholds (planned). Commercial use is not restricted — a company can wire the CLI into its
 pipelines without paying anyone or talking to anyone.
 

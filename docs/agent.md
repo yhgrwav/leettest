@@ -31,7 +31,7 @@ in PowerShell use `$env:Path += ";C:\folder"`). Or `go install github.com/yhgrwa
 Done when `leettest -version` prints a version.
 
 Where it should run: Linux or macOS, next to the service (same network, container or CI runner).
-Windows works, but its clock steps about 0.5 ms, and a fast service there often ends as an invalid run
+Windows works, but its clock stepped about 0.5 ms on our Windows 11 machine (LeetTest measures and prints the step), and a fast service there may end as an invalid run
 (`clock_step`, exit code 2). If you are on Windows, say so in step 4 (a valid run there may still carry
 `schedule.not_exact_reasons`: the timing is not exact), and run for numbers on Linux.
 
@@ -194,6 +194,13 @@ Example, for a person who writes English: «Run it again with `leettest -c load.
 `/home/me/load.yaml`. The service held 800 requests per second and broke at 1000, so start with 800.
 This is what the client saw; it does not say what inside the service broke. If a run fails, the message
 names the line to fix; if it is unclear, tell me or open an issue.»
+
+Example for a plain run (not a breaking-point search): «Run it again with `leettest -c load.yaml`;
+the config is `/home/me/load.yaml`. At 100 requests per second for 10 seconds the slowest 1% of calls
+took 45 ms or more (p99) and none failed; the exit code 0 only says the plan ran, it does not say the
+service is healthy. LeetTest sees only the client side, so it does not say what is happening inside
+the service. If a run fails, the message names the line to fix; if it is unclear, tell me or open an
+issue.»
 
 ## Feedback after a problem
 

@@ -2,7 +2,7 @@
 
 <h1><img src="../../assets/logo.png" width="360" alt="LeetTest"></h1>
 
-**Find where your gRPC service breaks — with numbers you can trust.**
+**Load testing for gRPC services.**
 
 [Русский](../ru/) · [English](../en/) · [Deutsch](../de/) · [简体中文](../zh-CN/)
 
@@ -10,6 +10,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/yhgrwav/leettest.svg)](https://pkg.go.dev/github.com/yhgrwav/leettest)
 [![Go version](https://img.shields.io/github/go-mod/go-version/yhgrwav/leettest)](../../go.mod)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](../../LICENSE)
+[![Support](https://img.shields.io/badge/support-USDT%20TRC20-26A17B?logo=tether&logoColor=white)](../support.md)
 
 </div>
 
@@ -19,12 +20,12 @@
 > one is right. Plus an index of English docs, not in the Russian source.
 
 The tool answers the question people bring to a load test: **at what load does the service stop
-coping, and where is the bottleneck.** It applies load that looks like production — several
-methods at once, each at its own RPS — and measures so that the numbers don't lie while the
-service degrades. No `.proto`, no codegen, no scripts.
+coping, and where is the bottleneck.** The report shows the requested load next to the achieved
+load and names the waits on the client side, so the numbers can be judged for how much is the
+service and how much is the generator. Beyond that: several methods in one run, each at its own
+RPS; a simple CLI with no `.proto`, codegen or scripts.
 
-Priorities, in order: the numbers don't lie; the tool is pleasant to use — an unclear error
-message is as much a defect as a wrong number; the generator never becomes the bottleneck.
+Project priorities, in order: measurement correctness, usability, speed.
 
 The project is growing: what works today is below, what comes next is in the [roadmap](roadmap.md).
 
@@ -575,7 +576,7 @@ is no default address, and a `linger` of 15 s delays the exit: read the warnings
 |---|---|
 | What questions does LeetTest answer? | [Read](questions.md) |
 | What problem does LeetTest solve? | [Read](problem.md) |
-| Why this tool? | [Read](why.md) |
+| How does it differ from ghz, k6 and JMeter? | [Read](why.md) |
 | Which load-testing problems does it fix? | [Read](pitfalls.md) |
 | What is call chaining and why does it matter? | [Read](chaining.md) |
 | What does commercial use look like? | [Read](commercial.md) |
@@ -594,7 +595,7 @@ copyright stays with you.
 
 ## Support the project
 
-USDT (TRC20): `TGi6i9DgBHQV6RNzVSMQmgamGrYh5RdZYH`
+[Address and QR code](../support.md).
 
 ## License
 
