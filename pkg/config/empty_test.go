@@ -55,6 +55,11 @@ func TestParse_EmptyInput(t *testing.T) {
 		"null":               "null\n",
 		"a tilde":            "~\n",
 		"null after comment": "# off\nnull\n",
+		"a tab":              "\t",
+		"document marker":    "---\n",
+		"marker, comment":    "--- # c\n",
+		"two markers":        "---\n---\n",
+		"comment, marker":    "# c\n---\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			cfg, err := parseNoPanic(t, raw)
@@ -74,6 +79,18 @@ func TestParse_EmptyInput(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A second document with no body after a real one is not asked to say the
+// config is empty: the first document is there. Only no panic and an error are
+// required; which error is not specified.
+// Ground: contract — pkg/config is a library API; callers get an error, never a panic.
+func TestParse_EmptySecondDocumentDoesNotPanic(t *testing.T) {
+	cfg, err := parseNoPanic(t, "a: 1\n---\n")
+
+	if cfg != nil || err == nil {
+		t.Errorf("Parse = (%v, %v), want a nil config and an error", cfg, err)
 	}
 }
 

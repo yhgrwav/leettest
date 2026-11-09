@@ -71,11 +71,13 @@ func TestRun_EmptyConfigFile(t *testing.T) {
 	}
 
 	for name, body := range map[string]string{
-		"nothing":        "",
-		"a newline":      "\n",
-		"spaces":         "   ",
-		"only a comment": "# only a comment\n",
-		"null":           "null\n",
+		"nothing":         "",
+		"a newline":       "\n",
+		"spaces":          "   ",
+		"only a comment":  "# only a comment\n",
+		"null":            "null\n",
+		"a tab":           "\t",
+		"document marker": "---\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			stdout, stderr, code := runConfigFile(t, body)
