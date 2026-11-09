@@ -1,0 +1,21 @@
+# Нагрузочный тест для CI. app.target — сервис, который запустила задача; здесь это эталонный
+# стенд, из корня репозитория:
+#   go run ./test/stand/cmd/stand -delay 20ms
+#   leettest -c examples/ru/ci.yaml
+# Пределы pass решают код выхода: на стенде оба держатся, поэтому он 0; пропущенный предел — 4.
+
+app:
+  target:
+    ip: 127.0.0.1
+    port: 50051
+  tls: false
+
+load:
+  warmup: 2s
+  calls:
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 100
+      duration: 10s
+      pass:
+        p99: 200ms
+        errors: 1%

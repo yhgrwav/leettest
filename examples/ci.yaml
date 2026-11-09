@@ -1,0 +1,21 @@
+# A load test for CI. app.target is the service the job started; here it is the reference stand,
+# from the repository root:
+#   go run ./test/stand/cmd/stand -delay 20ms
+#   leettest -c examples/ci.yaml
+# The pass limits decide the exit code: both hold on the stand, so it is 0; a missed limit is 4.
+
+app:
+  target:
+    ip: 127.0.0.1
+    port: 50051
+  tls: false
+
+load:
+  warmup: 2s
+  calls:
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 100
+      duration: 10s
+      pass:
+        p99: 200ms
+        errors: 1%
