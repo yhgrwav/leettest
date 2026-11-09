@@ -5,9 +5,11 @@
 > Translated from [docs/ru/pitfalls.md](../ru/pitfalls.md) at bfd24aa, 2026-11-03. If they
 > differ, the Russian one is right.
 
-A list of places where load tools lie or get in the way, and where we stand on each.
+A list of known measurement errors and inconveniences of load testing, and what LeetTest does
+about each. Which tool has which behavior is given with sources in the
+[comparison](why.md#comparison-with-ghz-k6-and-jmeter); tools are not named here.
 
-Statuses are honest: `done` — works now; `planned` — the decision is made, the code is ahead.
+Statuses: `done` — works now; `planned` — the decision is made, the code is ahead.
 
 | Problem | Status |
 |---|---|
@@ -29,16 +31,17 @@ Statuses are honest: `done` — works now; `planned` — the decision is made, t
 
 ## Coordinated omission
 
-The costliest mistake in load testing. The target is 1000 RPS, a request every millisecond. The
+An error in which a service stall disappears from the report. The target is 1000 RPS, a request every millisecond. The
 service hangs for a second. During that second 1000 requests should have gone out.
 
 If latency is counted from the moment of actual sending, they all go out after the service
-recovers, take 5 ms each, and the report shows `p99 = 5ms`. The one-second stall has vanished —
-the tool reported that all was well exactly when it wasn't.
+recovers, take 5 ms each, and the report shows `p99 = 5ms`. The one-second stall is not visible
+in the report (a worked example, not a measurement; the measurement on a stand is in the
+[comparison with ghz](compare-ghz.md)).
 
 We give each request its scheduled time when it is scheduled and count latency from it. A request
 scheduled for `t=0` left at `t=1000ms`, the reply came at `t=1005ms` — latency `1005ms`. This is
-built into the core from the first line: it cannot be bolted onto a finished engine.
+part of the LeetTest core.
 
 ## One method per run
 
@@ -49,8 +52,9 @@ will never show it. We take a list of methods with their own RPS — one run, on
 ## Closed model
 
 "N virtual users, each waits for a reply before the next request" feels natural but has a built-in
-flaw: when the service slows down, users wait longer and the actual load drops by itself. The tool
-stops pushing exactly when it gets interesting what happens under pressure.
+property: when the service slows down, users wait longer and the actual load drops by itself. The
+model suits the question "how many users can the service serve" but not "what happens at a given
+request rate".
 
 We use an open model: the target RPS is a schedule, requests go out on the clock whether or not
 the previous ones came back.
@@ -74,7 +78,8 @@ percentiles. The same will be needed when several machines apply the load.
 
 Separately — the cost of recording metrics. A mutex around a shared latency slice makes the
 generator its own bottleneck at high RPS. We record into HDR histograms: a write costs tens of
-nanoseconds, a hundredth of a percent of the time at 5000 RPS — measured, not assumed.
+nanoseconds (an estimate; benchmarks of the `pkg/metrics` package are in the repository, there is
+no separate output at 5000 RPS).
 
 ## Preparation and typos
 
@@ -82,7 +87,7 @@ No `.proto` or codegen: method descriptions come from the service through reflec
 
 The config is read in strict mode. `rsp: 800` instead of `rps: 800` is an error that says where,
 not a quiet run with zero load and a green report. A zero `rps` is also an error: an empty
-successful run is the worst kind of lie, because it looks like success.
+successful run looks like success although it checked nothing.
 
 ## Warm-up
 
@@ -94,7 +99,7 @@ They skew the percentiles of the whole run, so `warmup` keeps them out of the pe
 The flip side of the open model: if the target stalls, hanging requests pile up and the generator
 dies before the service under test. The cure is an explicit cap on concurrent requests. Silently
 lowering the load at the cap is not allowed: a "1000 RPS" run that quietly became "whatever we
-managed" is worse than a failed one. So the cap is checked before the start: it holds everything
+managed" hides that the load was not the requested one. So the cap is checked before the start: it holds everything
 a stalled service can keep until the timeout, with a margin. A stalled service lasts to the end of
 the run, and the report states what was measured: `at 100 rps, 150 of 150 calls (100.0%) got no
 answer within 300ms, and the target answered nothing at all`. If the cap still runs out, the
