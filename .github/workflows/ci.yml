@@ -144,6 +144,52 @@ jobs:
           bin/leettest -c examples/pass.yaml -output json > pass.json
           jq -e '(.thresholds | length) == 8 and all(.thresholds[]; .verdict == "pass")' pass.json
 
+  # The workflow on the CI page (docs/en/ci.md, docs/ru/ci.md) runs here. The steps between the
+  # two markers are the page's text, byte for byte: examples/ci_page_test.go fails when they
+  # differ. Around them the page installs the latest release and starts the reader's service;
+  # this job builds this commit and starts the reference stand.
+  example-workflow:
+    name: example workflow
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_LATEST }}
+      - name: Build LeetTest and the reference stand
+        run: |
+          go build -o bin/ ./cmd/leettest ./test/stand/cmd/stand
+          echo "$PWD/bin" >> "$GITHUB_PATH"
+      - name: Start the service under test
+        run: |
+          cp examples/ci.yaml load.yaml
+          bin/stand -delay 20ms -life 60s &
+          sleep 1
+      # example workflow: start
+      - name: Run the load
+        run: |
+          rc=0
+          leettest -c load.yaml -json-file report.json || rc=$?
+          case "$rc" in
+            0) ;;
+            2) echo "::error::invalid run: the numbers are not about the service's load"; exit 1 ;;
+            3) echo "::error::the run stopped before its plan"; exit 1 ;;
+            4) echo "::error::a pass limit was missed"; exit 1 ;;
+            *) echo "::error::leettest exited with $rc and no report"; exit 1 ;;
+          esac
+      - name: Read the report
+        if: always() && hashFiles('report.json') != ''
+        run: |
+          echo "p99: $(jq '.methods[0].latency.p99.us' report.json) us" >> "$GITHUB_STEP_SUMMARY"
+          jq -e '.thresholds != null and all(.thresholds[]; .verdict == "pass")' report.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: leettest-report
+          path: report.json
+          if-no-files-found: ignore
+      # example workflow: end
+
   # The per-request cost of templates (Code rules: a speed trick keeps its
   # benchmark in CI). Gated only on what a shared runner does not blur: the
   # plain path allocates nothing, and the fast build beats the naive one it is
