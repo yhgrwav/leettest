@@ -368,7 +368,7 @@ and the endpoint holds them for `linger`. An example is
 | `leettest_excluded_total` | counter | `method`, `category` | `unreachable`, `cut_off`, `client_error`, `unclassified`: no usable latency, and they are not in the histogram. The same calls are also in `leettest_calls_total` |
 | `leettest_not_sent_total` | counter | `method`, `cause` | Calls that never left the generator, by the client-side cause: `generator`, `connection`, `stream` |
 | `leettest_in_flight` | gauge | — | Calls in flight now, all methods |
-| `leettest_start_lag_seconds` | histogram | `le` | How late calls began against their schedule, all methods together (not released yet). Warm-up is not in it, calls that never went out are. A call counts when it completes |
+| `leettest_start_lag_seconds` | histogram | `le` | How late calls began against their schedule, all methods together. Warm-up is not in it, calls that never went out are. A call counts when it completes |
 | `leettest_warmup_sent_total` | counter | `method` | Sent during warm-up. These calls are in no other counter |
 | `leettest_warmup` | gauge | — | `1` while the run is in its warm-up, else `0` |
 
@@ -499,9 +499,9 @@ the generator and the target goes into the latency and looks like the target's t
   owes, and they are not the target's. Otherwise a tail decided by streams or connections does
   not make a run invalid. A
   breaking-point search is not affected: its steps keep their own `generator` cause.
-- The generator's lag is warned of while the run goes on (not released yet). Once a second the last
+- The generator's lag is warned of while the run goes on. Once a second the last
   five whole seconds of the run are looked at, warm-up included, by the second a call was done in.
-  When more than 1% of the calls started later than the wait floor (1 ms by default, the
+  When more than 1% of the calls started later than the wait floor (1 ms or more, more on a coarse clock: max(1 ms, 4 × the clock step); the
   p99 rule: at least 100 starts, and 2 of 100, 3 of 200, 11 of 1000), or the generator left a call
   unsent at all, one line goes to stderr, once per run, in text and JSON mode alike: `warning: the
   generator is behind its schedule: 2140 of 60000 calls in the last 5 s (warm-up) started more than
@@ -510,7 +510,7 @@ the generator and the target goes into the latency and looks like the target's t
   it on stderr after it closes. It is a hint, not a verdict: the report still decides whether the
   run is valid. A breaking-point search does not print it.
 
-## Response size, traffic and warm-up in the report (not released yet)
+## Response size, traffic and warm-up in the report
 
 - Under a method's row, `response: N B per call`: the mean reply body of the measured successful
   calls, after decompression, whole bytes. An empty reply is `0 B`, a size; a method with no
@@ -529,7 +529,7 @@ the generator and the target goes into the latency and looks like the target's t
   `warm-up N sent` of the run's line, which counts every call sent. Under 100 observations p99 is
   told as `too few observations (N of 100)`.
 
-## The schedule line (not released yet)
+## The schedule line
 
 When the generator did not wait to each call's moment exactly, the header has one more line, under
 `machine:` (under `labels:` when there are labels):
@@ -636,9 +636,9 @@ measured calls only. The first column is the field's full path.
 | `start_lag` | object | How late calls started against the schedule |
 | `start_lag.p99` | percentile? | p99 of the lag |
 | `start_lag.max` | percentile? | The maximum, always exact; `null` without calls |
-| `schedule` | object | Whether the generator waited to each call's moment exactly (not released yet) |
-| `schedule.exact` | bool | (not released yet) `true` — it did; the list below is empty |
-| `schedule.not_exact_reasons` | []string | (not released yet) Why not, in this order: `no_precise_sleep` (only Linux has a microsecond sleep), `clock_step` (the step is 1 µs or more; not the `clock_step` of `invalid_reasons`, and it does not make the run invalid), `gomaxprocs`; `[]` when exact, never `null` |
+| `schedule` | object | Whether the generator waited to each call's moment exactly |
+| `schedule.exact` | bool | `true` — it did; the list below is empty |
+| `schedule.not_exact_reasons` | []string | Why not, in this order: `no_precise_sleep` (only Linux has a microsecond sleep), `clock_step` (the step is 1 µs or more; not the `clock_step` of `invalid_reasons`, and it does not make the run invalid), `gomaxprocs`; `[]` when exact, never `null` |
 | `connections` | object? | Connections; `null` when the sender does not report them |
 | `connections.open` | int | How many connections carried calls at once |
 | `connections.reconnects` | int | Successful handshakes after the first |
@@ -663,8 +663,8 @@ measured calls only. The first column is the field's full path.
 | `generator_cpu.busy_seconds` | int | How many of those seconds have a `share` of 0.90 or more (compared as rounded). `0` when they total under a second |
 | `generator_cpu.first_busy_s` | int? | The first such second, counted from the start of the run, warm-up included; `null` without one |
 | `generator_cpu.seconds` | []float | The share of each second from the start of the run, warm-up and the timeout tail included: as many entries as the longest `methods[].seconds`. `null` for a second no reading covers, and for a last second under half a second that is counted with the one before |
-| `traffic` | object? | Message bodies per second of the measured sending window (not released yet); `null` without a window |
-| `traffic.sent_bits_per_second`, `traffic.received_bits_per_second` | float | (not released yet) Bits per second, unscaled: request bodies of the measured calls that went out by wire size, replies of successful calls by size before decompression. Without HTTP/2 frames, headers and TLS |
+| `traffic` | object? | Message bodies per second of the measured sending window; `null` without a window |
+| `traffic.sent_bits_per_second`, `traffic.received_bits_per_second` | float | Bits per second, unscaled: request bodies of the measured calls that went out by wire size, replies of successful calls by size before decompression. Without HTTP/2 frames, headers and TLS |
 | `methods` | []object | Methods, see below |
 | `unchecked` | []object | Methods that could not be checked through reflection |
 | `unchecked[].method` | string | The method |
@@ -699,11 +699,11 @@ The rest are plain counters.
 | `methods[].planned_duration_us` | int | How long the method was meant to go, as configured, the ramp included |
 | `methods[].request_bytes` | object? | The request body, mean over the measured calls that went out; `null` without compression |
 | `methods[].request_bytes.raw`, `methods[].request_bytes.wire` | float | Bytes before compression and on the wire (without the 5-byte frame) |
-| `methods[].response_bytes` | float? | The reply body, mean over the measured successful calls, after decompression (not released yet); `0` for empty replies, `null` when none succeeded |
-| `methods[].warmup` | object? | The warm-up measured apart from the run (not released yet); `null` when it left no observation |
-| `methods[].warmup.calls` | int | (not released yet) The observations behind the percentiles: successes and the timed-out or aborted calls as lower bounds; not the `warmup_sent` count |
-| `methods[].warmup.p50`, `methods[].warmup.p99` | percentile? | (not released yet) Latency from the scheduled moment, `lower_bound` as in `methods[].latency`; `p99` is `null` under 100 observations |
-| `methods[].warmup.response_bytes` | float? | (not released yet) The mean reply body of the warm-up's successes; `null` when none succeeded |
+| `methods[].response_bytes` | float? | The reply body, mean over the measured successful calls, after decompression; `0` for empty replies, `null` when none succeeded |
+| `methods[].warmup` | object? | The warm-up measured apart from the run; `null` when it left no observation |
+| `methods[].warmup.calls` | int | The observations behind the percentiles: successes and the timed-out or aborted calls as lower bounds; not the `warmup_sent` count |
+| `methods[].warmup.p50`, `methods[].warmup.p99` | percentile? | Latency from the scheduled moment, `lower_bound` as in `methods[].latency`; `p99` is `null` under 100 observations |
+| `methods[].warmup.response_bytes` | float? | The mean reply body of the warm-up's successes; `null` when none succeeded |
 | `methods[].latency` | object | Latency of successful calls, with timeouts and aborted calls as lower bounds |
 | `methods[].latency.min`, `methods[].latency.p50`, `methods[].latency.p90`, `methods[].latency.p95`, `methods[].latency.p99`, `methods[].latency.max` | percentile? | Minimum, percentiles, maximum |
 | `methods[].latency.p999` | percentile? | p99.9 by the same rule; null while the method has fewer than 1000 observations (`observations`), where p99.9 would be the max |
@@ -851,7 +851,7 @@ a `p99` check has no others. A verdict exists only when the check has a limit.
 | `base.labels`, `new.labels` | map | The passport's labels; `{}` without a passport or labels |
 | `comparable` | bool | `true` — nothing makes the reports incomparable and, for runs, there is a method in common |
 | `differences` | []object | What makes the reports incomparable, in the order compared; `[]` if nothing |
-| `differences[].field` | string | The field's name as in the `differs:` line (`target`, `method`, `leettest_version`, `passport.config_sha256`, `schedule` (not released yet), `methods`, `dataset <method>`). A missing passport is `passport` |
+| `differences[].field` | string | The field's name as in the `differs:` line (`target`, `method`, `leettest_version`, `passport.config_sha256`, `schedule`, `methods`, `dataset <method>`). A missing passport is `passport` |
 | `differences[].base` | string | The "before" value; `none` — no dataset, no passport, or a report without `schedule` |
 | `differences[].new` | string | The "after" value; for `passport`, `present` on the side that has one |
 | `verdict` | string? | The worst verdict of the checks that have a limit: `fail`, else `unknown`, else `pass`; `null` — no limit given |
