@@ -1,55 +1,25 @@
-# Wie sieht die kommerzielle Nutzung aus?
+# Wird es eine kostenpflichtige Version geben?
 
 [← Zur Übersicht](README.md)
 
-> Übersetzt aus [docs/ru/commercial.md](../ru/commercial.md) bei 67f8732, 2026-10-08. Bei Abweichungen gilt die
+> Übersetzt aus [docs/ru/commercial.md](../ru/commercial.md) bei c67a5df, 2026-11-09. Bei Abweichungen gilt die
 > russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/commercial.md).
 
-> Diese Seite beschreibt ein **beabsichtigtes** Modell. Nichts vom kostenpflichtigen Teil
-> existiert bisher, und es gibt keinen Zeitplan. Es steht hier, damit es später niemanden
-> überrascht.
+Für die Zukunft ist eine kostenpflichtige Enterprise-Version von LeetTest für Teams und
+Organisationen geplant.
 
-## Was kostenlos bleibt
+## Was offen bleibt
 
-Kern und CLI stehen unter der Apache License 2.0 und bleiben offen. Das ist ein vollständiges
-Werkzeug, keine Demo: Läufe von einer Maschine, beliebig viele Methoden mit beliebigen Raten,
-Berichte, CI-Schwellwerte (geplant). Kommerzielle Nutzung ist nicht eingeschränkt — ein Unternehmen kann
-die CLI in seine Pipelines einbauen, ohne zu zahlen oder jemanden zu fragen.
+Kern und CLI stehen unter der Apache License 2.0 und bleiben offen. Die offene Version ist ein
+eigenständiges Werkzeug ohne künstliche Einschränkungen; kommerzielle Nutzung ist nicht
+eingeschränkt. Bereits veröffentlichte Versionen bleiben unwiderruflich unter Apache 2.0.
 
-## Was kostenpflichtig wird
+## Wozu das CLA
 
-Eine eigene Control Plane für Teams, denen eine Maschine und ein Lauf nicht mehr reichen:
-
-- **verteilte Läufe** — Last von mehreren Maschinen, synchroner Start, korrekt zusammengeführte
-  Histogramme in einem Bericht;
-- **Lauf-Historie** — gespeicherte Ergebnisse, Vergleich von Release zu Release, Verfolgung von
-  Verschlechterungen über die Zeit;
-- **Dashboard** — laufende Tests live und Auswertung abgeschlossener;
-- **Integrationen** — Benachrichtigungen, Export in Monitoring-Systeme, rollenbasierter Zugriff.
-
-Vorgesehen ist ein Abonnement je Organisation mit kostenlosem Testzeitraum, abgerechnet über die
-Control Plane und nicht über Anfragen oder Maschinen. Für geschlossene Umgebungen wird eine
-selbst betriebene Variante geprüft.
-
-## Warum die Grenze dort verläuft
-
-Alles, was von einer einzelnen Maschine aus funktioniert, gehört zum offenen Teil. Bezahlenswert
-ist, was Infrastruktur braucht: mehrere Generatoren zu koordinieren, Historie zu speichern, einem
-Team eine Oberfläche zu geben.
-
-Technisch ist es dieselbe Engine. Die Control Plane ist eine weitere Hülle um den Kern, neben der
-CLI, und die Metriken waren von Anfang an so entworfen, dass sich Ergebnisse mehrerer Maschinen
-korrekt addieren.
-
-## Was das für Beitragende bedeutet
-
-Deshalb wird ein Pull Request erst nach Unterzeichnung des [CLA](../../CLA.md) übernommen. Es ist
-eine Lizenz, keine Rechteübertragung: Das Urheberrecht am Beitrag bleibt bei der beitragenden
-Person, während das Projekt das Recht zur Unterlizenzierung erhält. Ohne das ist der geschlossene
-Teil rechtlich unmöglich, und nachträglich lässt es sich nicht heilen — dafür bräuchte es die
+Ein Pull Request wird nach Unterzeichnung des [CLA](../../CLA.md) übernommen. Es ist eine Lizenz,
+keine Rechteübertragung: Das Urheberrecht am Beitrag bleibt bei der beitragenden Person, während
+das Projekt das Recht zur Unterlizenzierung erhält. Ohne das ist eine kostenpflichtige Version
+rechtlich unmöglich, und nachträglich lässt es sich nicht heilen — dafür bräuchte es die
 Zustimmung aller, die je etwas beigetragen haben.
-
-Wer den offenen Teil nutzt, für den ändert sich nichts: Apache 2.0 ist unwiderruflich erteilt,
-und veröffentlichte Versionen bleiben darunter.

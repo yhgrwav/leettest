@@ -1,52 +1,21 @@
-# What does commercial use look like?
+# Will there be a paid version?
 
 [← Back to docs](README.md)
 
-> Translated from [docs/ru/commercial.md](../ru/commercial.md) at b7a685c, 2026-10-12. If they
+> Translated from [docs/ru/commercial.md](../ru/commercial.md) at c67a5df, 2026-11-09. If they
 > differ, the Russian one is right.
 
-> This page describes an **intended** model. None of the paid part exists yet and there is no
-> timeline. It is written down so that it does not come as a surprise later.
+In the future a paid Enterprise version of LeetTest for teams and organizations is planned.
 
-## What stays free
+## What stays open
 
-The core and the CLI are distributed under the Apache License 2.0 and will remain open. The open part
-has no feature limits: single-machine runs, any number of methods at any rate, reports, CI
-thresholds (planned). Commercial use is not restricted — a company can wire the CLI into its
-pipelines without paying anyone or talking to anyone.
+The core and the CLI are distributed under the Apache License 2.0 and remain open. The open
+version is a self-contained tool without artificial limits; commercial use is not restricted.
+Versions already released stay under Apache 2.0 irrevocably.
 
-## What will be paid
+## Why a CLA
 
-A separate control plane, for teams whose needs outgrow one machine and one run:
-
-- **distributed runs** — load from several machines, synchronized start, histograms merged
-  correctly into one report;
-- **run history** — stored results, release-over-release comparison, degradation tracked over
-  time;
-- **dashboard** — live view of a running test and analysis of finished ones;
-- **integrations** — notifications, export to monitoring systems, role-based access.
-
-The expected shape is a per-organization subscription with a free trial, priced against the
-control plane rather than against requests or machines. A self-hosted option is under
-consideration for closed environments.
-
-## Why the line is drawn there
-
-Everything that works from a single machine belongs to the open part. What is worth paying for is
-what needs infrastructure: coordinating several generators, storing history, providing an
-interface for a team.
-
-Technically it is the same engine. The control plane is one more wrapper around the core,
-alongside the CLI, and the metrics were designed from the start so that results from several
-machines add up correctly.
-
-## What it means for contributors
-
-This is why a pull request is merged after the author signs the [CLA](../../CLA.md). It is a
-license, not a transfer of ownership: you keep the copyright in your contribution while the
-project gains the right to sublicense the code. Without it the closed part is legally impossible,
-and it cannot be fixed after the fact — that would require the consent of everyone who ever
-contributed.
-
-If you use the open part, nothing changes for you: Apache 2.0 is granted irrevocably, and
-released versions stay under it.
+A pull request is merged after the author signs the [CLA](../../CLA.md). It is a license, not a
+transfer of ownership: you keep the copyright in your contribution while the project gains the
+right to sublicense the code. Without it a paid version is legally impossible, and it cannot be
+fixed after the fact — that would require the consent of everyone who ever contributed.
