@@ -17,8 +17,8 @@ LeetTest is built for **Linux and macOS**: the generator goes next to the target
 the same network, a container, a CI runner. The closer it is, the less foreign network is in the
 numbers.
 
-Windows is supported but measures worse: its clock steps about 0.5 ms, and a run against a fast
-service will honestly be declared invalid (`clock_step`, exit code 2) — the clock step is as big as
+Windows is supported, but its clock stepped about 0.5 ms on our Windows 11 machine, and a run
+against a fast service may be declared invalid (`clock_step`, exit code 2) — the clock step is as big as
 the latency itself. Measure on Linux; Windows is fine for trying the tool out.
 
 ## 1. Install

@@ -1,15 +1,17 @@
-# LeetTest and ghz on the same stand
+# Your load test might be lying to you: LeetTest and ghz on the same stand
 
 > Translated from [docs/ru/compare-ghz.md](../ru/compare-ghz.md) at b7a685c, 2026-10-12. If they
 > differ, the Russian one is right.
 
 This page compares LeetTest with [ghz](https://ghz.sh) on a test server with known behavior. The
-question is narrow: when the server stalls or slows down, does the report show it?
+question is narrow: when the server stalls or slows down, does the report show it? The load model
+of a tool (closed or open) changes the answer, so each ghz mode is a separate row. Each experiment
+below states its question, the exact flags, requested and achieved load, and its limits.
 A feature comparison with ghz, k6 and JMeter is in the [table](why.md#comparison-with-ghz-k6-and-jmeter).
 
 In short:
 
-- **When the server behaves**, both tools report the same latencies (mode A).
+- **When the server behaves**, both tools report latencies within 1ms of each other (mode A).
 - **When the server freezes for 2 seconds** (mode B1), ghz in synchronous mode (the default)
   reports p99 of 11.4ms with `-c 10` and 11.6ms with the default `-c 50`. LeetTest reports 1.71s.
   ghz with `--async` also reports 1.71s.
@@ -79,6 +81,18 @@ Environment:
 
 ### B1: a 2-second freeze
 
+**Question:** does the report show a server that froze for 2 seconds at the 10th second of the run?
+**Stand:** `-delay 10ms -freeze-at 10s -freeze-for 2s`.
+**Tools and model:** LeetTest (`rps: 200`, `duration: 30s`, `timeout: 5s`; open); ghz without
+`--async` with `-c 10` and with the default `-c 50` (closed); ghz with `--async` (open). Flags are
+in the Setup section.
+**Requested / achieved:** 200 calls per second, 6000 per run; 5999–6000 sent in every row, about
+200 per second.
+
+**Limits of this experiment:** one host, loopback, one 4-core container, one ghz version (v0.121.0),
+one kind of failure (a 2-second freeze). It does not show other ghz versions, other freeze lengths
+or a server across a network.
+
 | tool | sent | failed | p50 | p90 | p95 | p99 | calls over 1s |
 |---|---|---|---|---|---|---|---|
 | LeetTest | 6000 [6000–6000] | 0 | 10.4ms [10.3–10.4] | 10.6ms [10.5–10.6] | 509ms [508–509] | 1.71s [1.71–1.71] | not reported |
@@ -98,6 +112,18 @@ The number of calls sent is the same in all rows, so the count does not reveal t
 
 ### B2: a server slower than the load needs
 
+**Question:** what load actually reached a server that answers in 100ms when 200 calls per second
+are requested?
+**Stand:** `-delay 100ms`.
+**Tools and model:** LeetTest (open); ghz without `--async` with `-c 10` and with the default
+`-c 50` (closed). ghz with `--async` was not run in this mode.
+**Requested / achieved:** 200 per second, 6000 per run. Sent: LeetTest 6000, ghz `-c 10` 2970
+(about 99 per second), ghz `-c 50` 6000 (median; 5999–6001).
+
+**Limits of this experiment:** one host, loopback, one ghz version, one server delay (100ms). The
+ghz result depends on `-c`: at `-c 50` the ceiling is above the requested load and all of it goes
+out. It does not show which `-c` ghz users pick in practice.
+
 | tool | sent | failed | p50 | p90 | p95 | p99 |
 |---|---|---|---|---|---|---|
 | LeetTest | 6000 [6000–6000] | 0 | 100ms [100–100] | 101ms [101–101] | 101ms [101–101] | 102ms [101–102] |
@@ -106,14 +132,24 @@ The number of calls sent is the same in all rows, so the count does not reveal t
 
 Synchronous ghz sends at most c / latency calls per second, where c is the number of workers.
 With `-c 10` and 100ms that is 100 calls per second, half of the 200 requested. The latencies
-are right; the load is not. Reading only the latency columns, this run looks like a server
-that handles 200 RPS at 101ms. The server handled 100 RPS.
+of the calls sent are real, but half of the requested load went out. Reading only the latency
+columns, this run looks like a server that handles 200 RPS at 101ms; the server received 100 RPS.
 
 With the default `-c 50` the ceiling is 500 calls per second, and the full load goes out. The
 same ceiling applies to any c once the server slows down enough: at `-c 50` it is reached above
 250ms.
 
 ### A: control
+
+**Question:** do the tools agree when the server is fine?
+**Stand:** `-delay 10ms`.
+**Tools and model:** LeetTest (open); ghz without `--async` with `-c 10` (closed); ghz with
+`--async` (open).
+**Requested / achieved:** 200 per second, 6000 per run; 6000–6001 sent (median).
+
+**Limits of this experiment:** one host, loopback, one ghz version, one server with no failures. We
+did not investigate the 0.3–0.9ms difference between ghz and LeetTest; the experiment does not show
+its cause.
 
 | tool | sent | failed | p50 | p90 | p95 | p99 |
 |---|---|---|---|---|---|---|
@@ -122,7 +158,8 @@ same ceiling applies to any c once the server slows down enough: at `-c 50` it i
 | ghz, `--async` | 6001 [5996–6002] | 0 | 10.7ms [10.7–10.7] | 11.3ms [11.3–11.3] | 11.4ms [11.4–11.4] | 11.4ms [11.4–11.5] |
 
 All three agree within 1ms. In this environment ghz reads 0.3–0.9ms higher than LeetTest; we did
-not measure the cause.
+not measure the cause. Which of the two is closer to the latency on the wire, this experiment does
+not test.
 
 ## Reproduce
 

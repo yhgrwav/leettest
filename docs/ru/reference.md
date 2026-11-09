@@ -4,7 +4,7 @@
 [← На главную](../../README.md)
 
 Каждое поле конфига, каждый флаг и что инструмент проверяет до старта. Как читать отчёт — в
-[README](../../README.md#как-читать-отчёт).
+[как читать отчёт](report.md#как-читать-отчёт).
 
 ## Конфиг
 
@@ -469,7 +469,7 @@ SIGTERM (`docker stop`, Kubernetes, отмена джоба в CI) сразу о
 - Точное расписание вызовов — только на Linux. В контейнере с квотой CPU меньше двух ядер возможны
   редкие задержки старта до периода квоты (обычно 100 мс); отчёт их показывает.
 - За L4-балансировщиком нагружается один бэкенд: одно соединение — один бэкенд. См.
-  [как читать отчёт](../../README.md#как-читать-отчёт).
+  [как читать отчёт](report.md#как-читать-отчёт).
 - На Windows часы идут шагами около 0,5 мс, и прогон с быстрым сервисом будет объявлен
   недействительным (`clock_step`, код выхода 2).
 - Если хвост p99 решило опоздание самого генератора, прогон недействителен (`generator_late`, код
@@ -545,7 +545,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 ## Поля JSON
 
 Правила контракта — версия схемы, единицы, `null` вместо `0`, неизвестные поля — в
-[README](../../README.md#json-для-скриптов-и-ci). Здесь — каждое поле `schema_version` 1. Тип с `?`
+[разделе про JSON для скриптов](report.md#json-для-скриптов-и-ci). Здесь — каждое поле `schema_version` 1. Тип с `?`
 может быть `null`. Счётчики прогрева не входят ни в какие другие счётчики; `sent` и все его доли
 — только измеренные вызовы. В первой колонке — полный путь поля.
 
@@ -556,7 +556,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 |---|---|---|
 | `<перцентиль>.us` | int | Значение, целые микросекунды |
 | `<перцентиль>.ns` | int | Значение гистограммы в целых наносекундах, которое текстовый отчёт печатает тремя значащими цифрами; `us` — оно же, обрезанное до микросекунд; по `ns` судят `pass:` и `leettest compare`: рядом с `fail` `us` может равняться `limit_us` |
-| `<перцентиль>.lower_bound` | bool | `true` — это нижняя граница, а не значение ([README](../../README.md#как-читать-отчёт)) |
+| `<перцентиль>.lower_bound` | bool | `true` — это нижняя граница, а не значение ([как читать отчёт](report.md#как-читать-отчёт)) |
 
 ### Прогон
 
@@ -636,7 +636,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `connections.per_connection[].p99` | перцентиль? | p99 вызовов соединения; `null` без вызовов с задержкой |
 | `connections.per_connection[].first_limit`, `connections.per_connection[].last_limit` | int? | Лимит стримов соединения на первом и последнем рукопожатии; `null` — не объявлен |
 | `connections.per_connection[].limit_changes` | int | Сколько рукопожатий соединения объявили лимит, отличный от прежнего |
-| `client_waits` | object | Вызовы, ждавшие на стороне клиента дольше порога, по причинам ([README](../../README.md#как-читать-отчёт)) |
+| `client_waits` | object | Вызовы, ждавшие на стороне клиента дольше порога, по причинам ([как читать отчёт](report.md#как-читать-отчёт)) |
 | `client_waits.generator_calls`, `client_waits.stream_calls`, `client_waits.connection_calls` | int | Все такие вызовы, отправленные и нет. Отправленный может считаться за несколько причин |
 | `client_waits.generator_tail_calls`, `client_waits.stream_tail_calls`, `client_waits.connection_tail_calls` | int | Только среди вызовов хвоста p99 и неотправленных: по ним выбирается `tail_wait_cause` |
 | `generator_cpu` | object? | Сколько доступного самому LeetTest CPU занял прогон, по секундам; `null`, если CPU-время процесса не удалось прочитать. Отчёт печатает строку, когда есть занятая секунда |
@@ -667,7 +667,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 ### Метод: `methods[]`
 
 `<категория>` — каждая из четырёх категорий, у которых в JSON есть свой объект с временем ответа:
-`request_error`, `overload`, `failure`, `bad_response` ([категории](../../README.md#как-читать-отчёт)).
+`request_error`, `overload`, `failure`, `bad_response` ([категории](report.md#как-читать-отчёт)).
 Остальные — просто счётчики.
 
 | Поле | Тип | Что значит |
@@ -765,7 +765,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 
 Поиск пишет другой объект: поля `schema_version`, `leettest_version`, `target`, `started_at` — как у
 прогона выше, полей обычного прогона на верхнем уровне нет. Каждый прогон лежит в `breakpoint.runs`
-со своим полным отчётом ([поиск](../../README.md#поиск-точки-отказа)).
+со своим полным отчётом ([поиск](report.md#поиск-точки-отказа)).
 
 | Поле | Тип | Что значит |
 |---|---|---|

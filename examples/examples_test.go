@@ -319,7 +319,7 @@ var yamlBlock = regexp.MustCompile("(?s)```yaml\n(.*?)```")
 // The README's run block is examples/leettest.yaml, in each language.
 func TestReadme_BlockIsItsFile(t *testing.T) {
 	for _, c := range []struct{ readme, heading, example string }{
-		{"../README.md", "## Запуск", "ru/leettest.yaml"},
+		{"../docs/ru/guide/first-run.md", "## Запуск", "ru/leettest.yaml"},
 		{"../docs/en/README.md", "## Run", "leettest.yaml"},
 	} {
 		raw, err := os.ReadFile(c.readme)
