@@ -260,8 +260,14 @@ jobs:
       # have. A cosign that writes its own arguments into the bundle file lets
       # the snapshot run the real `signs:` block: which artifact is signed, the
       # flag form and the file name are checked below; the real signature is
-      # checked on the release rehearsal tag.
-      - name: stand-in cosign
+      # checked on the release rehearsal tag. The stand-in is on PATH for this
+      # one command only: goreleaser-action verifies its own download with the
+      # cosign it finds.
+      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          version: "v2.18.2"
+          install-only: true
+      - name: snapshot release with a stand-in cosign
         run: |
           mkdir -p "$RUNNER_TEMP/bin"
           cat > "$RUNNER_TEMP/bin/cosign" <<'EOF'
@@ -274,11 +280,7 @@ jobs:
           echo "$*" > "$out"
           EOF
           chmod +x "$RUNNER_TEMP/bin/cosign"
-          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
-      - uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
-        with:
-          version: "v2.18.2"
-          args: release --snapshot --clean
+          PATH="$RUNNER_TEMP/bin:$PATH" goreleaser release --snapshot --clean
       # What a user verifies after a release: an SBOM for each archive, both
       # covered by checksums.txt, and a bundle for checksums.txt itself.
       - name: SBOMs and signature are in dist
