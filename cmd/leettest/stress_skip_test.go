@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	// stressEnv is set to "1" by `make stress` and by nothing else.
+	// stressEnv is set to "1" by `make stress` and `make release-test` (its -race part) and by nothing else.
 	stressEnv = "LEETTEST_STRESS"
 	// stressSkipsEnv is the file `make stress` gives the skips to: one line
 	// "<test>\t<reasons>" per skip, appended.
