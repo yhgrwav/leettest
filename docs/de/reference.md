@@ -383,7 +383,7 @@ russisch; die englische Fassung ist [`examples/export.yaml`](../../examples/expo
 | `leettest_excluded_total` | counter | `method`, `category` | `unreachable`, `cut_off`, `client_error`, `unclassified`: keine brauchbare Latenz, im Histogramm sind sie nicht. Dieselben Aufrufe stehen auch in `leettest_calls_total` |
 | `leettest_not_sent_total` | counter | `method`, `cause` | Aufrufe, die den Generator nie verlassen haben, nach der Ursache auf der Client-Seite: `generator`, `connection`, `stream` |
 | `leettest_in_flight` | gauge | — | Aufrufe, die jetzt unterwegs sind, alle Methoden |
-| `leettest_start_lag_seconds` | histogram | `le` | Wie spät Aufrufe gegenüber ihrem Plan begannen, alle Methoden zusammen (nicht veröffentlicht). Das Warm-up zählt nicht mit, Aufrufe, die nie hinausgingen, schon. Ein Aufruf zählt, wenn er abgeschlossen ist |
+| `leettest_start_lag_seconds` | histogram | `le` | Wie spät Aufrufe gegenüber ihrem Plan begannen, alle Methoden zusammen. Das Warm-up zählt nicht mit, Aufrufe, die nie hinausgingen, schon. Ein Aufruf zählt, wenn er abgeschlossen ist |
 | `leettest_warmup_sent_total` | counter | `method` | Während des Aufwärmens gesendet. In keinem anderen Zähler sind diese Aufrufe |
 | `leettest_warmup` | gauge | — | `1`, solange der Lauf im Aufwärmen ist, sonst `0` |
 
@@ -523,10 +523,10 @@ bei 2 ms.
   bleibt gültig, mit dem Hinweis und `tail_wait_cause: generator`. Ein Ende, das Streams oder
   Verbindungen bestimmt haben, macht den Lauf nicht ungültig. Eine Suche nach dem Bruchpunkt ist
   nicht betroffen: Ihre Schritte behalten ihre eigene Ursache `generator`.
-- Vor der Verspätung des Generators wird gewarnt, solange der Lauf geht (nicht veröffentlicht).
+- Vor der Verspätung des Generators wird gewarnt, solange der Lauf geht.
   Einmal pro Sekunde werden die letzten fünf vollen Sekunden des Laufs betrachtet, das Warm-up
   eingeschlossen, nach der Sekunde, in der ein Aufruf endete. Starteten mehr als 1 % der Aufrufe
-  später als die Warteschwelle (standardmäßig 1 ms; die Regel des p99: mindestens 100 Starts, und
+  später als die Warteschwelle (ab 1 ms, bei grober Uhr mehr: max(1 ms, 4 × Uhrschritt); die Regel des p99: mindestens 100 Starts, und
   2 von 100, 3 von 200, 11 von 1000) oder ließ der Generator überhaupt einen Aufruf ungesendet, geht
   eine Zeile an stderr, einmal pro Lauf, im Text- und im JSON-Modus gleich: `warning: the generator
   is behind its schedule: 2140 of 60000 calls in the last 5 s (warm-up) started more than 1.00ms
@@ -535,7 +535,7 @@ bei 2 ms.
   sie nach dem Schließen auf stderr. Das ist ein Hinweis, kein Urteil: Ob der Lauf gültig ist,
   entscheidet der Bericht. Eine Suche nach dem Bruchpunkt druckt sie nicht.
 
-## Antwortgröße, Traffic und Warm-up im Bericht (nicht veröffentlicht)
+## Antwortgröße, Traffic und Warm-up im Bericht
 
 - Unter der Zeile einer Methode `response: N B per call`: der mittlere Antwortkörper der gemessenen
   erfolgreichen Aufrufe, nach dem Entpacken, ganze Bytes. Eine leere Antwort ist `0 B`, das ist
@@ -556,7 +556,7 @@ bei 2 ms.
   jeder gesendete Aufruf gezählt ist. Bei weniger als 100 Beobachtungen steht p99 als `too few
   observations (N of 100)`.
 
-## Die Zeile zum Zeitplan (nicht veröffentlicht)
+## Die Zeile zum Zeitplan
 
 Hat der Generator nicht auf den genauen Zeitpunkt jedes Aufrufs gewartet, steht im Kopf des Berichts
 eine weitere Zeile, unter `machine:` (unter `labels:`, wenn es Labels gibt):
@@ -665,9 +665,9 @@ unten den Typ „percentile?" hat.
 | `start_lag` | object | Wie spät Aufrufe gegenüber dem Plan starteten |
 | `start_lag.p99` | percentile? | p99 der Verspätung |
 | `start_lag.max` | percentile? | Das Maximum, immer exakt; `null` ohne Aufrufe |
-| `schedule` | object | Ob der Generator genau auf den Zeitpunkt jedes Aufrufs gewartet hat (nicht veröffentlicht) |
-| `schedule.exact` | bool | (nicht veröffentlicht) `true` — hat er; die Liste unten ist leer |
-| `schedule.not_exact_reasons` | []string | (nicht veröffentlicht) Warum nicht, in dieser Reihenfolge: `no_precise_sleep` (nur Linux hat einen Mikrosekunden-Sleep), `clock_step` (der Schritt beträgt 1 µs oder mehr; nicht das `clock_step` aus `invalid_reasons`, der Lauf wird dadurch nicht ungültig), `gomaxprocs`; `[]` wenn genau, nie `null` |
+| `schedule` | object | Ob der Generator genau auf den Zeitpunkt jedes Aufrufs gewartet hat |
+| `schedule.exact` | bool | `true` — hat er; die Liste unten ist leer |
+| `schedule.not_exact_reasons` | []string | Warum nicht, in dieser Reihenfolge: `no_precise_sleep` (nur Linux hat einen Mikrosekunden-Sleep), `clock_step` (der Schritt beträgt 1 µs oder mehr; nicht das `clock_step` aus `invalid_reasons`, der Lauf wird dadurch nicht ungültig), `gomaxprocs`; `[]` wenn genau, nie `null` |
 | `connections` | object? | Verbindungen; `null`, wenn der Sender sie nicht meldet |
 | `connections.open` | int | Wie viele Verbindungen gleichzeitig Aufrufe trugen |
 | `connections.reconnects` | int | Erfolgreiche Handshakes nach dem ersten |
@@ -692,8 +692,8 @@ unten den Typ „percentile?" hat.
 | `generator_cpu.busy_seconds` | int | Wie viele dieser Sekunden einen `share` von 0.90 oder mehr haben (verglichen wird der gerundete Wert). `0`, wenn sie zusammen unter einer Sekunde liegen |
 | `generator_cpu.first_busy_s` | int? | Die erste solche Sekunde ab Laufbeginn, das Warm-up zählt mit; `null`, wenn es keine gibt |
 | `generator_cpu.seconds` | []float | Der Anteil jeder Sekunde ab Laufbeginn, Warm-up und Timeout-Ende eingeschlossen: so viele Einträge wie das längste `methods[].seconds`. `null` für eine Sekunde, die keine Messung abdeckt, und für eine letzte Sekunde unter einer halben, die mit der vorigen zusammen gezählt wird |
-| `traffic` | object? | Nachrichtenkörper pro Sekunde des Sendefensters (nicht veröffentlicht); `null` ohne Fenster |
-| `traffic.sent_bits_per_second`, `traffic.received_bits_per_second` | float | (nicht veröffentlicht) Bit pro Sekunde, nicht skaliert: Anfragekörper nach Größe auf der Leitung, Antworten erfolgreicher Aufrufe vor dem Entpacken. Ohne HTTP/2-Frames, Header und TLS |
+| `traffic` | object? | Nachrichtenkörper pro Sekunde des Sendefensters; `null` ohne Fenster |
+| `traffic.sent_bits_per_second`, `traffic.received_bits_per_second` | float | Bit pro Sekunde, nicht skaliert: Anfragekörper nach Größe auf der Leitung, Antworten erfolgreicher Aufrufe vor dem Entpacken. Ohne HTTP/2-Frames, Header und TLS |
 | `methods` | []object | Methoden, siehe unten |
 | `unchecked` | []object | Methoden, die über Reflection nicht geprüft werden konnten |
 | `unchecked[].method` | string | Die Methode |
@@ -728,11 +728,11 @@ Die übrigen sind einfache Zähler.
 | `methods[].planned_duration_us` | int | Wie lange die Methode gehen sollte, wie konfiguriert, der Anlauf eingeschlossen |
 | `methods[].request_bytes` | object? | Der Anfragekörper, Mittel über die gemessenen Aufrufe, die hinausgingen; `null` ohne Kompression |
 | `methods[].request_bytes.raw`, `methods[].request_bytes.wire` | float | Bytes vor der Kompression und auf der Leitung (ohne den 5-Byte-Rahmen) |
-| `methods[].response_bytes` | float? | Antwortkörper, Mittel über die gemessenen erfolgreichen Aufrufe, nach dem Entpacken (nicht veröffentlicht); `null`, wenn keiner erfolgreich war |
-| `methods[].warmup` | object? | Warm-up, getrennt vom Lauf gemessen (nicht veröffentlicht); `null` ohne Beobachtung |
-| `methods[].warmup.calls` | int | (nicht veröffentlicht) Beobachtungen hinter den Perzentilen (Erfolge und zeitüberschrittene oder abgebrochene Aufrufe als Untergrenzen), nicht die Zahl `warmup_sent` |
-| `methods[].warmup.p50`, `methods[].warmup.p99` | percentile? | (nicht veröffentlicht) Latenz ab dem geplanten Zeitpunkt, `lower_bound` wie in `methods[].latency`; `p99` ist unter 100 Beobachtungen `null` |
-| `methods[].warmup.response_bytes` | float? | (nicht veröffentlicht) Mittlerer Antwortkörper der Warm-up-Erfolge; `null`, wenn keiner erfolgreich war |
+| `methods[].response_bytes` | float? | Antwortkörper, Mittel über die gemessenen erfolgreichen Aufrufe, nach dem Entpacken; `null`, wenn keiner erfolgreich war |
+| `methods[].warmup` | object? | Warm-up, getrennt vom Lauf gemessen; `null` ohne Beobachtung |
+| `methods[].warmup.calls` | int | Beobachtungen hinter den Perzentilen (Erfolge und zeitüberschrittene oder abgebrochene Aufrufe als Untergrenzen), nicht die Zahl `warmup_sent` |
+| `methods[].warmup.p50`, `methods[].warmup.p99` | percentile? | Latenz ab dem geplanten Zeitpunkt, `lower_bound` wie in `methods[].latency`; `p99` ist unter 100 Beobachtungen `null` |
+| `methods[].warmup.response_bytes` | float? | Mittlerer Antwortkörper der Warm-up-Erfolge; `null`, wenn keiner erfolgreich war |
 | `methods[].latency` | object | Latenz erfolgreicher Aufrufe, mit Timeouts und abgebrochenen Aufrufen als Untergrenzen |
 | `methods[].latency.min`, `methods[].latency.p50`, `methods[].latency.p90`, `methods[].latency.p95`, `methods[].latency.p99`, `methods[].latency.max` | percentile? | Minimum, Perzentile, Maximum |
 | `methods[].latency.p999` | percentile? | p99.9 nach derselben Regel; null, solange die Methode weniger als 1000 Beobachtungen (`observations`) hat, dann wäre p99.9 das Maximum |
@@ -882,7 +882,7 @@ Ein Feld, das es für die Art der Prüfung nicht gibt, ist `null`: bei `capacity
 | `base.labels`, `new.labels` | map | Labels des Passes; `{}` ohne Pass oder ohne Labels |
 | `comparable` | bool | `true` — die Berichte unterscheiden sich in nichts, was sie unvergleichbar macht, und die Läufe haben eine gemeinsame Methode |
 | `differences` | []object | Was die Berichte unvergleichbar macht, in der Reihenfolge des Vergleichs; `[]`, wenn nichts |
-| `differences[].field` | string | Name des Feldes wie in der Zeile `differs:` (`target`, `method`, `leettest_version`, `passport.config_sha256`, `schedule` (nicht veröffentlicht), `methods`, `dataset <Methode>`). Fehlt der Pass — `passport` |
+| `differences[].field` | string | Name des Feldes wie in der Zeile `differs:` (`target`, `method`, `leettest_version`, `passport.config_sha256`, `schedule`, `methods`, `dataset <Methode>`). Fehlt der Pass — `passport` |
 | `differences[].base` | string | Wert „vorher“; `none` — kein `dataset`, kein Pass oder kein `schedule` im Bericht |
 | `differences[].new` | string | Wert „nachher“; bei `passport` — `present` dort, wo ein Pass da ist |
 | `verdict` | string? | Das schlechteste Urteil der Prüfungen mit Grenze: `fail`, sonst `unknown`, sonst `pass`; `null` — keine Grenze gesetzt |

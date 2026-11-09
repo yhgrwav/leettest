@@ -132,7 +132,7 @@ Read https://raw.githubusercontent.com/yhgrwav/leettest/main/AGENTS.md and load-
   行表示该窗口内没有发出任何调用。如果速率低于每个窗口一次调用，这是计划本身，不是故障：请对照该
   方法的 `plan:`。使用 `ramp` 时，前几行就是爬坡阶段：那里 `sent/s` 低是计划，不是故障；请寻找在
   速率达到平台之前 p99 或失败比例就开始上升的那一行。
-- 运行头部的 `traffic:` 行显示消息体每秒移动了多少比特：发送和接收（未发布）。这是下界：不含
+- 运行头部的 `traffic:` 行显示消息体每秒移动了多少比特：发送和接收。这是下界：不含
   HTTP/2 帧、头部和 TLS；接收按解压前的大小计。方法下的 `response: N B per call` 是成功调用的
   平均响应大小；有预热时，`warm-up: N calls, p50, p99` 是预热自己的数字，与运行分开。
 - 带 `dataset` 的方法下面有一行 `data:`：文件中的请求用了多少个，最常用的那个发出了
@@ -226,7 +226,7 @@ leettest -c load.yaml -label env=staging -label commit=abc123
   指出方法、原因和应对办法。
 - **主机时钟比某个方法 p50 的四分之一还粗**，或运行期间步长增长到 1 µs 及以上（`clock_step`）。
   请从 Linux 上测量。
-- **压测机的延迟决定了 p99 尾部**（`generator_late`，未发布）：延迟中包含了这台机器自己的延迟，
+- **压测机的延迟决定了 p99 尾部**（`generator_late`）：延迟中包含了这台机器自己的延迟，
   测的不是目标。给压测机更多 CPU、降低速率，或把速率分摊到多台机器上。按方法判定，至少 100 个
   观测。报告会指出方法。
 - **某个 `pass` 限值无法判定**（`thresholds_undecided`）：观测太少、压测机来晚了、调用在等空闲的

@@ -25,7 +25,7 @@ kommt noch.
 | Ein Tippfehler in der Konfiguration ergibt einen leeren grünen Lauf | fertig |
 | Kaltstart verzerrt Perzentile | fertig |
 | Der Generator stirbt vor dem Ziel an hängenden Anfragen | fertig |
-| Der Generator stößt an seine Grenze, und der Bericht beschuldigt den Dienst | fertig (nicht veröffentlicht) |
+| Der Generator stößt an seine Grenze, und der Bericht beschuldigt den Dienst | fertig |
 | Rate-Limits des Ziels zählen als Dienstfehler | fertig |
 | Aufrufe lassen sich nicht über Daten verketten | geplant |
 | Unklar, was während des Laufs passiert | fertig |
@@ -114,8 +114,7 @@ der Dienst: Der Lauf hält mit Bericht an und wird als ungültig markiert.
 
 Schafft die Maschine die angeforderte RPS nicht, gehen Anfragen verspätet raus, die Latenz steigt
 — und der Bericht beschuldigt den Dienst, obwohl der Generator schuld ist. Die Verspätung des
-Generators messen wir bereits getrennt von der Antwortzeit des Dienstes und machen daraus ein Urteil
-(nicht veröffentlicht): Ein Lauf, in dem die Verspätung des Generators das p99-Ende bestimmt hat,
+Generators messen wir bereits getrennt von der Antwortzeit des Dienstes und machen daraus ein Urteil: Ein Lauf, in dem die Verspätung des Generators das p99-Ende bestimmt hat,
 wird für ungültig erklärt (`generator_late`, Exit-Code 2), und der Bericht nennt die Methoden und
 was zu ändern ist. Solange der Lauf geht, warnt eine Zeile auf stderr, dass der Generator hinter
 seinem Plan zurückbleibt. Einzelheiten stehen in der [Referenz](reference.md#wo-man-es-ausführt).
