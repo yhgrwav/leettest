@@ -693,7 +693,7 @@ The rest are plain counters.
 | `methods[].method` | string | The full method name |
 | `methods[].invalid_reason` | string? | The method measured nothing about load: `request_error`, `client_error`, `bad_response`, `mixed`; `null` — it did |
 | `methods[].sent`, `methods[].failed`, `methods[].aborted`, `methods[].not_sent`, `methods[].not_sent_generator`, `methods[].not_sent_stream`, `methods[].not_sent_connection`, `methods[].warmup_sent`, `methods[].warmup_failed`, `methods[].warmup_not_sent` | int | The method's share of the run's fields of the same name |
-| `methods[].rps` | float? | `sent/s`: calls sent divided by the sending time; `null` — no calls |
+| `methods[].rps` | float? | `sent/s`: calls sent divided by the sending time of this method; `null` — no calls |
 | `methods[].timeout_us` | int | The method's timeout |
 | `methods[].planned_rps_low`, `methods[].planned_rps_high` | int | Lowest and highest planned rate of the measured part of the plan, after the excluded window: a ramped call gives its `rps` twice |
 | `methods[].planned_duration_us` | int | How long the method was meant to go, as configured, the ramp included |

@@ -722,7 +722,7 @@ Die übrigen sind einfache Zähler.
 | `methods[].method` | string | Der volle Methodenname |
 | `methods[].invalid_reason` | string? | Die Methode hat nichts über Last gemessen: `request_error`, `client_error`, `bad_response`, `mixed`; `null` — sie hat |
 | `methods[].sent`, `methods[].failed`, `methods[].aborted`, `methods[].not_sent`, `methods[].not_sent_generator`, `methods[].not_sent_stream`, `methods[].not_sent_connection`, `methods[].warmup_sent`, `methods[].warmup_failed`, `methods[].warmup_not_sent` | int | Der Anteil der Methode an den gleichnamigen Feldern des Laufs |
-| `methods[].rps` | float? | `sent/s`: gesendete Aufrufe geteilt durch die Sendezeit; `null` — keine Aufrufe |
+| `methods[].rps` | float? | `sent/s`: gesendete Aufrufe geteilt durch die Sendezeit dieser Methode; `null` — keine Aufrufe |
 | `methods[].timeout_us` | int | Das Timeout der Methode |
 | `methods[].planned_rps_low`, `methods[].planned_rps_high` | int | Niedrigste und höchste geplante Rate des gemessenen Teils des Plans, nach dem ausgeschlossenen Fenster: Ein Aufruf mit Anlauf gibt sein `rps` zweimal |
 | `methods[].planned_duration_us` | int | Wie lange die Methode gehen sollte, wie konfiguriert, der Anlauf eingeschlossen |
