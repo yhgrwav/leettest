@@ -525,6 +525,9 @@ Prometheus 把它和服务自身的指标放在一起抓取。没有默认地址
 | 会有付费版本吗？ | [阅读](commercial.md) |
 | 在哪里提问或反馈？ | [阅读](feedback.md) |
 | 接下来会有什么？ | [阅读](roadmap.md) |
+| 如何完成第一次运行？ | [第一次运行](guide/first-run.md) |
+| 如何设置地址、TLS、请求头和令牌？ | [连接](guide/connection.md) |
+| 如何设置方法、负载和时长？ | [负载](guide/load.md) |
 
 **[在同一测试台上与 ghz 对比 →](compare-ghz.md)**——表格和复现命令。
 

@@ -619,6 +619,9 @@ die Warnungen in diesem Abschnitt.
 | Wird es eine kostenpflichtige Version geben? | [Lesen](commercial.md) |
 | Wo stelle ich Fragen oder gebe Feedback? | [Lesen](feedback.md) |
 | Was kommt als Nächstes? | [Lesen](roadmap.md) |
+| Wie mache ich den ersten Lauf? | [Der erste Lauf](guide/first-run.md) |
+| Wie setze ich Adresse, TLS, Header und Token? | [Verbindung](guide/connection.md) |
+| Wie setze ich Methoden, Last und Dauer? | [Last](guide/load.md) |
 
 **[Vergleich mit ghz auf einem Stand →](compare-ghz.md)** — Tabellen und der Befehl zum Nachstellen.
 
