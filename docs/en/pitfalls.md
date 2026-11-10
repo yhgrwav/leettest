@@ -123,7 +123,7 @@ warns that the generator is behind its schedule. Details are in the
 A `RESOURCE_EXHAUSTED` from the target's rate limiter is not the same as a timeout or a service
 crash. Lumping them into "errors: 12%" loses the meaning. The report splits calls by category, per method
 and per second: an "overloaded" refusal (`overload`) apart from a timeout (`timed_out`) and from a
-target failure (`failure`) — [categories](README.md#reading-the-report).
+target failure (`failure`) — [categories](report.md#reading-the-report).
 
 ## Visibility
 

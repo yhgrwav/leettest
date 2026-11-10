@@ -83,7 +83,7 @@ or cannot. Here is which.
 
 ## Where to look next
 
-- [Reading the report](README.md#reading-the-report) — client-side waits, categories, the clock.
-- [When a run is invalid](README.md#when-a-run-is-invalid) — the full list of causes.
+- [Reading the report](report.md#reading-the-report) — client-side waits, categories, the clock.
+- [When a run is invalid](report.md#when-a-run-is-invalid) — the full list of causes.
 - [Where to run](reference.md#where-to-run) — what disturbs a measurement and where to run from.
 - [Which load-testing problems does it fix?](pitfalls.md) — what the tool does about each.

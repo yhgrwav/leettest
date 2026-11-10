@@ -30,7 +30,7 @@ exit code.
 | `130` | Aborted without a report after Ctrl+C |
 | `143` | Aborted without a report after SIGTERM |
 
-The full description is in [exit codes](README.md#exit-codes).
+The full description is in [exit codes](report.md#exit-codes).
 
 ### The report's JSON: `-output json`, `schema_version` 1
 
@@ -50,7 +50,7 @@ version. The top-level fields:
 
 The nested fields, their types and meaning are in [JSON fields](reference.md#json-fields). The
 schema's rules (units, `null` instead of `0`, what to do with unknown fields) are in
-[JSON for scripts and CI](README.md#json-for-scripts-and-ci). `notes` and `unchecked[].error` are
+[JSON for scripts and CI](report.md#json-for-scripts-and-ci). `notes` and `unchecked[].error` are
 text for people: their wording changes freely, do not parse them. The values of fields that name a
 cause or a state (`outcome`, `invalid_reasons`, `stop_reason`, `unchecked[].reason`, the codes in
 `failure_codes`) may grow: a script must not fail on a value it does not know.
@@ -60,7 +60,7 @@ cause or a state (`outcome`, `invalid_reasons`, `stop_reason`, `unchecked[].reas
 `success`, `request_error`, `overload`, `failure`, `timed_out`, `cut_off`, `unreachable`,
 `client_error`, `bad_response`, `aborted`, `unclassified`. They are also the field names in the JSON
 and the values of the `category` label in Prometheus. What each means is in
-[reading the report](README.md#reading-the-report).
+[reading the report](report.md#reading-the-report).
 
 ### Config keys and flags
 
@@ -98,5 +98,5 @@ one. Nothing is deprecated now.
 ## Where to look next
 
 - [Reference](reference.md) — every key, flag, series and JSON field.
-- [Reading the report](README.md#reading-the-report) — how to read the report; the exit codes and the JSON are further down the same page.
+- [Reading the report](report.md#reading-the-report) — how to read the report; the exit codes and the JSON are further down the same page.
 - [What LeetTest does not do](limitations.md) — the limits where the report's numbers stop being about the target.

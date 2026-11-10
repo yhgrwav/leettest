@@ -7,7 +7,7 @@
 > Russian one is right.
 
 Every config field, every flag, and what the tool checks before the start. How to read the report
-is in the [README](README.md#reading-the-report).
+is in the [report page](report.md#reading-the-report).
 
 ## Config
 
@@ -491,7 +491,7 @@ the generator and the target goes into the latency and looks like the target's t
 - The exact call schedule is Linux-only. In a container with a CPU quota under two cores, rare start
   lags up to the quota period (usually 100 ms) are possible; the report shows them.
 - Behind an L4 balancer one backend is loaded: one connection, one backend. See
-  [reading the report](README.md#reading-the-report).
+  [reading the report](report.md#reading-the-report).
 - On Windows the clock steps about 0.5 ms, and a run against a fast service will be declared invalid
   (`clock_step`, exit code 2).
 - If the generator's own lag decided the p99 tail, the run is invalid (`generator_late`, exit code
@@ -569,7 +569,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 ## JSON fields
 
 The contract's rules — schema version, units, `null` rather than `0`, unknown fields — are in the
-[README](README.md#json-for-scripts-and-ci). Here is every field of `schema_version` 1. A type with
+[JSON for scripts and CI](report.md#json-for-scripts-and-ci). Here is every field of `schema_version` 1. A type with
 `?` may be `null`. Warm-up counters are in no other counter; `sent` and all its shares are
 measured calls only. The first column is the field's full path.
 
@@ -580,7 +580,7 @@ measured calls only. The first column is the field's full path.
 |---|---|---|
 | `<percentile>.us` | int | The value, whole microseconds |
 | `<percentile>.ns` | int | The histogram's value in whole nanoseconds, which the text report prints at three significant figures; `us` is the same value truncated to microseconds; `pass:` judges by the lowest value of the same histogram bucket, at most 0.1 % below `ns` (see [Pass limits](#pass-limits)), `leettest compare` by `ns`; beside a `fail` `us` can equal `limit_us` |
-| `<percentile>.lower_bound` | bool | `true` — a lower bound, not a value ([README](README.md#reading-the-report)) |
+| `<percentile>.lower_bound` | bool | `true` — a lower bound, not a value ([reading the report](report.md#reading-the-report)) |
 
 ### Run
 
@@ -660,7 +660,7 @@ measured calls only. The first column is the field's full path.
 | `connections.per_connection[].p99` | percentile? | p99 of the connection's calls; `null` without a call that has a latency |
 | `connections.per_connection[].first_limit`, `connections.per_connection[].last_limit` | int? | The connection's stream limit at its first and last handshake; `null` — not announced |
 | `connections.per_connection[].limit_changes` | int | Handshakes of the connection that announced a limit different from the one before |
-| `client_waits` | object | Calls that waited on the client side over the floor, by cause ([README](README.md#reading-the-report)) |
+| `client_waits` | object | Calls that waited on the client side over the floor, by cause ([reading the report](report.md#reading-the-report)) |
 | `client_waits.generator_calls`, `client_waits.stream_calls`, `client_waits.connection_calls` | int | All such calls, sent or not. A sent call can count for several causes |
 | `client_waits.generator_tail_calls`, `client_waits.stream_tail_calls`, `client_waits.connection_tail_calls` | int | Only among the p99 tail and the unsent: these pick `tail_wait_cause` |
 | `generator_cpu` | object? | How much of the CPU available to LeetTest itself the run used, second by second; `null` when the process's CPU time could not be read. The report prints a line when some second is busy |
@@ -691,7 +691,7 @@ measured calls only. The first column is the field's full path.
 ### Method: `methods[]`
 
 `<category>` is each of the four categories that have an object with answer times in JSON:
-`request_error`, `overload`, `failure`, `bad_response` ([categories](README.md#reading-the-report)).
+`request_error`, `overload`, `failure`, `bad_response` ([categories](report.md#reading-the-report)).
 The rest are plain counters.
 
 | Field | Type | Meaning |
