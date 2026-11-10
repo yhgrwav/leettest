@@ -93,6 +93,39 @@ func TestSearch_AProbeWithNoBaselineRecoversAndSaysSo(t *testing.T) {
 	}
 }
 
+// Ground: contract — the line about a missing baseline is one line however many
+// times the search probes: a break at 156 is probed and repeated clean, a break
+// at 195 is probed again, and the notes still hold the line once.
+func TestSearch_TheNoBaselineNoteIsWrittenOnceForTwoProbeRounds(t *testing.T) {
+	p := plan
+	p.To = 195
+	var asked []int
+	target := func(rps int) engine.Report {
+		switch n := len(asked); {
+		case rps == 100 && (n == 4 || n == 7):
+			return report(1000, 0, 20*time.Millisecond, 20*time.Millisecond)
+		case rps == 100 || rps == 125 || (rps == 156 && n == 5):
+			return undefinedP99(rps * 10)
+		default:
+			return report(rps*10, rps*5, 500*time.Millisecond, 500*time.Millisecond)
+		}
+	}
+	res, err := Search(t.Context(), p, fake(target, &asked))
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+
+	if want := []int{100, 125, 156, 100, 156, 195, 100, 195}; !slices.Equal(asked, want) {
+		t.Fatalf("ran %v, want %v: two probe rounds", asked, want)
+	}
+	if probes, recovered := recoveredProbes(res); probes != 2 || recovered != 2 {
+		t.Errorf("%d probes, %d recovered, want 2 and 2", probes, recovered)
+	}
+	if n := strings.Count(strings.Join(res.Notes, "\n"), noBaselineNote); n != 1 {
+		t.Errorf("notes %q hold the line %d times, want once", res.Notes, n)
+	}
+}
+
 // Ground: contract — a step that held with an undefined p99 does not touch the
 // baseline the earlier steps set: it is not a p99 of 0. The probe is then
 // judged against 20ms as always, and no line about a missing baseline is
