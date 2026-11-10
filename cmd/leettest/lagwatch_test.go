@@ -15,6 +15,8 @@
 package main
 
 import (
+	"encoding/json"
+	"errors"
 	"os"
 	"strings"
 	"sync"
@@ -238,7 +240,9 @@ func TestRun_NoLagNoWarning(t *testing.T) {
 
 		lagTickEvery = 20 * time.Millisecond
 
-		res := runCLI(t.Context(), t, 30*time.Second, "-fake", "-c", writeRunOf(t, "4s"))
+		res := runCLI(t.Context(), t, 30*time.Second, "-fake", "-output", "json", "-c", writeRunOf(t, "4s"))
+		skipIfTheRunShowsALateGenerator(t, res)
+
 		if res.err != nil {
 			t.Fatalf("run: %v\n%s", res.err, res.stderr)
 		}
@@ -247,6 +251,144 @@ func TestRun_NoLagNoWarning(t *testing.T) {
 			t.Errorf("stderr has a warning on a 50 rps run:\n%s", res.stderr)
 		}
 	})
+}
+
+// skipIfTheRunShowsALateGenerator skips the test when the run's own JSON report
+// shows a generator that did not keep the schedule, so the premise of a run with
+// no lag did not hold (issue #406, a loaded runner). Two cases, nothing wider:
+//   - the run ended invalid and every invalid_reasons entry is generator_late or
+//     clock_step (starvedReasons), the right verdict on a starved generator;
+//   - the run ended valid, stderr carries the warning and the report backs it:
+//     the slowest start is over the wait floor. The warning needs at least two
+//     starts over the floor, so a report that holds none contradicts it and the
+//     test fails on the warning as before.
+//
+// Any other result, a run invalid for another reason or a stdout that is not a
+// report included, returns and the asserts after it run.
+func skipIfTheRunShowsALateGenerator(t skipper, res result) {
+	t.Helper()
+
+	if res.err != nil {
+		if !errors.Is(res.err, ErrInvalidRun) {
+			return
+		}
+
+		if reasons, ok := starvedReasons([]byte(res.stdout)); ok {
+			t.Skipf("the generator was late, the run ended invalid (%s)", strings.Join(reasons, ","))
+		}
+
+		return
+	}
+
+	if !strings.Contains(res.stderr, "generator is behind") {
+		return
+	}
+
+	var report map[string]any
+	if json.Unmarshal([]byte(res.stdout), &report) != nil {
+		return
+	}
+
+	if worst, floor, ok := startLagOverTheFloor(report); ok {
+		t.Skipf("the generator was late, the run had no lag to keep silent about: slowest start %s over the wait floor %s",
+			worst, floor)
+	}
+}
+
+// startLagOverTheFloor reads the slowest start lag of a run's JSON report and
+// the wait floor it is judged by, max(1 ms, 4 clock steps), and says whether
+// the lag is over the floor. A report without the number says no.
+func startLagOverTheFloor(report map[string]any) (worst, floor time.Duration, ok bool) {
+	lag, _ := report["start_lag"].(map[string]any)
+	slowest, _ := lag["max"].(map[string]any)
+
+	ns, has := slowest["ns"].(float64)
+	if !has {
+		return 0, 0, false
+	}
+
+	step, _ := report["clock_step_ns"].(float64)
+	worst = time.Duration(ns)
+	floor = max(time.Millisecond, 4*time.Duration(step))
+
+	return worst, floor, worst > floor
+}
+
+// The skip of the 50 rps subtest is as narrow as the warning: a slowest start
+// strictly over max(1 ms, 4 clock steps) is lag; one at the floor, under it, or
+// a report without the number is not, and the subtest then fails on the warning.
+//
+// Ground: contract — a wait counts from the floor (rule of the wait floor).
+func TestStartLagOverTheFloor(t *testing.T) {
+	report := func(maxNS, stepNS any) map[string]any {
+		return map[string]any{
+			"start_lag":     map[string]any{"max": map[string]any{"ns": maxNS}},
+			"clock_step_ns": stepNS,
+		}
+	}
+
+	for name, tc := range map[string]struct {
+		report map[string]any
+		want   bool
+	}{
+		"over the 1 ms floor":           {report(float64(1_000_001), float64(100)), true},
+		"at the floor":                  {report(float64(1_000_000), float64(100)), false},
+		"under the floor":               {report(float64(900_000), float64(100)), false},
+		"over 1 ms, under 4 steps":      {report(float64(1_500_000), float64(500_000)), false},
+		"over 4 steps":                  {report(float64(2_100_000), float64(500_000)), true},
+		"no clock step, over the floor": {map[string]any{"start_lag": map[string]any{"max": map[string]any{"ns": float64(5_000_000)}}}, true},
+		"no start lag":                  {map[string]any{"clock_step_ns": float64(100)}, false},
+		"no number":                     {report(nil, float64(100)), false},
+		"empty report":                  {map[string]any{}, false},
+	} {
+		if _, _, got := startLagOverTheFloor(tc.report); got != tc.want {
+			t.Errorf("%s: over the floor = %v, want %v", name, got, tc.want)
+		}
+	}
+}
+
+// The skip is only for a run whose own report shows the generator late: invalid
+// for starvation alone, or valid with the warning on stderr and a slowest start
+// over the floor. Everything else is left to the subtest's asserts.
+//
+// Ground: contract — a verdict on the target, or a warning the report does not
+// back, is not starvation.
+func TestSkipIfTheRunShowsALateGenerator(t *testing.T) {
+	invalid := func(reasons string) result {
+		return result{stdout: string(reportWith(reasons)), err: errInvalidRun}
+	}
+	warned := func(stdout string) result {
+		return result{stdout: stdout, stderr: lagFragment + ": 3 of 150 calls\n"}
+	}
+	lagReport := func(maxNS string) string {
+		return `{"clock_step_ns":100,"start_lag":{"max":{"ns":` + maxNS + `}}}`
+	}
+
+	for name, tc := range map[string]struct {
+		res  result
+		want bool
+	}{
+		"invalid, generator late":         {invalid(`["generator_late"]`), true},
+		"invalid, coarse clock":           {invalid(`["clock_step"]`), true},
+		"invalid, late and in flight cap": {invalid(`["generator_late","in_flight_cap"]`), false},
+		"invalid, nothing measured":       {invalid(`["nothing_measured"]`), false},
+		"invalid, no reasons":             {invalid(`[]`), false},
+		"invalid, stdout not a report":    {result{stdout: "not json", err: errInvalidRun}, false},
+		"another error":                   {result{stdout: string(reportWith(`["generator_late"]`)), err: errors.New("dial: refused")}, false},
+		"valid, warned, start over floor": {warned(lagReport("2000000")), true},
+		"valid, warned, start at floor":   {warned(lagReport("1000000")), false},
+		"valid, warned, no start lag":     {warned(`{"clock_step_ns":100}`), false},
+		"valid, warned, stdout not JSON":  {warned("a text report"), false},
+		"valid, silent, start over floor": {result{stdout: lagReport("2000000")}, false},
+	} {
+		r := &skipRecorder{name: "TestX"}
+
+		skipIfTheRunShowsALateGenerator(r, tc.res)
+
+		if r.skipped != tc.want {
+			t.Errorf("%s: skipped = %v (%s), want %v", name, r.skipped, r.message, tc.want)
+		}
+	}
 }
 
 // writeRunOf is the config of the other runs with its stage lasting dur.
