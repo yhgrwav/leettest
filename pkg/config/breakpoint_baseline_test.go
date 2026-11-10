@@ -49,6 +49,10 @@ func TestBreakpoint_TheFirstStepMustMeasureEnoughCallsForAP99(t *testing.T) {
 		{"13 rps for 8 s measured", "13", "2s", "10s", ""},
 		{"100 calls exactly", "10", "2s", "12s", ""},
 		{"one call short of 100", "11", "1s", "10s", "99"},
+		// The count is floor(from × window): 9.1 s × 11 = 100.1 holds, and
+		// 9.95 s × 10 = 99.5 is 99, not a rounded 100 or a window cut to 9 s.
+		{"a fractional window, 100.1 calls", "11", "900ms", "10s", ""},
+		{"a fractional window, 99.5 calls", "10", "2050ms", "12s", "99"},
 	} {
 		_, err := config.Parse([]byte(stepYAML(tc.from, tc.settle, tc.hold)))
 		if tc.refused == "" {
@@ -66,6 +70,18 @@ func TestBreakpoint_TheFirstStepMustMeasureEnoughCallsForAP99(t *testing.T) {
 		if want := "the first step measures " + tc.refused + tail; !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: %q, want it to contain %q", tc.name, err, want)
 		}
+	}
+}
+
+// Ground: boundary — a plan Rates refuses (settle at the hold) is one error, the
+// settle's; there is no window to count, and no negative "N calls" is written.
+func TestBreakpoint_ASettleOverTheHoldIsOnlyTheSettleError(t *testing.T) {
+	_, err := config.Parse([]byte(stepYAML("5", "10s", "10s")))
+	if err == nil || !strings.Contains(err.Error(), "breakpoint.settle") {
+		t.Fatalf("%v, want the settle refusal", err)
+	}
+	if errors.Is(err, config.ErrShortFirstStep) || strings.Contains(err.Error(), "first step measures") {
+		t.Errorf("%v names the first step's calls beside a window that does not exist", err)
 	}
 }
 

@@ -88,8 +88,8 @@ func TestSearch_AProbeWithNoBaselineRecoversAndSaysSo(t *testing.T) {
 	if res.Outcome != BrokeBetween || res.Held != 125 || res.Broke != 156 || res.Cause != CauseErrors {
 		t.Errorf("%v held %d broke %d cause %v, want BrokeBetween 125 156 by errors", res.Outcome, res.Held, res.Broke, res.Cause)
 	}
-	if !slices.Contains(res.Notes, noBaselineNote) {
-		t.Errorf("notes %q, want the line %q", res.Notes, noBaselineNote)
+	if n := strings.Count(strings.Join(res.Notes, "\n"), noBaselineNote); n != 1 {
+		t.Errorf("notes %q hold the line %d times, want once: %q", res.Notes, n, noBaselineNote)
 	}
 }
 
