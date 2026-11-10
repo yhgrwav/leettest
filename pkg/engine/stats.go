@@ -527,6 +527,8 @@ type Stats struct {
 	// the names in the order of the calls.
 	scenarios     map[string]*scenarioTally
 	scenarioOrder []string
+	// stepHeads maps each later step of a scenario to the method that opens it.
+	stepHeads map[string]string
 }
 
 // linkStats is what one connection carried, counted by the rules of the run's
@@ -662,6 +664,13 @@ func (s *Stats) setScenario(name string, methods []string) {
 	}
 	if _, ok := s.scenarios[name]; !ok {
 		s.scenarioOrder = append(s.scenarioOrder, name)
+	}
+
+	if s.stepHeads == nil {
+		s.stepHeads = make(map[string]string)
+	}
+	for _, step := range methods[min(1, len(methods)):] {
+		s.stepHeads[step] = methods[0]
 	}
 
 	s.scenarios[name] = &scenarioTally{
@@ -1152,7 +1161,9 @@ func recordWarmup(dist *metrics.Latencies, r Result) {
 // snapshot of its distribution, so percentiles can be computed without holding
 // anything.
 type methodView struct {
-	name        string
+	name string
+	// window is the time the method was sending, what its rate divides by.
+	window      time.Duration
 	sent        int
 	failed      int
 	unanswered  int
@@ -1190,7 +1201,7 @@ func (s *Stats) views() (elapsed, measured time.Duration, sent, failed int, out 
 
 	for name, method := range s.byMethod {
 		out = append(out, methodView{
-			name: name, sent: method.sent, failed: method.failed, unanswered: method.unanswered, cutOff: method.cutOff,
+			name: name, window: s.methodWindow(name, measured), sent: method.sent, failed: method.failed, unanswered: method.unanswered, cutOff: method.cutOff,
 			unknown: method.unknown, clientError: method.clientError, lastAnswer: method.lastAnswer,
 			codes: failureCodes(method.codes), warmupLat: method.warmupLat,
 		})
@@ -1265,19 +1276,17 @@ func (s *Stats) SnapshotInto(dst *Snapshot, buf *LiveBuffer, percentiles bool) {
 	for i, method := range buf.methods {
 		m := &dst.Methods[i]
 		m.Method, m.Sent, m.Failed = buf.names[i], method.sent, method.failed
+
+		m.RPS = 0
+		if window := s.methodWindow(buf.names[i], measured); window > 0 {
+			m.RPS = float64(method.sent) / window.Seconds()
+		}
 	}
 	s.mu.Unlock()
 
 	dst.Elapsed, dst.Sent, dst.Failed, dst.RPS = elapsed, sent, failed, 0
 	if measured > 0 {
 		dst.RPS = float64(sent) / measured.Seconds()
-	}
-	for i := range dst.Methods {
-		m := &dst.Methods[i]
-		m.RPS = 0
-		if measured > 0 {
-			m.RPS = float64(m.Sent) / measured.Seconds()
-		}
 	}
 
 	if !percentiles {
@@ -1479,8 +1488,8 @@ func (s *Stats) Report() Report {
 			Windows:           windowsOfView(windowViews[v.name]),
 			OutsideWindows:    windowViews[v.name].outside,
 		}
-		if measured > 0 {
-			entry.RPS = float64(v.sent) / measured.Seconds()
+		if v.window > 0 {
+			entry.RPS = float64(v.sent) / v.window.Seconds()
 		}
 
 		// The tail is the calls at or above the printed p99: the ones that set
@@ -1543,6 +1552,23 @@ func (s *Stats) sendingWindow(elapsed time.Duration) time.Duration {
 	}
 
 	return max(0, window-s.warmup)
+}
+
+// methodWindow is what a method's rate divides by: the run's sending window
+// common, cut at the end of the method's own plan less the warm-up, so a short
+// plan beside a long one is not shown at a fraction of its rate. A scenario
+// step has no plan of its own and runs at its head's pace; a method Stats was
+// given no plan for keeps common. Never negative. Callers hold Stats.mu.
+func (s *Stats) methodWindow(method string, common time.Duration) time.Duration {
+	stages := s.methodStages[method]
+	if len(stages) == 0 {
+		stages = s.methodStages[s.stepHeads[method]]
+	}
+	if len(stages) == 0 {
+		return common
+	}
+
+	return max(0, min(common, planLength(stages)-s.warmup))
 }
 
 // p999Of is p99.9 of the observations, undefined while it would be the max.

@@ -151,15 +151,19 @@ func TestStatsMethodRPSOfAPlanOfSeveralStagesIsOverTheirSum(t *testing.T) {
 // method's plan. The run started 30 s ago, so the clock plays no part.
 func TestStatsLiveMethodRPSAfterTheStopIsOverItsOwnWindow(t *testing.T) {
 	tests := []struct {
-		name  string
-		stop  time.Duration
-		wantA float64
-		wantB float64
+		name   string
+		warmup time.Duration
+		stop   time.Duration
+		wantA  float64
+		wantB  float64
 	}{
 		// Both plans are still running at the stop: both windows are 5 s.
-		{"stop at 5 s", 5 * time.Second, 100, 50},
+		{"stop at 5 s", 0, 5 * time.Second, 100, 50},
 		// A's plan ended at 10 s, B's goes on to the stop at 15 s.
-		{"stop at 15 s", 15 * time.Second, 100, 50},
+		{"stop at 15 s", 0, 15 * time.Second, 100, 50},
+		// The warm-up is out of the plan's window too: A sent 800 calls over
+		// its 8 measured seconds, B 650 over the 13 up to the stop.
+		{"warm-up 2 s, stop at 15 s", 2 * time.Second, 15 * time.Second, 100, 50},
 	}
 
 	for _, tt := range tests {
@@ -167,7 +171,7 @@ func TestStatsLiveMethodRPSAfterTheStopIsOverItsOwnWindow(t *testing.T) {
 			start := time.Now().Add(-30 * time.Second)
 			stats := NewStats()
 			stats.Reserve(time.Minute, "a", "b")
-			stats.Start(start, 0)
+			stats.Start(start, tt.warmup)
 			stats.setMethodStages("a", []Stage{{StartRPS: 100, TargetRPS: 100, Duration: 10 * time.Second}})
 			stats.setMethodStages("b", []Stage{{StartRPS: 50, TargetRPS: 50, Duration: 20 * time.Second}})
 			planSent(stats, start, "a", 100, 10*time.Second, tt.stop)
