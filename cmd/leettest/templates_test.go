@@ -226,9 +226,9 @@ func TestRun_ASearchGoesOnCountingThroughItsSteps(t *testing.T) {
 			len(sizes), gaveOut, res.stdout)
 	}
 
-	// Steps of 50, 63 and 79 rps hand out 15, 19 and 24 requests: more than any
-	// one step does, and every number once.
-	if len(sizes) <= 24 {
+	// Steps of 400, 500 and 625 rps hand out 120, 150 and 188 requests: more than
+	// any one step does, and every number once.
+	if len(sizes) <= 188 {
 		t.Fatalf("the target saw %d requests: the search did not run past its first steps\n%s", len(sizes), res.stdout)
 	}
 	for i, got := range sizes {
@@ -291,7 +291,7 @@ func TestRun_APlanPastTheFieldIsRefusedBeforeTheFirstRequest(t *testing.T) {
 }
 
 // seqSearch runs the breaking-point search over a call whose {{seq}} field holds
-// 3: the first step (50 rps) hands out 3 requests and the guard stops it before
+// 3: the first step (400 rps) hands out 3 requests and the guard stops it before
 // the 4th. It is the one path where the guard fires in a real command, because
 // a plain run is refused earlier by CheckTemplatesFit. The calls are made here,
 // not by the CLI, so that the limit can be as small as the test needs.
@@ -339,7 +339,7 @@ func TestSearch_ASeqPastItsFieldEndsTheSearchStoppedWithAReport(t *testing.T) {
 	if got := exitCode(err); got != 3 {
 		t.Errorf("exit code %d, want 3", got)
 	}
-	for _, want := range []string{"stopped at the first step", "{{seq}} of " + strings.TrimPrefix(checkMethod, "/") + " outgrew its field (limit 3) at 50 rps"} {
+	for _, want := range []string{"stopped at the first step", "{{seq}} of " + strings.TrimPrefix(checkMethod, "/") + " outgrew its field (limit 3) at 400 rps"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the report lacks %q:\n%s", want, out)
 		}

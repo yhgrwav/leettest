@@ -430,18 +430,20 @@ func TestThresholds_ABadPassSectionIsExit1(t *testing.T) {
 }
 
 // Ground: contract — in a search the limit is on the rate held. The fake
-// target never breaks, so the search holds every step up to 79: a limit at 63
+// target never breaks, so the search holds every step up to 625: a limit at 500
 // passes (0); a p99_limit under the fake's latency breaks the first step,
 // nothing is held, and the same limit is missed (4). The search's own outcome
 // stays what it was.
 func TestThresholds_ASearchIsDecidedByWhatItHeld(t *testing.T) {
 	section := func(extra string) string {
-		return "  breakpoint:\n    from: 50\n    to: 80\n    settle: 50ms\n    hold: 300ms\n" + extra + "    pass:\n      held_rps: 63\n"
+		return "  breakpoint:\n    from: 400\n    to: 640\n    settle: 50ms\n    hold: 300ms\n" + extra + "    pass:\n      held_rps: 500\n"
 	}
 
 	t.Run("held up to the limit", func(t *testing.T) {
+		// The steps now measure a p99: a generous p99_limit stands in for the
+		// knee, which this test is not about.
 		res := runCLI(t.Context(), t, 60*time.Second, "-fake", "-output", "json",
-			"-c", writeSearchOf(t, closedPort(t), section(""), "200ms", checkMethod))
+			"-c", writeSearchOf(t, closedPort(t), section("    p99_limit: 1s\n"), "200ms", checkMethod))
 		skipIfTheGeneratorDecided(t, res, optionalJSON(t, res))
 		wantExit(t, res, 0)
 		out := decodeOnly(t, res.stdout)
@@ -451,16 +453,16 @@ func TestThresholds_ASearchIsDecidedByWhatItHeld(t *testing.T) {
 			// The search ended early (a run limit) and the guard above did not see
 			// the generator behind it: its own fields do not show a starved
 			// generator, so this test cannot say it was one. What it can still
-			// check is that the limit passed on what was held, at 63 or more; the
-			// full 79 and held_all are asserted only for a search that went to the end.
-			if held, _ := rows["held_rps"]["held_rps"].(float64); held < 63 {
-				t.Errorf("held_rps threshold %v after a run limit, want held at least 63", rows["held_rps"])
+			// check is that the limit passed on what was held, at 500 or more; the
+			// full 625 and held_all are asserted only for a search that went to the end.
+			if held, _ := rows["held_rps"]["held_rps"].(float64); held < 500 {
+				t.Errorf("held_rps threshold %v after a run limit, want held at least 500", rows["held_rps"])
 			}
 
 			return
 		}
-		if rows["held_rps"]["limit_rps"] != 63.0 || rows["held_rps"]["held_rps"] != 79.0 {
-			t.Errorf("held_rps threshold %v, want limit 63, held 79", rows["held_rps"])
+		if rows["held_rps"]["limit_rps"] != 500.0 || rows["held_rps"]["held_rps"] != 625.0 {
+			t.Errorf("held_rps threshold %v, want limit 500, held 625", rows["held_rps"])
 		}
 		if got := jsonAt(t, out, "breakpoint", "outcome"); got != "held_all" {
 			t.Errorf("breakpoint.outcome = %v, want held_all", got)

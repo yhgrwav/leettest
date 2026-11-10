@@ -23,7 +23,7 @@ import (
 // errorsLimitSection is a short search on the fake target with the given
 // lines added to the breakpoint section.
 func errorsLimitSection(extra string) string {
-	return "  breakpoint:\n    from: 50\n    to: 80\n    settle: 50ms\n    hold: 300ms\n" + extra
+	return "  breakpoint:\n    from: 400\n    to: 640\n    settle: 50ms\n    hold: 300ms\n" + extra
 }
 
 // Ground: contract — load.breakpoint.errors_limit reaches the search and its

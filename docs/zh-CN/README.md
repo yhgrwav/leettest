@@ -371,6 +371,13 @@ p99 越过界线时判为崩溃。因没有连接而未发出的调用，在任�
 会有一行 `breakpoint: up to N steps, at most T`：共有多少级，以及搜索最坏情况下要多久。整个搜索
 只用一条连接；目标断开它时，该级判为崩溃，不会重连。
 
+第一级必须测到足够算出 p99 的调用数：`from × (hold − settle)`，小数部分舍去，至少 100 次。第一级测到的
+调用更少的搜索会在任何负载之前被拒绝：`invalid breakpoint: the first step measures 40 calls, a p99
+needs 100: raise from, hold or lower settle`——后续各级和探测都以撑住的最好一级的 p99 为参照。
+若某一级仍然没有 p99（带有测量延迟的调用太少），它不会设定这个参照；没有参照时做的探测视为已恢复，
+报告会在一条注释中说明（`no baseline: the first step measured too few calls for a p99, the knee was
+not checked`）。
+
 结果（JSON 中的 `outcome`）是封闭列表：`broke`（撑住 X，在 Y 崩溃）、`broke_at_first`（在第一级就
 崩溃——请从更低处开始）、`held_all`（一直撑到 `to`）、`run_limit`（压测机、某条连接的上限或
 `-max-in-flight` 用尽：更高负载下目标的情况未知）、`stopped`（Ctrl+C）、`invalid`（某一级是无效
