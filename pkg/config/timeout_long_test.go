@@ -113,6 +113,24 @@ func TestTimeoutJustUnderAnHourIsAccepted(t *testing.T) {
 	}
 }
 
+// Ground: contract — pkg/config is a library API: a caller that builds a Call
+// and validates it without Parse gets the same refusal, from the field as
+// written (the resolved Timeout is not there yet).
+func TestCallValidate_ATimeoutOfAnHourIsRefusedWithoutParse(t *testing.T) {
+	over, under := 2*time.Hour, 59*time.Minute+59*time.Second
+	call := Call{Method: "wallet.v1.WalletService/GetBalance", RPS: 10, Duration: time.Second}
+
+	call.RawTimeout = &over
+	if err := call.Validate(); !errors.Is(err, ErrTimeoutTooLong) {
+		t.Errorf("2h: err = %v, want ErrTimeoutTooLong", err)
+	}
+
+	call.RawTimeout = &under
+	if err := call.Validate(); err != nil {
+		t.Errorf("59m59s: err = %v, want accepted", err)
+	}
+}
+
 // Ground: contract — the text is what the user fixes the config by: the call
 // it is about, the key, the value and the limit.
 func TestTimeoutErrorNamesKeyValueAndLimit(t *testing.T) {

@@ -528,6 +528,9 @@ func (c Call) Validate() error {
 	if c.RawTimeout != nil && *c.RawTimeout <= 0 {
 		errs = append(errs, fmt.Errorf("%w: %s", ErrInvalidTimeout, *c.RawTimeout))
 	}
+	if c.RawTimeout != nil && *c.RawTimeout >= maxLatencyLimit {
+		errs = append(errs, fmt.Errorf("timeout %s is not below 1h: %w", *c.RawTimeout, ErrTimeoutTooLong))
+	}
 	if c.RawDataset != nil && strings.TrimSpace(*c.RawDataset) == "" {
 		errs = append(errs, ErrEmptyDatasetPath)
 	}
