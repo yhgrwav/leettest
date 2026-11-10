@@ -17,12 +17,14 @@ package config
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/yhgrwav/leettest/pkg/breakpoint"
+	"github.com/yhgrwav/leettest/pkg/metrics"
 	"github.com/yhgrwav/leettest/pkg/share"
 	"github.com/yhgrwav/leettest/pkg/threshold"
 )
@@ -63,8 +65,8 @@ var (
 	// ErrBreakpoint is a breakpoint section that cannot run as written.
 	ErrBreakpoint = errors.New("invalid breakpoint")
 	// ErrShortFirstStep is a search whose first step measures fewer calls than
-	// a p99 needs (red-test stub: nothing returns it yet).
-	ErrShortFirstStep = errors.New("breakpoint: the first step measures too few calls for a p99")
+	// a p99 needs: it is also an ErrBreakpoint.
+	ErrShortFirstStep = errors.New("the first step measures too few calls for a p99")
 	// ErrThreshold is a pass section that cannot be judged as written.
 	ErrThreshold              = errors.New("invalid pass")
 	ErrInvalidMaxResponseSize = errors.New("max_response_size must be a positive size below 2GiB with a unit: B, KB, MB, GB, KiB, MiB or GiB")
@@ -100,6 +102,17 @@ func (errSearchNeedsRamp) Error() string {
 }
 
 func (errSearchNeedsRamp) Unwrap() error { return ErrRealNeedsRamp }
+
+// errShortFirstStep is ErrShortFirstStep with its numbers; to errors.Is it is
+// an ErrBreakpoint too.
+type errShortFirstStep struct{ calls, need int64 }
+
+func (e errShortFirstStep) Error() string {
+	return fmt.Sprintf("%s: the first step measures %d calls, a p99 needs %d: raise from, hold or lower settle",
+		ErrBreakpoint, e.calls, e.need)
+}
+
+func (errShortFirstStep) Unwrap() []error { return []error{ErrShortFirstStep, ErrBreakpoint} }
 
 // The values of app.mode. Left out, a config is local.
 const (
@@ -281,6 +294,11 @@ func (b Breakpoint) validate() error {
 	}
 	_, err := b.Plan(time.Second, 0).Rates()
 	if err == nil {
+		// The window is hold − settle, positive once Rates accepted the plan.
+		if calls, need := windowCalls(int64(b.From), b.Hold-b.Settle), metrics.MinCount(0.99); calls < need {
+			return errShortFirstStep{calls: calls, need: need}
+		}
+
 		return nil
 	}
 	key := "settle"
@@ -298,6 +316,17 @@ func (b Breakpoint) validate() error {
 	}
 
 	return fmt.Errorf("%w: breakpoint.%s: %w", ErrBreakpoint, key, err)
+}
+
+// windowCalls is the calls rps sends in window, rounded down: whole seconds
+// first, so the product cannot overflow for a window of any length.
+func windowCalls(rps int64, window time.Duration) int64 {
+	secs := int64(window / time.Second)
+	if secs > 0 && rps > math.MaxInt64/secs/2 {
+		return math.MaxInt64 / 2
+	}
+
+	return rps*secs + rps*int64(window%time.Second)/int64(time.Second)
 }
 
 // validateSearch refuses what a search cannot run with: more than one call,
