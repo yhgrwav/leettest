@@ -131,10 +131,14 @@ Ziels), `nothing_sent` (kein einziger Aufruf wurde gesendet), `censored` (am End
 stehen Aufrufe ohne Antwort innerhalb des Timeouts: Der Wert ist nur eine Untergrenze, nicht über
 der Grenze).
 
-- Die Latenz wird in Nanosekunden verglichen, wie das JSON sie trägt (`value.ns`): Ein Wert, der eine
-  Nanosekunde über der Grenze liegt, ist ein `fail`, obwohl `value.us` (auf Mikrosekunden
-  abgeschnitten) gleich `limit_us` sein kann. Eine Untergrenze über der Grenze ist ein `fail`: Der
-  wahre Wert ist noch größer.
+- Die Latenz wird in Nanosekunden verglichen, und zwar am kleinsten Wert des Histogramm-Buckets, in
+  den das Perzentil fällt: Bericht und JSON (`value.ns`) tragen die Obergrenze des Buckets, höchstens
+  0,1 % darüber. Eine Grenze wird nur verletzt, wenn dieser kleinste Wert darüber liegt; Aufrufe
+  genau an der Grenze bestehen also, obwohl der gedruckte Wert etwas darüber liegen kann
+  (100,008 ms gegen `p99: 100ms`: `pass`). Ein Skript, das `value.ns` selbst mit der Grenze
+  vergleicht, kann an dieser Kante vom Urteil abweichen. `value.us` (auf Mikrosekunden abgeschnitten)
+  kann neben einem `fail` gleich `limit_us` sein. Eine Untergrenze über der Grenze ist ein `fail`:
+  Der wahre Wert ist noch größer.
 - Der Anteil zählt jeden fehlgeschlagenen Aufruf und jeden Aufruf, der mangels Verbindung nicht
   gesendet wurde, an allen gezählten. Für ein `fail` zählen nur die Fehler, die das Ziel
   entschieden hat: Vom Client abgelehnte Anfragen, Client-Fehler und fehlerhafte Antworten sagen
@@ -602,7 +606,7 @@ unten den Typ „percentile?" hat.
 | Feld | Typ | Bedeutung |
 |---|---|---|
 | `<percentile>.us` | int | Der Wert, ganze Mikrosekunden |
-| `<percentile>.ns` | int | Der Wert des Histogramms in ganzen Nanosekunden, den der Textbericht mit drei signifikanten Stellen ausgibt; `us` ist derselbe Wert, auf Mikrosekunden abgeschnitten; `pass:` und `leettest compare` urteilen nach `ns`: neben einem `fail` kann `us` gleich `limit_us` sein |
+| `<percentile>.ns` | int | Der Wert des Histogramms in ganzen Nanosekunden, den der Textbericht mit drei signifikanten Stellen ausgibt; `us` ist derselbe Wert, auf Mikrosekunden abgeschnitten; `pass:` urteilt nach dem kleinsten Wert desselben Histogramm-Buckets, höchstens 0,1 % unter `ns` (siehe [Grenzen: pass](#grenzen-pass)), `leettest compare` nach `ns`; neben einem `fail` kann `us` gleich `limit_us` sein |
 | `<percentile>.lower_bound` | bool | `true` — eine Untergrenze, kein Wert ([README](README.md#den-bericht-lesen)) |
 
 ### Lauf

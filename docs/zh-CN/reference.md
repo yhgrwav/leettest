@@ -118,8 +118,11 @@ load:
 客户端自己的失败，而不是目标的）、`nothing_sent`（一个调用也没发出）、`censored`（尾部有在超时内没有
 应答的调用：该值只是下界，且不高于限值）。
 
-- 延迟按纳秒比较，与 JSON 中的一致（`value.ns`）：比限值高一纳秒的值就是 `fail`，尽管 `value.us`
-  （截断到微秒）可能等于 `limit_us`。高于限值的下界算 `fail`：真实值还要更大。
+- 延迟按纳秒比较，取该百分位所在直方图桶中的最小值：报告和 JSON（`value.ns`）给出的是桶的上沿，
+  最多高出 0.1 %。只有这个最小值高于限值时才算超限，所以恰好在限值上的调用算通过，尽管打印的值可能
+  略高于限值（100.008 ms 对 `p99: 100ms`：`pass`）。自行把 `value.ns` 与限值比较的脚本，在这个边界上
+  可能与结论不一致。`fail` 旁边的 `value.us`（截断到微秒）可能等于 `limit_us`。高于限值的下界算
+  `fail`：真实值还要更大。
 - 占比统计所有失败的调用，以及因没有连接而未发出的调用，除以所有被统计的调用。对 `fail` 只计由目标
   决定的失败：被客户端拒绝的请求、客户端错误和错误的响应都说明不了目标。
 - 限值那一行绝不与其结论矛盾：如果四舍五入到三位有效数字的值会落在所输出限值的错误一侧，就输出精确值。
@@ -477,7 +480,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | 字段 | 类型 | 含义 |
 |---|---|---|
 | `<percentile>.us` | int | 数值，整数微秒 |
-| `<percentile>.ns` | int | 直方图的数值，整数纳秒，文本报告按三位有效数字打印；`us` 是同一数值截断到微秒；`pass:` 和 `leettest compare` 按 `ns` 判定：`fail` 旁边的 `us` 可能等于 `limit_us` |
+| `<percentile>.ns` | int | 直方图的数值，整数纳秒，文本报告按三位有效数字打印；`us` 是同一数值截断到微秒；`pass:` 按同一直方图桶中的最小值判定，最多比 `ns` 低 0.1 %（见 [Pass 限值](#pass-限值)），`leettest compare` 按 `ns` 判定；`fail` 旁边的 `us` 可能等于 `limit_us` |
 | `<percentile>.lower_bound` | bool | `true`——下界，而不是数值（[README](README.md#阅读报告)） |
 
 ### 运行

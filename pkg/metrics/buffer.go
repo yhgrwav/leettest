@@ -108,6 +108,8 @@ func (b *Buffer) Percentile(p float64) Quantile {
 	return percentile(b, p)
 }
 
+func (b *Buffer) significantFigures() int { return int(b.measured.SignificantFigures()) }
+
 func (b *Buffer) counts() (measured, censored int64) {
 	return b.measured.TotalCount(), b.censored.TotalCount()
 }

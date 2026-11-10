@@ -24,6 +24,7 @@ import (
 // holding that rank. combinedAt merges measured and censored and may be
 // expensive: the rule asks for it only when the percentile is not exact.
 type view interface {
+	significantFigures() int
 	counts() (measured, censored int64)
 	thresholds() (lo, hi int64)
 	measuredAt(rank int64) int64
@@ -44,21 +45,24 @@ func percentile(v view, p float64) Quantile {
 
 	rank := rankFor(p, n)
 	lo, hi := v.thresholds()
+	figures := v.significantFigures()
 
 	// Exact when the rank-th measured value's bucket lies at or below every
 	// censored threshold: a censored observation's true value exceeds its
 	// threshold, so none of them can take that rank.
 	if rank <= measuredN {
 		if m := v.measuredAt(rank); m <= lo {
-			return Quantile{Value: time.Duration(m), Exact: true, Defined: true}
+			return Quantile{Value: time.Duration(m), Low: time.Duration(lowestEquivalent(m, figures)), Exact: true, Defined: true}
 		}
 	}
 
 	// A single threshold c is the bound when fewer than rank measured values
 	// can be below it: the rank-th measured one lies in a bucket above c's.
-	if lo == hi && (measuredN < rank || v.measuredAt(rank) > highestEquivalent(lo)) {
+	// Low stays unknown: the bound is c itself, not an edge.
+	if lo == hi && (measuredN < rank || v.measuredAt(rank) > highestEquivalent(lo, figures)) {
 		return Quantile{Value: time.Duration(lo), Defined: true}
 	}
 
-	return Quantile{Value: time.Duration(lowestEquivalent(v.combinedAt(rank))), Defined: true}
+	// The bound is already a bucket's bottom: Low would repeat it.
+	return Quantile{Value: time.Duration(lowestEquivalent(v.combinedAt(rank), figures)), Defined: true}
 }

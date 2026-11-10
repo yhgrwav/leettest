@@ -548,15 +548,17 @@ func (s *search) broken(r engine.Report, kind Kind) (broken bool, cause Cause, w
 		return false, CauseClientErrors, fmt.Sprintf("%s over errors_limit %s only with the client's; the target's own are within it, the target above that is untested",
 			failedText(r, limit, verdict), limit.Text)
 	}
-	got := p99(r)
+	// The printed p99 is the bucket's top; a step breaks only on what is
+	// certainly over, the bucket's bottom. The baseline stays as printed.
+	got, floor := p99(r), p99Floor(r)
 	if s.plan.P99Limit > 0 {
-		if got > s.plan.P99Limit {
+		if floor > s.plan.P99Limit {
 			return true, CauseP99Limit, fmt.Sprintf("p99 %v over p99_limit %v", overLimit(got, s.plan.P99Limit), s.plan.P99Limit)
 		}
 
 		return false, NoCause, ""
 	}
-	if s.baseline > 0 && got > KneeRatio*s.baseline {
+	if s.baseline > 0 && floor > KneeRatio*s.baseline {
 		return true, CauseP99VsBase, fmt.Sprintf("p99 %v = %.1fx baseline %v (no p99_limit set)", short(got), float64(got)/float64(s.baseline), short(s.baseline))
 	}
 
@@ -651,6 +653,21 @@ func p99(r engine.Report) time.Duration {
 	top, _ := definedP99(r)
 
 	return top
+}
+
+// p99Floor is the highest lowest-value of a method's p99 bucket, 0 when none
+// is defined: what the limit and the knee are compared with. Not the floor of
+// the method with the highest p99: one method's bound can be over a limit
+// another's bucket top only reaches.
+func p99Floor(r engine.Report) time.Duration {
+	var floor time.Duration
+	for i := range r.Methods {
+		if m := &r.Methods[i]; m.P99.Defined {
+			floor = max(floor, m.P99.Floor())
+		}
+	}
+
+	return floor
 }
 
 // definedP99 is p99 and whether any method has one.
