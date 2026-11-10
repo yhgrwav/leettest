@@ -18,7 +18,7 @@ runs shell commands does the same four things:
 
 `load.yaml` in the service's repository. The limits under `pass` make the exit code a verdict:
 without them a run that reaches its end returns `0` however the service answered
-([pass limits](README.md#pass-limits-a-run-as-a-check)). `app.target` is the service the job
+([pass limits](report.md#pass-limits-a-run-as-a-check)). `app.target` is the service the job
 started; in this file it is the reference stand from this repository, the target of our own CI.
 
 ```yaml
@@ -98,7 +98,7 @@ jobs:
 The step by step:
 
 - **Install.** `install.sh` puts the latest release into `~/.local/bin` and checks its checksum
-  ([install](README.md#install)). A build that must not change under you pins a release: put
+  ([install](guide/first-run.md#install)). A build that must not change under you pins a release: put
   `LEETTEST_VERSION=<tag>` before `sh`, with a tag from the
   [releases page](https://github.com/yhgrwav/leettest/releases).
 - **Start the service.** Replace the step with however your service starts, and point

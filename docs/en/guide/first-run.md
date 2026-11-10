@@ -8,7 +8,7 @@
 This is the path from installing to the first report: install LeetTest, write a config for two
 methods, run it and read the result. You need no service of your own: below is a test service that
 ships with LeetTest. Working through an AI agent — give it [docs/agent.md](../../agent.md) (the
-phrase for it is in the [README](../README.md#install)): it will take the same steps itself.
+phrase for it is in the [README](../../../README.md#установка)): it will take the same steps itself.
 
 ## Where to run
 

@@ -320,7 +320,7 @@ var yamlBlock = regexp.MustCompile("(?s)```yaml\n(.*?)```")
 func TestReadme_BlockIsItsFile(t *testing.T) {
 	for _, c := range []struct{ readme, heading, example string }{
 		{"../docs/ru/guide/first-run.md", "## Запуск", "ru/leettest.yaml"},
-		{"../docs/en/README.md", "## Run", "leettest.yaml"},
+		{"../docs/en/guide/first-run.md", "## Run", "leettest.yaml"},
 	} {
 		raw, err := os.ReadFile(c.readme)
 		if err != nil {

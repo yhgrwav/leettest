@@ -144,7 +144,7 @@ repository (`make stand`, needs Go and a clone):
 Every field is described in the
 [reference, «JSON fields»](https://github.com/yhgrwav/leettest/blob/main/docs/en/reference.md#json-fields);
 the contract rules are in the
-[README, «JSON for scripts and CI»](https://github.com/yhgrwav/leettest/blob/main/docs/en/README.md#json-for-scripts-and-ci).
+[report page, «JSON for scripts and CI»](https://github.com/yhgrwav/leettest/blob/main/docs/en/report.md#json-for-scripts-and-ci).
 
 - Decisions are fields, not text: read `invalid_reasons`, `methods[].invalid_reason`, `tail_wait_cause`,
   `methods[].silent_from_s`. Never parse `notes`: it is reworded freely.
