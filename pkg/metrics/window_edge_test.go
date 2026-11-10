@@ -72,3 +72,39 @@ func TestRunLowerBoundIsStillTheBottomOfTheThreeDigitBucket(t *testing.T) {
 		t.Errorf("run p99 = %+v, want the lower bound %v", q, want)
 	}
 }
+
+// windowWithAThresholdInTheBucket holds 98 calls at 10ms, one measured at
+// 99.7ms and one cut off at 100ms: a single threshold, and the p99 (rank 99) is
+// the 99.7ms call. The window's bucket for both is [99 614 720; 100 139 007]
+// ns; the three-digit bucket of 100ms ends at 100 007 935.
+func windowWithAThresholdInTheBucket(l *Latencies) *Latencies {
+	record(l, 98, 10*time.Millisecond)
+	l.Record(99_700_000 * time.Nanosecond)
+	l.RecordCensored(100 * time.Millisecond)
+
+	return l
+}
+
+// Ground: contract (decision C) — a lower bound never exceeds what is known.
+// The measured p99 is 99.7ms and the threshold shares its two-digit bucket, so
+// the data cannot say which is larger: the bound is the bucket's bottom,
+// 99 614 720 ns, not the threshold's 100ms. The fixed 11-bit edges took the
+// top of the three-digit bucket of 100ms for the end of the window's bucket
+// and read the threshold, 0.3ms above the call it stands for.
+func TestWindowBoundNeverExceedsAMeasuredValueInTheThresholdsBucket(t *testing.T) {
+	q := windowWithAThresholdInTheBucket(NewWindowLatencies()).Snapshot().Percentile(0.99)
+
+	if !q.Defined || q.Exact || q.Value > 99_700_000*time.Nanosecond || q.Value != windowBound100ms {
+		t.Errorf("window p99 = %+v, want an inexact bound %v, at most the measured 99.7ms", q, windowBound100ms)
+	}
+}
+
+// Ground: contract (decision C) — the same through a merge of windows.
+func TestMergedWindowBoundNeverExceedsAMeasuredValueInTheThresholdsBucket(t *testing.T) {
+	merged := Merge(windowWithAThresholdInTheBucket(NewWindowLatencies()).Snapshot(), NewWindowLatencies().Snapshot())
+
+	q := merged.Percentile(0.99)
+	if !q.Defined || q.Exact || q.Value > 99_700_000*time.Nanosecond || q.Value != windowBound100ms {
+		t.Errorf("merged p99 = %+v, want an inexact bound %v, at most the measured 99.7ms", q, windowBound100ms)
+	}
+}

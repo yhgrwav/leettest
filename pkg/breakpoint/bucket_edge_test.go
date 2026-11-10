@@ -85,6 +85,46 @@ func TestSearch_P99LimitIsComparedAtTheBucketsLowerEdge(t *testing.T) {
 	}
 }
 
+// Ground: contract — over several methods the step's p99 is the highest bottom
+// of them, not the bottom of the method with the highest printed value. Method
+// A's p99 is a lower bound in the censored mass at 100ms (nothing known of its
+// bucket: the bound itself is the floor), method B's is a real bucket of
+// 100ms, printed 100.008ms with its bottom at 99.942ms. Against a limit of
+// 99.99ms A alone is certainly over, so the step breaks; taking the floor of B,
+// the method printed highest, would hold it. Green before the change: it
+// keeps the line for the code.
+func TestSearch_OverMethodsTheLimitReadsTheHighestFloor(t *testing.T) {
+	const ms = time.Millisecond
+
+	step := func(a metrics.Quantile, bLatency time.Duration) engine.Report {
+		b := recordedStep(1000, bLatency).Methods[0]
+		b.Method = "b.B/C"
+
+		return engine.Report{Sent: 2000, Methods: []engine.MethodReport{
+			{Method: "a.B/C", Sent: 1000, Latencies: 1000, P99: a, P99WithoutClientWaits: a}, b,
+		}}
+	}
+	fast := metrics.Quantile{Value: 10 * ms, Exact: true, Defined: true}
+	bound := metrics.Quantile{Value: 100 * ms, Defined: true}
+
+	p := Plan{From: 100, To: 125, Settle: 10 * ms, Hold: 50 * ms, P99Limit: 99_990_000 * time.Nanosecond}
+	var asked []int
+	target := func(rps int) engine.Report {
+		if rps == 100 {
+			return step(fast, 10*ms)
+		}
+
+		return step(bound, 100*ms)
+	}
+	res, err := Search(t.Context(), p, fake(target, &asked))
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if res.Outcome != BrokeBetween {
+		t.Errorf("outcome %v, want BrokeBetween: method A's bound is over the limit", res.Outcome)
+	}
+}
+
 // Ground: boundary — the knee is checked the same way: against a first step of
 // 20ms the knee is 3 x the printed baseline, and a step at exactly 60ms holds
 // (its bucket starts at 59.998ms, under the knee at 60.015ms) while 61ms

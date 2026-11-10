@@ -47,6 +47,9 @@ type Snapshot struct {
 // Quantile is one percentile of the distribution.
 type Quantile struct {
 	Value time.Duration
+	// Low is the lowest value of the bucket holding the percentile; zero means
+	// unknown and Floor reads Value.
+	Low time.Duration
 	// Exact is false when the percentile landed among censored observations:
 	// the true value is larger than Value by an unknown amount. Meaningful
 	// only when Defined is true.
@@ -54,6 +57,11 @@ type Quantile struct {
 	// Defined is false when the distribution has no observations at all;
 	// check it before Value or Exact.
 	Defined bool
+}
+
+// Floor is the lowest value the percentile can have.
+func (q Quantile) Floor() time.Duration {
+	return q.Value
 }
 
 // cumBar is one non-empty histogram bucket with the running count of all
