@@ -21,6 +21,8 @@ import (
 	"path/filepath"
 
 	"github.com/goccy/go-yaml"
+
+	"github.com/yhgrwav/leettest/pkg/config"
 )
 
 const settingsDir = "leettest"
@@ -49,6 +51,10 @@ func LoadSettings() (*Settings, error) {
 		return settings, nil
 	}
 	if err != nil {
+		return nil, err
+	}
+
+	if raw, err = config.UTF8Text(raw, path); err != nil {
 		return nil, err
 	}
 
