@@ -30,6 +30,25 @@ archives:
 checksum:
   name_template: checksums.txt
 
+# One SPDX JSON SBOM per archive, next to it: leettest_..._linux_amd64.tar.gz.sbom.json.
+# Needs syft on PATH (release.yml installs it).
+sboms:
+  - artifacts: archive
+
+# Keyless: cosign signs checksums.txt with the workflow's OIDC identity, no key
+# or secret exists. The bundle (signature, certificate, transparency-log entry)
+# is one file, checksums.txt.sigstore.json; the archives are covered through
+# the hashes inside checksums.txt. Needs cosign on PATH and id-token: write.
+signs:
+  - cmd: cosign
+    signature: "${artifact}.sigstore.json"
+    args:
+      - sign-blob
+      - "--bundle=${signature}"
+      - "${artifact}"
+      - "--yes"
+    artifacts: checksum
+
 # A tag with a suffix (v0.1.0-rc.1) is a pre-release; the default would ship
 # it as the latest release.
 #
