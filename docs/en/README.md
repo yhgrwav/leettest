@@ -10,6 +10,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/yhgrwav/leettest.svg)](https://pkg.go.dev/github.com/yhgrwav/leettest)
 [![Go version](https://img.shields.io/github/go-mod/go-version/yhgrwav/leettest)](../../go.mod)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](../../LICENSE)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/16533/badge)](https://www.bestpractices.dev/projects/16533)
 [![Support](https://img.shields.io/badge/support-USDT%20TRC20-26A17B?logo=tether&logoColor=white)](../support.md)
 
 </div>
