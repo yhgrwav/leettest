@@ -109,7 +109,7 @@ func datasetCounter(call *config.Call) (*engine.RecordCounter, error) {
 	}
 
 	if call.DatasetSeed != nil {
-		return engine.NewShuffledCounter(len(call.Records), uint64(*call.DatasetSeed)), nil
+		return engine.NewShuffledCounter(len(call.Records), uint64(*call.DatasetSeed)), nil //nolint:gosec // config validation keeps dataset_seed in 0 to 2^53-1 (ErrDatasetSeed)
 	}
 
 	var raw [8]byte

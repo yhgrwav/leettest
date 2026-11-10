@@ -125,13 +125,16 @@ func (s Stage) rateBounds(x time.Duration) (floor, ceil int) {
 	if a == b || s.Duration <= 0 {
 		return a, a
 	}
-	gain := uint64(max(a, b) - min(a, b))
-	hi, lo := bits.Mul64(gain, uint64(x))
-	q, r := bits.Div64(hi, lo, uint64(s.Duration))
-	moved := int(q)
+	// The one caller, ratesOver, passes x from 0 to s.Duration, and the
+	// Duration is above 0 (checked above), so q is at most gain and r is below
+	// the Duration. Every release build is 64-bit, where an int holds both.
+	gain := uint64(max(a, b) - min(a, b))          //nolint:gosec // the larger rate minus the smaller one is not negative
+	hi, lo := bits.Mul64(gain, uint64(x))          //nolint:gosec // x is from 0 to s.Duration
+	q, r := bits.Div64(hi, lo, uint64(s.Duration)) //nolint:gosec // s.Duration > 0 is checked above
+	moved := int(q)                                //nolint:gosec // q is at most gain, which came from an int
 	if b > a {
-		return a + moved, a + moved + min(int(r), 1)
+		return a + moved, a + moved + min(int(r), 1) //nolint:gosec // r is below s.Duration, which fits an int on 64-bit
 	}
 
-	return a - moved - min(int(r), 1), a - moved
+	return a - moved - min(int(r), 1), a - moved //nolint:gosec // r is below s.Duration, which fits an int on 64-bit
 }

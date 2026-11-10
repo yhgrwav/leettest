@@ -6,7 +6,7 @@ LINT_VERSION := v2.14.0
 # CI calls these targets rather than copying their commands: one definition,
 # so a local run and CI cannot drift apart.
 
-.PHONY: help vet test race stress stress-timing lint lint-install fmt check bench build demo stand run proto clean
+.PHONY: help vet test race stress stress-timing fuzz lint lint-install fmt check bench build demo stand run proto clean
 
 # Recipes run in sh (Git Bash, CI) or in cmd.exe (an IDE on Windows, no sh
 # in PATH): every one must mean the same in both. $(info) needs no shell.
@@ -16,7 +16,8 @@ help:
 	$(info make race          tests under -race (needs gcc in PATH))
 	$(info make stress        the nightly run: -race -count=20, takes long)
 	$(info make stress-timing the tests stress skips: -count=20, no -race, go test -json)
-	$(info make release-test  what release.yml runs: -race minus the STRESS_SKIP tests, then those without -race)
+	$(info make fuzz          the fuzz targets, 30 s each (FUZZTIME=2m to change it))
+	$(info make release-test what release.yml runs: -race minus the STRESS_SKIP tests, then those without -race)
 	$(info make lint          golangci-lint, gofmt and goimports included)
 	$(info make fmt           gofmt the tree)
 	$(info make check         what must pass before a push: vet, test, lint)
@@ -123,6 +124,17 @@ release-test-race:
 
 release-test-plain: | release-test-race
 	go test -count=1 -timeout 30m -run "$(STRESS_SKIP)" ./...
+
+# The fuzz targets read untrusted input (config, template text, dataset file):
+# 30 s each, mutating their seeds; `go test` alone replays the seeds. go test
+# -fuzz takes one target at a time, hence one line each. A crash is written to
+# testdata/fuzz next to the target; commit it.
+FUZZTIME := 30s
+fuzz:
+	go test ./pkg/config -run NONE -fuzz "^FuzzParse$$" -fuzztime $(FUZZTIME)
+	go test ./pkg/config -run NONE -fuzz "^FuzzParseTemplate$$" -fuzztime $(FUZZTIME)
+	go test ./pkg/config -run NONE -fuzz "^FuzzExpandEnvRefs$$" -fuzztime $(FUZZTIME)
+	go test ./pkg/config -run NONE -fuzz "^FuzzReadDataset$$" -fuzztime $(FUZZTIME)
 
 lint:
 	$(LINT) run ./...

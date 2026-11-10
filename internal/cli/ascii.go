@@ -43,7 +43,7 @@ func asciiText(s string) string {
 	var b strings.Builder
 	for _, r := range s {
 		switch {
-		case r < 0x80 && plainByte(byte(r)):
+		case r < 0x80 && plainByte(byte(r)): //nolint:gosec // r < 0x80 in the same condition, so it fits a byte
 			b.WriteRune(r)
 		case r > 0xffff:
 			hi, lo := utf16.EncodeRune(r)

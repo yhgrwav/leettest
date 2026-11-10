@@ -39,5 +39,6 @@ func ProcessCPU() (time.Duration, error) {
 
 // filetimeDuration reads a span in units of 100 ns.
 func filetimeDuration(ft syscall.Filetime) time.Duration {
-	return time.Duration(uint64(ft.HighDateTime)<<32|uint64(ft.LowDateTime)) * 100 * time.Nanosecond
+	// Below 2^63 units of 100 ns (about 29,000 CPU-years) for any process.
+	return time.Duration(uint64(ft.HighDateTime)<<32|uint64(ft.LowDateTime)) * 100 * time.Nanosecond //nolint:gosec // a process's CPU time stays far below 2^63 units
 }

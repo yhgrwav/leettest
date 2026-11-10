@@ -107,7 +107,7 @@ func (c *Call) spent() bool {
 // a seq above the largest its field holds; nil otherwise. The seq is never
 // built, so it cannot wrap.
 func (c *Call) seqOverflow() error {
-	if c.Template == nil || c.Template.Max == 0 || uint64(c.Template.Counter.Handed())+1 <= c.Template.Max {
+	if c.Template == nil || c.Template.Max == 0 || uint64(c.Template.Counter.Handed())+1 <= c.Template.Max { //nolint:gosec // Handed counts Add(1) calls from zero, never negative
 		return nil
 	}
 
@@ -540,7 +540,7 @@ func (e *Engine) templatesReport(call Call) *TemplatesReport {
 		n = (*ended)[call.Method]
 	}
 
-	return &TemplatesReport{Placeholders: call.Template.Placeholders, LastSeq: uint64(n)}
+	return &TemplatesReport{Placeholders: call.Template.Placeholders, LastSeq: uint64(n)} //nolint:gosec // n is Handed(), or a copy of it at the end: a count from zero, never negative
 }
 
 // noteHanded keeps each dataset and templated call's count at the end of the run.

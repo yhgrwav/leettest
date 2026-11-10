@@ -173,6 +173,45 @@ jobs:
           path: timing-result-${{ strategy.job-index }}.txt
           retention-days: 1
 
+  # The fuzz targets (make fuzz, 30 s each) on the default branch's tip: the
+  # parsers of untrusted input must not panic. Not in the stress count and not
+  # in `report`: a crash is a bug in a parser, with its own issue. go test
+  # writes the crashing input under testdata/fuzz; the artifact holds it.
+  fuzz:
+    name: fuzz
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: make fuzz
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: fuzz-crash
+          path: "**/testdata/fuzz"
+          if-no-files-found: ignore
+      - name: open or update the issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Fuzz target failed on ${{ github.ref_name }}"
+          body="Run: $RUN. The crashing input is in the fuzz-crash artifact; commit it under testdata/fuzz next to the target."
+          open=$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[0].number')
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body "$body"
+          else
+            gh issue create --title "$title" --body "$body"
+          fi
+
   report:
     name: report a failure
     runs-on: ubuntu-latest
