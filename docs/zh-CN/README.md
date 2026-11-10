@@ -515,6 +515,9 @@ Prometheus 把它和服务自身的指标放在一起抓取。没有默认地址
 | 问题 | |
 |---|---|
 | LeetTest 回答哪些问题？ | [阅读](questions.md) |
+| 它不做什么，数字在哪里不再成立？ | [阅读](limitations.md) |
+| 1.x 版本内不会改变什么？ | [阅读](stability.md) |
+| 如何在 CI 中运行 LeetTest，并在限值未达标时让构建失败？ | [阅读](ci.md) |
 | LeetTest 解决什么问题？ | [阅读](problem.md) |
 | 为什么选这个工具？ | [阅读](why.md) |
 | 它解决了压测中的哪些问题？ | [阅读](pitfalls.md) |
