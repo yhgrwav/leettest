@@ -615,6 +615,7 @@ die Warnungen in diesem Abschnitt.
 | Welches Problem löst LeetTest? | [Lesen](problem.md) |
 | Warum dieses Werkzeug? | [Lesen](why.md) |
 | Welche Probleme von Lasttests behebt es? | [Lesen](pitfalls.md) |
+| Wie lese ich den Bericht, die Exit-Codes und das JSON, und wie vergleiche ich zwei Läufe? | [Bericht](report.md) |
 | Was ist Verkettung von Aufrufen, und wozu? | [Lesen](chaining.md) |
 | Wird es eine kostenpflichtige Version geben? | [Lesen](commercial.md) |
 | Wo stelle ich Fragen oder gebe Feedback? | [Lesen](feedback.md) |
