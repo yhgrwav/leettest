@@ -790,7 +790,7 @@ have two significant digits, so they are not compared with the run's own by the 
 
 A search writes another object: `schema_version`, `leettest_version`, `target` and `started_at` are
 as in the run above, a plain run's other fields are not at the top level. Every run is in
-`breakpoint.runs` with its own full report ([the search](../../README.md#breaking-point-search)).
+`breakpoint.runs` with its own full report ([the search](report.md#breaking-point-search)).
 
 | Field | Type | What it means |
 |---|---|---|
