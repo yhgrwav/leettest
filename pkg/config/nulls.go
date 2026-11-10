@@ -66,9 +66,7 @@ func checkTree(raw []byte) error {
 	}
 
 	v := nullDatasetVisitor{anchors: anchors}
-	for _, doc := range file.Docs {
-		ast.Walk(&v, doc)
-	}
+	walkDocs(file, &v)
 
 	return errors.Join(v.errs...)
 }
