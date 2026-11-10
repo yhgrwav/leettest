@@ -35,7 +35,7 @@ func LoadFile(path string) (*MasterConfig, error) {
 		return nil, fmt.Errorf("%w %s: %w", ErrReadConfig, path, err)
 	}
 
-	cfg, err := Parse(raw)
+	cfg, err := parse(raw, path)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +54,21 @@ func LoadFile(path string) (*MasterConfig, error) {
 }
 
 // Parse reads the config from raw YAML, applies defaults and validates the result.
+// A leading UTF-8 byte order mark is not part of the YAML; the hash is of raw
+// as given, the mark included.
 func Parse(raw []byte) (*MasterConfig, error) {
+	return parse(raw, "config")
+}
+
+// parse is Parse for a file named name, which a refusal of the file names.
+func parse(raw []byte, name string) (*MasterConfig, error) {
+	sum := sha256.Sum256(raw)
+
+	raw, err := UTF8Text(raw, name)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrReadConfig, err)
+	}
+
 	if err := checkEmpty(raw); err != nil {
 		return nil, err
 	}
@@ -70,7 +84,6 @@ func Parse(raw []byte) (*MasterConfig, error) {
 		return nil, err
 	}
 
-	sum := sha256.Sum256(raw)
 	cfg.SHA256 = hex.EncodeToString(sum[:])
 
 	if err := cfg.resolve(); err != nil {

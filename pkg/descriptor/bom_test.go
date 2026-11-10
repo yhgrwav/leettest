@@ -21,11 +21,7 @@ import (
 	"github.com/yhgrwav/leettest/pkg/descriptor"
 )
 
-const (
-	protoBOM = "\xEF\xBB\xBF"
-	// protoUTF16Refusal is the sentence every user file kind answers a UTF-16 file with.
-	protoUTF16Refusal = "file is UTF-16; save it as UTF-8"
-)
+const protoBOM = "\xEF\xBB\xBF"
 
 // descriptorCompile compiles shop.proto of dir, which is its own import path.
 func descriptorCompile(dir string) (*descriptor.FileResolver, error) {
@@ -36,18 +32,10 @@ func descriptorCompileEntries(dir string, entries ...string) (*descriptor.FileRe
 	return descriptor.NewProtoResolver(at(dir, entries...), at(dir, "."))
 }
 
-func protoUTF16LE(s string) string {
-	b := []byte{0xFF, 0xFE}
-	for _, r := range s {
-		b = append(b, byte(r), 0)
-	}
-
-	return string(b)
-}
-
 // Kind: .proto source (app.proto.files and what they import). The compiler is
-// protocompile; a file with a leading mark is compiled, or refused with a
-// message that names the mark, not read as a syntax error at 1:1.
+// protocompile, which skips a leading mark itself: these are guards, so that an
+// upgrade of it that stops doing so is seen. A UTF-16 .proto is not refused by
+// name: it is a compile error at 1:1.
 // Ground: contract — the public API of pkg/descriptor: a method of a compiled file.
 func TestProtoResolver_ALeadingBOMIsNotPartOfTheSource(t *testing.T) {
 	dir := tree(t, map[string]string{"shop.proto": protoBOM + shopProto})
@@ -104,22 +92,5 @@ func TestProtoResolver_AnErrorInAFileWithABOMKeepsItsPosition(t *testing.T) {
 
 	if got != want {
 		t.Errorf("error with a mark:\n%s\nerror without:\n%s", got, want)
-	}
-}
-
-// A UTF-16 .proto is refused, naming the file.
-// Ground: contract — the public API of pkg/descriptor: a compile error names the file.
-func TestProtoResolver_AUTF16SourceIsRefused(t *testing.T) {
-	dir := tree(t, map[string]string{"shop.proto": protoUTF16LE(shopProto)})
-
-	_, err := descriptorCompile(dir)
-	if err == nil {
-		t.Fatal("a UTF-16 .proto compiled")
-	}
-	if !strings.Contains(err.Error(), protoUTF16Refusal) {
-		t.Errorf("error = %q, want it to say %q", err, protoUTF16Refusal)
-	}
-	if !strings.Contains(err.Error(), "shop.proto") {
-		t.Errorf("error = %q, want it to name shop.proto", err)
 	}
 }

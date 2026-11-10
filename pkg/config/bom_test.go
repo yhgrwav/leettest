@@ -162,6 +162,84 @@ func TestLoadFile_AnInvalidConfigWithABOMGivesTheBOMLessError(t *testing.T) {
 	}
 }
 
+// The helper on its own: short inputs (shorter than a mark) pass through, one
+// leading mark goes, a second stays, a UTF-16 mark is refused by name.
+// Ground: contract — pkg/config is a library API; callers get this without our CLI.
+func TestUTF8Text(t *testing.T) {
+	for name, tc := range map[string]struct{ in, want string }{
+		"nil":             {"", ""},
+		"one byte":        {"a", "a"},
+		"two bytes":       {"\xEF\xBB", "\xEF\xBB"},
+		"the mark":        {utf8BOM, ""},
+		"mark and text":   {utf8BOM + "a: 1", "a: 1"},
+		"two marks":       {utf8BOM + utf8BOM + "a", utf8BOM + "a"},
+		"mark in middle":  {"a" + utf8BOM + "b", "a" + utf8BOM + "b"},
+		"no mark":         {"a: 1\n", "a: 1\n"},
+		"half a mark end": {"a\xEF\xBB", "a\xEF\xBB"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := config.UTF8Text([]byte(tc.in), "f.yaml")
+			if err != nil || string(got) != tc.want {
+				t.Errorf("UTF8Text(%q) = %q, %v, want %q", tc.in, got, err, tc.want)
+			}
+		})
+	}
+
+	for name, in := range map[string]string{"le": "\xFF\xFEa\x00", "be": "\xFE\xFF\x00a", "le mark only": "\xFF\xFE", "be mark only": "\xFE\xFF"} {
+		_, err := config.UTF8Text([]byte(in), "f.yaml")
+		if !errors.Is(err, config.ErrUTF16) || !strings.Contains(err.Error(), "f.yaml") || !strings.Contains(err.Error(), utf16Refusal) {
+			t.Errorf("%s: error = %v, want ErrUTF16 naming f.yaml", name, err)
+		}
+	}
+}
+
+// The first line is where the mark sits, so an error there is the one that would
+// move: it keeps its line and column, and the snippet shows no mark.
+// Ground: contract — pkg/config is a library API; callers get this without our CLI.
+func TestLoadFile_AnErrorOnTheFirstLineWithABOMKeepsItsPlace(t *testing.T) {
+	const content = "appx:\n  target:\n    ip: localhost\n    port: 50051\n"
+
+	dir := t.TempDir()
+
+	_, plainErr := config.LoadFile(writeConfigFile(t, dir, "plain.yaml", content))
+	_, markedErr := config.LoadFile(writeConfigFile(t, dir, "marked.yaml", utf8BOM+content))
+
+	if plainErr == nil || markedErr == nil || markedErr.Error() != plainErr.Error() {
+		t.Fatalf("error with a mark:\n%v\nerror without:\n%v", markedErr, plainErr)
+	}
+	if !strings.Contains(markedErr.Error(), "[1:1]") || strings.Contains(markedErr.Error(), utf8BOM) {
+		t.Errorf("error = %q, want [1:1] and no mark in the snippet", markedErr)
+	}
+}
+
+// Parse takes bytes, not a file: a mark in them is stripped there too, and the
+// hash is of the bytes as given.
+// Ground: contract — pkg/config is a library API; callers get this without our CLI.
+func TestParse_ALeadingBOMIsNotPartOfTheConfig(t *testing.T) {
+	plain, err := config.Parse([]byte(validYAML))
+	if err != nil {
+		t.Fatalf("fixture: %v", err)
+	}
+
+	marked, err := config.Parse([]byte(utf8BOM + validYAML))
+	if err != nil {
+		t.Fatalf("parse with a leading mark: %v", err)
+	}
+
+	if marked.SHA256 != sha256Hex(utf8BOM+validYAML) {
+		t.Errorf("SHA256 = %s, want the hash of the bytes as given", marked.SHA256)
+	}
+
+	plain.SHA256, marked.SHA256 = "", ""
+	if !reflect.DeepEqual(plain, marked) {
+		t.Errorf("a config with a mark differs from the same one without:\nplain:  %+v\nmarked: %+v", plain, marked)
+	}
+
+	if _, err = config.Parse([]byte(utf16LE(validYAML))); !errors.Is(err, config.ErrUTF16) {
+		t.Errorf("Parse of UTF-16 bytes: error = %v, want ErrUTF16", err)
+	}
+}
+
 // A file of nothing but the mark is as empty as an empty file; the check for
 // the length that comes before the strip is this row.
 // Ground: contract — pkg/config is a library API; callers get this without our CLI.

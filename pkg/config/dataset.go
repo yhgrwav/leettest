@@ -33,9 +33,6 @@ type DatasetRecord struct {
 	JSON json.RawMessage
 }
 
-// byteOrderMark is what PowerShell writes at the start of a UTF-8 file.
-var byteOrderMark = []byte{0xEF, 0xBB, 0xBF}
-
 // readDatasets reads the file of every call that names one, from dir when its
 // path is relative. A dataset's error names the call and the path as the config
 // wrote it, never the joined one and never the content of a line: it may be a
@@ -89,7 +86,10 @@ func readDataset(path, written string) (records []DatasetRecord, sum string, err
 
 	digest := sha256.Sum256(raw)
 	sum = hex.EncodeToString(digest[:])
-	raw = bytes.TrimPrefix(raw, byteOrderMark)
+	raw, err = UTF8Text(raw, written)
+	if err != nil {
+		return nil, "", err
+	}
 
 	for n, line := range bytes.Split(raw, []byte{'\n'}) {
 		line = bytes.TrimSuffix(line, []byte{'\r'})

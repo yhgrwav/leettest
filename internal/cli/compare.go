@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	"github.com/yhgrwav/leettest/pkg/compare"
+	"github.com/yhgrwav/leettest/pkg/config"
 	shr "github.com/yhgrwav/leettest/pkg/share"
 )
 
@@ -49,6 +50,10 @@ type ComparedReport struct {
 func ReadReport(path string) (ComparedReport, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
+		return ComparedReport{}, err
+	}
+
+	if raw, err = config.UTF8Text(raw, path); err != nil {
 		return ComparedReport{}, err
 	}
 

@@ -28,6 +28,8 @@ load:
       timeout: 2s
 ```
 
+The config, a dataset, a report for `compare` and the settings file are UTF-8; a leading byte-order mark, which Windows Notepad writes, is accepted. A UTF-16 file is refused with `file is UTF-16; save it as UTF-8`.
+
 | Field | What it does |
 |---|---|
 | `name` | Optional. What to call the run in the header. Left out — the service name if every method belongs to one service, otherwise the config file name |
