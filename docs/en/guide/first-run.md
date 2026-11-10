@@ -59,6 +59,28 @@ Check, for any way:
 leettest -version
 ```
 
+### Verify the download
+
+Releases after v0.7.0 carry a `checksums.txt` signed by the release workflow without a key
+(`checksums.txt.sigstore.json`, [cosign](https://docs.sigstore.dev/cosign/installation/)) and an SBOM
+for every archive (`<archive>.sbom.json`, SPDX JSON; the checksums cover it too). Put `checksums.txt`,
+`checksums.txt.sigstore.json` and your archive from the
+[releases page](https://github.com/yhgrwav/leettest/releases/latest) in one folder and run, there,
+first the check that the signature belongs to the release workflow:
+
+```sh
+cosign verify-blob --bundle checksums.txt.sigstore.json --certificate-identity-regexp 'https://github.com/yhgrwav/leettest/.github/workflows/release.yml@refs/tags/v.*' --certificate-oidc-issuer https://token.actions.githubusercontent.com checksums.txt
+```
+
+Then that the archive is the one in the list (on macOS: `shasum -a 256 -c --ignore-missing checksums.txt`):
+
+```sh
+sha256sum -c --ignore-missing checksums.txt
+```
+
+`install.sh` checks the archive against `checksums.txt` but not the signature: these two commands are
+what show the file was built by the release workflow.
+
 ## Run
 
 Save this as `leettest.yaml`, putting in the address and methods of your service:
