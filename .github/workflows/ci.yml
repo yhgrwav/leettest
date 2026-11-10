@@ -144,6 +144,79 @@ jobs:
           bin/leettest -c examples/pass.yaml -output json > pass.json
           jq -e '(.thresholds | length) == 8 and all(.thresholds[]; .verdict == "pass")' pass.json
 
+  # The same tour on macOS, where the quickstart's readers also run it. The steps are the
+  # Linux job's, with the same `sent` assertions (an open model: the counts follow the
+  # schedule, not the host speed). Only the host-speed bound on the start lag stays on
+  # Linux: here the lag is printed in the summary line and not judged. Not a required check;
+  # keep both job names as they are.
+  tour-macos:
+    name: quickstart tour (macos)
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_LATEST }}
+      - name: Tools the steps use
+        run: |
+          for tool in jq pkill pgrep; do
+            command -v "$tool" || { echo "::error::$tool is missing on this runner"; exit 1; }
+          done
+          sleep 0.2
+      - run: go build -o bin/ ./cmd/leettest ./test/stand/cmd/stand
+      - name: Run examples/tour.yaml
+        env:
+          LEETTEST_TOKEN: ci
+        run: |
+          bin/stand -delay 20ms -hang-from 25s -life 60s &
+          sleep 1
+          rc=0
+          bin/leettest -c examples/tour.yaml -output json > tour.json || rc=$?
+          if [ -s tour.json ]; then
+            jq -c '{exit: '"$rc"', start_lag, clock_step_ns, invalid_reasons, tail_wait_cause,
+              not_sent, not_sent_generator, not_sent_connection, not_sent_stream,
+              generator_tail_calls: .client_waits.generator_tail_calls,
+              p99_us: .methods[0].latency.p99.us,
+              p99_without_client_waits_us: .methods[0].p99_without_client_waits.us}' tour.json
+          fi
+          if [ "$rc" -ne 0 ]; then
+            echo "exit code $rc"
+            exit 1
+          fi
+          # (300 + 50) rps for 40s, the 3s warm-up counted apart.
+          jq -e '.sent == 12950 and [.methods[].sent] == [11100, 1850]' tour.json
+      # Each example uses port 50051: the previous step's stand outlives its
+      # run by its -life, so it is stopped first.
+      - name: Run examples/tour-tls.yaml
+        run: |
+          pkill -x stand || true
+          while pgrep -x stand > /dev/null; do sleep 0.2; done
+          bin/stand -mtls -delay 20ms -life 30s &
+          sleep 1
+          bin/leettest -c examples/tour-tls.yaml -output json > tour-tls.json
+          jq -e '.sent == 2000' tour-tls.json
+          # gzip on: the stand accepted it and the sizes are told.
+          jq -e '.settings.compression == "gzip" and ([.methods[] | .request_bytes.wire > 0] | all) and ([.methods[] | .request_error.count == 0] | all)' tour-tls.json
+      - name: Run examples/leettest.yaml
+        run: |
+          pkill -x stand || true
+          while pgrep -x stand > /dev/null; do sleep 0.2; done
+          bin/stand -delay 20ms -life 75s &
+          sleep 1
+          bin/leettest -c examples/leettest.yaml -output json > leettest.json
+          # (800 + 50) rps for 1m, the 5s warm-up counted apart.
+          jq -e '.sent == 46750' leettest.json
+      - name: Run examples/pass.yaml
+        run: |
+          pkill -x stand || true
+          while pgrep -x stand > /dev/null; do sleep 0.2; done
+          bin/stand -delay 20ms -life 75s &
+          sleep 1
+          # A healthy stand: every limit holds, so the exit code is 0 (a miss is 4).
+          bin/leettest -c examples/pass.yaml -output json > pass.json
+          jq -e '(.thresholds | length) == 8 and all(.thresholds[]; .verdict == "pass")' pass.json
+
   # Known vulnerabilities in the standard library and the modules we reach, by
   # call graph: a finding fails the job only when our code can call the flaw.
   # A CI-only tool, not a dependency in go.mod (BSD-3-Clause).
