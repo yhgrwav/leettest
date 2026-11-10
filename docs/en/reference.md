@@ -51,7 +51,7 @@ load:
 | `load.calls[].method` | The full method name: `package.Service/Method` |
 | `load.calls[].rps` | Requests per second for this method |
 | `load.calls[].duration` | How long to load it: `30s`, `5m`, `1h` |
-| `load.calls[].timeout` | How long to wait for a reply. Left out — `2s`. Zero does not turn it off, it is an error |
+| `load.calls[].timeout` | How long to wait for a reply. Left out — `2s`. Zero does not turn it off, it is an error. Below 1 h: `59m59s` is accepted, `1h` is an error, because the histogram keeps no latency of an hour or more |
 | `load.calls[].data` | The request body, see [below](#request-body). Left out — an empty message |
 | `load.calls[].dataset` | A file of request bodies instead of `data`, see [below](#a-different-request-each-call-a-dataset). Not together with `data` |
 | `load.calls[].dataset_order` | `file` (left out) or `random`: the order of the dataset's requests. Needs `dataset` |

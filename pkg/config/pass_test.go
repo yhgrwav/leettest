@@ -200,8 +200,8 @@ func TestPass_LatencyNeedsErrorsNextToIt(t *testing.T) {
 }
 
 // Ground: boundary — a call that timed out is known only as "at least the
-// timeout", so a latency limit at or above it checks nothing; and a value
-// above 1h is clamped by the histogram, so a limit must be below that too.
+// timeout", so a latency limit at or above it checks nothing; and a timeout
+// of 1h or more is refused, because the histogram keeps no longer latency.
 func TestPass_LatencyLimitIsBelowTheTimeoutAndAnHour(t *testing.T) {
 	refuses(t, "above the default 2s", passYAML("100", "60s", "", "p99: 3s", "errors: 1%"), "pass.p99", "timeout")
 	refuses(t, "at the timeout", withTimeout("500ms", "p99: 500ms"), "pass.p99", "timeout")
@@ -211,11 +211,19 @@ func TestPass_LatencyLimitIsBelowTheTimeoutAndAnHour(t *testing.T) {
 		t.Errorf("just under the timeout: %v, want accepted", err)
 	}
 
-	long := func(limit string) []byte { return withTimeout("3h", "p99: "+limit) }
-	refuses(t, "an hour", long("1h"), "pass.p99")
-	refuses(t, "two hours under a 3h timeout", long("2h"), "pass.p99")
-	if _, err := config.Parse(long("59m59s")); err != nil {
-		t.Errorf("just under an hour: %v, want accepted", err)
+	// A timeout of an hour or more is refused before the limits are read, so a
+	// limit of an hour is never reached through Parse: the limit is below the
+	// timeout, and the timeout is below an hour. The 1h branch in latencyLimit
+	// stays as a defence.
+	for _, timeout := range []string{"1h", "3h"} {
+		_, err := config.Parse(withTimeout(timeout, "p99: 200ms"))
+		if !errors.Is(err, config.ErrTimeoutTooLong) {
+			t.Errorf("timeout %s: %v, want ErrTimeoutTooLong", timeout, err)
+		}
+	}
+	refuses(t, "at a timeout just under an hour", withTimeout("59m59s", "p99: 59m59s"), "pass.p99", "timeout")
+	if _, err := config.Parse(withTimeout("59m59s", "p99: 59m58s")); err != nil {
+		t.Errorf("a limit just under a timeout just under an hour: %v, want accepted", err)
 	}
 }
 
