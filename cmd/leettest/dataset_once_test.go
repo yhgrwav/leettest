@@ -136,7 +136,7 @@ func TestRun_ReuseTrueWrapsThePlanLongerThanTheFile(t *testing.T) {
 	}
 }
 
-// onceSearch is a search of steps 50, 63, 79 rps, each held 300ms, on a file
+// onceSearch is a search of steps 400, 500, 625 rps, each held 300ms, on a file
 // of n records none handed out twice.
 func onceSearch(t *testing.T, n int) string {
 	t.Helper()
@@ -145,18 +145,18 @@ func onceSearch(t *testing.T, n int) string {
 		"      dataset: '"+writeDataset(t, lines(n))+"'\n      dataset_reuse: false\n", unaryCallMethod)
 }
 
-// A search is checked against its first run: 50 rps for 300ms hands out 15
-// requests, and a file of 14 cannot give even that. Nothing is run.
+// A search is checked against its first run: 400 rps for 300ms hands out 120
+// requests, and a file of 119 cannot give even that. Nothing is run.
 // Ground: contract — the first run of a search is known before it starts
 // (the warm-up is inside the hold).
 func TestRun_OnceSearchWithAFileShorterThanItsFirstRunIsAConfigError(t *testing.T) {
-	res := runCLI(t.Context(), t, 20*time.Second, "-fake", "-c", onceSearch(t, 14))
+	res := runCLI(t.Context(), t, 20*time.Second, "-fake", "-c", onceSearch(t, 119))
 
 	if exitCode(res.err) != 1 {
 		t.Fatalf("exit code %d, want 1\nerr %v\nstderr %s", exitCode(res.err), res.err, res.stderr)
 	}
-	if all := res.err.Error() + res.stderr; !strings.Contains(all, "has 14 records") || !strings.Contains(all, "hands out 15") {
-		t.Errorf("the error does not give 14 and 15:\n%s", all)
+	if all := res.err.Error() + res.stderr; !strings.Contains(all, "has 119 records") || !strings.Contains(all, "hands out 120") {
+		t.Errorf("the error does not give 119 and 120:\n%s", all)
 	}
 	if strings.Contains(res.stderr, "rps: sent") {
 		t.Errorf("a run was made before the error:\n%s", res.stderr)
@@ -169,14 +169,14 @@ func TestRun_OnceSearchWithAFileShorterThanItsFirstRunIsAConfigError(t *testing.
 // is not lost to "stopped at the first step".
 // Ground: contract — exhaustion is lazy: a record is missing when a tick needs it.
 func TestRun_OnceSearchStopsWhenTheFileRunsOut(t *testing.T) {
-	res := runCLI(t.Context(), t, 30*time.Second, "-fake", "-c", onceSearch(t, 15))
+	res := runCLI(t.Context(), t, 30*time.Second, "-fake", "-c", onceSearch(t, 120))
 
 	if exitCode(res.err) != 3 {
 		t.Fatalf("exit code %d, want 3: a soft stop\nerr %v\nstderr %s", exitCode(res.err), res.err, res.stderr)
 	}
 	for _, want := range []string{
-		"stopped at 63 rps", "held 50 rps so far",
-		"dataset users.jsonl (call " + unaryCallMethod + ") ran out at 63 rps",
+		"stopped at 500 rps", "held 400 rps so far",
+		"dataset users.jsonl (call " + unaryCallMethod + ") ran out at 500 rps",
 	} {
 		if !strings.Contains(res.stdout, want) {
 			t.Errorf("stdout lacks %q:\n%s", want, res.stdout)
@@ -186,13 +186,13 @@ func TestRun_OnceSearchStopsWhenTheFileRunsOut(t *testing.T) {
 		t.Errorf("the first run, whole and judged, is reported as nothing learned:\n%s", res.stdout)
 	}
 
-	res = runCLI(t.Context(), t, 30*time.Second, "-fake", "-output", "json", "-c", onceSearch(t, 15))
+	res = runCLI(t.Context(), t, 30*time.Second, "-fake", "-output", "json", "-c", onceSearch(t, 120))
 	if exitCode(res.err) != 3 {
 		t.Fatalf("json: exit code %d, want 3\nerr %v", exitCode(res.err), res.err)
 	}
 	bp := jsonAt(t, decodeOnly(t, res.stdout), "breakpoint").(map[string]any)
-	if bp["outcome"] != "stopped" || bp["stop_reason"] != "dataset_exhausted" || bp["held_rps"] != 50.0 {
-		t.Errorf("breakpoint = outcome %v stop_reason %v held_rps %v, want stopped, dataset_exhausted, 50", bp["outcome"], bp["stop_reason"], bp["held_rps"])
+	if bp["outcome"] != "stopped" || bp["stop_reason"] != "dataset_exhausted" || bp["held_rps"] != 400.0 {
+		t.Errorf("breakpoint = outcome %v stop_reason %v held_rps %v, want stopped, dataset_exhausted, 400", bp["outcome"], bp["stop_reason"], bp["held_rps"])
 	}
 	if runs, _ := bp["runs"].([]any); len(runs) != 2 {
 		t.Errorf("%d runs listed, want 2: the whole one and the one that found no record", len(runs))
@@ -203,9 +203,9 @@ func TestRun_OnceSearchStopsWhenTheFileRunsOut(t *testing.T) {
 // search itself and stop_reason is null, the key present.
 // Ground: contract — null when the search was not stopped.
 func TestRun_SearchThatEndsItselfHasNoStopReason(t *testing.T) {
-	// 15 + 19 + 24 requests over the three steps.
+	// 120 + 150 + 188 requests over the three steps.
 	for name, cfg := range map[string]string{
-		"a file that covers it": onceSearch(t, 58),
+		"a file that covers it": onceSearch(t, 458),
 		"a file that wraps": writeSearchWith(t, closedPort(t), quickSearch, "200ms",
 			"      dataset: '"+writeDataset(t, lines(3))+"'\n      dataset_reuse: true\n", unaryCallMethod),
 		"no dataset": writeSearch(t, closedPort(t), checkMethod),

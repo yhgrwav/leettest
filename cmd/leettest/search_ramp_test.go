@@ -23,12 +23,13 @@ import (
 	"time"
 )
 
-// rampSearch is a breakpoint section from 50 to 80 rps whose hold is a second
+// rampSearch is a breakpoint section from 100 to 160 rps whose hold is a second
 // and a half: the first step's second 2 (after a ramp of 2s) is a whole second
-// at the rate, and every step has a whole first second to count.
+// at the rate, every step has a whole first second to count, and the first
+// measures 145 calls, over the 100 a p99 needs.
 const rampSearch = `  breakpoint:
-    from: 50
-    to: 80
+    from: 100
+    to: 160
     settle: 50ms
     hold: 1500ms
 `
@@ -37,7 +38,7 @@ const needsSearchRampText = "app.mode: real needs load.ramp (a ramp from 0 to br
 
 // searchRunsOf runs the search of the config on the fake target and returns the
 // decoded document and its runs (at least two: -fake never breaks, so each of
-// the steps 50, 63 and 79 is held).
+// the steps 100, 125 and 156 is held).
 func searchRunsOf(t *testing.T, cfg string) (doc map[string]any, runs []any) {
 	t.Helper()
 
@@ -99,10 +100,10 @@ func noteBetween(notes []string, prefix, suffix string) (string, bool) {
 }
 
 // Ground: contract — the whole path of the ramp of a search: config to JSON. A
-// search from 50 rps with a ramp of 2s rises from 0 to 50 in the first step's
+// search from 100 rps with a ramp of 2s rises from 0 to 100 in the first step's
 // excluded window and starts its steps there. The first step only: its first
-// second holds the ramp's first half (12 or so calls, not 50), its second the
-// second half (37 or so), and its third second the rate; the next step is a
+// second holds the ramp's first half (25 or so calls, not 100), its second the
+// second half (75 or so), and its third second the rate; the next step is a
 // constant stage and counts its rate from the first second. The window the
 // statistics leave out is ramp and settle (2.05s) for the first step and the
 // settle (50ms) for the others, and the ramp is in the settings of the first
@@ -125,14 +126,14 @@ func TestRun_ASearchStartsWithItsRamp(t *testing.T) {
 	if len(begun) < 3 {
 		t.Fatalf("runs[0] has %d seconds %v, want 3 or more (2s of ramp and the hold)", len(begun), begun)
 	}
-	if begun[0] >= 25 {
-		t.Errorf("runs[0] began %v calls in its first second, want under 25 (half of from): the ramp rises from 0", begun[0])
+	if begun[0] >= 50 {
+		t.Errorf("runs[0] began %v calls in its first second, want under 50 (half of from): the ramp rises from 0", begun[0])
 	}
 	if begun[1] <= begun[0] {
 		t.Errorf("runs[0] began %v calls in its first second and %v in its second, want a rise through the ramp", begun[0], begun[1])
 	}
-	if begun[2] < 40 {
-		t.Errorf("runs[0] began %v calls in its third second, want 40 or more (0.8 of from): the ramp is over", begun[2])
+	if begun[2] < 80 {
+		t.Errorf("runs[0] began %v calls in its third second, want 80 or more (0.8 of from): the ramp is over", begun[2])
 	}
 	if !warmup[0] || !warmup[1] {
 		t.Errorf("runs[0] seconds 0 and 1 are warm-up: %v, want both true: the ramp is outside the statistics", warmup)
@@ -195,8 +196,8 @@ func TestRun_ASearchWithoutARampIsTodays(t *testing.T) {
 			t.Errorf("ramp %q: settings.ramp_us = %v, want 0 (and present)", ramp, got)
 		}
 		begun, _ := begunBySecond(t, runs[0])
-		if len(begun) == 0 || begun[0] < 40 {
-			t.Errorf("ramp %q: runs[0] began %v calls in its first second, want 40 or more (0.8 of from)", ramp, begun)
+		if len(begun) == 0 || begun[0] < 80 {
+			t.Errorf("ramp %q: runs[0] began %v calls in its first second, want 80 or more (0.8 of from)", ramp, begun)
 		}
 		for i := range runs {
 			if got := fieldNumber(t, runs[i], "report", "settings", "ramp_us"); got != 0 {
@@ -317,14 +318,14 @@ func TestRun_ARefusedFirstStepOfARampedSearchEchoesItsRamp(t *testing.T) {
 
 // Ground: contract — a search with a ramp is checked against its first run as
 // that run will be: the ramp's calls use records of a dataset_reuse: false
-// file too. A file that covers the hold of the first step (15 requests at 50
+// file too. A file that covers the hold of the first step (120 requests at 400
 // rps for 300ms) and not the ramp before it is a config error, before anything
 // is sent, and the message says the ramp is in the count, as a plain run's does.
-// The count is the engine's own (the 2s ramp from 0 to 50 hands out about 50),
+// The count is the engine's own (the 2s ramp from 0 to 400 hands out about 400),
 // so it is judged by margins.
 func TestRun_OnceSearchCountsTheRampInItsFirstRun(t *testing.T) {
 	cfg := writeSearchWith(t, closedPort(t), quickSearch, "200ms",
-		"      dataset: '"+writeDataset(t, lines(15))+"'\n      dataset_reuse: false\n", unaryCallMethod)
+		"      dataset: '"+writeDataset(t, lines(120))+"'\n      dataset_reuse: false\n", unaryCallMethod)
 	setRamp(t, cfg, "2s")
 
 	res := runCLI(t.Context(), t, 20*time.Second, "-fake", "-c", cfg)
@@ -333,12 +334,12 @@ func TestRun_OnceSearchCountsTheRampInItsFirstRun(t *testing.T) {
 		t.Fatalf("exit code %d, want 1\nerr %v\nstderr %s", exitCode(res.err), res.err, res.stderr)
 	}
 	all := fmt.Sprint(res.err) + res.stderr
-	m := regexp.MustCompile(`has 15 records, the run hands out (\d+) \(ramp and warm-up included\)`).FindStringSubmatch(all)
+	m := regexp.MustCompile(`has 120 records, the run hands out (\d+) \(ramp and warm-up included\)`).FindStringSubmatch(all)
 	if m == nil {
-		t.Fatalf("the error does not give 15 records and the ramp in the count:\n%s", all)
+		t.Fatalf("the error does not give 120 records and the ramp in the count:\n%s", all)
 	}
-	if need, _ := strconv.Atoi(m[1]); need < 60 || need > 70 {
-		t.Errorf("the first run hands out %d, want 60 to 70: the ramp's 50 and the hold's 15", need)
+	if need, _ := strconv.Atoi(m[1]); need < 480 || need > 560 {
+		t.Errorf("the first run hands out %d, want 480 to 560: the ramp's 400 and the hold's 120", need)
 	}
 	if strings.Contains(res.stderr, "rps: sent") {
 		t.Errorf("a run was made before the error:\n%s", res.stderr)

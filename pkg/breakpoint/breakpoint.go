@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -457,7 +458,8 @@ func (s *search) step(ctx context.Context, rps int, hold time.Duration, kind Kin
 		step.Broken, step.Cause, step.Why = s.broken(report, kind)
 	}
 	if kind == Probe && !step.Broken && step.Why == "" {
-		step.Recovered = float64(p99(report)) <= Recovered*float64(s.baseline)
+		// No baseline: nothing to be far from, the knee is not checked either.
+		step.Recovered = s.baseline == 0 || float64(p99(report)) <= Recovered*float64(s.baseline)
 	}
 	s.record(step)
 
@@ -486,10 +488,13 @@ func (s *search) limited(step Step) bool {
 	return true
 }
 
+// hold keeps a held step. Its p99 lowers the baseline only when it is defined:
+// a step too short for a p99 says nothing, and zero would be the lowest.
 func (s *search) hold(step Step) {
 	s.res.Held = step.RPS
-	if p99 := p99(step.Report); s.baseline == 0 || p99 < s.baseline {
-		s.baseline = p99
+	got, ok := definedP99(step.Report)
+	if ok && (s.baseline == 0 || got < s.baseline) {
+		s.baseline = got
 	}
 }
 
@@ -591,9 +596,16 @@ func failedText(r engine.Report, limit share.Percent, v share.Verdict) string {
 	return text + ")"
 }
 
+// noBaselineText is the note of a probe judged with no baseline: every step
+// that held measured too few calls for a p99.
+const noBaselineText = "no baseline: the first step measured too few calls for a p99, the knee was not checked"
+
 // probe runs up to MaxProbes probes at the first step's rate until one comes
-// within Recovered of the baseline.
+// within Recovered of the baseline; with no baseline the first one has recovered.
 func (s *search) probe(ctx context.Context) (bool, error) {
+	if s.baseline == 0 && !slices.Contains(s.res.Notes, noBaselineText) {
+		s.res.Notes = append(s.res.Notes, noBaselineText)
+	}
 	for k := range MaxProbes {
 		s.probeN = k + 1
 		step, err := s.step(ctx, s.first, ProbeHold(s.first), Probe)
@@ -634,16 +646,22 @@ func short(d time.Duration) time.Duration {
 	return d.Round(unit)
 }
 
-// p99 is the highest p99 over the methods.
+// p99 is the highest p99 over the methods, 0 when none is defined.
 func p99(r engine.Report) time.Duration {
-	var top time.Duration
+	top, _ := definedP99(r)
+
+	return top
+}
+
+// definedP99 is p99 and whether any method has one.
+func definedP99(r engine.Report) (top time.Duration, ok bool) {
 	for i := range r.Methods {
 		if m := &r.Methods[i]; m.P99.Defined {
-			top = max(top, m.P99.Value)
+			top, ok = max(top, m.P99.Value), true
 		}
 	}
 
-	return top
+	return top, ok
 }
 
 func sleep(ctx context.Context, d time.Duration) error {

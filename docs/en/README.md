@@ -452,6 +452,14 @@ first step stderr has `breakpoint: up to N steps, at most T`: how many steps and
 takes at worst. One connection for the whole search; if the target drops it, the step is broken,
 with no reconnect.
 
+The first step must measure enough calls for a p99: `from × (hold − settle)`, fractions rounded
+down, at least 100. A search whose first step measures fewer is refused before any load, with
+`invalid breakpoint: the first step measures 40 calls, a p99 needs 100: raise from, hold or lower
+settle`, because the p99 of the best held step is what the next steps and the probes are judged
+against. A step that still ends with no p99 (too few of its calls got a measured latency) does not
+set that baseline; a probe run with no baseline counts as recovered, and the report says so in a note
+(`no baseline: the first step measured too few calls for a p99, the knee was not checked`).
+
 The result (`outcome` in JSON) is a closed list: `broke` (held X, broke at Y), `broke_at_first`
 (broke at the first step — start lower), `held_all` (held every step up to `to`), `run_limit` (the
 generator, a connection's limit or `-max-in-flight` ran out: nothing is known about the target

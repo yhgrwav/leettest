@@ -305,7 +305,7 @@ func TestRun_ASearchInRealStatesItsRangeAndAsks(t *testing.T) {
 	res := runCLI(t.Context(), t, 10*time.Second, "-plain", "-c", cfg)
 
 	wantExit(t, res, 1)
-	want := "real mode: " + addr + ", ramp 30s to 50 rps, then search from 50 to 80 rps until it breaks, duration not promised"
+	want := "real mode: " + addr + ", ramp 30s to 400 rps, then search from 400 to 640 rps until it breaks, duration not promised"
 	if !strings.Contains(res.stderr, want) || !strings.Contains(res.stderr, askText) {
 		t.Errorf("stderr lacks %q and %q:\n%s", want, askText, res.stderr)
 	}
@@ -349,7 +349,7 @@ func TestRun_YesInASearchPrintsItsLineAndDoesNotAsk(t *testing.T) {
 
 		res := runCLI(t.Context(), t, 60*time.Second, "-plain", "-yes", "-c", cfg)
 
-		want := "real mode: " + addr + ", ramp 1s to 50 rps, then search from 50 to 80 rps until it breaks, duration not promised"
+		want := "real mode: " + addr + ", ramp 1s to 400 rps, then search from 400 to 640 rps until it breaks, duration not promised"
 		if !strings.Contains(res.stderr, want) {
 			t.Errorf("terminal %v: stderr lacks %q:\n%s", terminal, want, res.stderr)
 		}

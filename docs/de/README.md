@@ -445,6 +445,15 @@ stderr eine Zeile `breakpoint: up to N steps, at most T`: wie viele Stufen und w
 schlimmsten Fall dauert. Eine Verbindung für die ganze Suche; reißt das Ziel sie ab, ist die Stufe
 gebrochen, einen Wiederaufbau gibt es nicht.
 
+Die erste Stufe muss genug Aufrufe für ein p99 messen: `from × (hold − settle)`, der Bruchteil wird
+abgerundet, mindestens 100. Eine Suche, deren erste Stufe weniger misst, wird vor jeder Last
+abgelehnt: `invalid breakpoint: the first step measures 40 calls, a p99 needs 100: raise from, hold
+or lower settle` — am p99 der besten gehaltenen Stufe werden die folgenden Stufen und die Proben
+gemessen. Eine Stufe, die dennoch ohne p99 endet (zu wenige ihrer Aufrufe haben eine gemessene
+Latenz), setzt diese Bezugsgröße nicht; eine Probe ohne Bezugsgröße gilt als erholt, und der Bericht
+sagt das in einer Notiz (`no baseline: the first step measured too few calls for a p99, the knee was
+not checked`).
+
 Das Ergebnis (`outcome` im JSON) ist eine geschlossene Liste: `broke` (hielt X, brach bei Y),
 `broke_at_first` (brach schon bei der ersten Stufe — fangen Sie niedriger an), `held_all` (hielt alles
 bis `to`), `run_limit` (der Generator, das Limit einer Verbindung oder `-max-in-flight` war zu Ende:

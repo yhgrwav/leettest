@@ -28,10 +28,12 @@ import (
 	"github.com/yhgrwav/leettest/test/stand"
 )
 
-// quickSearch is a breakpoint section from 50 to 80 rps: steps 50, 63, 79.
+// quickSearch is a breakpoint section from 400 to 640 rps: steps 400, 500, 625.
+// A step measures 250ms of calls at its rate: from 400 that is the 100 calls a
+// p99 needs, the least the config accepts for the first step.
 const quickSearch = `  breakpoint:
-    from: 50
-    to: 80
+    from: 400
+    to: 640
     settle: 50ms
     hold: 300ms
 `
@@ -101,16 +103,16 @@ func TestRun_ASearchOnTheFakeTarget(t *testing.T) {
 	if res.err != nil {
 		t.Fatalf("run: %v\n%s", res.err, res.stderr)
 	}
-	if want := "breaking point: " + checkMethod + "\n  held every step up to 79 rps: the limit is above it\n"; !strings.Contains(res.stdout, want) {
+	if want := "breaking point: " + checkMethod + "\n  held every step up to 625 rps: the limit is above it\n"; !strings.Contains(res.stdout, want) {
 		t.Errorf("stdout lacks %q:\n%s", want, res.stdout)
 	}
 	if !strings.Contains(res.stderr, "breakpoint: up to 3 steps, at most ") {
 		t.Errorf("stderr lacks the plan line:\n%s", res.stderr)
 	}
-	// 15 + 19 + 24 requests handed out over the steps of 50, 63 and 79 rps held
-	// for 300ms (ticks i/rps below 300ms): 58, over 3 records is 20 at most.
-	if want := "  held every step up to 79 rps: the limit is above it\n" +
-		"  data: 3 of 3 requests from users.jsonl, each used up to 20 times\n\n"; !strings.Contains(res.stdout, want) {
+	// 120 + 150 + 188 requests handed out over the steps of 400, 500 and 625 rps
+	// held for 300ms (ticks i/rps below 300ms): 458, over 3 records is 153 at most.
+	if want := "  held every step up to 625 rps: the limit is above it\n" +
+		"  data: 3 of 3 requests from users.jsonl, each used up to 153 times\n\n"; !strings.Contains(res.stdout, want) {
 		t.Errorf("stdout lacks the data line under the headline, with the count of the whole search:\n%s", res.stdout)
 	}
 
@@ -120,8 +122,8 @@ func TestRun_ASearchOnTheFakeTarget(t *testing.T) {
 	}
 	out := decodeOnly(t, res.stdout)
 	bp, _ := out["breakpoint"].(map[string]any)
-	if out["mode"] != "breakpoint" || bp == nil || bp["outcome"] != "held_all" || bp["held_rps"] != 79.0 {
-		t.Errorf("mode %v, breakpoint %v; want breakpoint, held_all at 79", out["mode"], bp)
+	if out["mode"] != "breakpoint" || bp == nil || bp["outcome"] != "held_all" || bp["held_rps"] != 625.0 {
+		t.Errorf("mode %v, breakpoint %v; want breakpoint, held_all at 625", out["mode"], bp)
 	}
 
 	runs, _ := bp["runs"].([]any)
