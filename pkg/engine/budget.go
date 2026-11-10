@@ -180,7 +180,7 @@ func inFlightFor(rps int, timeout time.Duration) int {
 		return 0
 	}
 
-	hi, lo := bits.Mul64(uint64(rps), uint64(timeout))
+	hi, lo := bits.Mul64(uint64(rps), uint64(timeout)) //nolint:gosec // rps > 0 is checked above; config validation keeps timeout positive (ErrInvalidTimeout)
 	if hi >= uint64(time.Second) {
 		return math.MaxInt
 	}

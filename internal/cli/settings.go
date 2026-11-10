@@ -87,7 +87,7 @@ func (s *Settings) Save() error {
 		s.path = path
 	}
 
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil { //nolint:gosec // the directory holds only the mode and palette, nothing secret
 		return err
 	}
 

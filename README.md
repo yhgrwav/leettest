@@ -124,4 +124,4 @@ leettest -c leettest.yaml
 
 [Сравнение с ghz, k6, JMeter](docs/ru/why.md#сравнение-с-ghz-k6-и-jmeter) · [План](docs/ru/roadmap.md) ·
 [Платная версия](docs/ru/commercial.md) · [Вопросы и отзывы](docs/ru/feedback.md) ·
-[Участие](CONTRIBUTING.md) · [Поддержать](docs/support.md) · Apache 2.0, [лицензия](LICENSE)
+[Участие](CONTRIBUTING.md) · [Безопасность](SECURITY.md) · [Поддержать](docs/support.md) · Apache 2.0, [лицензия](LICENSE)

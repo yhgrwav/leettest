@@ -11,6 +11,7 @@ linters:
     - copyloopvar
     - errorlint
     - gocritic
+    - gosec
     - misspell
     - nilerr
     - noctx
@@ -33,6 +34,16 @@ linters:
         - name: error-strings
         - name: indent-error-flow
         - name: var-naming
+    gosec:
+      excludes:
+        # G304: every file path the CLI opens (config, dataset, proto, report)
+        # is the user's own argument, by design.
+        - G304
+        # G703: the same finding, found by taint tracking from the config path.
+        - G703
+        # G404: math/rand shuffles a dataset and drives the fake sender; none
+        # of it is a secret.
+        - G404
     gocritic:
       enabled-tags:
         - diagnostic
@@ -54,6 +65,16 @@ linters:
         linters:
           - errcheck
           - prealloc
+      # Test code does not ship: file modes, subprocesses and conversions in
+      # tests are not a risk to a user.
+      - path: _test\.go
+        linters:
+          - gosec
+      # The dev tools under test/ (measurement, stand, stress planning) run on
+      # the maintainer's machine and in CI, never on a user's.
+      - path: ^test/
+        linters:
+          - gosec
 
 formatters:
   enable:
