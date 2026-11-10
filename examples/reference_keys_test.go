@@ -40,18 +40,7 @@ var referenceOnlyKeys = map[string]string{}
 
 // undocumentedExampleKeys are keys the examples set that no row of the reference tables names.
 // Each has a reason. A key that gets a row must leave this map.
-var undocumentedExampleKeys = map[string]string{
-	"app.target.ip":          "the app.target row names `ip` and `port` inside its text, not as rows of their own",
-	"app.target.port":        "the app.target row names `ip` and `port` inside its text, not as rows of their own",
-	"load.breakpoint.from":   "documented in the README's breaking-point section, the reference has no table for it",
-	"load.breakpoint.to":     "documented in the README's breaking-point section, the reference has no table for it",
-	"load.breakpoint.factor": "documented in the README's breaking-point section, the reference has no table for it",
-	"load.breakpoint.step":   "documented in the README's breaking-point section, the reference has no table for it",
-	"load.breakpoint.hold":   "documented in the README's breaking-point section, the reference has no table for it",
-	"load.breakpoint.settle": "documented in the README's breaking-point section, the reference has no table for it",
-	"load.breakpoint.p99_limit": "documented in the README's breaking-point section, " +
-		"the reference has no table for it",
-}
+var undocumentedExampleKeys = map[string]string{}
 
 // openKeys take keys of the user's own naming below them: a label, a header, a field of the message.
 var openKeys = []string{"labels", "app.metadata", "load.calls[].data"}
