@@ -39,9 +39,7 @@ func checkNumbers(raw []byte) error {
 	}
 
 	var v numberVisitor
-	for _, doc := range file.Docs {
-		ast.Walk(&v, doc)
-	}
+	walkDocs(file, &v)
 
 	return errors.Join(v.errs...)
 }

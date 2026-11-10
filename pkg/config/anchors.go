@@ -67,9 +67,7 @@ func (c *anchorCollector) Visit(node ast.Node) ast.Visitor {
 // anywhere in the config, is refused, each repeat against the first definition.
 func collectAnchors(file *ast.File) (map[string]ast.Node, error) {
 	var c anchorCollector
-	for _, doc := range file.Docs {
-		ast.Walk(&c, doc)
-	}
+	walkDocs(file, &c)
 
 	sort.SliceStable(c.defs, func(i, j int) bool {
 		if c.defs[i].line != c.defs[j].line {
