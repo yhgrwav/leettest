@@ -66,8 +66,8 @@ func Parse(raw []byte) (*MasterConfig, error) {
 	}
 
 	var cfg MasterConfig
-	if err := yaml.UnmarshalWithOptions(raw, &cfg, yaml.Strict()); err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrReadConfig, err)
+	if err := decode(raw, &cfg); err != nil {
+		return nil, err
 	}
 
 	sum := sha256.Sum256(raw)
@@ -84,6 +84,21 @@ func Parse(raw []byte) (*MasterConfig, error) {
 	}
 
 	return &cfg, nil
+}
+
+// goccy/go-yaml v1.19.2 panics on this input; remove when fixed upstream.
+func decode(raw []byte, cfg *MasterConfig) (err error) {
+	defer func() {
+		if recover() != nil {
+			err = fmt.Errorf("%w: the YAML library could not decode this file", ErrReadConfig)
+		}
+	}()
+
+	if err := yaml.UnmarshalWithOptions(raw, cfg, yaml.Strict()); err != nil {
+		return fmt.Errorf("%w: %w", ErrReadConfig, err)
+	}
+
+	return nil
 }
 
 func (m *MasterConfig) resolve() error {

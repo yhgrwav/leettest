@@ -62,6 +62,37 @@ func runConfigFile(t *testing.T, body string) (stdout, stderr string, code int) 
 
 var errPanicked = errors.New("run panicked")
 
+// A file the YAML library cannot decode is refused like a YAML syntax error:
+// exit code 1, the reason on stderr, no stack trace.
+func TestRun_UndecodableConfigFile(t *testing.T) {
+	_, _, syntaxCode := runConfigFile(t, "app: [\n")
+	if syntaxCode != 1 {
+		t.Fatalf("a YAML syntax error exits %d, want 1: the reference", syntaxCode)
+	}
+
+	for name, body := range map[string]string{
+		"the fuzz input": "00A:00000000:\n    0A: 00000000A\n0000000A: 10000\nload:\n  00000A: 0A\n  calls:    ! ",
+		"shortest known": "load:\n  calls: !\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			stdout, stderr, code := runConfigFile(t, body)
+
+			if !strings.Contains(stderr, "the YAML library could not decode this file") {
+				t.Errorf("stderr = %q, want the reason", stderr)
+			}
+			if strings.Contains(stderr, "goroutine") {
+				t.Errorf("stderr holds a stack trace:\n%s", stderr)
+			}
+			if code != syntaxCode {
+				t.Errorf("exit code %d, want %d as for a YAML syntax error", code, syntaxCode)
+			}
+			if stdout != "" {
+				t.Errorf("stdout = %q, want it empty", stdout)
+			}
+		})
+	}
+}
+
 // A config file with no document in it is refused like a YAML syntax error:
 // the same exit code, the reason on stderr, nothing on stdout, no stack trace.
 func TestRun_EmptyConfigFile(t *testing.T) {
