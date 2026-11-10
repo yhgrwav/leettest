@@ -637,7 +637,7 @@ measured calls only. The first column is the field's full path.
 | `warmup_sent`, `warmup_failed`, `warmup_not_sent` | int | The same for calls scheduled in the excluded window (the ramp and the warm-up) |
 | `cap_hit` | object? | The `-max-in-flight` cap was hit; `null` — it was not |
 | `cap_hit.at_us` | int | When |
-| `cap_hit.unsent` | int | Calls the cap refused |
+| `cap_hit.unsent` | int | Calls the cap refused. Always `1`: the first refusal stops the run and makes it invalid |
 | `cap_hit.over_deadline` | int | Calls in flight at that moment holding their slot past their deadline |
 | `start_lag` | object | How late calls started against the schedule |
 | `start_lag.p99` | percentile? | p99 of the lag |
@@ -758,7 +758,7 @@ of the method.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `methods[].seconds[].warmup` | bool | The second is in the excluded window (the ramp and the warm-up) |
+| `methods[].seconds[].warmup` | bool | The second begins in the excluded window (the ramp and the warm-up). When the window ends mid-second (`warmup: 1.5s`), that second is `true` but holds both warm-up and measured calls: `Σ succeeded` over the `warmup: false` seconds falls short of the total by the measured part of that second |
 | `methods[].seconds[].begun` | int | Calls begun in this second |
 | `methods[].seconds[].succeeded`, `methods[].seconds[].overload`, `methods[].seconds[].failure`, `methods[].seconds[].client_error`, `methods[].seconds[].bad_response`, `methods[].seconds[].request_error`, `methods[].seconds[].timed_out`, `methods[].seconds[].unreachable`, `methods[].seconds[].cut_off`, `methods[].seconds[].aborted`, `methods[].seconds[].unclassified` | int | Calls that finished in this second, by category |
 | `methods[].seconds[].not_sent_generator`, `methods[].seconds[].not_sent_stream`, `methods[].seconds[].not_sent_connection` | int | Timeouts before sending that finished in this second, by cause |

@@ -619,7 +619,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `warmup_sent`, `warmup_failed`, `warmup_not_sent` | int | То же для вызовов, запланированных на исключённое окно (разгон и прогрев) |
 | `cap_hit` | object? | Упор в `-max-in-flight`; `null` — упора не было |
 | `cap_hit.at_us` | int | Когда |
-| `cap_hit.unsent` | int | Сколько вызовов потолок не пустил |
+| `cap_hit.unsent` | int | Сколько вызовов потолок не пустил. Всегда `1`: первый отказ потолка останавливает прогон и делает его невалидным |
 | `cap_hit.over_deadline` | int | Сколько вызовов в полёте в тот момент держали слот после своего дедлайна |
 | `start_lag` | object | Опоздание старта вызовов против расписания |
 | `start_lag.p99` | перцентиль? | p99 опоздания |
@@ -739,7 +739,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 
 | Поле | Тип | Что значит |
 |---|---|---|
-| `methods[].seconds[].warmup` | bool | Секунда в исключённом окне (разгон и прогрев) |
+| `methods[].seconds[].warmup` | bool | Секунда начинается в исключённом окне (разгон и прогрев). Если окно кончается посреди секунды (`warmup: 1.5s`), эта секунда помечена `true`, но в ней и вызовы прогрева, и измеренные: `Σ succeeded` по секундам с `warmup: false` меньше итога на измеренную часть этой секунды |
 | `methods[].seconds[].begun` | int | Вызовы, начатые в эту секунду |
 | `methods[].seconds[].succeeded`, `methods[].seconds[].overload`, `methods[].seconds[].failure`, `methods[].seconds[].client_error`, `methods[].seconds[].bad_response`, `methods[].seconds[].request_error`, `methods[].seconds[].timed_out`, `methods[].seconds[].unreachable`, `methods[].seconds[].cut_off`, `methods[].seconds[].aborted`, `methods[].seconds[].unclassified` | int | Вызовы, завершившиеся в эту секунду, по категориям |
 | `methods[].seconds[].not_sent_generator`, `methods[].seconds[].not_sent_stream`, `methods[].seconds[].not_sent_connection` | int | Таймауты до отправки, завершившиеся в эту секунду, по причинам |
