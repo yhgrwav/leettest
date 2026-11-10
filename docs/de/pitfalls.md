@@ -2,15 +2,16 @@
 
 [← Zur Übersicht](README.md)
 
-> Übersetzt aus [docs/ru/pitfalls.md](../ru/pitfalls.md) bei bfd24aa, 2026-11-03. Bei
+> Übersetzt aus [docs/ru/pitfalls.md](../ru/pitfalls.md) bei 0e32d00, 2026-11-10. Bei
 > Abweichungen gilt die russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/pitfalls.md).
 
-Eine Liste der Stellen, an denen Lastwerkzeuge lügen oder im Weg stehen, und wo wir jeweils stehen.
+Eine Liste bekannter Messfehler und Unannehmlichkeiten beim Lasttest und dessen, was LeetTest damit
+tut. Welches Werkzeug welche Eigenheit hat, steht mit Quellen im
+[Vergleich](why.md#vergleich-mit-ghz-k6-und-jmeter); hier sind keine Werkzeuge genannt.
 
-Die Status sind ehrlich: `fertig` — funktioniert; `geplant` — die Entscheidung steht, der Code
-kommt noch.
+Status: `fertig` — funktioniert; `geplant` — die Entscheidung steht, der Code kommt noch.
 
 | Problem | Status |
 |---|---|
@@ -32,17 +33,18 @@ kommt noch.
 
 ## Coordinated Omission
 
-Der teuerste Fehler im Lasttest. Ziel sind 1000 RPS, eine Anfrage pro Millisekunde. Der Dienst
-hängt eine Sekunde. In dieser Sekunde hätten 1000 Anfragen rausgehen müssen.
+Ein Fehler, bei dem ein Stillstand des Dienstes aus dem Bericht verschwindet. Ziel sind 1000 RPS,
+eine Anfrage pro Millisekunde. Der Dienst hängt eine Sekunde. In dieser Sekunde hätten 1000
+Anfragen rausgehen müssen.
 
 Zählt man die Latenz ab dem tatsächlichen Senden, gehen alle nach der Erholung raus, brauchen je
-5 ms, und der Bericht zeigt `p99 = 5ms`. Der einsekündige Stillstand ist verschwunden — das
-Werkzeug meldete, alles sei bestens, genau als es das nicht war.
+5 ms, und der Bericht zeigt `p99 = 5ms`. Der einsekündige Stillstand ist im Bericht nicht zu sehen
+(das Beispiel ist errechnet, keine Messung; eine Messung auf dem Stand steht im
+[Vergleich mit ghz](compare-ghz.md)).
 
 Wir geben jeder Anfrage beim Planen ihren geplanten Zeitpunkt und zählen die Latenz ab diesem. Eine
 für `t=0` geplante Anfrage ging bei `t=1000ms` raus, die Antwort kam bei `t=1005ms` — Latenz
-`1005ms`. Das ist von der ersten Zeile an im Kern angelegt: Auf eine fertige Engine lässt es sich
-nicht aufschrauben.
+`1005ms`. Der geplante Zeitpunkt und das Zählen ab ihm gehören zum Kern von LeetTest.
 
 ## Eine Methode pro Lauf
 
@@ -54,9 +56,9 @@ Bericht.
 ## Closed Model
 
 „N virtuelle Nutzer, jeder wartet auf eine Antwort vor der nächsten Anfrage" wirkt natürlich, hat
-aber einen eingebauten Makel: Wird der Dienst langsam, warten die Nutzer länger, und die
-tatsächliche Last sinkt von selbst. Das Werkzeug hört genau dann auf zu drücken, wenn es spannend
-wird, was unter Druck passiert.
+aber eine Eigenschaft: Wird der Dienst langsam, warten die Nutzer länger, und die tatsächliche Last
+sinkt von selbst. So passt das Modell zur Frage „wie viele Nutzer bedient der Dienst", aber nicht zur
+Frage „was passiert bei einer vorgegebenen Anfragerate".
 
 Wir arbeiten mit einem Open Model: Die Ziel-RPS ist ein Zeitplan, Anfragen gehen nach der Uhr raus,
 ob die vorigen zurück sind oder nicht.
@@ -81,8 +83,8 @@ berechnet, nicht aus fertigen Perzentilen.
 
 Dazu die Kosten der Metrikerfassung. Ein Mutex um ein gemeinsames Latenz-Slice macht den Generator
 bei hoher RPS zu seinem eigenen Engpass. Wir schreiben in HDR-Histogramme: ein Schreibvorgang
-kostet einige zehn Nanosekunden, bei 5000 RPS ein Hundertstelprozent der Zeit — gemessen, nicht
-angenommen.
+kostet einige zehn Nanosekunden (eine Schätzung; die Benchmarks des Pakets `pkg/metrics` liegen im
+Repository, eine eigene Auswertung für 5000 RPS gibt es nicht).
 
 ## Vorbereitung und Tippfehler
 
@@ -90,7 +92,7 @@ Kein `.proto`, kein Codegen: Methodenbeschreibungen kommen per Reflection vom Di
 
 Die Konfiguration wird im strikten Modus gelesen. `rsp: 800` statt `rps: 800` ist ein Fehler mit
 Ortsangabe, kein stiller Lauf mit null Last und grünem Bericht. Auch `rps` gleich null ist ein
-Fehler: Ein leerer erfolgreicher Lauf ist die schlimmste Lüge, weil er wie Erfolg aussieht.
+Fehler: Ein leerer erfolgreicher Lauf sieht wie Erfolg aus, obwohl er nichts geprüft hat.
 
 ## Aufwärmen
 
@@ -102,7 +104,7 @@ Sie verzerren die Perzentile des ganzen Laufs, daher hält `warmup` sie aus den 
 Die Kehrseite des Open Model: Steht das Ziel, stauen sich hängende Anfragen, und der Generator
 stirbt vor dem getesteten Dienst. Abhilfe ist eine explizite Obergrenze gleichzeitiger Anfragen.
 Die Last an der Grenze still zu senken ist nicht erlaubt: Ein „1000 RPS"-Lauf, der still zu
-„so viel es eben ging" wurde, ist schlimmer als ein abgebrochener. Deshalb wird die Grenze vor dem
+„so viel es eben ging" wurde, verbirgt, dass die Last nicht die richtige war. Deshalb wird die Grenze vor dem
 Start geprüft: Sie fasst alles, was ein hängender Dienst bis zum Timeout festhalten kann, mit
 Reserve. Ein hängender Dienst läuft bis zum Ende des Laufs, und der Bericht stellt das Gemessene
 fest: `at 100 rps, 150 of 150 calls (100.0%) got no answer within 300ms, and the target answered
@@ -113,10 +115,15 @@ der Dienst: Der Lauf hält mit Bericht an und wird als ungültig markiert.
 
 Schafft die Maschine die angeforderte RPS nicht, gehen Anfragen verspätet raus, die Latenz steigt
 — und der Bericht beschuldigt den Dienst, obwohl der Generator schuld ist. Die Verspätung des
-Generators messen wir bereits getrennt von der Antwortzeit des Dienstes und machen daraus ein Urteil: Ein Lauf, in dem die Verspätung des Generators das p99-Ende bestimmt hat,
-wird für ungültig erklärt (`generator_late`, Exit-Code 2), und der Bericht nennt die Methoden und
-was zu ändern ist. Solange der Lauf geht, warnt eine Zeile auf stderr, dass der Generator hinter
-seinem Plan zurückbleibt. Einzelheiten stehen in der [Referenz](reference.md#wo-man-es-ausführt).
+Generators messen wir bereits getrennt von der Antwortzeit des Dienstes und heben sie zu einem
+Urteil: Ein Lauf, in dem die Verspätung des Generators das p99-Ende bestimmt hat, wird für ungültig
+erklärt (`generator_late`, Exit-Code 2), und der Bericht nennt die Methoden und was zu ändern ist.
+Noch nicht veröffentlicht: Der Bericht nennt die Grenze, an die der Generator stieß (GOMAXPROCS,
+CPU-Quote, die CPU selbst oder der Zeitplan), oder sagt, dass er sie nicht nennen kann; der Lauf ist
+auch dann ungültig, wenn der Generator 1 % oder mehr der Aufrufe einer Methode nicht gesendet hat,
+selbst wenn die Ursache des Endes die Verbindung ist. Solange der Lauf geht, warnt eine Zeile auf
+stderr, dass der Generator hinter seinem Plan zurückbleibt. Einzelheiten stehen in der
+[Referenz](reference.md#wo-man-es-ausführt).
 
 ## Fehler nach Kategorien
 
@@ -124,7 +131,7 @@ Ein `RESOURCE_EXHAUSTED` vom Rate-Limiter des Ziels ist nicht dasselbe wie ein T
 Absturz des Dienstes. Alles in „Fehler: 12%" zu werfen, verliert den Sinn. Der Bericht teilt die
 Aufrufe nach Kategorien auf, je Methode und je Sekunde: eine Ablehnung „überlastet" (`overload`)
 getrennt von einem Timeout (`timed_out`) und einem Fehler des Ziels (`failure`) —
-[Kategorien](README.md#den-bericht-lesen).
+[Kategorien](../en/report.md#reading-the-report).
 
 ## Sichtbarkeit
 
