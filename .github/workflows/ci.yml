@@ -194,7 +194,16 @@ jobs:
           while pgrep -x stand > /dev/null; do sleep 0.2; done
           bin/stand -mtls -delay 20ms -life 30s &
           sleep 1
-          bin/leettest -c examples/tour-tls.yaml -output json > tour-tls.json
+          rc=0
+          bin/leettest -c examples/tour-tls.yaml -output json > tour-tls.json || rc=$?
+          if [ -s tour-tls.json ]; then
+            jq -c '{exit: '"$rc"', start_lag, clock_step_ns, invalid_reasons, tail_wait_cause,
+              not_sent_generator, generator_tail_calls: .client_waits.generator_tail_calls}' tour-tls.json
+          fi
+          if [ "$rc" -ne 0 ]; then
+            echo "exit code $rc"
+            exit 1
+          fi
           jq -e '.sent == 2000' tour-tls.json
           # gzip on: the stand accepted it and the sizes are told.
           jq -e '.settings.compression == "gzip" and ([.methods[] | .request_bytes.wire > 0] | all) and ([.methods[] | .request_error.count == 0] | all)' tour-tls.json
