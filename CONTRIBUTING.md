@@ -124,6 +124,9 @@ Every capability a guide shows is a command to copy: a fenced block that runs as
 prompt, no `[...]` optional parts, no `/path/to`; a placeholder only when it cannot be avoided,
 with a line saying what to put there), followed by what the reader will see.
 
+A new config key needs a row in `docs/en/reference.md` and a line in an example under
+`examples/`; a test in `examples/` fails without either.
+
 [AGENTS.md](AGENTS.md#docs) has the full rule.
 
 The README recording (`assets/demo.gif`) is rebuilt from `assets/demo.tape` with Docker:
