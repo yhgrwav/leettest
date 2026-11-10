@@ -596,7 +596,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `methods[].method` | string | 方法全名 |
 | `methods[].invalid_reason` | string? | 该方法没有测到任何与负载相关的内容：`request_error`、`client_error`、`bad_response`、`mixed`；`null`——测到了 |
 | `methods[].sent`、`methods[].failed`、`methods[].aborted`、`methods[].not_sent`、`methods[].not_sent_generator`、`methods[].not_sent_stream`、`methods[].not_sent_connection`、`methods[].warmup_sent`、`methods[].warmup_failed`、`methods[].warmup_not_sent` | int | 该方法在运行同名字段中所占的部分 |
-| `methods[].rps` | float? | `sent/s`：已发送调用数除以发送时间；`null`——没有调用 |
+| `methods[].rps` | float? | `sent/s`：已发送调用数除以该方法的发送时间；`null`——没有调用 |
 | `methods[].timeout_us` | int | 该方法的超时 |
 | `methods[].planned_rps_low`、`methods[].planned_rps_high` | int | 计划中被测量部分（被排除的窗口之后）最低和最高的计划速率：带爬升的调用会给出两次它的 `rps` |
 | `methods[].planned_duration_us` | int | 该方法计划运行多久，按配置，包括爬升 |

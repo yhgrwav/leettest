@@ -675,7 +675,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `methods[].method` | string | Полное имя метода |
 | `methods[].invalid_reason` | string? | Метод ничего не измерил про нагрузку: `request_error`, `client_error`, `bad_response`, `mixed`; `null` — измерил |
 | `methods[].sent`, `methods[].failed`, `methods[].aborted`, `methods[].not_sent`, `methods[].not_sent_generator`, `methods[].not_sent_stream`, `methods[].not_sent_connection`, `methods[].warmup_sent`, `methods[].warmup_failed`, `methods[].warmup_not_sent` | int | Доля метода в одноимённых полях прогона |
-| `methods[].rps` | float? | `sent/s`: отправленные, делённые на время отправки; `null` — ни одного вызова |
+| `methods[].rps` | float? | `sent/s`: отправленные, делённые на время отправки этого метода; `null` — ни одного вызова |
 | `methods[].timeout_us` | int | Таймаут метода |
 | `methods[].planned_rps_low`, `methods[].planned_rps_high` | int | Наименьший и наибольший плановый темп измеряемой части плана, после исключённого окна: вызов с разгоном даёт свой `rps` дважды |
 | `methods[].planned_duration_us` | int | Сколько метод должен был идти, как задано, разгон включён |
