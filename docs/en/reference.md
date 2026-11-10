@@ -125,9 +125,13 @@ failures decide it, not the target's), `nothing_sent` (not a single call was sen
 tail holds calls with no answer within the timeout: the value is only a lower bound, not above the
 limit).
 
-- Latency is compared in nanoseconds, as the JSON carries it (`value.ns`): a value one nanosecond
-  over the limit is a `fail`, though `value.us` (cut at the microsecond) may equal `limit_us`. A
-  lower bound over the limit is a `fail`: the real value is larger still.
+- Latency is compared in nanoseconds, at the lowest value of the percentile's histogram bucket: the
+  report and the JSON (`value.ns`) carry the bucket's top, at most 0.1 % higher. A limit fails
+  only when that lowest value is over it, so calls exactly at the limit pass, though the printed
+  value may be a little above it (100.008 ms against `p99: 100ms`: `pass`). A script that compares
+  `value.ns` with the limit itself can disagree with the verdict at that edge. `value.us` (cut at
+  the microsecond) may equal `limit_us` beside a `fail`. A lower bound over the limit is a `fail`:
+  the real value is larger still.
 - The share counts every failed call and every call not sent for lack of a connection, over all
   counted. For a `fail` only the failures the target decided count: requests the client rejected,
   client errors and bad responses say nothing of the target.
@@ -573,7 +577,7 @@ measured calls only. The first column is the field's full path.
 | Field | Type | Meaning |
 |---|---|---|
 | `<percentile>.us` | int | The value, whole microseconds |
-| `<percentile>.ns` | int | The histogram's value in whole nanoseconds, which the text report prints at three significant figures; `us` is the same value truncated to microseconds; `pass:` and `leettest compare` judge by `ns`, so beside a `fail` `us` can equal `limit_us` |
+| `<percentile>.ns` | int | The histogram's value in whole nanoseconds, which the text report prints at three significant figures; `us` is the same value truncated to microseconds; `pass:` judges by the lowest value of the same histogram bucket, at most 0.1 % below `ns` (see [Pass limits](#pass-limits)), `leettest compare` by `ns`; beside a `fail` `us` can equal `limit_us` |
 | `<percentile>.lower_bound` | bool | `true` — a lower bound, not a value ([README](README.md#reading-the-report)) |
 
 ### Run

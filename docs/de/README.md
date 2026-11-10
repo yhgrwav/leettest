@@ -385,8 +385,9 @@ Die Einheit steht im Feldnamen: `_us` sind ganze Mikrosekunden, `_s` ganze Sekun
 ist die einzige gebrochene Zahl. Ein Wert, den der Lauf nicht hervorgebracht hat, ist `null`, nicht
 `0`. Ein Perzentil ist ein Objekt `{"us": 1234, "ns": 1234567, "lower_bound": false}`: `ns` ist der
 Wert des Histogramms in ganzen Nanosekunden, `us` derselbe Wert auf Mikrosekunden abgeschnitten;
-`pass:` und `leettest compare` urteilen nach `ns`, bei einem Bericht, der vor diesem Feld geschrieben
-wurde, nehmen sie `us` × 1000. Mit `lower_bound: true` ist es eine Untergrenze, kein Wert. Latenzen
+`pass:` urteilt nach dem niedrigsten Wert derselben Histogramm-Klasse (höchstens 0,1 % unter `ns`),
+`leettest compare` nach `ns`; bei einem Bericht, der vor diesem Feld geschrieben wurde, nehmen sie
+`us` × 1000. Mit `lower_bound: true` ist es eine Untergrenze, kein Wert. Latenzen
 sind die Werte des Histogramms auf 3 signifikante Stellen (ein Fehler bis 0,1 %), Zählungen sind
 exakt. Zeiten zählen ab `started_at` (RFC 3339, UTC), dem
 Beginn des Plans, Aufwärmen eingeschlossen; auch `duration_us` schließt das Aufwärmen ein.

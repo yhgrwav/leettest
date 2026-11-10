@@ -28,6 +28,8 @@ type fakeView struct {
 	combinedCalls      int
 }
 
+func (f *fakeView) significantFigures() int { return significantFigures }
+
 func (f *fakeView) counts() (measured, censored int64) {
 	return int64(len(f.measured)), int64(len(f.censored))
 }
@@ -60,13 +62,13 @@ func TestPercentileRule(t *testing.T) {
 		want               Quantile
 	}{
 		{"empty", nil, nil, 0.5, Quantile{}},
-		{"no censored: exact rank value", []int64{10, 20, 30, 40}, nil, 0.5, Quantile{20, true, true}},
-		{"measured at rank equals the smallest threshold: exact", []int64{10, 50}, []int64{50}, 0.5, Quantile{50, true, true}},
-		{"measured at rank above the only threshold: the threshold", []int64{10, 60, 70}, []int64{50}, 0.5, Quantile{50, false, true}},
-		{"rank past every measured value: the threshold", []int64{10}, []int64{50, 50, 50}, 0.75, Quantile{50, false, true}},
-		{"mixed thresholds: the rank in the combined order", []int64{10, 100}, []int64{30, 50}, 0.75, Quantile{50, false, true}},
-		{"only censored, mixed: the rank in the combined order", nil, []int64{30, 50, 70}, 1, Quantile{70, false, true}},
-		{"p = 0 is rank 1", []int64{10, 20}, nil, 0, Quantile{10, true, true}},
+		{"no censored: exact rank value", []int64{10, 20, 30, 40}, nil, 0.5, Quantile{Value: 20, Low: 20, Exact: true, Defined: true}},
+		{"measured at rank equals the smallest threshold: exact", []int64{10, 50}, []int64{50}, 0.5, Quantile{Value: 50, Low: 50, Exact: true, Defined: true}},
+		{"measured at rank above the only threshold: the threshold", []int64{10, 60, 70}, []int64{50}, 0.5, Quantile{Value: 50, Defined: true}},
+		{"rank past every measured value: the threshold", []int64{10}, []int64{50, 50, 50}, 0.75, Quantile{Value: 50, Defined: true}},
+		{"mixed thresholds: the rank in the combined order", []int64{10, 100}, []int64{30, 50}, 0.75, Quantile{Value: 50, Defined: true}},
+		{"only censored, mixed: the rank in the combined order", nil, []int64{30, 50, 70}, 1, Quantile{Value: 70, Defined: true}},
+		{"p = 0 is rank 1", []int64{10, 20}, nil, 0, Quantile{Value: 10, Low: 10, Exact: true, Defined: true}},
 	}
 
 	for _, c := range cases {

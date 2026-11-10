@@ -160,14 +160,18 @@ func TestMergeKeepsTheSmallestAndLargestThreshold(t *testing.T) {
 
 // Ground: contract — the bucket edges computed here are the library's own: a
 // histogram holding one value reports its bucket's bottom as Min and its top
-// as Max. Checked from 1ns to the hour, so a change of the histogram's shape
-// is caught here rather than as a wrong bound.
+// as Max. Checked from 1ns to the hour at every figure count a histogram here
+// uses (the run's and the window's), so a change of the histogram's shape is
+// caught here rather than as a wrong bound.
 func TestBucketEdgesMatchTheHistograms(t *testing.T) {
-	for v := int64(1); v <= highestTrackableNanos; v = v*103/100 + 1 {
-		h := hdrhistogram.New(lowestTrackableNanos, highestTrackableNanos, significantFigures)
-		_ = h.RecordValue(v)
-		if lowestEquivalent(v) != h.Min() || highestEquivalent(v) != h.Max() {
-			t.Fatalf("%d: edges [%d, %d], histogram [%d, %d]", v, lowestEquivalent(v), highestEquivalent(v), h.Min(), h.Max())
+	for _, figures := range []int{significantFigures, windowSignificantFigures} {
+		for v := int64(1); v <= highestTrackableNanos; v = v*103/100 + 1 {
+			h := hdrhistogram.New(lowestTrackableNanos, highestTrackableNanos, figures)
+			_ = h.RecordValue(v)
+			if lowestEquivalent(v, figures) != h.Min() || highestEquivalent(v, figures) != h.Max() {
+				t.Fatalf("%d figures, %d: edges [%d, %d], histogram [%d, %d]", figures, v,
+					lowestEquivalent(v, figures), highestEquivalent(v, figures), h.Min(), h.Max())
+			}
 		}
 	}
 }

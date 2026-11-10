@@ -146,11 +146,14 @@ func TestPercentileAgainstReferenceWithCensoredMix(t *testing.T) {
 		}
 		if wantExact {
 			assertUpperBound(t, f, got.Value, want)
+			if bottom := time.Duration(lowestEquivalent(int64(want), significantFigures)); got.Low != bottom {
+				t.Errorf("p%v/%v: Low %v, want the bottom of the reference %v's bucket, %v", f.num, f.den, got.Low, want, bottom)
+			}
 			continue
 		}
 		// A bound is a lower bound: the bottom of the reference's bucket, never
 		// above the reference.
-		if bottom := time.Duration(lowestEquivalent(int64(want))); got.Value != bottom {
+		if bottom := time.Duration(lowestEquivalent(int64(want), significantFigures)); got.Value != bottom {
 			t.Errorf("p%v/%v: bound %v, want the bottom of the reference %v's bucket, %v", f.num, f.den, got.Value, want, bottom)
 		}
 	}

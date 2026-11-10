@@ -47,6 +47,9 @@ type Snapshot struct {
 // Quantile is one percentile of the distribution.
 type Quantile struct {
 	Value time.Duration
+	// Low is the lowest value of the bucket holding the percentile; zero means
+	// unknown and Floor reads Value.
+	Low time.Duration
 	// Exact is false when the percentile landed among censored observations:
 	// the true value is larger than Value by an unknown amount. Meaningful
 	// only when Defined is true.
@@ -54,6 +57,18 @@ type Quantile struct {
 	// Defined is false when the distribution has no observations at all;
 	// check it before Value or Exact.
 	Defined bool
+}
+
+// Floor is the value a limit is compared with: Low when the bucket's lower
+// edge is known, else Value. Value is the bucket's top, up to 0.1 % above the
+// lowest value a call of the bucket could have had; a limit is broken only by
+// what is certainly above it.
+func (q Quantile) Floor() time.Duration {
+	if q.Low != 0 {
+		return q.Low
+	}
+
+	return q.Value
 }
 
 // cumBar is one non-empty histogram bucket with the running count of all
@@ -134,6 +149,7 @@ func (s *Snapshot) CountAtOrAbove(d time.Duration) int64 {
 	return cum[len(cum)-1].cumCount - cum[below-1].cumCount
 }
 
+func (s *Snapshot) significantFigures() int            { return int(s.measuredRaw.SignificantFigures) }
 func (s *Snapshot) counts() (measured, censored int64) { return s.measuredN, s.censoredN }
 func (s *Snapshot) thresholds() (lo, hi int64)         { return s.censoredMin, s.censoredMax }
 func (s *Snapshot) measuredAt(rank int64) int64        { return valueAtRank(s.measuredCumBars(), rank) }
@@ -259,20 +275,36 @@ func cumulative(h *hdrhistogram.Histogram) []cumBar {
 	return cum
 }
 
-// lowestEquivalent is the smallest value stored in v's bucket. With a lowest
-// trackable value of 1 and 3 significant figures the histograms keep 2048
-// sub-buckets: below 2048 a bucket is one value, above it 2^(bits(v)-11).
-func lowestEquivalent(v int64) int64 {
-	shift := max(0, bits.Len64(uint64(v))-11) //nolint:gosec // v is a recorded latency or a threshold: the histogram rejects negatives
+// bucketShift is the width of v's bucket as a power of two, for a histogram of
+// the given significant figures and a lowest trackable value of 1. The
+// library keeps 2^ceil(log2(2 * 10^figures)) sub-buckets (2048 for 3 figures,
+// 256 for 2): below that a bucket is one value, above it 2^(bits(v)-magnitude).
+func bucketShift(v int64, figures int) int {
+	magnitude := bits.Len64(2*pow10(figures) - 1)
+
+	return max(0, bits.Len64(uint64(v))-magnitude) //nolint:gosec // v is a recorded latency or a threshold: the histogram rejects negatives
+}
+
+func pow10(n int) uint64 {
+	p := uint64(1)
+	for range n {
+		p *= 10
+	}
+
+	return p
+}
+
+// lowestEquivalent is the smallest value stored in v's bucket of a histogram
+// with the given significant figures.
+func lowestEquivalent(v int64, figures int) int64 {
+	shift := bucketShift(v, figures)
 
 	return v >> shift << shift
 }
 
 // highestEquivalent is the largest value stored in v's bucket.
-func highestEquivalent(v int64) int64 {
-	shift := max(0, bits.Len64(uint64(v))-11) //nolint:gosec // v is a recorded latency or a threshold: the histogram rejects negatives
-
-	return lowestEquivalent(v) + 1<<shift - 1
+func highestEquivalent(v int64, figures int) int64 {
+	return lowestEquivalent(v, figures) + 1<<bucketShift(v, figures) - 1
 }
 
 func valueAtRank(cum []cumBar, rank int64) int64 {

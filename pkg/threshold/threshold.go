@@ -226,14 +226,16 @@ func runSideOf(report engine.Report, m *engine.MethodReport) (bool, Reason) {
 	}
 }
 
-// latency compares the value in nanoseconds, as the run JSON carries it
-// (value.ns), with the limit. A value that is only a lower bound fails once
-// the bound is over the limit and decides nothing otherwise.
+// latency compares the lowest value of the percentile's bucket, in
+// nanoseconds, with the limit: the run prints the bucket's top (value.ns), up
+// to 0.1 % higher, and calls exactly at the limit pass. A value that is only a
+// lower bound fails once the bound is over the limit and decides nothing
+// otherwise.
 func latency(limit time.Duration, q metrics.Quantile) (Verdict, Reason) {
 	switch {
 	case !q.Defined:
 		return VerdictUnknown, ReasonFewObservations
-	case q.Value > limit:
+	case q.Floor() > limit:
 		return VerdictFail, ""
 	case !q.Exact:
 		return VerdictUnknown, ReasonCensored

@@ -393,8 +393,9 @@ parse the JSON, not the screen. The rules:
 The unit is in the field's name: `_us` is whole microseconds, `_s` whole seconds; the rate `rps` is
 the only fractional number. A value the run did not produce is `null`, not `0`. A percentile is an
 object `{"us": 1234, "ns": 1234567, "lower_bound": false}`: `ns` is the histogram's value in whole
-nanoseconds and `us` the same value truncated to microseconds; `pass:` and `leettest compare` judge by `ns`,
-and for a report written before that field takes `us` × 1000. With `lower_bound: true` it is a
+nanoseconds and `us` the same value truncated to microseconds; `pass:` judges by the lowest value of the same histogram bucket
+(at most 0.1% below `ns`), `leettest compare` by `ns`; for a report written before that field
+they take `us` × 1000. With `lower_bound: true` it is a
 lower bound, not a value. Latencies are the histogram's values at 3 significant figures (an error of up to 0.1%),
 counts are exact. Times count from `started_at` (RFC 3339, UTC), the start of the schedule, warm-up
 included; `duration_us` includes warm-up too. `in_flight` in a second is how many calls were in
