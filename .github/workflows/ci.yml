@@ -146,7 +146,7 @@ jobs:
 
   # The same tour on macOS, where the quickstart's readers also run it. It proves that the
   # examples load, run and, when the shared runner is too slow for the generator, end as an
-  # invalid run (exit 2) with a named host-speed reason (generator_late or clock_step); any
+  # invalid run (exit 2) with a named host-speed reason (generator_late or clock_step, with thresholds_undecided beside it); any
   # other exit code or reason fails the job. A run that ends 0 keeps the Linux job's `sent`
   # assertions (an open model: the counts follow the schedule, not the host speed). It does
   # not prove any number: the start-lag bound stays on Linux, here the lag is printed and not
@@ -185,7 +185,11 @@ jobs:
             case $rc in
               0) return 0 ;;
               2)
-                if jq -e '.schema_version == 1 and (.invalid_reasons | length) > 0 and all(.invalid_reasons[]; IN("generator_late", "clock_step"))' "$file" > /dev/null; then
+                # thresholds_undecided is allowed only beside a host-speed reason: a pass
+                # limit cannot be judged on an invalid run.
+                if jq -e '.schema_version == 1 and (.invalid_reasons | length) > 0
+                    and all(.invalid_reasons[]; IN("generator_late", "clock_step", "thresholds_undecided"))
+                    and any(.invalid_reasons[]; IN("generator_late", "clock_step"))' "$file" > /dev/null; then
                   echo "::notice::$name: macOS shared runner: $(jq -c .invalid_reasons "$file"), expected"
                   return 3
                 fi
