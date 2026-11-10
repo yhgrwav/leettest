@@ -62,6 +62,9 @@ var (
 	ErrDuplicateAnchor = errors.New("anchor is already defined")
 	// ErrBreakpoint is a breakpoint section that cannot run as written.
 	ErrBreakpoint = errors.New("invalid breakpoint")
+	// ErrShortFirstStep is a search whose first step measures fewer calls than
+	// a p99 needs (red-test stub: nothing returns it yet).
+	ErrShortFirstStep = errors.New("breakpoint: the first step measures too few calls for a p99")
 	// ErrThreshold is a pass section that cannot be judged as written.
 	ErrThreshold              = errors.New("invalid pass")
 	ErrInvalidMaxResponseSize = errors.New("max_response_size must be a positive size below 2GiB with a unit: B, KB, MB, GB, KiB, MiB or GiB")
