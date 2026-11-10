@@ -48,6 +48,8 @@ var (
 	ErrInvalidTimeout      = errors.New("timeout must be positive: without one, requests to a hung target pile up until the in-flight cap ends the run")
 	ErrDataAndDataset      = errors.New("data and dataset are both set; use one")
 	ErrEmptyDatasetPath    = errors.New("dataset must be the path of a file")
+	// ErrTimeoutTooLong is a timeout of 1h or more: the histogram keeps no longer latency.
+	ErrTimeoutTooLong = errors.New("the histogram keeps no longer latency")
 	// ErrDatasetOrder is a dataset_order that is neither file nor random.
 	ErrDatasetOrder = errors.New("dataset_order must be file or random")
 	// ErrOrderWithoutDataset is dataset_order or dataset_seed on a call without a dataset.
