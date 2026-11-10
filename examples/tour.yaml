@@ -2,7 +2,7 @@
 #   go run ./test/stand/cmd/stand -delay 20ms -hang-from 25s -life 60s
 #   export LEETTEST_TOKEN=demo
 #   leettest -c examples/tour.yaml
-# TLS and mTLS: tour-tls.yaml. The quickstart walks through it: docs/en/quickstart.md.
+# TLS and mTLS: tour-tls.yaml. The quickstart walks through it: docs/en/guide/first-run.md.
 
 name: tour                          # the run's name in the header
 labels:                             # key: "value" pairs for the report's passport; -label key=value adds or overrides
