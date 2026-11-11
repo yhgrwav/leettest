@@ -2,7 +2,7 @@
 
 [← Zur Übersicht](README.md)
 
-> Übersetzt aus [docs/ru/chaining.md](../ru/chaining.md) bei 67f8732, 2026-10-08. Bei Abweichungen gilt die
+> Übersetzt aus [docs/ru/chaining.md](../ru/chaining.md) bei feb2d1d, 2026-11-10. Bei Abweichungen gilt die
 > russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/chaining.md).
@@ -21,8 +21,9 @@ Sitzungen, Last auf den Erstellungsvorgang selbst. Und tausend Überweisungen zw
 zwei Wallets sind keine Last auf Überweisungen, sondern auf eine Datenbankzeile und ihre Sperre.
 
 Der zweite Ausweg ist ein Skript, das ein Wallet erstellt und gleich davon überweist. Dann misst
-man nicht die Überweisung, sondern die Folge „Erstellen plus Überweisen", und die beiden lassen
-sich in der Latenz nicht mehr trennen.
+man die Folge „Erstellen plus Überweisen“ und nicht eine einzelne Überweisung; den Beitrag jedes
+Schritts zur Latenz bekommt man aus der Gesamtzahl nicht heraus, wenn das Skript die Schritte nicht
+getrennt misst.
 
 Wir lösen das mit Pools. Ein Aufruf wird zum Produzenten erklärt: Aus seinen Antworten wird ein
 Feld genommen und in einem benannten Pool gesammelt. Ein anderer Aufruf ist Konsument: Er setzt
@@ -50,6 +51,7 @@ ein klarer Fehler vor dem Lauf, keine Müllantworten mitten in der Last.
 
 Eine offene Frage, die mit der Umsetzung geklärt wird: Was tun, wenn der Konsument schneller ist
 als der Produzent und der Pool leerläuft — warten, Last senken oder abbrechen. Stillschweigend den
-letzten Wert wiederzuverwenden ist die einzige sicher falsche Antwort.
+letzten Wert wiederzuverwenden ist als Variante verworfen: Der Lauf entspräche nicht mehr dem
+gesetzten Plan, und das wäre nicht zu sehen.
 
 Platz im Plan — nach dem Hochfahren der Last und den Datensätzen.

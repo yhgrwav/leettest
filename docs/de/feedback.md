@@ -2,7 +2,7 @@
 
 [← Zur Übersicht](README.md)
 
-> Übersetzt aus [docs/ru/feedback.md](../ru/feedback.md) bei c726cb6, 2026-10-14. Bei Abweichungen gilt die
+> Übersetzt aus [docs/ru/feedback.md](../ru/feedback.md) bei c64b80a, 2026-11-10. Bei Abweichungen gilt die
 > russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/feedback.md).
