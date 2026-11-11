@@ -3,11 +3,11 @@
 [Русский](../ru/reference.md) · [English](../en/reference.md) · [Deutsch](../de/reference.md) · [简体中文](reference.md)
 [← 首页](README.md)
 
-> 译自 [docs/ru/reference.md](../ru/reference.md)，对应 bfd24aa，2026-11-03。如有出入，以俄文版为准。
+> 译自 [docs/ru/reference.md](../ru/reference.md)，对应 0d969a9，2026-11-11。如有出入，以俄文版为准。
 > **可能滞后：** 中文版在每次发布前同步，最新内容请看[英文版](../en/reference.md)。
 
 每个配置字段、每个命令行参数，以及工具在启动前检查什么。如何阅读报告见
-[README](README.md#阅读报告)。
+[阅读报告](../en/report.md#reading-the-report)（英文）。
 
 ## 配置
 
@@ -28,11 +28,15 @@ load:
       timeout: 2s
 ```
 
+配置、dataset、`compare` 的报告文件和设置文件均为 UTF-8；文件开头的字节序标记（Windows 记事本会写入）是允许的。UTF-16 文件会被拒绝：`file is UTF-16; save it as UTF-8`。
+
 | 字段 | 作用 |
 |---|---|
 | `name` | 可选。运行在标题中的名称。省略时——如果所有方法属于同一个服务，则为服务名，否则为配置文件名 |
 | `labels` | 可选。报告“护照”打印的 `key: "value"` 键值对，用于区分不同的运行（`env: staging`、`commit: abc123`）。键为 1 到 64 个 `A-Za-z0-9_.-` 字符；值是不超过 256 字节的 YAML 字符串，数字请加引号（`"1.10"`）。`-label` 可添加键值对，或替换配置中的同名键值对 |
-| `app.target` | 服务地址：`ip` 和 `port` |
+| `app.target` | 服务地址，两个键都必填：`app.target.ip` 和 `app.target.port` |
+| `app.target.ip` | 服务地址：IP 或名称（`127.0.0.1`、`localhost`）。为空或未写时报 `got empty IP`，退出码 1。名称在连接时解析 |
+| `app.target.port` | 服务端口，1 到 65535 的整数。未写或超出范围时报 `got invalid port: 0`（或所显示的值），退出码 1 |
 | `app.tls` | TLS。省略时开启。`false`——不加密的连接 |
 | `app.ca` | 用于校验服务的 PEM 证书文件，替代系统证书。需要 TLS |
 | `app.cert`、`app.key` | PEM 格式的客户端证书及其私钥，用于要求 mTLS 的服务。必须同时设置，需要 TLS |
@@ -41,17 +45,17 @@ load:
 | `app.max_response_size` | 一次调用接受的最大应答：`16MiB`、`512KB`。单位必填（`MB` = 10⁶ 字节，`MiB` = 2²⁰），小于 2 GiB。省略时为 4 MiB，与 gRPC 相同。更大的应答算作 `bad response`。在途的调用最多可能缓冲上限的两倍：默认每个最多 8 MiB |
 | `app.connections` | 向目标打开多少条连接，1 到 256 的整数。省略时为 1。调用在这些连接间轮流进行，报告打印一个 `Connections:` 块，每条连接一行 |
 | `app.compression` | 压缩请求体：`gzip`。省略时不压缩。报告在方法下打印 `bytes: <raw> -> <wire> per call` |
-| `app.mode` | `local` 或 `real`，必须原样书写（`Real` 是错误，没有值的键也是）。省略时为 `local`。`real` 表示对有人在使用的系统施压，并且在发出第一个调用之前要求有 `load.ramp`（从 0 爬升到 `rps`），否则退出码为 1；配合 `load.breakpoint` 时不要求爬升，因为搜索不接受它。搜索本身也不是爬升：它的第一步直接跳到 `breakpoint.from`。报告在 `name` 下打印该模式，`local` 也一样。没有对应的命令行参数，但 `real` 运行在第一次调用之前会询问（见 `-yes`）。还要求有 `load.stop_on_errors`（搜索除外）。 |
+| `app.mode` | `local` 或 `real`，必须原样书写（`Real` 是错误，没有值的键也是）。省略时为 `local`。`real` 表示对有人在使用的系统施压，并且在发出第一个调用之前要求有 `load.ramp`（从 0 爬升到 `rps`），否则退出码为 1；配合 `load.breakpoint` 时同样要求爬升：它在搜索第一级之前从 0 爬升到 `breakpoint.from`，没有它搜索不会启动（退出码 1）。报告在 `name` 下打印该模式，`local` 也一样。没有对应的命令行参数，但 `real` 运行在第一次调用之前会询问（见 `-yes`）。还要求有 `load.stop_on_errors`（搜索除外）。 |
 | `app.proto.files` | 提供服务定义的 `.proto` 文件，用于没有 reflection 的服务。路径从配置文件所在目录算起。每个文件必须位于某个 `import_paths` 之内 |
 | `app.proto.import_paths` | 在哪里查找这些文件及其 import，与 `protoc -I` 相同。路径从配置文件所在目录算起。省略时为该目录。标准类型（`google/protobuf/…`）不需要路径 |
 | `app.protoset` | 用描述符集文件代替 `.proto` 文件，由 `protoc --include_imports --descriptor_set_out=FILE` 生成。路径从配置文件所在目录算起。不能与 `app.proto` 同时使用；两者都没有时，方法通过 reflection 获取 |
 | `load.warmup` | 前 N 秒不计入百分位和 `sent`：冷缓存会扭曲它们。预热调用确实会到达目标；报告用一行 `warm-up N sent (M failed), excluded from stats` 输出它们——`sent` 加上这一行就是压测机尝试过的全部调用。除计为 unreachable 或 client error 的调用外，目标都收到了；`cut off` 和超时的调用可能没有完整到达：不打开 HTTP/2 窗口（流量控制）的目标只会收到请求头，它的计数器可能看不到这次调用。计入 `duration`，必须短于每个调用 |
-| `load.ramp` | 在此时间内把每个调用从 0 线性提升到它的 `rps`，之后才开始它的 `duration`：运行时长为 `ramp` + `duration`，而 `duration` 的含义和以前一样（以 `rps` 运行的时间）。不写或 `0s` 表示没有爬升。爬升期间的调用和预热一样不计入百分位和 `sent`，预热在爬升结束时才开始；报告把两者打印在同一行：`ramp and warm-up N sent, excluded from stats`。`pass` 限值和错误占比只按保持阶段计算：在爬升中垮掉后又恢复的目标会通过，只有这一行能看出来。爬升从时刻 0 的一次调用开始。不能与 `load.breakpoint` 同用。 |
+| `load.ramp` | 在此时间内把每个调用从 0 线性提升到它的 `rps`，之后才开始它的 `duration`：运行时长为 `ramp` + `duration`，而 `duration` 的含义和以前一样（以 `rps` 运行的时间）。不写或 `0s` 表示没有爬升。爬升期间的调用和预热一样不计入百分位和 `sent`，预热在爬升结束时才开始；报告把两者打印在同一行：`ramp and warm-up N sent, excluded from stats`。`pass` 限值和错误占比只按保持阶段计算：在爬升中垮掉后又恢复的目标会通过，只有这一行能看出来。爬升从时刻 0 的一次调用开始。配合 `load.breakpoint`，爬升只在第一级之前从 0 到 `breakpoint.from` 进行一次，并与 `settle` 一起算入它被排除的窗口；之后的各级以及第一级的重复直接按各自速率运行，没有爬升。 |
 | `load.stop_on_errors` | 形如 `5%` 或 `0.5%` 的百分数，小数点后最多三位，不超过 `100%` 且大于 0（`0%` 是错误）。当某个方法在最近 5 个完整秒内失败调用的占比严格高于该限值，并且失败调用至少有两个时，运行停止；各方法分别判断，停止行会写出方法名。失败指除 `success` 和 `aborted` 之外的任何类别；没有发出的调用不计入。窗口按调用结束所在的秒计算，每秒检查一次，当前这一秒不在窗口内，爬升和预热在内。卡死的目标最早在第一个以超时结束的调用之后才能被发现，大约是 `timeout` 加 5 秒窗口。停止是软停止，和 Ctrl-C 一样：退出码 3，`incomplete`；它优先于 `pass`（此时 `pass` 为 `unknown/incomplete`），而 `pass` 和 `stop_on_errors` 相互独立。`100%` 表示关闭：报告打印 `stop_on_errors: off (100%)`，该键通过校验但什么也不停止。省略则完全不观察。`app.mode: real` 必须有它（搜索除外）；与 `load.breakpoint` 同用是错误，搜索有自己的 `breakpoint.errors_limit`。 |
 | `load.calls[].method` | 方法全名：`package.Service/Method` |
 | `load.calls[].rps` | 该方法每秒的请求数 |
 | `load.calls[].duration` | 施压时长：`30s`、`5m`、`1h` |
-| `load.calls[].timeout` | 等待应答的时长。省略时为 `2s`。零不会关闭超时，而是错误 |
+| `load.calls[].timeout` | 等待应答的时长。省略时为 `2s`。零不会关闭超时，而是错误。短于一小时：`59m59s` 被接受，`1h` 是错误，因为直方图不存一小时及以上的延迟 |
 | `load.calls[].data` | 请求体，见[下文](#请求体)。省略时为空消息 |
 | `load.calls[].dataset` | 用请求体文件代替 `data`，见[下文](#每次调用不同的请求dataset)。不能与 `data` 同时使用 |
 | `load.calls[].dataset_order` | `file`（省略时）或 `random`：文件中请求的顺序。需要 `dataset` |
@@ -59,8 +63,15 @@ load:
 | `load.calls[].dataset_reuse` | `true`（省略时）或 `false`：为 `false` 时，整个进程中没有任何一条记录会发出两次。需要 `dataset` |
 | `load.calls[].templates` | `true` 或 `false`（省略时为 `false`；写了键却没有值是错误）：在 `data` 中启用占位符 `{{uuid}}` 和 `{{seq}}`，见[下文](#会变化的请求模板)。至少需要一个占位符，不能与 `dataset` 同用。 |
 | `load.calls[].pass` | 运行要通过必须满足的限值：`p50`、`p90`、`p95`、`p99`、`p999`、`errors`，见[下文](#pass-限值)。省略时没有限值 |
-| `load.breakpoint.pass` | 崩溃点搜索的限值：`held_rps`，见[下文](#pass-限值)。省略时没有限值 |
+| `load.breakpoint.from` | 崩溃点搜索第一级的速率，每秒调用数。从 1 起的整数；小数是配置错误（`rps must be a whole number of requests: 100.5`）。必填：缺少或小于 1 时报 `invalid breakpoint: breakpoint.from: breaking-point plan: from 0, want at least 1 rps`，退出码 1。第一级必须测得至少 100 个调用，即 `from` × (`hold` − `settle`)，否则在加压前报 `invalid breakpoint: the first step measures 8 calls, a p99 needs 100: raise from, hold or lower settle`。配合 `app.mode: real`，爬升从 0 到 `from` |
+| `load.breakpoint.to` | 速率高于它就不再有级。整数，不小于 `from`（等于 `from` 即只有一级）。必填：缺少或低于 `from` 时报 `invalid breakpoint: breakpoint.to: breaking-point plan: to 50 is below from 100`，退出码 1。搜索走到最后一级且它撑住了，结果为 `held_all` |
+| `load.breakpoint.factor` | 下一级 = 上一级 × `factor`，取整后不小于上一级 + 1。大于 1 的数（`1.25`）。没写且没有 `step` 时为 `1.25`。不能与 `step` 同用。错误：`factor 1, want over 1` 和 `factor and step both set; set one`，退出码 1 |
+| `load.breakpoint.step` | 下一级 = 上一级 + `step` 每秒调用，代替 `factor`。大于 0 的整数（`0` 视为没写）。没写时各级按 `factor` 增长。不能与 `factor` 同用。小于 0 时报 `step -5, want over 0`，退出码 1 |
+| `load.breakpoint.settle` | 每一级开头这么长的时间不计入该级的判定，如同预热。带单位的时长（`2s`）：不带单位的数字是配置错误。必须严格小于 `hold` 的一半，否则 `settle 5s, want under half the hold 10s`，退出码 1。省略时为 `0s`，该级从第一秒起就被测量 |
+| `load.breakpoint.hold` | 一级的时长。带单位的时长（`10s`），大于零。必填：缺少时报 `no hold`，退出码 1。有多少级、搜索最坏要多久，stderr 在第一级之前打印：`breakpoint: up to N steps, at most T` |
+| `load.breakpoint.p99_limit` | 某级的 p99 明确高于这个限值时，该级崩溃。带单位的时长（`200ms`），大于零；小于零时报 `invalid breakpoint: breakpoint.p99_limit -1s, want positive or left out`，退出码 1。省略（或 `0s`）时，该级在拐点处崩溃：p99 比撑住的各级中最好的 p99 高出三倍以上 |
 | `load.breakpoint.errors_limit` | 形如 `1%` 或 `0.5%` 的百分数，小数点后最多三位，不超过 `100%`。失败调用占比超过它时，搜索的这一级就崩溃；恰好等于它则算撑住。省略时为 `1%` |
+| `load.breakpoint.pass` | 崩溃点搜索的限值：`held_rps`，见[下文](#pass-限值)。省略时没有限值 |
 | `export.prometheus.listen` | 运行在加压期间提供 `/metrics` 的 `host:port`，见[下文](#prometheus-指标)；端口 `0` 取一个空闲端口，选中的地址会打印到 stderr。没有默认值：地址来自这个键或 `-metrics-listen`，只写 `export.prometheus` 而两者皆无是错误。示例：`127.0.0.1:9464`。**`:9464` 会在所有网卡上开放端口且没有密码**，响应体中有方法名和你的 `labels`。写了键却没有值是错误。不能与 `load.breakpoint` 和 `-dry-run` 同用。 |
 | `export.prometheus.linger` | 运行结束后，端点继续提供最终数值多久，好让最后一次抓取看到它们。省略时为 `15s`；`0` 表示不保留。**`15s` 会拖延每次运行的退出，在 CI 中请设为 `0`。** 写了键却没有值是错误。只能与 `export.prometheus.listen` 或 `-metrics-listen` 一起使用。 |
 
@@ -307,7 +318,7 @@ seed 在启动时选取，每个调用各有一个。
 | `-max-in-flight` | 等待应答的请求数上限。默认 `5000` |
 | `-plain` | 不用实时屏幕：每秒一行进度输出到 stderr，与没有终端时相同，并且没有首次运行的对话。报告和退出码不变 |
 | `-dry-run` | 不加压地检查配置：建立连接、检查方法、每个调用发送一个请求，并打印请求、状态和响应。没有统计，没有报告。详见下面的“压测前检查”一节。不能与 `-fake`、`-output`、`-json-file`、`-label`、`-plain` 一起使用（退出码 1）。 |
-| `-yes` | 不经提问直接启动 `app.mode: real` 的运行。这类运行会在 stderr 打印计划（目标、计划峰值、含爬坡在内的计划时长；搜索则为区间），并在终端上（stdin 与 stderr 都是终端）于第一次调用之前（含建立连接）询问 `Start? [y/N]`：只有 `y` 或 `yes` 才会启动；其他任何回答或输入结束都以退出码 1 结束且不发送任何请求，在提问时按 Ctrl-C 同样如此。没有终端时，`real` 运行必须加 `-yes`（否则退出码 1）。`-dry-run` 从不询问；`-fake` 与真实目标一样会询问。加了 `-yes` 仍会打印计划行。对 `app.mode: local` 不起作用，它从不询问。 |
+| `-yes` | 不经提问直接启动 `app.mode: real` 的运行。这类运行会在 stderr 打印计划（目标、计划峰值、含爬坡在内的计划时长；搜索则为爬升和区间），并在终端上（stdin 与 stderr 都是终端）于第一次调用之前（含建立连接）询问 `Start? [y/N]`：只有 `y` 或 `yes` 才会启动；其他任何回答或输入结束都以退出码 1 结束且不发送任何请求，在提问时按 Ctrl-C 同样如此。没有终端时，`real` 运行必须加 `-yes`（否则退出码 1）。`-dry-run` 从不询问；`-fake` 与真实目标一样会询问。加了 `-yes` 仍会打印计划行。对 `app.mode: local` 不起作用，它从不询问。 |
 | `-fake` | 用内置的桩代替配置中的服务施压——无需服务即可查看工具。报告会标记为 `fake target` |
 | `-fake-delay`、`-fake-jitter`、`-fake-fail-ratio` | 桩的行为。只能与 `-fake` 一起使用 |
 | `-version` | 输出版本并退出。从源码构建时输出提交哈希 |
@@ -420,14 +431,15 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 - 精确的调用调度只在 Linux 上提供。在 CPU 配额低于两个核的容器里，偶尔会出现最长为配额周期
   （通常 100 ms）的启动延迟；报告会显示出来。
 - 在 L4 负载均衡器后面只有一个后端承受负载：一条连接——一个后端。见
-  [阅读报告](README.md#阅读报告)。
+  [阅读报告](../en/report.md#reading-the-report)（英文）。
 - 在 Windows 上时钟步长约 0.5 ms，针对快速服务的运行会被判为无效（`clock_step`，退出码 2）。
 - 如果生成器自己的延迟决定了 p99 尾部，运行无效（`generator_late`，退出码 2，未发布）：报告会列出
   相关方法、生成器撞上的上限（`generator_limit`：`gomaxprocs`、`cpu_quota`、`cpu`、`schedule` 或
   `unknown`）以及要改的那一项，然后建议降低速率，或把速率分摊到多台机器上。只有生成器的 CPU 测满
   一整秒时才会给出上限，否则为 `unknown`。只评判有 100 个及以上
   观测的方法；少于 100 个时 p99 就是最大值，运行仍然有效，只给出提示和 `tail_wait_cause: generator`。
-  由流或连接决定的尾部不会使运行无效。断点搜索不受影响：它的各步保留自己的原因 `generator`。
+  生成器没有发出任何一个方法 1% 及以上的调用时，运行同样无效，不论尾部原因怎么说：这样的调用是
+  生成器欠下的延迟，不是目标的错。除此之外，由流或连接决定的尾部不会使运行无效。断点搜索不受影响：它的各步保留自己的原因 `generator`。
 - 运行进行中就会预警生成器的延迟。每秒查看一次运行最近五个完整的秒，包含预热，按调用
   结束所在的那一秒计。如果超过 1% 的调用比等待阈值（至少 1 ms；时钟粗糙时更大：max(1 ms, 4 × 时钟步长)）更晚开始（按 p99 的规则：至少
   100 次启动，100 次中 2 次、200 次中 3 次、1000 次中 11 次），或者生成器有调用根本没发出，就会向
@@ -471,7 +483,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 ## JSON 字段
 
 契约的规则——结构版本、单位、用 `null` 而不是 `0`、未知字段——见
-[README](README.md#供脚本和-ci-使用的-json)。这里列出 `schema_version` 1 的每个字段。带 `?` 的类型
+[供脚本使用的 JSON 一节](../en/report.md#json-for-scripts-and-ci)（英文）。这里列出 `schema_version` 1 的每个字段。带 `?` 的类型
 可能为 `null`。预热计数不包含在任何其他计数中；`sent` 及其所有组成部分只包括被测量的调用。第一列是
 字段的完整路径。
 
@@ -481,7 +493,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 |---|---|---|
 | `<percentile>.us` | int | 数值，整数微秒 |
 | `<percentile>.ns` | int | 直方图的数值，整数纳秒，文本报告按三位有效数字打印；`us` 是同一数值截断到微秒；`pass:` 按同一直方图桶中的最小值判定，最多比 `ns` 低 0.1 %（见 [Pass 限值](#pass-限值)），`leettest compare` 按 `ns` 判定；`fail` 旁边的 `us` 可能等于 `limit_us` |
-| `<percentile>.lower_bound` | bool | `true`——下界，而不是数值（[README](README.md#阅读报告)） |
+| `<percentile>.lower_bound` | bool | `true`——下界，而不是数值（[阅读报告](../en/report.md#reading-the-report)） |
 
 ### 运行
 
@@ -519,7 +531,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `settings.max_in_flight` | int；搜索：`int?` | 在途请求上限：`-max-in-flight` 的值，否则为默认值。搜索：未设该参数时为 `null`（每次运行取其能运行的最小上限）；在其各次运行中为该次运行的上限 |
 | `settings.connections` | int | 按配置的 `app.connections`，默认 1；`connections.open` 是实际打开的数量 |
 | `settings.warmup_us` | int | 按配置的预热。搜索：`settle` 时长 |
-| `settings.ramp_us` | int | 按配置的 `load.ramp`，单位为整微秒；没有爬升时为 0。 |
+| `settings.ramp_us` | int | 按配置的 `load.ramp`，单位为整微秒；没有爬升时为 0。搜索：第一级之前的爬升；在 `breakpoint.runs[0].report.settings.ramp_us` 中相同，其余运行为 0 |
 | `settings.stop_on_errors` | string? | 按配置书写的 `load.stop_on_errors`：`"5%"`，`"100%"` 保持 `"100%"`；`null` 表示省略。 |
 | `settings.compression` | string? | 按配置的 `app.compression`：`"gzip"`，`null` 表示省略 |
 | `passport` | object? | 这次运行所用的机器和配置，用于区分不同的运行。搜索只在顶层有一个，`breakpoint.runs` 中的各次运行没有 |
@@ -538,7 +550,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `warmup_sent`、`warmup_failed`、`warmup_not_sent` | int | 在被排除的窗口（爬升和预热）内计划的调用的同类数值 |
 | `cap_hit` | object? | 触及了 `-max-in-flight` 上限；`null`——没有触及 |
 | `cap_hit.at_us` | int | 何时 |
-| `cap_hit.unsent` | int | 被上限拒绝的调用 |
+| `cap_hit.unsent` | int | 被上限拒绝的调用。始终为 `1`：上限的第一次拒绝就会停止运行并使其无效 |
 | `cap_hit.over_deadline` | int | 当时在途、占用名额超过截止时间的调用 |
 | `start_lag` | object | 调用相对计划开始得晚了多少 |
 | `start_lag.p99` | percentile? | 延迟的 p99 |
@@ -561,7 +573,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `connections.per_connection[].p99` | percentile? | 该连接调用的 p99；没有带延迟的调用时为 `null` |
 | `connections.per_connection[].first_limit`、`connections.per_connection[].last_limit` | int? | 该连接第一次和最后一次握手时的流上限；`null`——未声明 |
 | `connections.per_connection[].limit_changes` | int | 该连接声明的上限与上一次不同的握手次数 |
-| `client_waits` | object | 在客户端侧等待超过阈值的调用，按原因（[README](README.md#阅读报告)） |
+| `client_waits` | object | 在客户端侧等待超过阈值的调用，按原因（[阅读报告](../en/report.md#reading-the-report)） |
 | `client_waits.generator_calls`、`client_waits.stream_calls`、`client_waits.connection_calls` | int | 所有此类调用，无论是否发出。一个已发出的调用可能同时计入多个原因 |
 | `client_waits.generator_tail_calls`、`client_waits.stream_tail_calls`、`client_waits.connection_tail_calls` | int | 只统计 p99 尾部和未发出的调用：由它们决定 `tail_wait_cause` |
 | `generator_cpu` | object? | 运行占用了 LeetTest 自身可用 CPU 的多少，按秒给出；无法读取进程的 CPU 时间时为 `null`。有繁忙的秒时，报告会打印一行 |
@@ -592,7 +604,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 ### 方法：`methods[]`
 
 `<category>` 指在 JSON 中带有应答时间对象的四个类别之一：`request_error`、`overload`、`failure`、
-`bad_response`（[类别](README.md#阅读报告)）。其余类别只是计数。
+`bad_response`（[类别](../en/report.md#reading-the-report)）。其余类别只是计数。
 
 | 字段 | 类型 | 含义 |
 |---|---|---|
@@ -605,7 +617,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `methods[].planned_duration_us` | int | 该方法计划运行多久，按配置，包括爬升 |
 | `methods[].request_bytes` | object? | 已发出的被测调用的请求体平均大小；无压缩时为 `null` |
 | `methods[].request_bytes.raw`, `methods[].request_bytes.wire` | float | 压缩前与线上的字节数（不含 5 字节帧头） |
-| `methods[].response_bytes` | float? | 已测成功调用的响应体平均大小，解压后；无成功时为 `null` |
+| `methods[].response_bytes` | float? | 已测成功调用的响应体平均大小，解压后；空响应为 `0`，无成功时为 `null` |
 | `methods[].warmup` | object? | 与运行分开测量的预热；没有任何观测时为 `null` |
 | `methods[].warmup.calls` | int | 百分位背后的观测数（成功，以及超时或中止的调用作为下界），不是 `warmup_sent` 的计数 |
 | `methods[].warmup.p50`, `methods[].warmup.p99` | percentile? | 自计划时刻起的延迟，`lower_bound` 同 `methods[].latency`；观测少于 100 时 `p99` 为 `null` |
@@ -657,7 +669,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 
 | 字段 | 类型 | 含义 |
 |---|---|---|
-| `methods[].seconds[].warmup` | bool | 该秒处于被排除的窗口（爬升和预热）内 |
+| `methods[].seconds[].warmup` | bool | 该秒开始于被排除的窗口（爬升和预热）内。窗口在秒的中间结束（`warmup: 1.5s`）时，这一秒标为 `true`，但其中既有预热调用也有被测调用：`warmup: false` 各秒的 `Σ succeeded` 比总数少这一秒的被测部分 |
 | `methods[].seconds[].begun` | int | 在该秒开始的调用 |
 | `methods[].seconds[].succeeded`、`methods[].seconds[].overload`、`methods[].seconds[].failure`、`methods[].seconds[].client_error`、`methods[].seconds[].bad_response`、`methods[].seconds[].request_error`、`methods[].seconds[].timed_out`、`methods[].seconds[].unreachable`、`methods[].seconds[].cut_off`、`methods[].seconds[].aborted`、`methods[].seconds[].unclassified` | int | 在该秒结束的调用，按类别 |
 | `methods[].seconds[].not_sent_generator`、`methods[].seconds[].not_sent_stream`、`methods[].seconds[].not_sent_connection` | int | 在该秒结束的发送前超时，按原因 |
@@ -687,7 +699,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 ### 崩溃点搜索：`mode: "breakpoint"`
 
 搜索输出的是另一种对象：`schema_version`、`leettest_version`、`target`、`started_at` 与上面的运行相同，
-普通运行的其他字段不在顶层。每次运行连同它自己的完整报告都在 `breakpoint.runs` 中（[搜索](README.md#崩溃点搜索)）。
+普通运行的其他字段不在顶层。每次运行连同它自己的完整报告都在 `breakpoint.runs` 中（[搜索](../en/report.md#breaking-point-search)）。
 
 | 字段 | 类型 | 含义 |
 |---|---|---|
