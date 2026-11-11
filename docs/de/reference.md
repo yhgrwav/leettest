@@ -3,13 +3,13 @@
 [Русский](../ru/reference.md) · [English](../en/reference.md) · [Deutsch](reference.md) · [简体中文](../zh-CN/reference.md)
 [← Startseite](README.md)
 
-> Übersetzt aus [docs/ru/reference.md](../ru/reference.md) bei bfd24aa, 2026-11-03. Bei
+> Übersetzt aus [docs/ru/reference.md](../ru/reference.md) bei 0d969a9, 2026-11-11. Bei
 > Abweichungen gilt die russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/reference.md).
 
 Jedes Konfigurationsfeld, jedes Flag und was das Werkzeug vor dem Start prüft. Wie man den Bericht
-liest, steht im [README](README.md#den-bericht-lesen).
+liest, steht unter [Den Bericht lesen](../en/report.md#reading-the-report) (englisch).
 
 ## Konfiguration
 
@@ -30,11 +30,15 @@ load:
       timeout: 2s
 ```
 
+Die Konfiguration, ein Dataset, ein Bericht für `compare` und die Einstellungsdatei sind UTF-8; eine Byte-Order-Marke am Dateianfang, wie sie der Windows-Editor schreibt, ist erlaubt. Eine UTF-16-Datei wird abgelehnt: `file is UTF-16; save it as UTF-8`.
+
 | Feld | Was es tut |
 |---|---|
 | `name` | Optional. Wie der Lauf in der Kopfzeile heißt. Weggelassen — der Dienstname, wenn alle Methoden zu einem Dienst gehören, sonst der Name der Konfigurationsdatei |
 | `labels` | Optional. Paare `key: "value"`, die der Pass des Berichts druckt, um Läufe zu unterscheiden (`env: staging`, `commit: abc123`). Ein Schlüssel hat 1 bis 64 Zeichen aus `A-Za-z0-9_.-`; ein Wert ist ein YAML-String von bis zu 256 Bytes, eine Zahl also in Anführungszeichen (`"1.10"`). `-label` fügt ein Paar hinzu oder ersetzt das der Konfiguration |
-| `app.target` | Die Adresse des Dienstes: `ip` und `port` |
+| `app.target` | Die Adresse des Dienstes, beide Schlüssel sind Pflicht: `app.target.ip` und `app.target.port` |
+| `app.target.ip` | Die Adresse des Dienstes: eine IP oder ein Name (`127.0.0.1`, `localhost`). Leer oder fehlend — `got empty IP`, Exit 1. Der Name wird beim Verbinden aufgelöst |
+| `app.target.port` | Der Port des Dienstes, eine ganze Zahl von 1 bis 65535. Fehlend oder außerhalb — `got invalid port: 0` (oder der gezeigte Wert), Exit 1 |
 | `app.tls` | TLS. Weggelassen — an. `false` — eine unverschlüsselte Verbindung |
 | `app.ca` | Eine PEM-Datei mit Zertifikaten, mit denen der Dienst statt mit den System-Zertifikaten geprüft wird. Braucht TLS |
 | `app.cert`, `app.key` | Ein Client-Zertifikat und sein Schlüssel in PEM, für einen Dienst mit mTLS. Nur zusammen, braucht TLS |
@@ -43,17 +47,17 @@ load:
 | `app.max_response_size` | Die größte Antwort, die ein Aufruf annimmt: `16MiB`, `512KB`. Die Einheit ist Pflicht (`MB` = 10⁶ Bytes, `MiB` = 2²⁰), unter 2 GiB. Weggelassen — 4 MiB, wie in gRPC. Eine größere Antwort ist eine `bad response`. Ein laufender Aufruf kann bis zum Doppelten des Limits puffern: standardmäßig bis zu 8 MiB je Aufruf |
 | `app.connections` | Wie viele Verbindungen zum Ziel geöffnet werden, eine ganze Zahl von 1 bis 256. Weggelassen — 1. Die Aufrufe nehmen die Verbindungen reihum, der Bericht druckt einen Block `Connections:`, eine Zeile je Verbindung |
 | `app.compression` | Anfragekörper komprimieren: `gzip`. Weggelassen — keine. Der Bericht druckt unter der Methode `bytes: <raw> -> <wire> per call` |
-| `app.mode` | `local` oder `real`, genau so geschrieben (`Real` ist ein Fehler, ebenso ein Schlüssel ohne Wert). Weggelassen — `local`. `real` kennzeichnet einen Lauf gegen ein System, das Menschen nutzen, und verlangt vor dem ersten Aufruf `load.ramp` (einen Anlauf von 0 auf `rps`), sonst Exit 1; mit `load.breakpoint` ist kein Anlauf nötig, weil die Suche keinen annimmt. Auch die Suche ist kein Anlauf: ihr erster Schritt geht sofort auf `breakpoint.from`. Der Bericht druckt den Modus unter `name`, auch bei `local`. Ein Flag dafür gibt es nicht, aber ein Lauf `real` fragt vor dem ersten Aufruf (siehe `-yes`). Verlangt auch `load.stop_on_errors`, außer bei einer Suche. |
+| `app.mode` | `local` oder `real`, genau so geschrieben (`Real` ist ein Fehler, ebenso ein Schlüssel ohne Wert). Weggelassen — `local`. `real` kennzeichnet einen Lauf gegen ein System, das Menschen nutzen, und verlangt vor dem ersten Aufruf `load.ramp` (einen Anlauf von 0 auf `rps`), sonst Exit 1; mit `load.breakpoint` ist der Anlauf ebenso nötig: Er geht vor dem ersten Schritt der Suche von 0 auf `breakpoint.from`, und ohne ihn startet die Suche nicht (Exit 1). Der Bericht druckt den Modus unter `name`, auch bei `local`. Ein Flag dafür gibt es nicht, aber ein Lauf `real` fragt vor dem ersten Aufruf (siehe `-yes`). Verlangt auch `load.stop_on_errors`, außer bei einer Suche. |
 | `app.proto.files` | `.proto`-Dateien, aus denen die Dienste genommen werden, für einen Dienst ohne Reflection. Pfade gelten ab dem Verzeichnis der Konfigurationsdatei. Jede Datei muss in einem der `import_paths` liegen |
 | `app.proto.import_paths` | Wo die Dateien und ihre Imports gesucht werden, wie bei `protoc -I`. Pfade gelten ab dem Verzeichnis der Konfigurationsdatei. Weggelassen — dieses Verzeichnis. Für Standardtypen (`google/protobuf/…`) braucht es keinen Pfad |
 | `app.protoset` | Eine Deskriptorsatz-Datei statt `.proto`-Dateien, gebaut mit `protoc --include_imports --descriptor_set_out=FILE`. Der Pfad gilt ab dem Verzeichnis der Konfigurationsdatei. Nicht zusammen mit `app.proto`; ist keines von beiden gesetzt, werden die Methoden über Reflection geholt |
 | `load.warmup` | Die ersten N Sekunden bleiben aus den Perzentilen und aus `sent`: kalte Caches verderben sie. Aufwärm-Aufrufe erreichen das Ziel durchaus; der Bericht gibt sie auf einer Zeile `warm-up N sent (M failed), excluded from stats` aus — `sent` plus diese Zeile ist jeder Aufruf, den der Generator versucht hat. Das Ziel bekam sie alle bis auf die als unreachable oder client error gezählten; `cut off` und abgelaufene haben es vielleicht nicht vollständig erreicht: Ein Ziel, das sein HTTP/2-Fenster nicht öffnet (Flusskontrolle), bekommt nur die Header, und seine Zähler sehen den Aufruf womöglich nicht. Zählt zu `duration`, kürzer als jeder Aufruf |
-| `load.ramp` | Jeden Aufruf in dieser Zeit linear von 0 auf sein `rps` anheben, bevor sein `duration` beginnt: der Lauf dauert `ramp` + `duration`, und `duration` bedeutet dasselbe wie vorher (die Zeit auf `rps`). Fehlt der Schlüssel oder `0s` — kein Anlauf. Die Aufrufe des Anlaufs bleiben aus Perzentilen und `sent`, wie die des Aufwärmens, das erst danach beginnt, wenn der Anlauf endet; der Bericht gibt beide in einer Zeile aus, `ramp and warm-up N sent, excluded from stats`. Die `pass`-Grenzen und der Fehleranteil zählen nur die Haltephase: Ein Ziel, das im Anlauf fiel und sich erholte, besteht, und das ist nur an dieser Zeile zu sehen. Der Anlauf beginnt mit einem Aufruf im Moment 0. Nicht zusammen mit `load.breakpoint`. |
+| `load.ramp` | Jeden Aufruf in dieser Zeit linear von 0 auf sein `rps` anheben, bevor sein `duration` beginnt: der Lauf dauert `ramp` + `duration`, und `duration` bedeutet dasselbe wie vorher (die Zeit auf `rps`). Fehlt der Schlüssel oder `0s` — kein Anlauf. Die Aufrufe des Anlaufs bleiben aus Perzentilen und `sent`, wie die des Aufwärmens, das erst danach beginnt, wenn der Anlauf endet; der Bericht gibt beide in einer Zeile aus, `ramp and warm-up N sent, excluded from stats`. Die `pass`-Grenzen und der Fehleranteil zählen nur die Haltephase: Ein Ziel, das im Anlauf fiel und sich erholte, besteht, und das ist nur an dieser Zeile zu sehen. Der Anlauf beginnt mit einem Aufruf im Moment 0. Mit `load.breakpoint` geht der Anlauf einmal von 0 auf `breakpoint.from`, vor dem ersten Schritt, und gehört mit `settle` zu dessen ausgeschlossenem Fenster; spätere Schritte und die Wiederholung des ersten Schritts gehen sofort auf ihre Rate, ohne Anlauf. |
 | `load.stop_on_errors` | Ein Prozentwert wie `5%` oder `0.5%`, bis zu drei Stellen nach dem Punkt, höchstens `100%`, aber über null (`0%` ist ein Fehler). Der Lauf stoppt, wenn der Anteil fehlgeschlagener Aufrufe einer Methode in den letzten 5 ganzen Sekunden strikt über der Grenze liegt und mindestens zwei Aufrufe fehlschlugen; jede Methode wird für sich beurteilt, die Stopp-Zeile nennt sie. Fehlgeschlagen ist jede Kategorie außer `success` und `aborted`; Aufrufe, die nicht hinausgingen, zählen nicht. Das Fenster richtet sich nach der Sekunde, in der ein Aufruf endete, und wird einmal pro Sekunde geprüft; die laufende Sekunde gehört nicht dazu, Anlauf und Aufwärmen schon. Ein hängendes Ziel fällt frühestens beim ersten Aufruf auf, der mit Timeout endete, etwa nach `timeout` plus dem 5-s-Fenster. Der Stopp ist weich wie Strg-C: Exit 3, `incomplete`; er geht vor `pass`, das dann `unknown/incomplete` lautet, während `pass` und `stop_on_errors` voneinander unabhängig sind. `100%` bedeutet aus: Der Bericht druckt `stop_on_errors: off (100%)`, der Schlüssel besteht die Prüfung und stoppt nichts. Fehlt der Schlüssel, wird nichts beobachtet. Für `app.mode: real` Pflicht (außer bei einer Suche); zusammen mit `load.breakpoint` ein Fehler, die Suche hat ihr eigenes `breakpoint.errors_limit`. |
 | `load.calls[].method` | Der volle Methodenname: `package.Service/Method` |
 | `load.calls[].rps` | Anfragen pro Sekunde für diese Methode |
 | `load.calls[].duration` | Wie lange sie belastet wird: `30s`, `5m`, `1h` |
-| `load.calls[].timeout` | Wie lange auf eine Antwort gewartet wird. Weggelassen — `2s`. Null schaltet es nicht ab, es ist ein Fehler |
+| `load.calls[].timeout` | Wie lange auf eine Antwort gewartet wird. Weggelassen — `2s`. Null schaltet es nicht ab, es ist ein Fehler. Unter einer Stunde: `59m59s` wird angenommen, `1h` ist ein Fehler, weil das Histogramm keine Latenz ab einer Stunde speichert |
 | `load.calls[].data` | Der Anfrage-Body, siehe [unten](#anfrage-body). Weggelassen — eine leere Nachricht |
 | `load.calls[].dataset` | Eine Datei mit Anfrage-Bodies statt `data`, siehe [unten](#bei-jedem-aufruf-eine-andere-anfrage-dataset). Zusammen mit `data` nicht erlaubt |
 | `load.calls[].dataset_order` | `file` (weggelassen) oder `random`: die Reihenfolge der Anfragen aus der Datei. Braucht `dataset` |
@@ -61,8 +65,15 @@ load:
 | `load.calls[].dataset_reuse` | `true` (weggelassen) oder `false`: bei `false` geht kein Datensatz im ganzen Prozess zweimal raus. Braucht `dataset` |
 | `load.calls[].templates` | `true` oder `false` (weggelassen — `false`; ein Schlüssel ohne Wert ist ein Fehler): schaltet die Platzhalter `{{uuid}}` und `{{seq}}` in `data` ein, siehe [unten](#eine-anfrage-die-sich-ändert-templates). Braucht mindestens einen Platzhalter, nicht zusammen mit `dataset`. |
 | `load.calls[].pass` | Die Grenzen, die ein Lauf einhalten muss, um zu bestehen: `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, siehe [unten](#grenzen-pass). Weggelassen — keine Grenzen |
-| `load.breakpoint.pass` | Die Grenze einer Bruchpunkt-Suche: `held_rps`, siehe [unten](#grenzen-pass). Weggelassen — keine Grenze |
+| `load.breakpoint.from` | Die Rate der ersten Stufe der Bruchpunkt-Suche, Aufrufe pro Sekunde. Eine ganze Zahl ab 1; eine Dezimalzahl ist ein Konfigurationsfehler (`rps must be a whole number of requests: 100.5`). Pflicht: fehlend oder unter 1 — `invalid breakpoint: breakpoint.from: breaking-point plan: from 0, want at least 1 rps`, Exit 1. Die erste Stufe muss mindestens 100 Aufrufe messen, `from` × (`hold` − `settle`), sonst vor der Last der Fehler `invalid breakpoint: the first step measures 8 calls, a p99 needs 100: raise from, hold or lower settle`. Mit `app.mode: real` geht ein Anlauf von 0 auf `from` |
+| `load.breakpoint.to` | Über dieser Rate gibt es keine Stufen. Eine ganze Zahl, nicht unter `from` (gleich `from` — eine Stufe). Pflicht: fehlend oder unter `from` — `invalid breakpoint: breakpoint.to: breaking-point plan: to 50 is below from 100`, Exit 1. Erreicht die Suche die letzte Stufe und hält sie, lautet das Ergebnis `held_all` |
+| `load.breakpoint.factor` | Jede folgende Stufe ist die vorige × `factor`, auf eine ganze Zahl gerundet und mindestens vorige + 1. Eine Zahl über 1 (`1.25`). Fehlen `factor` und `step` — `1.25`. Nicht zusammen mit `step`. Fehler: `factor 1, want over 1` und `factor and step both set; set one`, Exit 1 |
+| `load.breakpoint.step` | Jede folgende Stufe ist die vorige + `step` Aufrufe pro Sekunde, statt `factor`. Eine ganze Zahl über 0 (`0` — wie nicht gesetzt). Fehlt er, wachsen die Stufen nach `factor`. Nicht zusammen mit `factor`. Unter 0 — `step -5, want over 0`, Exit 1 |
+| `load.breakpoint.settle` | Der Anfang jeder Stufe dieser Länge geht nicht in ihr Urteil ein, wie das Aufwärmen. Eine Dauer mit Einheit (`2s`): eine Zahl ohne Einheit ist ein Konfigurationsfehler. Strikt unter der Hälfte von `hold`: sonst `settle 5s, want under half the hold 10s`, Exit 1. Weggelassen — `0s`, die Stufe wird ab der ersten Sekunde gemessen |
+| `load.breakpoint.hold` | Die Länge einer Stufe. Eine Dauer mit Einheit (`10s`), über null. Pflicht: ohne sie `no hold`, Exit 1. Wie viele Stufen es sind und wie lange die Suche im schlimmsten Fall dauert, druckt stderr vor der ersten Stufe: `breakpoint: up to N steps, at most T` |
+| `load.breakpoint.p99_limit` | Eine Stufe bricht, wenn ihr p99 nachweislich über dieser Grenze liegt. Eine Dauer mit Einheit (`200ms`), über null; unter null — `invalid breakpoint: breakpoint.p99_limit -1s, want positive or left out`, Exit 1. Weggelassen (oder `0s`) — die Stufe bricht am Knick: ein p99 mehr als dreimal so hoch wie das beste p99 der gehaltenen Stufen |
 | `load.breakpoint.errors_limit` | Ein Prozentwert wie `1%` oder `0.5%`, bis zu drei Stellen nach dem Punkt, höchstens `100%`. Eine Stufe der Suche bricht, wenn mehr als dieser Anteil der Aufrufe fehlschlug; genau so viel wird gehalten. Weggelassen — `1%` |
+| `load.breakpoint.pass` | Die Grenze einer Bruchpunkt-Suche: `held_rps`, siehe [unten](#grenzen-pass). Weggelassen — keine Grenze |
 | `export.prometheus.listen` | Das `host:port`, auf dem der Lauf `/metrics` ausliefert, solange die Last läuft, siehe [unten](#prometheus-metriken); Port `0` nimmt einen freien, die gewählte Adresse steht auf stderr. Kein Standard: Die Adresse kommt von diesem Schlüssel oder von `-metrics-listen`, und `export.prometheus` ohne beides ist ein Fehler. Ein Beispiel ist `127.0.0.1:9464`. **`:9464` öffnet den Port auf allen Interfaces ohne Passwort**, und der Body enthält Methodennamen und Ihre `labels`. Ein Schlüssel ohne Wert ist ein Fehler. Nicht zusammen mit `load.breakpoint` und `-dry-run`. |
 | `export.prometheus.linger` | Wie lange der Endpunkt nach dem Ende des Laufs die Endwerte weiter ausliefert, damit der letzte Scrape sie sieht. Weggelassen — `15s`; `0` — nicht halten. **`15s` verzögert das Ende jedes Laufs, setzen Sie in CI `0`.** Ein Schlüssel ohne Wert ist ein Fehler. Nur zusammen mit `export.prometheus.listen` oder `-metrics-listen`. |
 
@@ -363,7 +374,7 @@ ein Anhalten lässt Datensätze ungesendet.
 | `-max-in-flight` | Grenze für Anfragen, die auf eine Antwort warten. Standard `5000` |
 | `-plain` | Ohne Live-Bildschirm: eine Fortschrittszeile pro Sekunde auf stderr, wie ohne Terminal, und ohne den Dialog beim ersten Start. Der Bericht und die Exit-Codes sind dieselben |
 | `-dry-run` | Die Konfiguration ohne Last prüfen: verbinden, die Methoden prüfen, pro Aufruf eine Anfrage senden und die Anfrage, den Status und die Antwort ausgeben. Keine Statistik, kein Bericht. Einzelheiten im Abschnitt „Prüfen vor der Last“ unten. Nicht zusammen mit `-fake`, `-output`, `-json-file`, `-label`, `-plain` (Exit-Code 1). |
-| `-yes` | Startet einen Lauf mit `app.mode: real` ohne die Frage. Ein solcher Lauf gibt seinen Plan auf stderr aus (Ziel, geplante Spitze, geplante Dauer mit dem Anlauf darin; bei einer Suche den Bereich) und fragt auf einem Terminal (stdin und stderr beide) vor dem ersten Aufruf, die Verbindung eingeschlossen, `Start? [y/N]`: nur `y` oder `yes` startet; alles andere und das Ende der Eingabe ist Exit 1 ohne gesendete Anfrage, ebenso Strg+C bei der Frage. Ohne Terminal braucht ein `real`-Lauf `-yes` (ohne es Exit 1). `-dry-run` fragt nie; `-fake` fragt wie ein echtes Ziel. Mit `-yes` wird die Planzeile trotzdem ausgegeben. Mit `app.mode: local` ändert es nichts, er fragt nie. |
+| `-yes` | Startet einen Lauf mit `app.mode: real` ohne die Frage. Ein solcher Lauf gibt seinen Plan auf stderr aus (Ziel, geplante Spitze, geplante Dauer mit dem Anlauf darin; bei einer Suche der Anlauf und der Bereich) und fragt auf einem Terminal (stdin und stderr beide) vor dem ersten Aufruf, die Verbindung eingeschlossen, `Start? [y/N]`: nur `y` oder `yes` startet; alles andere und das Ende der Eingabe ist Exit 1 ohne gesendete Anfrage, ebenso Strg+C bei der Frage. Ohne Terminal braucht ein `real`-Lauf `-yes` (ohne es Exit 1). `-dry-run` fragt nie; `-fake` fragt wie ein echtes Ziel. Mit `-yes` wird die Planzeile trotzdem ausgegeben. Mit `app.mode: local` ändert es nichts, er fragt nie. |
 | `-fake` | Statt des Dienstes aus der Konfiguration einen eingebauten Platzhalter belasten — um das Werkzeug ohne Dienst anzusehen. Der Bericht ist als `fake target` markiert |
 | `-fake-delay`, `-fake-jitter`, `-fake-fail-ratio` | Das Verhalten des Platzhalters. Nur zusammen mit `-fake` |
 | `-version` | Version ausgeben und beenden. Ein Build aus dem Quellcode gibt den Commit aus |
@@ -515,7 +526,7 @@ bei 2 ms.
   Kernen sind seltene Startverzögerungen bis zur Quotenperiode (meist 100 ms) möglich; der Bericht
   zeigt sie.
 - Hinter einem L4-Balancer wird ein Backend belastet: eine Verbindung — ein Backend. Siehe
-  [den Bericht lesen](README.md#den-bericht-lesen).
+  [den Bericht lesen](../en/report.md#reading-the-report) (englisch).
 - Unter Windows springt die Uhr in Schritten von etwa 0,5 ms, und ein Lauf gegen einen schnellen
   Dienst wird für ungültig erklärt (`clock_step`, Exit-Code 2).
 - Hat die Verspätung des Generators selbst das p99-Ende bestimmt, ist der Lauf ungültig
@@ -524,8 +535,11 @@ bei 2 ms.
   `unknown`), und das eine, was zu ändern ist, und rät dann, die Rate zu senken oder sie auf mehrere
   Rechner aufzuteilen. Die Grenze wird nur aus einer CPU-Messung des Generators über eine volle
   Sekunde genannt; sonst ist sie `unknown`. Beurteilt werden Methoden ab 100 Beobachtungen; bei weniger ist p99 das Maximum, und der Lauf
-  bleibt gültig, mit dem Hinweis und `tail_wait_cause: generator`. Ein Ende, das Streams oder
-  Verbindungen bestimmt haben, macht den Lauf nicht ungültig. Eine Suche nach dem Bruchpunkt ist
+  bleibt gültig, mit dem Hinweis und `tail_wait_cause: generator`. Ungültig ist der Lauf auch dann,
+  wenn der Generator 1 % oder mehr der Aufrufe irgendeiner Methode nicht gesendet hat, was auch
+  immer die Ursache des Endes sagt: Solche Aufrufe sind Verzögerung, die der Generator schuldet, und
+  nicht die Schuld des Ziels. Sonst macht ein Ende, das Streams oder Verbindungen bestimmt haben,
+  den Lauf nicht ungültig. Eine Suche nach dem Bruchpunkt ist
   nicht betroffen: Ihre Schritte behalten ihre eigene Ursache `generator`.
 - Vor der Verspätung des Generators wird gewarnt, solange der Lauf geht.
   Einmal pro Sekunde werden die letzten fünf vollen Sekunden des Laufs betrachtet, das Warm-up
@@ -596,7 +610,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 
 
 Die Regeln des Vertrags — Schemaversion, Einheiten, `null` statt `0`, unbekannte Felder — stehen im
-[README](README.md#json-für-skripte-und-ci). Hier ist jedes Feld von `schema_version` 1. Ein Typ mit
+[Abschnitt zu JSON für Skripte](../en/report.md#json-for-scripts-and-ci) (englisch). Hier ist jedes Feld von `schema_version` 1. Ein Typ mit
 `?` kann `null` sein. Aufwärm-Zähler stecken in keinem anderen Zähler; `sent` und alle seine Anteile
 sind nur gemessene Aufrufe. Die erste Spalte ist der volle Pfad des Felds.
 
@@ -607,7 +621,7 @@ unten den Typ „percentile?" hat.
 |---|---|---|
 | `<percentile>.us` | int | Der Wert, ganze Mikrosekunden |
 | `<percentile>.ns` | int | Der Wert des Histogramms in ganzen Nanosekunden, den der Textbericht mit drei signifikanten Stellen ausgibt; `us` ist derselbe Wert, auf Mikrosekunden abgeschnitten; `pass:` urteilt nach dem kleinsten Wert desselben Histogramm-Buckets, höchstens 0,1 % unter `ns` (siehe [Grenzen: pass](#grenzen-pass)), `leettest compare` nach `ns`; neben einem `fail` kann `us` gleich `limit_us` sein |
-| `<percentile>.lower_bound` | bool | `true` — eine Untergrenze, kein Wert ([README](README.md#den-bericht-lesen)) |
+| `<percentile>.lower_bound` | bool | `true` — eine Untergrenze, kein Wert ([den Bericht lesen](../en/report.md#reading-the-report)) |
 
 ### Lauf
 
@@ -645,7 +659,7 @@ unten den Typ „percentile?" hat.
 | `settings.max_in_flight` | int; Suche: `int?` | Die Obergrenze für Anfragen im Flug: der Wert von `-max-in-flight`, sonst der Standard. Suche: `null` ohne die Option (jeder Lauf nimmt die kleinste Grenze, mit der er läuft); in ihren Läufen die Grenze dieses Laufs |
 | `settings.connections` | int | `app.connections` wie konfiguriert, standardmäßig 1; `connections.open` ist, was sich geöffnet hat |
 | `settings.warmup_us` | int | Das Aufwärmen wie konfiguriert. Suche: die Einschwingzeit `settle` |
-| `settings.ramp_us` | int | `load.ramp` wie konfiguriert, in ganzen Mikrosekunden; 0 ohne Anlauf. |
+| `settings.ramp_us` | int | `load.ramp` wie konfiguriert, in ganzen Mikrosekunden; 0 ohne Anlauf. Suche: der Anlauf vor der ersten Stufe; in `breakpoint.runs[0].report.settings.ramp_us` derselbe, bei den übrigen Läufen 0 |
 | `settings.stop_on_errors` | string? | `load.stop_on_errors` wie geschrieben: `"5%"`, `"100%"` bleibt `"100%"`; `null` — weggelassen. |
 | `settings.compression` | string? | `app.compression` wie konfiguriert: `"gzip"`, `null` — weggelassen |
 | `passport` | object? | Die Maschine und die Konfiguration, mit denen der Lauf gemacht wurde, um Läufe zu unterscheiden. Eine Suche hat ihn einmal auf oberster Ebene, ihre Läufe in `breakpoint.runs` nicht |
@@ -664,7 +678,7 @@ unten den Typ „percentile?" hat.
 | `warmup_sent`, `warmup_failed`, `warmup_not_sent` | int | Dasselbe für Aufrufe, die im ausgeschlossenen Fenster geplant waren (Anlauf und Aufwärmen) |
 | `cap_hit` | object? | Die Grenze `-max-in-flight` wurde erreicht; `null` — wurde sie nicht |
 | `cap_hit.at_us` | int | Wann |
-| `cap_hit.unsent` | int | Aufrufe, die die Grenze abgewiesen hat |
+| `cap_hit.unsent` | int | Aufrufe, die die Grenze abgewiesen hat. Immer `1`: Die erste Abweisung der Grenze stoppt den Lauf und macht ihn ungültig |
 | `cap_hit.over_deadline` | int | Aufrufe in Flug, die in diesem Moment ihren Platz über ihre Deadline hinaus hielten |
 | `start_lag` | object | Wie spät Aufrufe gegenüber dem Plan starteten |
 | `start_lag.p99` | percentile? | p99 der Verspätung |
@@ -687,7 +701,7 @@ unten den Typ „percentile?" hat.
 | `connections.per_connection[].p99` | percentile? | p99 der Aufrufe der Verbindung; `null` ohne einen Aufruf mit Latenz |
 | `connections.per_connection[].first_limit`, `connections.per_connection[].last_limit` | int? | Das Stream-Limit der Verbindung beim ersten und letzten Handshake; `null` — nicht angekündigt |
 | `connections.per_connection[].limit_changes` | int | Handshakes der Verbindung, die ein anderes Limit als das vorige ankündigten |
-| `client_waits` | object | Aufrufe, die auf Client-Seite über der Schwelle warteten, nach Ursache ([README](README.md#den-bericht-lesen)) |
+| `client_waits` | object | Aufrufe, die auf Client-Seite über der Schwelle warteten, nach Ursache ([den Bericht lesen](../en/report.md#reading-the-report)) |
 | `client_waits.generator_calls`, `client_waits.stream_calls`, `client_waits.connection_calls` | int | Alle solchen Aufrufe, gesendet oder nicht. Ein gesendeter Aufruf kann für mehrere Ursachen zählen |
 | `client_waits.generator_tail_calls`, `client_waits.stream_tail_calls`, `client_waits.connection_tail_calls` | int | Nur im p99-Ende und unter den ungesendeten: Diese bestimmen `tail_wait_cause` |
 | `generator_cpu` | object? | Wie viel der für LeetTest selbst verfügbaren CPU der Lauf belegte, sekundenweise; `null`, wenn die CPU-Zeit des Prozesses nicht gelesen werden konnte. Der Bericht druckt eine Zeile, wenn eine Sekunde ausgelastet ist |
@@ -718,7 +732,7 @@ unten den Typ „percentile?" hat.
 ### Methode: `methods[]`
 
 `<category>` ist jede der vier Kategorien, die im JSON ein Objekt mit Antwortzeiten haben:
-`request_error`, `overload`, `failure`, `bad_response` ([Kategorien](README.md#den-bericht-lesen)).
+`request_error`, `overload`, `failure`, `bad_response` ([Kategorien](../en/report.md#reading-the-report)).
 Die übrigen sind einfache Zähler.
 
 | Feld | Typ | Bedeutung |
@@ -732,7 +746,7 @@ Die übrigen sind einfache Zähler.
 | `methods[].planned_duration_us` | int | Wie lange die Methode gehen sollte, wie konfiguriert, der Anlauf eingeschlossen |
 | `methods[].request_bytes` | object? | Der Anfragekörper, Mittel über die gemessenen Aufrufe, die hinausgingen; `null` ohne Kompression |
 | `methods[].request_bytes.raw`, `methods[].request_bytes.wire` | float | Bytes vor der Kompression und auf der Leitung (ohne den 5-Byte-Rahmen) |
-| `methods[].response_bytes` | float? | Antwortkörper, Mittel über die gemessenen erfolgreichen Aufrufe, nach dem Entpacken; `null`, wenn keiner erfolgreich war |
+| `methods[].response_bytes` | float? | Antwortkörper, Mittel über die gemessenen erfolgreichen Aufrufe, nach dem Entpacken; `0` bei leeren Antworten, `null`, wenn keiner erfolgreich war |
 | `methods[].warmup` | object? | Warm-up, getrennt vom Lauf gemessen; `null` ohne Beobachtung |
 | `methods[].warmup.calls` | int | Beobachtungen hinter den Perzentilen (Erfolge und zeitüberschrittene oder abgebrochene Aufrufe als Untergrenzen), nicht die Zahl `warmup_sent` |
 | `methods[].warmup.p50`, `methods[].warmup.p99` | percentile? | Latenz ab dem geplanten Zeitpunkt, `lower_bound` wie in `methods[].latency`; `p99` ist unter 100 Beobachtungen `null` |
@@ -785,7 +799,7 @@ etwas geschah. Anders als die Summen enthält sie jeden Aufruf. Zum Abgleich: `�
 
 | Feld | Typ | Bedeutung |
 |---|---|---|
-| `methods[].seconds[].warmup` | bool | Die Sekunde liegt im ausgeschlossenen Fenster (Anlauf und Aufwärmen) |
+| `methods[].seconds[].warmup` | bool | Die Sekunde beginnt im ausgeschlossenen Fenster (Anlauf und Aufwärmen). Endet das Fenster mitten in der Sekunde (`warmup: 1.5s`), ist diese Sekunde `true`, enthält aber sowohl Warm-up- als auch gemessene Aufrufe: `Σ succeeded` über die Sekunden mit `warmup: false` liegt um den gemessenen Teil dieser Sekunde unter der Summe |
 | `methods[].seconds[].begun` | int | In dieser Sekunde begonnene Aufrufe |
 | `methods[].seconds[].succeeded`, `methods[].seconds[].overload`, `methods[].seconds[].failure`, `methods[].seconds[].client_error`, `methods[].seconds[].bad_response`, `methods[].seconds[].request_error`, `methods[].seconds[].timed_out`, `methods[].seconds[].unreachable`, `methods[].seconds[].cut_off`, `methods[].seconds[].aborted`, `methods[].seconds[].unclassified` | int | In dieser Sekunde beendete Aufrufe, nach Kategorie |
 | `methods[].seconds[].not_sent_generator`, `methods[].seconds[].not_sent_stream`, `methods[].seconds[].not_sent_connection` | int | Timeouts vor dem Senden, die in dieser Sekunde endeten, nach Ursache |
@@ -818,7 +832,7 @@ Gesamtwerten verglichen.
 
 Die Suche schreibt ein anderes Objekt: `schema_version`, `leettest_version`, `target` und
 `started_at` wie beim Lauf oben, die übrigen Felder eines gewöhnlichen Laufs stehen nicht auf der
-obersten Ebene. Jeder Lauf liegt mit seinem vollständigen Bericht in `breakpoint.runs` ([die Suche](README.md#suche-nach-dem-bruchpunkt)).
+obersten Ebene. Jeder Lauf liegt mit seinem vollständigen Bericht in `breakpoint.runs` ([die Suche](../en/report.md#breaking-point-search)).
 
 | Feld | Typ | Bedeutung |
 |---|---|---|
