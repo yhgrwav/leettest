@@ -67,8 +67,8 @@ func refusedReply(err error, answered bool) bool {
 	return !answered && status.Code(err) == codes.ResourceExhausted && strings.Contains(msg, sizeLimit)
 }
 
-// streamRefused is how grpc-go v1.84.0 words a stream the target reset with
-// REFUSED_STREAM (internal/transport/http2_client.go:1318, the same since
+// streamRefused is how grpc-go v1.85.0 words a stream the target reset with
+// REFUSED_STREAM (internal/transport/http2_client.go:1333, the same since
 // v1.20.0). It has no type of its own: the transport marks the stream
 // unprocessed internally and the caller gets this text under UNAVAILABLE.
 // Pinned by a test against grpc-go itself.
