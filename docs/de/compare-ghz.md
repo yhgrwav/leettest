@@ -1,17 +1,19 @@
-# LeetTest und ghz auf demselben Stand
+# Ein Lasttest kann Sie belügen: LeetTest und ghz auf demselben Stand
 
-> Übersetzt aus [docs/ru/compare-ghz.md](../ru/compare-ghz.md) bei c726cb6, 2026-10-14. Bei
+> Übersetzt aus [docs/ru/compare-ghz.md](../ru/compare-ghz.md) bei feb2d1d, 2026-11-10. Bei
 > Abweichungen gilt die russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/compare-ghz.md).
 
 Diese Seite vergleicht LeetTest mit [ghz](https://ghz.sh) auf einem Testserver mit bekanntem
 Verhalten. Die Frage ist eng: Wenn der Server stockt oder langsamer wird, zeigt der Bericht das?
-Ein Funktionsvergleich mit ghz, k6 und JMeter steht in der [Tabelle](why.md#vergleich-mit-ghz-k6-und-jmeter).
+Das Lastmodell eines Werkzeugs (geschlossen oder offen) ändert die Antwort, deshalb ist jeder
+ghz-Modus eine eigene Zeile. Jeder Versuch unten nennt die Frage, die genauen Flags, die
+angeforderte und die gelieferte Last und die Grenzen. Ein Funktionsvergleich mit ghz, k6 und JMeter steht in der [Tabelle](why.md#vergleich-mit-ghz-k6-und-jmeter).
 
 Kurz:
 
-- **Wenn sich der Server normal verhält**, melden beide Werkzeuge dieselben Latenzen (Modus A).
+- **Wenn sich der Server normal verhält**, melden beide Werkzeuge Latenzen innerhalb von 1 ms (Modus A).
 - **Wenn der Server 2 Sekunden einfriert** (Modus B1), meldet ghz im synchronen Modus (Standard)
   ein p99 von 11.4ms mit `-c 10` und 11.6ms mit dem Standard `-c 50`. LeetTest meldet 1.71s.
   ghz mit `--async` meldet ebenfalls 1.71s.
@@ -83,6 +85,18 @@ Umgebung:
 
 ### B1: ein 2-Sekunden-Stillstand
 
+**Frage:** zeigt der Bericht einen Server, der in der 10. Sekunde des Laufs 2 Sekunden stillsteht?
+**Stand:** `-delay 10ms -freeze-at 10s -freeze-for 2s`.
+**Werkzeuge und Modell:** LeetTest (`rps: 200`, `duration: 30s`, `timeout: 5s`; offen); ghz ohne
+`--async` mit `-c 10` und mit dem Standard `-c 50` (geschlossen); ghz mit `--async` (offen). Die
+Flags stehen im Abschnitt «Aufbau».
+**Angefordert / geliefert:** 200 Aufrufe pro Sekunde, 6000 pro Lauf; gesendet wurden in allen Zeilen
+5999–6000, also etwa 200 pro Sekunde.
+
+**Grenzen des Versuchs:** ein Host, Loopback, ein Container mit 4 Kernen, eine ghz-Version (v0.121.0),
+eine Art von Ausfall (ein Stillstand von 2 Sekunden). Der Versuch zeigt nicht, wie sich andere
+ghz-Versionen, andere Stillstandsdauern und ein Server über das Netz verhalten.
+
 | Werkzeug | gesendet | fehlgeschlagen | p50 | p90 | p95 | p99 | Aufrufe über 1s |
 |---|---|---|---|---|---|---|---|
 | LeetTest | 6000 [6000–6000] | 0 | 10.4ms [10.3–10.4] | 10.6ms [10.5–10.6] | 509ms [508–509] | 1.71s [1.71–1.71] | nicht ausgegeben |
@@ -104,6 +118,18 @@ nicht.
 
 ### B2: ein Server, langsamer als die Last verlangt
 
+**Frage:** welche Last kam wirklich beim Server an, der in 100 ms antwortet, bei angeforderten 200
+Aufrufen pro Sekunde?
+**Stand:** `-delay 100ms`.
+**Werkzeuge und Modell:** LeetTest (offen); ghz ohne `--async` mit `-c 10` und mit dem Standard
+`-c 50` (geschlossen). ghz mit `--async` wurde in diesem Modus nicht gestartet.
+**Angefordert / geliefert:** 200 pro Sekunde, 6000 pro Lauf. Gesendet: LeetTest 6000, ghz `-c 10`
+2970 (etwa 99 pro Sekunde), ghz `-c 50` 6000 (Median; 5999–6001).
+
+**Grenzen des Versuchs:** ein Host, Loopback, eine ghz-Version, eine Serverlatenz (100 ms). Das
+Ergebnis von ghz hängt von `-c` ab: Bei `-c 50` liegt die Decke über der angeforderten Last, und die
+gesamte Last geht raus. Der Versuch zeigt nicht, welches `-c` ghz-Nutzer in der Praxis wählen würden.
+
 | Werkzeug | gesendet | fehlgeschlagen | p50 | p90 | p95 | p99 |
 |---|---|---|---|---|---|---|
 | LeetTest | 6000 [6000–6000] | 0 | 100ms [100–100] | 101ms [101–101] | 101ms [101–101] | 102ms [101–102] |
@@ -112,14 +138,25 @@ nicht.
 
 Synchrones ghz sendet höchstens c / Latenz Aufrufe pro Sekunde, wobei c die Zahl der Worker ist.
 Mit `-c 10` und 100ms sind das 100 Aufrufe pro Sekunde, die Hälfte der angeforderten 200. Die
-Latenzen stimmen, die Last nicht. Wer nur die Latenzspalten liest, sieht einen Server, der 200 RPS
-bei 101ms schafft. Der Server schaffte 100 RPS.
+Latenzen der gesendeten Aufrufe sind echt, aber es ging nur die Hälfte der angeforderten Last raus.
+Wer nur die Latenzspalten liest, sieht einen Server, der 200 RPS bei 101ms schafft; beim Server
+kamen 100 RPS an.
 
 Mit dem Standard `-c 50` liegt die Decke bei 500 Aufrufen pro Sekunde, und die volle Last geht
 raus. Dieselbe Decke gilt für jedes c, sobald der Server langsam genug wird: Bei `-c 50` wird sie
 oberhalb von 250ms erreicht.
 
 ### A: Kontrolle
+
+**Frage:** stimmen die Werkzeuge überein, wenn mit dem Server alles in Ordnung ist?
+**Stand:** `-delay 10ms`.
+**Werkzeuge und Modell:** LeetTest (offen); ghz ohne `--async` mit `-c 10` (geschlossen); ghz mit
+`--async` (offen).
+**Angefordert / geliefert:** 200 pro Sekunde, 6000 pro Lauf; gesendet 6000–6001 (Median).
+
+**Grenzen des Versuchs:** ein Host, Loopback, eine ghz-Version, ein Server ohne Ausfälle. Den
+Unterschied von 0.3–0.9 ms zwischen ghz und LeetTest haben wir nicht untersucht; der Versuch zeigt
+seine Ursache nicht.
 
 | Werkzeug | gesendet | fehlgeschlagen | p50 | p90 | p95 | p99 |
 |---|---|---|---|---|---|---|
@@ -128,7 +165,8 @@ oberhalb von 250ms erreicht.
 | ghz, `--async` | 6001 [5996–6002] | 0 | 10.7ms [10.7–10.7] | 11.3ms [11.3–11.3] | 11.4ms [11.4–11.4] | 11.4ms [11.4–11.5] |
 
 Alle drei stimmen auf 1ms überein. In dieser Umgebung zeigt ghz 0.3–0.9ms mehr als LeetTest; die
-Ursache haben wir nicht gemessen.
+Ursache haben wir nicht gemessen. Welches der beiden Werkzeuge der Latenz «auf dem Draht» näher
+kommt, prüft dieser Versuch nicht.
 
 ## Nachstellen
 

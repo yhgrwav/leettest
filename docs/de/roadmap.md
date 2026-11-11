@@ -2,7 +2,7 @@
 
 [← Zur Übersicht](README.md)
 
-> Übersetzt aus [docs/ru/roadmap.md](../ru/roadmap.md) bei bfd24aa, 2026-11-03. Bei Abweichungen gilt die
+> Übersetzt aus [docs/ru/roadmap.md](../ru/roadmap.md) bei 0e32d00, 2026-11-10. Bei Abweichungen gilt die
 > russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/roadmap.md).
@@ -12,7 +12,7 @@
 > [Discussions](https://github.com/yhgrwav/leettest/discussions). Die Reihenfolge unten richtet sich
 > danach, was Nutzer brauchen.
 
-Das sind Pläne, keine zugesagten Termine. Was heute funktioniert, steht im [README](README.md).
+Das sind Pläne, keine zugesagten Termine. Was heute funktioniert, steht in der [Dokumentation](README.md).
 
 ## Später
 

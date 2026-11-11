@@ -1,18 +1,16 @@
-# Warum dieses Werkzeug?
+# LeetTest, ghz, k6 und JMeter: ein Vergleich
 
 [← Zur Übersicht](README.md)
 
-> Übersetzt aus [docs/ru/why.md](../ru/why.md) bei c726cb6, 2026-10-14. Bei Abweichungen gilt die
+> Übersetzt aus [docs/ru/why.md](../ru/why.md) bei feb2d1d, 2026-11-10. Bei Abweichungen gilt die
 > russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/why.md).
 
-LeetTest ruht auf einem Grundsatz: Ein Lasttest ist nur dann etwas wert, wenn man seinem
-Ergebnis ohne Einschränkung vertrauen kann. Alles andere im Werkzeug folgt daraus.
-
-Die Prioritäten sind geordnet: **Korrektheit der Messung**, dann **Bedienbarkeit**, dann
-**Geschwindigkeit**. Im Konflikt gewinnt die erste — eine Optimierung, die die Genauigkeit
-verschlechtert, wird abgelehnt.
+LeetTest ist ein Werkzeug für gRPC. Die Hauptfrage, die es beantwortet: Bei welcher Last kommt der
+Dienst nicht mehr zurecht. Diese Seite vergleicht es Punkt für Punkt mit ghz, k6 und JMeter; zu jedem
+Punkt steht eine Quelle. Die Prioritäten des Projekts: zuerst die Korrektheit der Messung, dann die
+Bedienbarkeit, dann die Geschwindigkeit.
 
 ## Vergleich mit ghz, k6 und JMeter
 
@@ -38,7 +36,7 @@ JMeter ist Version 5.6.3 mit einem gRPC-Plugin: JMeter selbst kann kein gRPC [20
 
 | Was wir prüfen | ghz | k6 | JMeter | LeetTest |
 |---|---|---|---|---|
-| Die Last bricht nicht ein, wenn das Ziel langsamer wird (Open Model) | 🟡 `--async`, nicht der Standard [4] | 🟡 eigener Executor, nicht der Standard [11] | 🟡 experimentell, nicht der Standard [23] | 🟢 das einzige Modell |
+| Die Last bricht nicht ein, wenn das Ziel langsamer wird (Open Model) | 🟡 `--async`, nicht der Standard [4] | 🟡 eigener Executor, nicht der Standard [11] | 🟡 experimentell, nicht der Standard [23] | 🟢 nur das Open Model |
 | Die eigene Verspätung des Generators fließt in die Latenz ein | 🔴 nein: ab dem Senden [5] | 🔴 nein: ab dem Senden, ungesendete in `dropped_iterations` [12][13] | 🔴 nein: ab dem Senden [24] | 🟢 |
 | Fehlgeschlagene und durch Timeout abgebrochene Aufrufe gehen in die Perzentile ein | 🟡 `--count-errors`, nicht der Standard [6] | 🟢 [13] | 🟢 [25] | 🟢 fehlgeschlagene mit eigenen Perzentilen je Kategorie, abgebrochene als untere Schranke |
 
@@ -46,16 +44,21 @@ JMeter ist Version 5.6.3 mit einem gRPC-Plugin: JMeter selbst kann kein gRPC [20
 
 | Was wir messen | ghz | k6 | LeetTest |
 |---|---|---|---|
-| Anfragen pro Sekunde, die ein Kern hält; das Ziel antwortet sofort (mehr ist besser) | 9.300 | 4.750 | **35.550** |
-| Gleichmäßigkeit des Zeitplans bei 1000 Anfragen pro Sekunde: Abstand zwischen benachbarten Anfragen am Ziel, Median / p99 / p99,9 / Maximum; ideal ist 1 ms (Median: näher an 1 ms ist besser; p99 / p99,9 / Maximum: weniger ist besser) ² | **1,1** / 1,75 / 3,5 / 9,3 ms | 0,59 / 1,8 / 2,05 / 14,7 ms | 1,5 / **1,68 / 1,88 / 3,1 ms** |
-| Was das Werkzeug zur Latenz hinzufügt; das Ziel antwortet in 20 ms, 500 Anfragen pro Sekunde; p50 / p99 (weniger ist besser) | **0,33 / 0,31 ms** | **0,33** / 0,49 ms | 0,98 / 1,3 ms ¹ |
+| Anfragen pro Sekunde, die ein Kern hält; das Ziel antwortet sofort (mehr ist besser) | 9.300 | 4.750 | 35.550 |
+| Gleichmäßigkeit des Zeitplans bei 1000 Anfragen pro Sekunde: Abstand zwischen benachbarten Anfragen am Ziel, Median / p99 / p99,9 / Maximum; ideal ist 1 ms (Median: näher an 1 ms ist besser; p99 / p99,9 / Maximum: weniger ist besser) ² | 1,1 / 1,75 / 3,5 / 9,3 ms | 0,59 / 1,8 / 2,05 / 14,7 ms | 1,5 / 1,68 / 1,88 / 3,1 ms |
+| Was das Werkzeug zur Latenz hinzufügt; das Ziel antwortet in 20 ms, 500 Anfragen pro Sekunde; p50 / p99 (weniger ist besser) | 0,33 / 0,31 ms | 0,33 / 0,49 ms | 0,98 / 1,3 ms ¹ |
 
-JMeter wurde nicht gemessen. ¹ LeetTest zählt die Latenz ab dem Moment, zu dem der Aufruf fällig
-war, ghz und k6 ab dem Senden (die Zeile „Die eigene Verspätung des Generators fließt in die
-Latenz ein“ oben); bei `GOMAXPROCS=1` startet LeetTest Aufrufe verspätet: p99 etwa 1,1 ms, einzelne
-bis 2,5 ms, und diese Verspätung landet nur in seiner Zahl. ² Alle drei Werkzeuge senden in jeder
-stabilen Sekunde 999–1001 Anfragen, der mittlere Abstand beträgt also 1 ms; ein Median abseits von
-1 ms bedeutet, dass die Anfragen ungleichmäßig kommen, nicht dass die Rate eine andere ist.
+Diese drei Zeilen messen verschiedene Dinge, eine Gesamtwertung gibt es nicht. Der Durchsatz je Kern
+ist bei LeetTest höher; der Median des Abstands liegt bei ghz näher an 1 ms, das p99 und das Ende
+des Abstands sind bei LeetTest besser; der Zuschlag zur Latenz ist bei ghz und k6 kleiner. JMeter
+wurde nicht gemessen. ¹ LeetTest zählt die Latenz ab dem Moment, zu dem der Aufruf fällig war, ghz
+und k6 ab dem Senden (die Zeile „Die eigene Verspätung des Generators fließt in die Latenz ein“
+oben); bei `GOMAXPROCS=1` startete LeetTest in diesem Lauf Aufrufe verspätet (p99 etwa 1,1 ms,
+einzelne bis 2,5 ms), und diese Verspätung landet nur in seiner Zahl. Die Quelle dieser Schätzung ist
+der unten beschriebene Lauf `compare-perf`; eine eigene Auswertung dafür gibt es im Repository nicht.
+² Im Lauf sendeten die Werkzeuge in jeder stabilen Sekunde 999–1001 Anfragen, der mittlere Abstand
+beträgt also 1 ms; ein Median abseits von 1 ms bedeutet, dass die Anfragen ungleichmäßig kommen,
+nicht dass die Rate eine andere ist.
 
 So wurde gemessen. Jedes Werkzeug läuft in einem eigenen Docker-Container mit einem Kern
 (`--cpus=1`, `GOMAXPROCS=1`), der Referenz-Stand in einem anderen mit vier. Die Zahlen berechnet der
@@ -81,29 +84,28 @@ Am Ende gibt der Befehl die Tabellen aus und speichert sie in `test/compare-perf
 ein voller Lauf dauert bis zu drei Stunden. `-plan` gibt alle Einstellungen und Befehle aus, ohne
 etwas zu starten.
 
-Open Model als Standard, Erfassung der Verspätung des Generators und die Suche nach dem
-Ausfallpunkt sind die Zeilen, in denen weder ghz noch k6 noch JMeter ein 🟢 haben. Die
-Verkettung von Aufrufen fehlt LeetTest noch; die Reihenfolge steht in der
-[roadmap](roadmap.md). Das Hochfahren auf eine Ziel-RPS (`load.ramp`), Schwellen für CI (`pass`) und
-der Betrieb ohne Reflection (`.proto`, Protoset) sind vorhanden.
+In der Tabelle hat nur LeetTest ein 🟢 bei: Open Model als einziges Modell, Erfassung der Verspätung
+des Generators, Suche nach dem Ausfallpunkt. Wo LeetTest ein 🔴 hat, ist die Verkettung von
+Aufrufen (ein Antwortfeld geht in die nächste Anfrage): k6 und JMeter haben sie, LeetTest noch nicht;
+die Reihenfolge steht in der [roadmap](roadmap.md). Das Hochfahren auf eine Ziel-RPS (`load.ramp`),
+Schwellen für CI (`pass`) und der Betrieb ohne Reflection (`.proto`, Protoset) hat LeetTest.
 
-## Last wie in der Produktion
+## Mehrere Methoden in einem Lauf
 
-Das Werkzeug beschreibt Last so, wie sie wirklich auftritt: mehrere Methoden gleichzeitig, jede
-mit eigener Rate und Dauer, alles in einem Lauf und einem Bericht. Gerade an der Mischung zeigen
-sich Konkurrenz um den Verbindungspool, Datenbanksperren und Kämpfe um den Cache — Effekte, die man
-nie sieht, solange Methoden einzeln gemessen werden.
+Die Last wird als mehrere gleichzeitige Methoden beschrieben: jede mit eigener Rate und Dauer, alles
+in einem Lauf und einem Bericht. ghz startet pro Lauf eine Methode [1]; k6 und JMeter beschreiben
+mehrere Methoden mit Szenarien oder Thread-Gruppen [10][22].
 
-## Messung, die sich nicht verzerren lässt
+## Latenz ab dem Zeitplan
 
 Die Latenz zählt ab dem Zeitpunkt, für den die Anfrage geplant war, nicht ab dem, zu dem sie
-gesendet werden konnte. So wird die ganze Verzögerung erfasst, einschließlich der Wartezeit auf der
-Seite des Generators. Hängt das Ziel eine Sekunde, meldet das Werkzeug `1005ms` — die Verzögerung,
-die ein echter Nutzer gesehen hätte — statt `5ms`, die nur zeigen, wie schnell die Antworten nach
-der Erholung kamen.
+gesendet werden konnte, und enthält die Wartezeit auf der Seite des Generators. Ein Beispiel: Das
+Ziel hängt eine Sekunde, eine Anfrage ging laut Plan zu Beginn der Pause raus, die Antwort kam nach
+1005 ms. Das Zählen ab dem Plan ergibt `1005ms`; das Zählen ab dem Senden (ghz, k6, JMeter
+[5][13][24]) ergibt bei einer Anfrage, die sich beim Generator in die Warteschlange stellte, eine
+kleinere Zahl. Der Versuch auf dem Stand steht auf der Seite [LeetTest und ghz](compare-ghz.md).
 
-Die Last folgt einem Zeitplan: Die angeforderte RPS wird gehalten, ob der Dienst mitkommt oder
-nicht.
+Die Last folgt einem Zeitplan: Die angeforderte RPS hängt nicht davon ab, ob der Dienst mitkommt.
 
 Eine durch den Timeout abgebrochene Anfrage wird nicht durch eine Zahl ersetzt. Bekannt ist nur,
 dass sie länger als der Timeout dauerte, und könnten solche Anfragen den Platz eines Perzentils
@@ -119,18 +121,16 @@ Start nach dem Schema des Dienstes gebaut.
 ## Deklarative Beschreibung
 
 Die Last wird durch eine Konfigurationsdatei festgelegt, nicht durch ein Programm. Die Datei liegt
-beim Code des Dienstes, durchläuft das Code-Review und bleibt auch nach einem halben Jahr lesbar.
-Sie braucht kein Debugging und kann selbst keine Quelle von Messfehlern werden.
+beim Code des Dienstes und durchläuft das Code-Review. Ein Skriptprogramm gibt es nicht, also auch
+keine Fehler darin; Fehler in der Datei selbst (falsche Grenzen, die falsche Methode) bleiben
+möglich.
 
-## Sorgfalt für den Menschen
+## Fehlermeldungen und Laufverlauf
 
 Fehlermeldungen nennen Ort und Ursache. Ein unbekannter Schlüssel in der Konfiguration oder eine
 Rate von null sind Fehler und werden nicht stillschweigend hingenommen: Ein Lauf, der keine einzige
-Anfrage gesendet hat, darf nicht erfolgreich aussehen. Der Zustand des Laufs ist live sichtbar —
-aktuelle Rate, laufende Anfragen, Fehleranteil, Perzentile.
-
-Die Qualität der Oberfläche steht gleichrangig neben der Korrektheit der Messung: Eine unklare
-Fehlermeldung gilt als Defekt.
+Anfrage gesendet hat, sieht nicht erfolgreich aus. Der Zustand des Laufs ist live sichtbar: aktuelle
+Rate, laufende Anfragen, Fehleranteil, Perzentile.
 
 ## Quellen
 
