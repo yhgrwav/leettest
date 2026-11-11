@@ -521,6 +521,7 @@ Prometheus 把它和服务自身的指标放在一起抓取。没有默认地址
 | LeetTest 解决什么问题？ | [阅读](problem.md) |
 | 为什么选这个工具？ | [阅读](why.md) |
 | 它解决了压测中的哪些问题？ | [阅读](pitfalls.md) |
+| 如何阅读报告、退出码和 JSON，如何对比两次运行？ | [报告](report.md) |
 | 什么是调用串联，为什么重要？ | [阅读](chaining.md) |
 | 会有付费版本吗？ | [阅读](commercial.md) |
 | 在哪里提问或反馈？ | [阅读](feedback.md) |
