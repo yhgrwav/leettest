@@ -609,6 +609,9 @@ die Warnungen in diesem Abschnitt.
 | Frage | |
 |---|---|
 | Welche Fragen beantwortet LeetTest? | [Lesen](questions.md) |
+| Was tut es nicht, und wo tragen seine Zahlen nicht mehr? | [Lesen](limitations.md) |
+| Was ändert sich innerhalb der Version 1.x nicht? | [Lesen](stability.md) |
+| Wie starte ich LeetTest in CI und lasse den Build bei einer verfehlten Grenze scheitern? | [Lesen](ci.md) |
 | Welches Problem löst LeetTest? | [Lesen](problem.md) |
 | Warum dieses Werkzeug? | [Lesen](why.md) |
 | Welche Probleme von Lasttests behebt es? | [Lesen](pitfalls.md) |
