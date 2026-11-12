@@ -309,7 +309,7 @@ func (b Breakpoint) validate() error {
 		key = "from"
 	case b.To < b.From:
 		key = "to"
-	case b.Factor != 0:
+	case b.Factor != 0 && (b.Step != 0 || b.Factor <= 1):
 		key = "factor"
 	case b.Step < 0:
 		key = "step"
