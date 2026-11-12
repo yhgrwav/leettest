@@ -183,7 +183,7 @@ func TestPlan_ReadsThisRepositorysWorkflows(t *testing.T) {
 	}
 	// Update with the matrix Go in ci.yml and the Go of release.yml (two versions
 	// while they differ).
-	if want := []string{"1.27.3", "1.27.4"}; !reflect.DeepEqual(gos, want) {
+	if want := []string{"1.27.4"}; !reflect.DeepEqual(gos, want) {
 		t.Errorf("Go versions of this repository %q, want %q", gos, want)
 	}
 }
