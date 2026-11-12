@@ -1,6 +1,6 @@
 # Your load test might be lying to you: LeetTest and ghz on the same stand
 
-> Translated from [docs/ru/compare-ghz.md](../ru/compare-ghz.md) at b7a685c, 2026-10-12. If they
+> Translated from [docs/ru/compare-ghz.md](../ru/compare-ghz.md) at feb2d1d, 2026-11-09. If they
 > differ, the Russian one is right.
 
 This page compares LeetTest with [ghz](https://ghz.sh) on a test server with known behavior. The

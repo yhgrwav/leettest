@@ -2,7 +2,7 @@
 
 [← Back to docs](README.md)
 
-> Translated from [docs/ru/stability.md](../ru/stability.md) at 3a9dbba, 2026-11-09. If they
+> Translated from [docs/ru/stability.md](../ru/stability.md) at ecdd128, 2026-11-09. If they
 > differ, the Russian one is right.
 
 **In force from v1.0.0; before that, see «Upgrading» in the [release notes](https://github.com/yhgrwav/leettest/releases).** Before 1.0 a minor version (`0.7`, `0.8`) may break what worked

@@ -3,7 +3,7 @@
 [Русский](../ru/reference.md) · [English](reference.md) · [Deutsch](../de/reference.md) · [简体中文](../zh-CN/reference.md)
 [← Home](README.md)
 
-> Translated from [docs/ru/reference.md](../ru/reference.md) at bfd24aa, 2026-11-03. If they differ, the
+> Translated from [docs/ru/reference.md](../ru/reference.md) at 0d969a9, 2026-11-10. If they differ, the
 > Russian one is right.
 
 Every config field, every flag, and what the tool checks before the start. How to read the report
