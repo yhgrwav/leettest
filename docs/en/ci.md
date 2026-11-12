@@ -2,7 +2,7 @@
 
 [← Back to docs](README.md)
 
-> Translated from [docs/ru/ci.md](../ru/ci.md) at ecdd128, 2026-11-09. If they differ, the Russian
+> Translated from [docs/ru/ci.md](../ru/ci.md) at dc7fd95, 2026-11-09. If they differ, the Russian
 > one is right.
 
 This page shows how to run a load test on every change to a service and fail the build when the

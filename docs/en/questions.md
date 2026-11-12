@@ -2,7 +2,7 @@
 
 [← Back to docs](README.md)
 
-> Translated from [docs/ru/questions.md](../ru/questions.md) at fe640ce, 2026-10-12. If they
+> Translated from [docs/ru/questions.md](../ru/questions.md) at feb2d1d, 2026-11-09. If they
 > differ, the Russian one is right.
 
 The questions the report answers today.

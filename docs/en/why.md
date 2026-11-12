@@ -2,7 +2,7 @@
 
 [← Back to docs](README.md)
 
-> Translated from [docs/ru/why.md](../ru/why.md) at b7a685c, 2026-10-12. If they differ, the
+> Translated from [docs/ru/why.md](../ru/why.md) at feb2d1d, 2026-11-09. If they differ, the
 > Russian one is right.
 
 LeetTest is a tool for gRPC. The main question it answers: at what load does the service stop

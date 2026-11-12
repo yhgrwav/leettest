@@ -2,7 +2,7 @@
 
 [← Back to docs](README.md)
 
-> Translated from [docs/ru/pitfalls.md](../ru/pitfalls.md) at bfd24aa, 2026-11-03. If they
+> Translated from [docs/ru/pitfalls.md](../ru/pitfalls.md) at 0e32d00, 2026-11-09. If they
 > differ, the Russian one is right.
 
 A list of known measurement errors and inconveniences of load testing, and what LeetTest does
