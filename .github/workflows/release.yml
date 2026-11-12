@@ -25,7 +25,7 @@ jobs:
           # The Go that CI tests as latest (GO_LATEST in ci.yml; the weekly
           # tool-versions check keeps them equal). go-version-file would take
           # go.mod's floor, 1.26.0, without later stdlib security fixes.
-          go-version: "1.27.3"
+          go-version: "1.27.4"
           # This job can write: a cache other workflows wrote does not get in.
           cache: false
       # Only the tip of release/vX.Y gets vX.Y.Z[-rc.N]: that is the commit
