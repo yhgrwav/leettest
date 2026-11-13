@@ -433,7 +433,7 @@ SIGTERM（`docker stop`、Kubernetes、被取消的 CI 任务）会立即截断�
 - 在 L4 负载均衡器后面只有一个后端承受负载：一条连接——一个后端。见
   [阅读报告](../en/report.md#reading-the-report)（英文）。
 - 在 Windows 上时钟步长约 0.5 ms，针对快速服务的运行会被判为无效（`clock_step`，退出码 2）。
-- 如果生成器自己的延迟决定了 p99 尾部，运行无效（`generator_late`，退出码 2，未发布）：报告会列出
+- 如果生成器自己的延迟决定了 p99 尾部，运行无效（`generator_late`，退出码 2）：报告会列出
   相关方法、生成器撞上的上限（`generator_limit`：`gomaxprocs`、`cpu_quota`、`cpu`、`schedule` 或
   `unknown`）以及要改的那一项，然后建议降低速率，或把速率分摊到多台机器上。只有生成器的 CPU 测满
   一整秒时才会给出上限，否则为 `unknown`。只评判有 100 个及以上
@@ -508,7 +508,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `outcome` | string | `complete`、`invalid`、`incomplete`——对应退出码 `0`、`2`、`3`；已结束但没达到 `pass` 限值的运行是 `complete`，退出码 `4`；使用 `-json-file` 且写入失败时退出码为 `1`，`outcome` 仍是该次运行的 |
 | `invalid_reasons` | []string | 运行无效的原因：`in_flight_cap`、`nothing_measured`、`clock_step`、`generator_late`（生成器落后于计划，自 v0.7 起；见“在哪里运行”）、`thresholds_undecided`（某个 `pass` 限值无法判定，且原因不是运行被停止或已经无效）。为空——有效 |
 | `tail_wait_cause` | string? | 决定尾部的客户端侧等待：`generator`、`stream`、`connection`；`null`——没有结论 |
-| `generator_limit` | string? | 在 `generator_late` 运行中，生成器撞上了自身的哪个上限（未发布）：`gomaxprocs`、`cpu_quota`、`cpu`、`schedule`、`unknown`；`null`——该运行不是 `generator_late` |
+| `generator_limit` | string? | 在 `generator_late` 运行中，生成器撞上了自身的哪个上限：`gomaxprocs`、`cpu_quota`、`cpu`、`schedule`、`unknown`；`null`——该运行不是 `generator_late` |
 | `clock_step_ns` | int | 主机时钟步长，纳秒：每个延迟和等待都有 ± 这个值的误差 |
 | `stop_reason` | string? | 由 `load.stop_on_errors` 停止运行时为 `error_spike`；否则为 `null`。 |
 | `stop` | object? | `load.stop_on_errors` 在何处、依据哪些数字停止了运行；没有停止则为 `null`。 |
@@ -518,7 +518,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `stop.limit` | string | 按配置书写的限值：`"5%"`。 |
 | `stop.at_us` | int | 从运行开始到停止所经过的时间，单位为整微秒。 |
 | `stop.in_flight` | int | 此刻在途的调用数（已开始、未结束）：目标卡死时，这是窗口看不到的数字。 |
-| `stop.planned_rps` | float? | 停止那一刻该方法的计划给出的速率（未发布），每秒调用数，保留 3 位小数；停止行把它打印为整数个调用：`the plan offered 1700 rps at that moment`。停止发生在该方法计划结束时或之后则为 `null`，此时停止行写 `the plan had ended`。停止的时刻是判断的时刻，不是发送的时刻：失败的调用可能更早发出，最多早一个调用超时的长度；它们发出时的速率见 `ramp by second` 块。 |
+| `stop.planned_rps` | float? | 停止那一刻该方法的计划给出的速率，每秒调用数，保留 3 位小数；停止行把它打印为整数个调用：`the plan offered 1700 rps at that moment`。停止发生在该方法计划结束时或之后则为 `null`，此时停止行写 `the plan had ended`。停止的时刻是判断的时刻，不是发送的时刻：失败的调用可能更早发出，最多早一个调用超时的长度；它们发出时的速率见 `ramp by second` 块。 |
 | `seq_overflow` | object? | `{{seq}}` 放不进字段而运行停止的位置；没有发生时为 `null`。此时 `stop_reason` 为 `seq_overflow`，运行平稳结束（退出码 3）。 |
 | `seq_overflow.method` | string | 字段溢出的方法，写法同 `methods[].method`，含开头的 `/`。 |
 | `seq_overflow.limit` | int | 该方法最窄的字段所能容纳的最大 `seq`。 |
@@ -677,9 +677,9 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `methods[].seconds[].lag_calls`、`methods[].seconds[].lag_sum_us`、`methods[].seconds[].lag_max_us` | int | 对计划在该秒的调用：数量、启动延迟之和与最大值 |
 | `methods[].seconds[].observed_calls` | int | 其中成功的调用 |
 | `methods[].seconds[].observed_lag_sum_us`、`methods[].seconds[].transport_wait_sum_us`、`methods[].seconds[].service_time_sum_us` | int | 对成功的调用：启动延迟之和、发送前等待（连接和流）之和、从发送到应答的时间之和。三者相加即为它们的延迟 |
-| `methods[].seconds[].planned_rps` | float | 计划在该秒给出的速率（未发布）：计划与发送所覆盖的那部分秒内的平均值，保留 3 位小数；计划已结束处为 `0` |
-| `methods[].seconds[].scheduled_sent` | int | 计划在该秒且已发出的调用（未发布）；从未发出的不计入 |
-| `methods[].seconds[].scheduled_failed` | int | 其中失败的调用，即既不在 `succeeded` 也不在 `aborted` 中结束（未发布）。按计划的秒计数，不同于上面按结束的秒计数的类别字段；运行结束时仍在途的调用不计入，因此是下界 |
+| `methods[].seconds[].planned_rps` | float | 计划在该秒给出的速率：计划与发送所覆盖的那部分秒内的平均值，保留 3 位小数；计划已结束处为 `0` |
+| `methods[].seconds[].scheduled_sent` | int | 计划在该秒且已发出的调用；从未发出的不计入 |
+| `methods[].seconds[].scheduled_failed` | int | 其中失败的调用，即既不在 `succeeded` 也不在 `aborted` 中结束。按计划的秒计数，不同于上面按结束的秒计数的类别字段；运行结束时仍在途的调用不计入，因此是下界 |
 
 ### 窗口：`methods[].windows[]`
 
