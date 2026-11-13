@@ -35,7 +35,7 @@
 
 - Прогон (`mode: "run"`): `schema_version`, `mode`, `leettest_version`, `target`, `name`,
   `methods_source`, `outcome`, `invalid_reasons`, `tail_wait_cause`,
-  `generator_limit` (не выпущено), `stop_reason`, `stop`, `seq_overflow`, `clock_step_ns`, `started_at`, `duration_us`, `planned_us`, `warmup_us`,
+  `generator_limit`, `stop_reason`, `stop`, `seq_overflow`, `clock_step_ns`, `started_at`, `duration_us`, `planned_us`, `warmup_us`,
   `settings`, `passport`, `sent`, `failed`, `aborted`, `not_sent`, `not_sent_generator`,
   `not_sent_stream`, `not_sent_connection`, `warmup_sent`, `warmup_failed`, `warmup_not_sent`,
   `cap_hit`, `start_lag`, `schedule`, `connections`, `client_waits`, `generator_cpu`, `traffic`,

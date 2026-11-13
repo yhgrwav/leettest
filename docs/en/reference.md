@@ -504,7 +504,7 @@ the generator and the target goes into the latency and looks like the target's t
 - On Windows the clock steps about 0.5 ms, and a run against a fast service will be declared invalid
   (`clock_step`, exit code 2).
 - If the generator's own lag decided the p99 tail, the run is invalid (`generator_late`, exit code
-  2, not released yet): the report names the methods and the limit the generator hit
+  2): the report names the methods and the limit the generator hit
   (`generator_limit`: `gomaxprocs`, `cpu_quota`, `cpu`, `schedule` or `unknown`) and the one thing to
   change, then says to lower the rate or split it over several machines. The limit is named only
   from a generator CPU measured for a whole second; otherwise it is `unknown`. It is judged on methods with at least 100
@@ -604,7 +604,7 @@ measured calls only. The first column is the field's full path.
 | `outcome` | string | `complete`, `invalid`, `incomplete` — matches exit code `0`, `2`, `3`; a finished run that missed a `pass` limit is `complete` with code `4`; with `-json-file` and a failed write the code is `1` and `outcome` stays the run's |
 | `invalid_reasons` | []string | Why the run is invalid: `in_flight_cap`, `nothing_measured`, `clock_step`, `generator_late` (the generator fell behind, since v0.7; see "Where to run"), `thresholds_undecided` (a `pass` limit cannot be decided, and not because the run was stopped or already invalid). Empty — valid |
 | `tail_wait_cause` | string? | The client-side wait that set the tail: `generator`, `stream`, `connection`; `null` — no verdict |
-| `generator_limit` | string? | Which limit of its own the generator hit, in a `generator_late` run (not released yet): `gomaxprocs`, `cpu_quota`, `cpu`, `schedule`, `unknown`; `null` — the run is not `generator_late` |
+| `generator_limit` | string? | Which limit of its own the generator hit, in a `generator_late` run: `gomaxprocs`, `cpu_quota`, `cpu`, `schedule`, `unknown`; `null` — the run is not `generator_late` |
 | `clock_step_ns` | int | The host clock step, ns: every latency and wait is ± it |
 | `stop_reason` | string? | `error_spike` when `load.stop_on_errors` stopped the run; otherwise `null`. |
 | `stop` | object? | Where and on which numbers `load.stop_on_errors` stopped the run; `null` when it did not. |
@@ -614,7 +614,7 @@ measured calls only. The first column is the field's full path.
 | `stop.limit` | string | The limit as written in the config: `"5%"`. |
 | `stop.at_us` | int | The time from the start of the run to the stop, in whole microseconds. |
 | `stop.in_flight` | int | The calls in flight at that moment (begun, not finished): on a hanging target, what the window cannot show. |
-| `stop.planned_rps` | float? | The rate the plan of that method offered at the moment of the stop (not released yet), calls per second, rounded to 3 places; the stop line prints it to whole calls: `the plan offered 1700 rps at that moment`. `null` when the stop came at or after the end of the method's plan, and the line says `the plan had ended`. The moment of the stop is the moment of judging, not of sending: the failed calls may have left earlier, by up to the call's timeout, so the rate they left at is the one the `ramp by second` block shows. |
+| `stop.planned_rps` | float? | The rate the plan of that method offered at the moment of the stop, calls per second, rounded to 3 places; the stop line prints it to whole calls: `the plan offered 1700 rps at that moment`. `null` when the stop came at or after the end of the method's plan, and the line says `the plan had ended`. The moment of the stop is the moment of judging, not of sending: the failed calls may have left earlier, by up to the call's timeout, so the rate they left at is the one the `ramp by second` block shows. |
 | `seq_overflow` | object? | Where a `{{seq}}` did not fit its field and the run stopped; `null` when that did not happen. `stop_reason` is then `seq_overflow` and the run ends softly (exit 3). |
 | `seq_overflow.method` | string | The method whose field overflowed, written as in `methods[].method`, leading `/` included. |
 | `seq_overflow.limit` | int | The largest `seq` the method's narrowest field holds. |
@@ -775,9 +775,9 @@ of the method.
 | `methods[].seconds[].lag_calls`, `methods[].seconds[].lag_sum_us`, `methods[].seconds[].lag_max_us` | int | Over calls scheduled in this second: how many, sum and maximum of the start lag |
 | `methods[].seconds[].observed_calls` | int | Of them, the successful ones |
 | `methods[].seconds[].observed_lag_sum_us`, `methods[].seconds[].transport_wait_sum_us`, `methods[].seconds[].service_time_sum_us` | int | Over the successful ones: sum of start lag, of the wait before sending (connection and stream), of the time from sending to the answer. Together — their latencies |
-| `methods[].seconds[].planned_rps` | float | The rate the plan offered in this second (not released yet): the mean over the part of the second the plan and the sending covered, rounded to 3 places; `0` where the plan was already over |
-| `methods[].seconds[].scheduled_sent` | int | Calls scheduled for this second that went out (not released yet); calls that never left are not counted |
-| `methods[].seconds[].scheduled_failed` | int | Of them, the calls that failed, that is, finished in neither `succeeded` nor `aborted` (not released yet). Counted by the scheduled second, unlike the category fields above, which count by the finishing second; calls still in flight at the end of the run are not in it, so it is a lower bound |
+| `methods[].seconds[].planned_rps` | float | The rate the plan offered in this second: the mean over the part of the second the plan and the sending covered, rounded to 3 places; `0` where the plan was already over |
+| `methods[].seconds[].scheduled_sent` | int | Calls scheduled for this second that went out; calls that never left are not counted |
+| `methods[].seconds[].scheduled_failed` | int | Of them, the calls that failed, that is, finished in neither `succeeded` nor `aborted`. Counted by the scheduled second, unlike the category fields above, which count by the finishing second; calls still in flight at the end of the run are not in it, so it is a lower bound |
 
 ### Window: `methods[].windows[]`
 

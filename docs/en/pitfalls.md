@@ -111,7 +111,7 @@ If the machine can't keep up with the requested RPS, requests go out late, laten
 report blames the service when the generator is at fault. We already measure the generator's lag
 separately from the service's response time and turn it into a verdict: a run in
 which the generator's lag decided the p99 tail is declared invalid (`generator_late`, exit code 2),
-and the report names the methods and what to change. Not released yet: the report names the limit
+and the report names the methods and what to change. The report names the limit
 the generator hit (GOMAXPROCS, the CPU quota, the CPU itself or the schedule), or says it cannot
 name one; the run is invalid also when the generator never sent 1% or more of a method's calls, even
 if the tail's cause names the connection. While the run is going, one line on stderr

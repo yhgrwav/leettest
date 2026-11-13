@@ -30,8 +30,7 @@ Am Ende steht der Bericht je Methode: gesendet, Fehlschläge, `sent/s`, p50/p90/
   kaputt: Gleichen Sie mit `plan:` der Methode ab. Bei `ramp` sind die ersten Zeilen der Anlauf: Ein
   niedriges `sent/s` ist dort der Plan, kein Ausfall; suchen Sie die Zeile, in der p99 oder der
   Fehleranteil wachsen, bevor das Tempo das Plateau erreicht hat.
-- Bei `ramp` hat der Bericht für jede Methode außerdem den Block `ramp by second` (noch nicht
-  veröffentlicht): die Sekunden des ausgeschlossenen Fensters, in jeder — das Plantempo, die
+- Bei `ramp` hat der Bericht für jede Methode außerdem den Block `ramp by second`: die Sekunden des ausgeschlossenen Fensters, in jeder — das Plantempo, die
   rausgegangenen Aufrufe, die auf sie geplant waren, und der Anteil der fehlgeschlagenen unter
   ihnen. Nur ganze Sekunden, höchstens 20 Zeilen. Der Fehleranteil ist eine untere Grenze: Aufrufe,
   die am Ende des Laufs noch unterwegs waren, zählen nicht als fehlgeschlagen. Die Suche nach dem

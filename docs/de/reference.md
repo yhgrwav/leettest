@@ -530,7 +530,7 @@ bei 2 ms.
 - Unter Windows springt die Uhr in Schritten von etwa 0,5 ms, und ein Lauf gegen einen schnellen
   Dienst wird für ungültig erklärt (`clock_step`, Exit-Code 2).
 - Hat die Verspätung des Generators selbst das p99-Ende bestimmt, ist der Lauf ungültig
-  (`generator_late`, Exit-Code 2, nicht veröffentlicht): Der Bericht nennt die Methoden, die Grenze, an die der
+  (`generator_late`, Exit-Code 2): Der Bericht nennt die Methoden, die Grenze, an die der
   Generator gestoßen ist (`generator_limit`: `gomaxprocs`, `cpu_quota`, `cpu`, `schedule` oder
   `unknown`), und das eine, was zu ändern ist, und rät dann, die Rate zu senken oder sie auf mehrere
   Rechner aufzuteilen. Die Grenze wird nur aus einer CPU-Messung des Generators über eine volle
@@ -636,7 +636,7 @@ unten den Typ „percentile?" hat.
 | `outcome` | string | `complete`, `invalid`, `incomplete` — entspricht Exit-Code `0`, `2`, `3`; ein beendeter Lauf, der eine `pass`-Grenze verfehlt hat, ist `complete` mit Code `4`; bei `-json-file` und fehlgeschlagenem Schreiben ist der Code `1`, und `outcome` bleibt der des Laufs |
 | `invalid_reasons` | []string | Warum der Lauf ungültig ist: `in_flight_cap`, `nothing_measured`, `clock_step`, `generator_late` (der Generator blieb hinter dem Plan zurück, seit v0.7; siehe „Wo man es ausführt“), `thresholds_undecided` (eine `pass`-Grenze lässt sich nicht entscheiden, und nicht, weil der Lauf angehalten oder schon ungültig war). Leer — gültig |
 | `tail_wait_cause` | string? | Die Wartezeit auf Client-Seite, die das Ende der Verteilung bestimmt hat: `generator`, `stream`, `connection`; `null` — kein Urteil |
-| `generator_limit` | string? | An welche eigene Grenze der Generator in einem `generator_late`-Lauf stieß (nicht veröffentlicht): `gomaxprocs`, `cpu_quota`, `cpu`, `schedule`, `unknown`; `null` — der Lauf ist nicht `generator_late` |
+| `generator_limit` | string? | An welche eigene Grenze der Generator in einem `generator_late`-Lauf stieß: `gomaxprocs`, `cpu_quota`, `cpu`, `schedule`, `unknown`; `null` — der Lauf ist nicht `generator_late` |
 | `clock_step_ns` | int | Der Uhrenschritt des Hosts, ns: Jede Latenz und Wartezeit ist ± dieser Wert |
 | `stop_reason` | string? | `error_spike`, wenn `load.stop_on_errors` den Lauf gestoppt hat; sonst `null`. |
 | `stop` | object? | Wo und auf welchen Zahlen `load.stop_on_errors` den Lauf gestoppt hat; `null`, wenn nicht. |
@@ -646,7 +646,7 @@ unten den Typ „percentile?" hat.
 | `stop.limit` | string | Die Grenze, wie in der Konfiguration geschrieben: `"5%"`. |
 | `stop.at_us` | int | Die Zeit vom Start des Laufs bis zum Stopp, in ganzen Mikrosekunden. |
 | `stop.in_flight` | int | Die Aufrufe im Flug in diesem Moment (begonnen, nicht beendet): bei einem hängenden Ziel das, was das Fenster nicht zeigt. |
-| `stop.planned_rps` | float? | Die Rate, die der Plan dieser Methode im Moment des Stopps vorsah (nicht veröffentlicht), Aufrufe pro Sekunde, auf 3 Stellen gerundet; die Stopp-Zeile druckt sie auf ganze Aufrufe: `the plan offered 1700 rps at that moment`. `null`, wenn der Stopp am Ende des Plans der Methode oder danach kam; die Zeile sagt dann `the plan had ended`. Der Moment des Stopps ist der Moment des Urteils, nicht des Sendens: Die fehlgeschlagenen Aufrufe können früher hinausgegangen sein, um bis zu den Timeout des Aufrufs; die Rate, mit der sie hinausgingen, zeigt der Block `ramp by second`. |
+| `stop.planned_rps` | float? | Die Rate, die der Plan dieser Methode im Moment des Stopps vorsah, Aufrufe pro Sekunde, auf 3 Stellen gerundet; die Stopp-Zeile druckt sie auf ganze Aufrufe: `the plan offered 1700 rps at that moment`. `null`, wenn der Stopp am Ende des Plans der Methode oder danach kam; die Zeile sagt dann `the plan had ended`. Der Moment des Stopps ist der Moment des Urteils, nicht des Sendens: Die fehlgeschlagenen Aufrufe können früher hinausgegangen sein, um bis zu den Timeout des Aufrufs; die Rate, mit der sie hinausgingen, zeigt der Block `ramp by second`. |
 | `seq_overflow` | object? | Wo ein `{{seq}}` nicht in sein Feld passte und der Lauf anhielt; `null`, wenn das nicht geschah. `stop_reason` ist dann `seq_overflow`, und der Lauf endet sanft (Exit 3). |
 | `seq_overflow.method` | string | Die Methode, deren Feld überlief, geschrieben wie in `methods[].method`, mit führendem `/`. |
 | `seq_overflow.limit` | int | Das größte `seq`, das das schmalste Feld der Methode fasst. |
@@ -807,9 +807,9 @@ etwas geschah. Anders als die Summen enthält sie jeden Aufruf. Zum Abgleich: `�
 | `methods[].seconds[].lag_calls`, `methods[].seconds[].lag_sum_us`, `methods[].seconds[].lag_max_us` | int | Über die in dieser Sekunde geplanten Aufrufe: Anzahl, Summe und Maximum der Startverspätung |
 | `methods[].seconds[].observed_calls` | int | Davon die erfolgreichen |
 | `methods[].seconds[].observed_lag_sum_us`, `methods[].seconds[].transport_wait_sum_us`, `methods[].seconds[].service_time_sum_us` | int | Über die erfolgreichen: Summe der Startverspätung, der Wartezeit vor dem Senden (Verbindung und Stream), der Zeit vom Senden bis zur Antwort. Zusammen — ihre Latenzen |
-| `methods[].seconds[].planned_rps` | float | Die Rate, die der Plan in dieser Sekunde vorsah (nicht veröffentlicht): Mittel über den Teil der Sekunde, den Plan und Senden abdeckten, auf 3 Stellen gerundet; `0`, wo der Plan schon vorbei war |
-| `methods[].seconds[].scheduled_sent` | int | Für diese Sekunde geplante Aufrufe, die hinausgingen (nicht veröffentlicht); nie gesendete zählen nicht |
-| `methods[].seconds[].scheduled_failed` | int | Davon die gescheiterten, also weder in `succeeded` noch in `aborted` beendet (nicht veröffentlicht). Nach der geplanten Sekunde gezählt, anders als die Kategoriefelder oben (nach der Sekunde des Endes); am Laufende noch fliegende Aufrufe fehlen, daher eine untere Grenze |
+| `methods[].seconds[].planned_rps` | float | Die Rate, die der Plan in dieser Sekunde vorsah: Mittel über den Teil der Sekunde, den Plan und Senden abdeckten, auf 3 Stellen gerundet; `0`, wo der Plan schon vorbei war |
+| `methods[].seconds[].scheduled_sent` | int | Für diese Sekunde geplante Aufrufe, die hinausgingen; nie gesendete zählen nicht |
+| `methods[].seconds[].scheduled_failed` | int | Davon die gescheiterten, also weder in `succeeded` noch in `aborted` beendet. Nach der geplanten Sekunde gezählt, anders als die Kategoriefelder oben (nach der Sekunde des Endes); am Laufende noch fliegende Aufrufe fehlen, daher eine untere Grenze |
 
 ### Fenster: `methods[].windows[]`
 

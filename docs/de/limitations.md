@@ -27,7 +27,7 @@ selbst oder kann es nicht. Hier steht, was genau.
   p99 das Maximum, der Lauf bleibt gültig, mit Hinweis. Eine p99-Verschiebung unter 10 % ist kein
   Urteil, sondern ein Hinweis mit der Zahl. Die Suche nach dem Bruchpunkt bekommt dieses Urteil
   nicht: ihre Stufen haben die eigene Ursache `generator`. Der Laufpass zeigt CPU-Anzahl,
-  `GOMAXPROCS` und die Quota. Noch nicht veröffentlicht: Der Bericht nennt die Grenze, an die der
+  `GOMAXPROCS` und die Quota. Der Bericht nennt die Grenze, an die der
   Generator gestoßen ist (`GOMAXPROCS`, CPU-Quota, die CPU selbst oder der Zeitplan), oder sagt, dass
   er keine nennen kann; außerdem ist der Lauf ungültig, wenn der Generator 1 % oder mehr der Aufrufe
   einer Methode nicht gesendet hat.
