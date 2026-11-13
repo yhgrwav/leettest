@@ -72,6 +72,8 @@ race:
 # Run_ASearchStartsWithItsRamp (run 43181561698, search_ramp_test.go:119, "the
 # search has 1 runs, want 2 or more"): the search ends at the first step on the
 # same starved generator.
+# Run_ASearchWithoutARampIsTodays (run 43462369661, search_ramp_test.go:193, the
+# same message): the same cause.
 #
 # 3. Covered by the no-race pass: under -race the run ends invalid (exit 2) or
 # warns generator_late, the right verdict on a starved generator, so there is no
@@ -89,7 +91,7 @@ race:
 # export_test.go:354): all seven end "the run is invalid" (exit 2) or warn that
 # the generator is behind its schedule (generator_late) on a 50 to 4000 rps run
 # of a fake target.
-STRESS_SKIP := ^TestReport_SlotsHeldWithinTheAllowanceDoNotHitTheCap$$|^TestSearchFeed_ASlowScreenKeepsTheLagUnderTwentyMilliseconds$$|^TestRun_ASearchNamesTheStandsCapacity$$|^TestBreakpoint_FindsTheStandsCapacity$$|^TestBreakpoint_ATargetThatDoesNotRecoverIsNamedSo$$|^TestRun_ASearchOnTheFakeTarget$$|^TestRun_OnceSearchStopsWhenTheFileRunsOut$$|^TestRun_ASearchStartsWithItsRamp$$|^TestRun_NoLagNoWarning$$|^TestRun_JSONCarriesTheGeneratorCPUOnTheGridOfTheRun$$|^TestExportRun_AScrapeStormDoesNotChangeTheReportAndRendersOncePerSecond$$|^TestRun_AHealthyRunUnderALimitRunsToTheEnd$$|^TestRun_ARampWithoutAWarmUpNamesTheRampAlone$$|^TestRun_LocalNeverAsks$$|^TestExportRun_AScrapeMidRunSeesThePlannedRateAndGrowingCalls$$|^TestReport_AnOnTimeStarterIsNotLate$$|^TestEarlyWarning_AnOnTimeStarterIsNotWarnedOf$$
+STRESS_SKIP := ^TestReport_SlotsHeldWithinTheAllowanceDoNotHitTheCap$$|^TestSearchFeed_ASlowScreenKeepsTheLagUnderTwentyMilliseconds$$|^TestRun_ASearchNamesTheStandsCapacity$$|^TestBreakpoint_FindsTheStandsCapacity$$|^TestBreakpoint_ATargetThatDoesNotRecoverIsNamedSo$$|^TestRun_ASearchOnTheFakeTarget$$|^TestRun_OnceSearchStopsWhenTheFileRunsOut$$|^TestRun_ASearchStartsWithItsRamp$$|^TestRun_ASearchWithoutARampIsTodays$$|^TestRun_NoLagNoWarning$$|^TestRun_JSONCarriesTheGeneratorCPUOnTheGridOfTheRun$$|^TestExportRun_AScrapeStormDoesNotChangeTheReportAndRendersOncePerSecond$$|^TestRun_AHealthyRunUnderALimitRunsToTheEnd$$|^TestRun_ARampWithoutAWarmUpNamesTheRampAlone$$|^TestRun_LocalNeverAsks$$|^TestExportRun_AScrapeMidRunSeesThePlannedRateAndGrowingCalls$$|^TestReport_AnOnTimeStarterIsNotLate$$|^TestEarlyWarning_AnOnTimeStarterIsNotWarnedOf$$
 
 # LEETTEST_STRESS=1 lets an end-to-end test in cmd/leettest skip itself when its
 # run ended invalid for generator_late or clock_step alone (skipIfStarved): the
