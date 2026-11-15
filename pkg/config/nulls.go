@@ -166,7 +166,7 @@ func (v *nullDatasetVisitor) visitScenarioKey(pair *ast.MappingValueNode, path s
 	line := pair.Key.GetToken().Position.Line
 	name := strings.TrimPrefix(path, "$.")
 
-	if m := stepKeyPath.FindStringSubmatch(path); m != nil && m[3] != "method" && m[3] != "timeout" {
+	if m := stepKeyPath.FindStringSubmatch(path); len(m) > 3 && m[3] != "method" && m[3] != "timeout" {
 		if stepKeysLater[m[3]] {
 			v.errs = append(v.errs, fmt.Errorf("line %d: %w: %s is not supported in a step yet", line, ErrScenario, name))
 		} else {
