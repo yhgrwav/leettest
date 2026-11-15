@@ -11,7 +11,7 @@ require (
 	github.com/jhump/protoreflect v1.19.0
 	github.com/mattn/go-isatty v0.0.24
 	golang.org/x/net v0.62.0
-	golang.org/x/sys v0.49.0
+	golang.org/x/sys v0.50.0
 	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12
 )
