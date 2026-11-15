@@ -113,6 +113,7 @@ json generator_cpu.busy_seconds
 json generator_cpu.first_busy_s
 json generator_cpu.seconds
 json generator_cpu.share
+json generator_limit
 json invalid_reasons
 json leettest_version
 json method
@@ -291,7 +292,10 @@ json methods[].seconds[].not_sent_stream
 json methods[].seconds[].observed_calls
 json methods[].seconds[].observed_lag_sum_us
 json methods[].seconds[].overload
+json methods[].seconds[].planned_rps
 json methods[].seconds[].request_error
+json methods[].seconds[].scheduled_failed
+json methods[].seconds[].scheduled_sent
 json methods[].seconds[].service_time_sum_us
 json methods[].seconds[].succeeded
 json methods[].seconds[].timed_out
@@ -385,6 +389,7 @@ json stop.failed
 json stop.in_flight
 json stop.limit
 json stop.method
+json stop.planned_rps
 json stop.total
 json stop_reason
 json tail_wait_cause
