@@ -421,6 +421,16 @@ type Call struct {
 	// limits the run is judged by, empty when RawPass is nil.
 	RawPass *Pass            `yaml:"pass"`
 	Pass    threshold.Limits `yaml:"-"`
+	// Scenario names the iteration this call starts and Steps are the calls
+	// after it; empty and nil for a plain call. Not read from the file yet.
+	Scenario string `yaml:"-"`
+	Steps    []Step `yaml:"-"`
+}
+
+// Step is one call of a scenario after the first. Not read from the file yet.
+type Step struct {
+	Method  string        `yaml:"-"`
+	Timeout time.Duration `yaml:"-"`
 }
 
 // Pass is a call's pass: section as written, key to value, so that a wrong key
