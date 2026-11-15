@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"math"
 	"runtime"
 	"slices"
 	"strconv"
@@ -38,15 +39,37 @@ type Passport struct {
 	NumCPU       int
 	GOMAXPROCS   int
 	// CPUQuota is the cgroup's CPU limit in cores as the cgroup says it; nil
-	// when there is none.
+	// when there is none. A value that is not a positive finite number (0, NaN,
+	// ±Inf, below 0) is read as none everywhere (usableQuota).
 	CPUQuota  *float64
 	GoVersion string
 	// Labels are the user's key=value pairs, the config's and the flag's.
 	Labels map[string]string
 }
 
-// NewPassport reads the machine now; configSHA256 and labels are the run's.
+// usableQuota is the passport's CPU quota in cores; false for none and for a
+// value no cgroup limit can be: 0, below 0, NaN, ±Inf. A library caller builds
+// the passport and can hand any of them; they are no quota, never a limit.
+func usableQuota(q *float64) (float64, bool) {
+	if q == nil || !(*q > 0) || math.IsInf(*q, 0) {
+		return 0, false
+	}
+
+	return *q, true
+}
+
+// quotaCoresText is a quota in cores as the passport prints it.
+func quotaCoresText(q float64) string {
+	return strconv.FormatFloat(q, 'f', -1, 64)
+}
+
+// NewPassport reads the machine now; configSHA256 and labels are the run's. A
+// quota that is not usable (usableQuota) is stored as none.
 func NewPassport(configSHA256 string, labels map[string]string, quota *float64) *Passport {
+	if _, ok := usableQuota(quota); !ok {
+		quota = nil
+	}
+
 	return &Passport{
 		ConfigSHA256: configSHA256,
 		OS:           runtime.GOOS,
@@ -67,8 +90,8 @@ func printPassport(w io.Writer, p *Passport) {
 
 	var line strings.Builder
 	fmt.Fprintf(&line, "machine: %s/%s, %d CPU, GOMAXPROCS %d", p.OS, p.Arch, p.NumCPU, p.GOMAXPROCS)
-	if p.CPUQuota != nil {
-		fmt.Fprintf(&line, ", quota %s", strconv.FormatFloat(*p.CPUQuota, 'f', -1, 64))
+	if q, ok := usableQuota(p.CPUQuota); ok {
+		fmt.Fprintf(&line, ", quota %s", quotaCoresText(q))
 	}
 	fmt.Fprintf(&line, ", %s; config sha256:%s", p.GoVersion, p.ConfigSHA256[:min(shortHashLen, len(p.ConfigSHA256))])
 	fmt.Fprintln(w, line.String())
@@ -106,8 +129,13 @@ func passportJSON(p *Passport) *jsonPassport {
 	labels := make(map[string]string, len(p.Labels))
 	maps.Copy(labels, p.Labels)
 
+	var quota *float64
+	if q, ok := usableQuota(p.CPUQuota); ok {
+		quota = &q
+	}
+
 	return &jsonPassport{
 		ConfigSHA256: p.ConfigSHA256, OS: p.OS, Arch: p.Arch, NumCPU: p.NumCPU, GOMAXPROCS: p.GOMAXPROCS,
-		CPUQuota: p.CPUQuota, GoVersion: p.GoVersion, Labels: labels,
+		CPUQuota: quota, GoVersion: p.GoVersion, Labels: labels,
 	}
 }

@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"math"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/yhgrwav/leettest/pkg/engine"
@@ -71,6 +70,8 @@ func GeneratorLimit(run RunReport) (limit string, ok bool) {
 // the cgroup quota is below the CPUs and the CPU was busy; the CPU was busy;
 // the CPU was quiet and the schedule not exact; else unknown. A lowered
 // GOMAXPROCS with a quiet CPU is no limit: the Ps that were there stood idle.
+// A passport quota that is not a positive finite number is no quota (usableQuota);
+// the gomaxprocs line names the quota only when it is below the CPUs.
 func generatorLimitLine(run RunReport) (limit, line string, ok bool) {
 	if !GeneratorLate(run) {
 		return "", "", false
@@ -85,23 +86,28 @@ func generatorLimitLine(run RunReport) (limit, line string, ok bool) {
 
 	if p := run.Passport; p != nil {
 		reach := p.NumCPU
-		belowCPUs := false
 
-		var rounded int
-		if q := p.CPUQuota; q != nil {
-			rounded = int(math.Ceil(*q))
-			belowCPUs = rounded < p.NumCPU
-			reach = min(reach, rounded)
+		// The ceiling is compared as a float: a quota too big for an int is no
+		// limit, not a wrapped one.
+		quota, hasQuota := usableQuota(p.CPUQuota)
+		belowCPUs := hasQuota && math.Ceil(quota) < float64(p.NumCPU)
+		if belowCPUs {
+			reach = int(math.Ceil(quota))
 		}
 
 		if busy && p.GOMAXPROCS < reach {
-			return limitGOMAXPROCS, fmt.Sprintf("The generator ran on GOMAXPROCS %d of %d CPUs: raise GOMAXPROCS, %s",
-				p.GOMAXPROCS, p.NumCPU, limitAdvice), true
+			quotaWords := ""
+			if belowCPUs {
+				quotaWords = ", quota " + quotaCoresText(quota)
+			}
+
+			return limitGOMAXPROCS, fmt.Sprintf("The generator ran on GOMAXPROCS %d of %d CPUs%s: raise GOMAXPROCS, %s",
+				p.GOMAXPROCS, p.NumCPU, quotaWords, limitAdvice), true
 		}
 
 		if busy && belowCPUs {
 			return limitCPUQuota, fmt.Sprintf("The generator used 90%% or more of its CPU quota (%s of %d CPUs) in %d of %d s: raise the quota, %s",
-				strconv.FormatFloat(*p.CPUQuota, 'f', -1, 64), p.NumCPU, cpu.BusySeconds, cpu.Counted, limitAdvice), true
+				quotaCoresText(quota), p.NumCPU, cpu.BusySeconds, cpu.Counted, limitAdvice), true
 		}
 	}
 
