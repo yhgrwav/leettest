@@ -157,6 +157,18 @@ func AttachMethods(
 	for i := range cfg.Load.Calls {
 		call := &cfg.Load.Calls[i]
 
+		// The steps first: they need no data, only to exist, and whatever the
+		// call itself turns out to be, a typo in a step costs the run too.
+		for k, step := range call.Steps {
+			stepUnchecked, stepErr := checkStepMethod(ctx, resolver, cfg, i, k, step.Method)
+			if stepUnchecked != nil {
+				unchecked = append(unchecked, *stepUnchecked)
+			}
+			if stepErr != nil {
+				errs = append(errs, stepErr)
+			}
+		}
+
 		method, resolveErr := resolver.Resolve(ctx, call.Method)
 		if resolveErr == nil {
 			methods[i] = method
@@ -246,6 +258,34 @@ func AttachMethods(
 	}
 
 	return unchecked, methods, errors.Join(errs...)
+}
+
+// checkStepMethod asks the target about step k (counting from 0, after the
+// call) of call i. A step has no data, so a resolver that could not answer only
+// costs the check: that is the unchecked it returns. A method the target does
+// not have, and credentials it refused, are errors that name the step.
+func checkStepMethod(
+	ctx context.Context, resolver descriptor.Resolver, cfg *config.MasterConfig, i, k int, name string,
+) (*Unchecked, error) {
+	_, err := resolver.Resolve(ctx, name)
+	if err == nil {
+		return nil, nil
+	}
+
+	at := fmt.Sprintf("load.calls[%d].steps[%d] (%s)", i, k, name)
+
+	switch {
+	case len(cfg.App.Metadata) > 0 && status.Code(err) == codes.Unauthenticated:
+		return nil, fmt.Errorf("%s: %w (%s)", at, ErrCredentialsRejected, codes.Unauthenticated)
+	case errors.Is(err, descriptor.ErrMethodNotFound):
+		return nil, fmt.Errorf("%s: %w", at, err)
+	}
+
+	if status.Code(err) == codes.Unauthenticated {
+		err = fmt.Errorf("target requires credentials; app.metadata is not set: %w", err)
+	}
+
+	return &Unchecked{Method: name, Err: err}, nil
 }
 
 // withProtoNames adds the .proto name of a field protojson names by its JSON

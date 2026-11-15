@@ -902,6 +902,13 @@ func withBudgetAdvice(err error, opts engine.Options) error {
 		return err
 	}
 
+	// A scenario holds its slot for all its steps, so one timeout for every call
+	// would be a number that fixes nothing: the cap is the advice.
+	if budget.Scenarios > 0 {
+		return fmt.Errorf("%w\nthe wait of a scenario is Σ step timeouts, which no single timeout stands for: run with -max-in-flight %d",
+			err, budget.Need)
+	}
+
 	// The formula only bounds the answer from above: each call rounds its own
 	// rps × timeout up. The check itself says which timeout fits, so the
 	// advice is the largest one it accepts, to the millisecond unless that

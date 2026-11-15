@@ -62,6 +62,13 @@ func checkDryRunFlags(flags *flag.FlagSet, dryRun bool) error {
 func runDryRun(ctx context.Context, stdout, stderr io.Writer, cfg *config.MasterConfig, sender engine.Sender,
 	grpcSender *grpcsender.Sender, flags runFlags,
 ) error {
+	for i := range cfg.Load.Calls {
+		if name := cfg.Load.Calls[i].Scenario; name != "" {
+			return fmt.Errorf("dry run: scenario %s isn't supported yet: a dry run sends one request per call, "+
+				"and the first step alone would check nothing of the rest", name)
+		}
+	}
+
 	_, calls, _, err := engineOptions(cfg, sender, flags.maxInFlight, 0)
 	if err != nil {
 		return err

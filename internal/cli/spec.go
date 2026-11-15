@@ -50,6 +50,16 @@ func CallsFromConfig(cfg *config.MasterConfig) ([]engine.Call, error) {
 				Duration:  call.Duration,
 			}},
 		}
+		if len(call.Steps) > 0 {
+			// The call is step 1; the steps send the empty message of their method
+			// (a step has no data yet) and carry no stages: the iteration is
+			// the unit of the schedule, so the ramp and the warm-up stay on the call.
+			built.Scenario = call.Scenario
+			built.Next = make([]engine.Step, len(call.Steps))
+			for k, step := range call.Steps {
+				built.Next[k] = engine.Step{Method: "/" + step.Method, Timeout: step.Timeout}
+			}
+		}
 		if cfg.Load.Ramp > 0 {
 			// The ramp comes before the call's duration: it does not shorten it.
 			built.Stages = append([]engine.Stage{{
