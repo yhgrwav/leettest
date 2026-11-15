@@ -146,9 +146,10 @@ func examplePaths(node any, prefix string, out map[string]bool) {
 	}
 }
 
-// within says whether path is key itself or lies below it.
+// within says whether path is key itself or lies below it, below a list of maps
+// (`steps[].method`) included.
 func within(path, key string) bool {
-	return path == key || strings.HasPrefix(path, key+".")
+	return path == key || strings.HasPrefix(path, key+".") || strings.HasPrefix(path, key+"[].")
 }
 
 // exampleKeyPaths maps every path some example sets to the examples that set it.

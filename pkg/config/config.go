@@ -93,6 +93,8 @@ var (
 	ErrStopWithSearch = errors.New("load.stop_on_errors and load.breakpoint do not go together: the search stops by breakpoint.errors_limit")
 	// ErrRealNeedsStop is app.mode: real without load.stop_on_errors.
 	ErrRealNeedsStop = errors.New("app.mode: real needs load.stop_on_errors (the run stops when failures pass this share), e.g. load.stop_on_errors: 5%")
+	// ErrScenario is a scenario or steps key that cannot run as written.
+	ErrScenario = errors.New("invalid scenario")
 )
 
 // errSearchNeedsRamp is ErrRealNeedsRamp for a search: the same error to
@@ -344,6 +346,9 @@ func (l Load) validateSearch() []error {
 	}
 	for i := range l.Calls {
 		call := &l.Calls[i]
+		if call.isScenario() {
+			errs = append(errs, fmt.Errorf("%w: load.calls[%d]: a scenario can't be searched yet: the search measures one call", ErrBreakpoint, i))
+		}
 		if call.RPS != 0 {
 			errs = append(errs, fmt.Errorf("%w: %s: rps with load.breakpoint: the search sets it", ErrBreakpoint, call.where(i)))
 		}
@@ -421,16 +426,21 @@ type Call struct {
 	// limits the run is judged by, empty when RawPass is nil.
 	RawPass *Pass            `yaml:"pass"`
 	Pass    threshold.Limits `yaml:"-"`
-	// Scenario names the iteration this call starts and Steps are the calls
-	// after it; empty and nil for a plain call. Not read from the file yet.
-	Scenario string `yaml:"-"`
-	Steps    []Step `yaml:"-"`
+	// RawScenario and RawSteps are scenario and steps as written, nil when left
+	// out. Scenario names the iteration this call starts and Steps are the calls
+	// after it, resolved; empty and nil for a plain call.
+	RawScenario *string `yaml:"scenario"`
+	RawSteps    *[]Step `yaml:"steps"`
+	Scenario    string  `yaml:"-"`
+	Steps       []Step  `yaml:"-"`
 }
 
-// Step is one call of a scenario after the first. Not read from the file yet.
+// Step is one call of a scenario after the first. Timeout is RawTimeout or the
+// default, never the timeout of the call.
 type Step struct {
-	Method  string        `yaml:"-"`
-	Timeout time.Duration `yaml:"-"`
+	Method     string         `yaml:"method"`
+	RawTimeout *time.Duration `yaml:"timeout"`
+	Timeout    time.Duration  `yaml:"-"`
 }
 
 // Pass is a call's pass: section as written, key to value, so that a wrong key
@@ -453,6 +463,80 @@ func (c *Call) ResolveTimeout() {
 		return
 	}
 	c.Timeout = *c.RawTimeout
+}
+
+// resolveScenario fills Scenario and Steps from the fields as written.
+func (c *Call) resolveScenario() {
+	if c.RawScenario != nil {
+		c.Scenario = *c.RawScenario
+	}
+	if c.RawSteps == nil {
+		return
+	}
+	c.Steps = make([]Step, len(*c.RawSteps))
+	for i, s := range *c.RawSteps {
+		s.Timeout = DefaultTimeout
+		if s.RawTimeout != nil {
+			s.Timeout = *s.RawTimeout
+		}
+		c.Steps[i] = s
+	}
+}
+
+// isScenario is a call that has a scenario or steps key, even a wrong one.
+func (c Call) isScenario() bool {
+	return c.RawScenario != nil || c.RawSteps != nil
+}
+
+// validateScenario checks the scenario and steps keys of call i by their path.
+func (c Call) validateScenario(i int) []error {
+	if !c.isScenario() {
+		return nil
+	}
+
+	var errs []error
+
+	at := fmt.Sprintf("load.calls[%d]", i)
+	fail := func(format string, args ...any) {
+		errs = append(errs, fmt.Errorf("%w: %s", ErrScenario, fmt.Sprintf(format, args...)))
+	}
+
+	switch {
+	case c.RawScenario == nil:
+		fail("%s.steps needs %s.scenario", at, at)
+	case strings.TrimSpace(*c.RawScenario) == "":
+		fail("%s.scenario must not be empty", at)
+	}
+	switch {
+	case c.RawSteps == nil:
+		fail("%s.scenario needs %s.steps", at, at)
+	case len(*c.RawSteps) == 0:
+		fail("%s.steps must not be empty", at)
+	}
+	if c.RawPass != nil {
+		errs = append(errs, passErr("%s: pass for a scenario isn't supported yet", at))
+	}
+
+	if c.RawSteps == nil {
+		return errs
+	}
+	for k, s := range *c.RawSteps {
+		step := fmt.Sprintf("%s.steps[%d]", at, k)
+		switch {
+		case s.Method == "":
+			fail("%s.method is required", step)
+		case !isMethodName(s.Method):
+			errs = append(errs, fmt.Errorf("%s: %w: %q", step, ErrInvalidMethod, s.Method))
+		}
+		if t := s.RawTimeout; t != nil && *t <= 0 {
+			errs = append(errs, fmt.Errorf("%s.timeout: %w: %s", step, ErrInvalidTimeout, *t))
+		}
+		if t := s.RawTimeout; t != nil && *t >= maxLatencyLimit {
+			errs = append(errs, fmt.Errorf("%s.timeout: timeout %s is not below 1h: %w", step, *t, ErrTimeoutTooLong))
+		}
+	}
+
+	return errs
 }
 
 func (c ConnectionStringTarget) CreateConnectionString() (ConnectionString, error) {
@@ -489,6 +573,7 @@ func (l Load) Validate() error {
 		errs = append(errs, l.validateSearch()...)
 	}
 	first := make(map[string]int, len(l.Calls))
+	names := map[string]string{}
 	for i := range l.Calls {
 		call := &l.Calls[i]
 		checked := *call
@@ -508,9 +593,44 @@ func (l Load) Validate() error {
 			continue
 		}
 		first[call.Method] = i
+
+		errs = append(errs, call.validateScenario(i)...)
+		errs = append(errs, claimNames(names, call, i)...)
 	}
 
 	return errors.Join(errs...)
+}
+
+// claimNames records the names call i takes in the report's namespace (its
+// method, the scenario's name, the step methods) and refuses one already taken:
+// the scenario name stands where a method does in the report and in the JSON.
+func claimNames(names map[string]string, call *Call, i int) []error {
+	var errs []error
+
+	claim := func(name, at, owner string) {
+		if name == "" {
+			return
+		}
+		if prev, taken := names[name]; taken {
+			errs = append(errs, fmt.Errorf("%s: %w: %q is already %s", at, ErrDuplicateMethod, name, prev))
+
+			return
+		}
+		names[name] = owner
+	}
+
+	at := fmt.Sprintf("load.calls[%d]", i)
+	claim(call.Method, at+".method", fmt.Sprintf("the method of call %d", i))
+	if call.RawScenario != nil {
+		claim(*call.RawScenario, at+".scenario", fmt.Sprintf("the scenario of call %d", i))
+	}
+	if call.RawSteps != nil {
+		for k, s := range *call.RawSteps {
+			claim(s.Method, fmt.Sprintf("%s.steps[%d]", at, k), fmt.Sprintf("step %d of call %d", k+2, i))
+		}
+	}
+
+	return errs
 }
 
 // where names a call the way the user can find it in the config: by its

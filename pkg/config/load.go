@@ -140,6 +140,7 @@ func (m *MasterConfig) resolve() error {
 	}
 	for i := range m.Load.Calls {
 		m.Load.Calls[i].ResolveTimeout()
+		m.Load.Calls[i].resolveScenario()
 		if raw := m.Load.Calls[i].RawDataset; raw != nil {
 			m.Load.Calls[i].Dataset = *raw
 		}
