@@ -117,8 +117,12 @@ type JSONReport struct {
 	ClientWaits       jsonClientWaits `json:"client_waits"`
 	GeneratorCPU      *jsonGenCPU     `json:"generator_cpu"`
 	// Traffic is null without a measured window.
-	Traffic   *jsonTraffic    `json:"traffic"`
-	Methods   []jsonMethod    `json:"methods"`
+	Traffic *jsonTraffic `json:"traffic"`
+	Methods []jsonMethod `json:"methods"`
+	// Scenarios is one entry per scenario of the run: the iteration as a unit,
+	// next to the calls of its steps, which are in Methods. An empty array
+	// without scenarios, never null.
+	Scenarios []jsonScenario  `json:"scenarios"`
 	Unchecked []jsonUnchecked `json:"unchecked"`
 	// Thresholds are the verdicts on the limits the config set, in its order;
 	// null when it set none.
@@ -402,6 +406,54 @@ type jsonMethod struct {
 	Windows               []jsonWindow   `json:"windows"`
 }
 
+// jsonScenario is one scenario: Iterations counts the iterations that ended,
+// Categories splits them by how they ended and adds up to Iterations. Latency
+// is from the tick to the end of the last step; Observations is the count
+// behind it and Censored how many of those only have a lower bound.
+type jsonScenario struct {
+	Name         string               `json:"name"`
+	Iterations   int                  `json:"iterations"`
+	Categories   jsonScenarioOutcomes `json:"categories"`
+	Latency      jsonScenarioLatency  `json:"latency"`
+	Observations int                  `json:"observations"`
+	Censored     int                  `json:"censored"`
+	Steps        []jsonScenarioStep   `json:"steps"`
+}
+
+// jsonScenarioOutcomes holds the 11 contract names of the categories, each a
+// count, zeros included.
+type jsonScenarioOutcomes struct {
+	Success      int `json:"success"`
+	RequestError int `json:"request_error"`
+	Overload     int `json:"overload"`
+	Failure      int `json:"failure"`
+	TimedOut     int `json:"timed_out"`
+	CutOff       int `json:"cut_off"`
+	Unreachable  int `json:"unreachable"`
+	ClientError  int `json:"client_error"`
+	BadResponse  int `json:"bad_response"`
+	Aborted      int `json:"aborted"`
+	Unclassified int `json:"unclassified"`
+}
+
+// jsonScenarioLatency is null where the percentile is not defined: p99 below
+// the minimum count.
+type jsonScenarioLatency struct {
+	P50 *jsonQuantile `json:"p50"`
+	P99 *jsonQuantile `json:"p99"`
+}
+
+// jsonScenarioStep is how far the iterations got at one step, in the engine's
+// counters (engine.ScenarioStepReport).
+type jsonScenarioStep struct {
+	Method      string `json:"method"`
+	Reached     int    `json:"reached"`
+	FailedHere  int    `json:"failed_here"`
+	AbortedHere int    `json:"aborted_here"`
+	NotSentHere int    `json:"not_sent_here"`
+	NotReached  int    `json:"not_reached"`
+}
+
 // jsonWindow is one time window of a method, counted from the end of the
 // warm-up. P50US and P99US are null in a window without observations;
 // P99Bound is true when the window's p99 is a lower bound (a censored
@@ -505,6 +557,7 @@ func NewJSONReport(run JSONRun) JSONReport {
 	out.CapHit = capHitJSON(r.CapHit)
 	out.Connections = connectionsOf(r.Connections)
 	out.Methods = methodsJSON(r.Methods, r.Warmup, out.Settings.Compression)
+	out.Scenarios = scenariosJSON(r.Scenarios)
 	out.Notes = notesJSON(run.Run)
 	out.InvalidReasons = invalidReasonsJSON(run.Run, out.Methods)
 	out.Unchecked = uncheckedJSON(run.Run.Unchecked)
@@ -632,6 +685,37 @@ func methodsJSON(methods []engine.MethodReport, warmup time.Duration, compressio
 			m.RequestBytes = &jsonRequestBytes{Raw: b.Raw, Wire: b.Wire}
 		}
 		out = append(out, m)
+	}
+
+	return out
+}
+
+func scenariosJSON(scenarios []engine.ScenarioReport) []jsonScenario {
+	out := make([]jsonScenario, 0, len(scenarios))
+	for i := range scenarios {
+		s := &scenarios[i]
+		by := s.ByCategory
+		entry := jsonScenario{
+			Name: s.Name, Iterations: s.Iterations,
+			Categories: jsonScenarioOutcomes{
+				Success: by[engine.CategorySuccess], RequestError: by[engine.CategoryClientFault],
+				Overload: by[engine.CategoryOverload], Failure: by[engine.CategoryServerFault],
+				TimedOut: by[engine.CategoryTimeout], CutOff: by[engine.CategoryCutOff],
+				Unreachable: by[engine.CategoryUnreachable], ClientError: by[engine.CategoryClientError],
+				BadResponse: by[engine.CategoryBadResponse], Aborted: by[engine.CategoryAborted],
+				Unclassified: by[engine.CategoryUnknown],
+			},
+			Latency:      jsonScenarioLatency{P50: quantile(s.P50), P99: quantile(s.P99)},
+			Observations: s.Latencies, Censored: s.Censored,
+			Steps: make([]jsonScenarioStep, 0, len(s.Steps)),
+		}
+		for _, st := range s.Steps {
+			entry.Steps = append(entry.Steps, jsonScenarioStep{
+				Method: st.Method, Reached: st.Reached, FailedHere: st.FailedHere, AbortedHere: st.AbortedHere,
+				NotSentHere: st.NotSentHere, NotReached: st.NotReached,
+			})
+		}
+		out = append(out, entry)
 	}
 
 	return out

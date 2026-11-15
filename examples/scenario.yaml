@@ -1,7 +1,7 @@
-# A scenario: one iteration is a balance check followed by a transfer and a history
-# read. rps counts iterations; a step goes out when the one before it ends, and a step
-# that fails ends its iteration. The report prints a block per scenario after the method
-# table. Against the reference stand, from the repository root:
+# A scenario: one iteration is a balance check followed by a transfer. rps counts
+# iterations; a step goes out when the one before it ends, and a step that fails ends
+# its iteration. The report prints a block per scenario after the method table. Against
+# the reference stand, from the repository root:
 #   go run ./test/stand/cmd/stand -delay 20ms
 #   leettest -c examples/scenario.yaml
 
@@ -20,4 +20,3 @@ load:
       steps:
         - method: wallet.v1.WalletService/Transfer
           timeout: 500ms
-        - method: wallet.v1.WalletService/GetHistory
