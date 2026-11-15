@@ -368,6 +368,17 @@ jobs:
                  else if (fast * 3 > ref) { print "bucket walk " fast " B/op is over a third of the reference " ref " B/op"; bad = 1 }
                  exit bad
                }' bench.txt
+      # Recording a result under the shared lock allocates nothing at 8 to 1000
+      # writers. allocs/op, not ns/op: the ns/op (about 220-250 on the author's
+      # machine) are printed above and drift on a shared runner.
+      - name: Recording a result allocates nothing
+        run: |
+          awk '$1 ~ /^BenchmarkStatsRecord\/writers[0-9]+(-[0-9]+)?$/ { seen++ }
+               $1 ~ /^BenchmarkStatsRecord\/writers[0-9]+(-[0-9]+)?$/ && $(NF-1) != 0 { print "recording allocates: " $0; bad = 1 }
+               END {
+                 if (seen == 0) { print "a benchmark did not run"; bad = 1 }
+                 exit bad
+               }' bench.txt
 
   # The stand's Go code is generated from wallet.proto with pinned tools:
   # regenerating must change nothing.

@@ -21,7 +21,7 @@ help:
 	$(info make lint          golangci-lint, gofmt and goimports included)
 	$(info make fmt           gofmt the tree)
 	$(info make check         what must pass before a push: vet, test, lint)
-	$(info make bench         the per-request benchmarks (plain, templated) and the export's bucket walk)
+	$(info make bench         the per-request benchmarks (plain, templated), the recording of a result and the export's bucket walk)
 	$(info make build         bin/leettest)
 	$(info make demo          a run against the built-in fake target, no server needed)
 	$(info make stand         start the reference stand on 127.0.0.1:50051 (keep it running))
@@ -163,9 +163,10 @@ check:
 	$(MAKE) vet test lint
 
 # The cost of one request: the plain path (must stay at 0 allocs) and a templated
-# one, and the fast template build against the naive one the reference test uses.
+# one, and the fast template build against the naive one the reference test uses;
+# and Stats.Record from 8 to 1000 writers (must stay at 0 allocs).
 bench:
-	go test -run NONE -bench "NewRequest|TemplateBuild" -benchmem -benchtime 200000x ./pkg/engine ./internal/cli
+	go test -run NONE -bench "NewRequest|TemplateBuild|StatsRecord$$" -benchmem -benchtime 200000x ./pkg/engine ./internal/cli
 	go test -run NONE -bench BufferCumulative -benchmem -benchtime 2000x ./pkg/metrics
 
 build:
