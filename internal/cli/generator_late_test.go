@@ -15,6 +15,7 @@
 package cli
 
 import (
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -533,6 +534,13 @@ func gomaxprocsLine(g, n int) string {
 		" CPUs: raise GOMAXPROCS, " + limitFixes
 }
 
+// gomaxprocsQuotaLine is the same line of a run whose cgroup quota is below
+// the CPUs: it names the quota, written as the passport writes it.
+func gomaxprocsQuotaLine(g, n int, q string) string {
+	return "The generator ran on GOMAXPROCS " + strconv.Itoa(g) + " of " + strconv.Itoa(n) +
+		" CPUs, quota " + q + ": raise GOMAXPROCS, " + limitFixes
+}
+
 func scheduleLine(reasons, fix string) string {
 	return "The generator's CPU was not busy, and the schedule is not exact here (" + reasons + "): " + fix + ", or lower the rate."
 }
@@ -558,14 +566,49 @@ func limitCases() []limitCase {
 		{"gomaxprocs lowered, CPU quiet: idle Ps are not the limit",
 			limitRun(limitPassport("linux", 8, 2, nil), cpuSeconds(2, 0, 10)), "unknown", unknownLine},
 		{"gomaxprocs lowered beats a busy CPU and a quota",
-			limitRun(limitPassport("linux", 8, 1, quota(2)), cpuSeconds(1, 7, 10)), "gomaxprocs", gomaxprocsLine(1, 8)},
+			limitRun(limitPassport("linux", 8, 1, quota(2)), cpuSeconds(1, 7, 10)), "gomaxprocs", gomaxprocsQuotaLine(1, 8, "2")},
 		{"gomaxprocs lowered, CPU quiet, schedule not exact: the schedule, not GOMAXPROCS",
 			limitRun(limitPassport("windows", 8, 4, nil), cpuSeconds(4, 0, 10), "no_precise_sleep"), "schedule",
 			scheduleLine("no microsecond sleep on windows", "run from Linux")},
 		{"gomaxprocs lowered beats an inexact schedule when the CPU is busy",
 			limitRun(limitPassport("windows", 8, 4, nil), cpuSeconds(4, 6, 10), "no_precise_sleep"), "gomaxprocs", gomaxprocsLine(4, 8)},
 		{"gomaxprocs below the quota rounded up (2 < ceil 2.5 = 3)",
-			limitRun(limitPassport("linux", 8, 2, quota(2.5)), cpuSeconds(2, 7, 10)), "gomaxprocs", gomaxprocsLine(2, 8)},
+			limitRun(limitPassport("linux", 8, 2, quota(2.5)), cpuSeconds(2, 7, 10)), "gomaxprocs", gomaxprocsQuotaLine(2, 8, "2.5")},
+		{"gomaxprocs lowered below a quota with a fraction below the CPUs: the quota is named as the passport writes it",
+			limitRun(limitPassport("linux", 8, 1, quota(1.5)), cpuSeconds(1, 7, 10)), "gomaxprocs", gomaxprocsQuotaLine(1, 8, "1.5")},
+		{"gomaxprocs lowered, quota whose ceiling is the CPUs is no quota: the line is the plain one",
+			limitRun(limitPassport("linux", 8, 4, quota(7.5)), cpuSeconds(4, 7, 10)), "gomaxprocs", gomaxprocsLine(4, 8)},
+		{"gomaxprocs lowered, quota equal to the CPUs: the line is the plain one",
+			limitRun(limitPassport("linux", 8, 4, quota(8)), cpuSeconds(4, 7, 10)), "gomaxprocs", gomaxprocsLine(4, 8)},
+		{"gomaxprocs lowered, quota too big for an int: no quota, the plain line",
+			limitRun(limitPassport("linux", 8, 4, quota(1e300)), cpuSeconds(4, 7, 10)), "gomaxprocs", gomaxprocsLine(4, 8)},
+		{"quota too big for an int is no limit",
+			limitRun(limitPassport("linux", 8, 8, quota(1e300)), cpuSeconds(8, 7, 10)), "cpu", coresLine("8 cores", 7, 10)},
+		{"a quota under one core is a limit (ceiling 1 < 8), GOMAXPROCS above it",
+			limitRun(limitPassport("linux", 8, 8, quota(0.5)), cpuSeconds(0.5, 7, 10)), "cpu_quota", quotaLine("0.5", 8, 7, 10)},
+		{"a quota under one core, GOMAXPROCS 1 is not lowered (ceiling 1)",
+			limitRun(limitPassport("linux", 8, 1, quota(0.5)), cpuSeconds(0.5, 7, 10)), "cpu_quota", quotaLine("0.5", 8, 7, 10)},
+		{"quota 0 is no quota: a busy CPU is the CPU",
+			limitRun(limitPassport("linux", 8, 8, quota(0)), cpuSeconds(8, 7, 10)), "cpu", coresLine("8 cores", 7, 10)},
+		{"quota NaN is no quota: a busy CPU is the CPU",
+			limitRun(limitPassport("linux", 8, 8, quota(math.NaN())), cpuSeconds(8, 7, 10)), "cpu", coresLine("8 cores", 7, 10)},
+		{"quota +Inf is no quota: a busy CPU is the CPU",
+			limitRun(limitPassport("linux", 8, 8, quota(math.Inf(1))), cpuSeconds(8, 7, 10)), "cpu", coresLine("8 cores", 7, 10)},
+		{"quota -Inf is no quota: a busy CPU is the CPU",
+			limitRun(limitPassport("linux", 8, 8, quota(math.Inf(-1))), cpuSeconds(8, 7, 10)), "cpu", coresLine("8 cores", 7, 10)},
+		{"quota 0, GOMAXPROCS lowered: the plain line, no quota in it",
+			limitRun(limitPassport("linux", 8, 2, quota(0)), cpuSeconds(2, 7, 10)), "gomaxprocs", gomaxprocsLine(2, 8)},
+		{"quota NaN, GOMAXPROCS lowered: the plain line, no quota in it",
+			limitRun(limitPassport("linux", 8, 2, quota(math.NaN())), cpuSeconds(2, 7, 10)), "gomaxprocs", gomaxprocsLine(2, 8)},
+		{"quota +Inf, GOMAXPROCS lowered: the plain line, no quota in it",
+			limitRun(limitPassport("linux", 8, 2, quota(math.Inf(1))), cpuSeconds(2, 7, 10)), "gomaxprocs", gomaxprocsLine(2, 8)},
+		{"quota -Inf, GOMAXPROCS lowered: the plain line, no quota in it",
+			limitRun(limitPassport("linux", 8, 2, quota(math.Inf(-1))), cpuSeconds(2, 7, 10)), "gomaxprocs", gomaxprocsLine(2, 8)},
+		{"quota 0, CPU quiet, schedule exact: unknown, not a quota",
+			limitRun(limitPassport("linux", 8, 8, quota(0)), cpuSeconds(8, 0, 10)), "unknown", unknownLine},
+		{"quota NaN, CPU quiet, schedule not exact: the schedule",
+			limitRun(limitPassport("windows", 8, 8, quota(math.NaN())), cpuSeconds(8, 0, 10), "clock_step"), "schedule",
+			scheduleLine("clock step 1us or coarser", "run from Linux")},
 		{"gomaxprocs below the CPUs with a quota above them, CPU busy",
 			limitRun(limitPassport("linux", 8, 6, quota(12)), cpuSeconds(6, 5, 10)), "gomaxprocs", gomaxprocsLine(6, 8)},
 		{"gomaxprocs below the CPUs with a quota above them, CPU quiet",
