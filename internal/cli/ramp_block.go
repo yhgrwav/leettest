@@ -45,6 +45,11 @@ func printRampBlocks(w io.Writer, run RunReport) {
 	}
 
 	for i := range run.Methods {
+		// A step has no ramp of its own: the head call's tick starts it.
+		if isStepMethod(run.Report, &run.Methods[i]) {
+			continue
+		}
+
 		printRampBlock(w, run, &run.Methods[i])
 	}
 }

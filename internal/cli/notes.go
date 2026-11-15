@@ -139,7 +139,12 @@ func timedOutNotes(report engine.Report) []string {
 			planned = fmt.Sprintf("%d-%d", m.RPSLow, m.RPSHigh)
 		}
 		rate := "at " + planned + " rps"
-		if m.SilentFrom != nil {
+		switch {
+		case isStepMethod(report, m):
+			// No plan of its own: «at 0 rps» would be a number that lies, and the
+			// sent rate is the head call's tick seen from one step.
+			rate = ""
+		case m.SilentFrom != nil:
 			// The target saw what went out, not the plan; the plan of that
 			// second is named only when the two part by more than
 			// silencePlanTolerancePercent, and never when no stage ran then.
@@ -167,7 +172,11 @@ func timedOutNotes(report engine.Report) []string {
 				silence = ",\nand the target answered nothing at all"
 			}
 
-			lines = append(lines, fmt.Sprintf("%s: %s, %d of %d calls (%.1f%%) got no answer within %s%s.",
+			if rate != "" {
+				rate += ", "
+			}
+
+			lines = append(lines, fmt.Sprintf("%s: %s%d of %d calls (%.1f%%) got no answer within %s%s.",
 				displayMethod(m.Method), rate, m.TimedOut, m.Sent, share(m.TimedOut, m.Sent),
 				formatDuration(m.Timeout), silence))
 			if m.TimedOutAfterWait > 0 {
