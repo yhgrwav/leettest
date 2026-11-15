@@ -60,7 +60,9 @@ load:
 | `load.calls[].dataset_reuse` | `true` (не указан) или `false`: при `false` ни одна запись не уходит дважды за весь процесс. Нужен `dataset` |
 | `load.calls[].templates` | `true` или `false` (не указан — `false`; ключ без значения — ошибка): включает в `data` подстановки `{{uuid}}` и `{{seq}}`, см. [ниже](#запрос-который-меняется-шаблоны). Нужен хотя бы один плейсхолдер, не вместе с `dataset`. |
 | `load.calls[].scenario` | (не выпущено) Имя сценария: сам вызов становится шагом 1, за ним идут `steps`. Нужен `steps`, и наоборот. Имя не пустое, в отчёте печатается как есть; оно не должно совпадать с методом. См. [ниже](#сценарий-шаги-за-вызовом) |
-| `load.calls[].steps` | (не выпущено) Непустой список шагов после вызова: `method` (обязателен, полное имя) и `timeout` (как у вызова; не указан — `2s`, а не таймаут вызова). Другие ключи шага пока не поддерживаются — ошибка |
+| `load.calls[].steps` | (не выпущено) Непустой список шагов после вызова. Любой ключ шага, кроме двух ниже, пока не поддерживается — ошибка |
+| `load.calls[].steps[].method` | (не выпущено) Метод шага, полное имя; обязателен. Проверяется до нагрузки, как метод вызова |
+| `load.calls[].steps[].timeout` | (не выпущено) Сколько ждать ответа шага, как `load.calls[].timeout`; не указан — `2s`, а не таймаут вызова |
 | `load.calls[].pass` | Пределы, по которым прогон проходит или нет: `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, см. [ниже](#пределы-pass). Не указано — пределов нет |
 | `load.breakpoint.from` | Темп первой ступени поиска точки отказа, вызовов в секунду. Целое от 1; дробное — ошибка конфига (`rps must be a whole number of requests: 100.5`). Обязателен: без него или меньше 1 — `invalid breakpoint: breakpoint.from: breaking-point plan: from 0, want at least 1 rps`, выход 1. Первая ступень должна измерить не меньше 100 вызовов, `from` × (`hold` − `settle`), иначе до нагрузки отказ `invalid breakpoint: the first step measures 8 calls, a p99 needs 100: raise from, hold or lower settle`. С `app.mode: real` разгон идёт с 0 до `from` |
 | `load.breakpoint.to` | Выше этого темпа ступеней нет. Целое, не меньше `from` (равное `from` — одна ступень). Обязателен: без него или ниже `from` — `invalid breakpoint: breakpoint.to: breaking-point plan: to 50 is below from 100`, выход 1. Если поиск дошёл до последней ступени и она выдержала, итог `held_all` |
@@ -353,7 +355,7 @@ load:
 
 Единица расписания — итерация, а не вызов: `rps` — итераций в секунду. Итерация шлёт вызов (шаг 1),
 потом шаги по порядку; шаг идёт после конца предыдущего. Если шаг не удался, не ушёл или прерван,
-следующих шагов в этой итерации нет. Сообщение шага — пустое сообщение его метода. Методы шагов
+следующих шагов в этой итерации нет. Сообщение шага — пустое сообщение его метода: цель, которой нужны поля, ответит `request_error`, и прогон по правилу `request_error` станет недействительным; данные шага появятся позже. Методы шагов
 проверяются до нагрузки, как методы вызовов; опечатка в методе шага — ошибка конфига.
 
 Ожидание в полёте считается по сумме таймаутов шагов (`rps` × Σ таймаутов шагов); если она выше
@@ -823,7 +825,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | Поле | Тип | Что значит |
 |---|---|---|
 | `scenarios[].name` | string | (не выпущено) Имя из `load.calls[].scenario`, как записано |
-| `scenarios[].iterations` | int | (не выпущено) Сколько итераций началось; не число вызовов |
+| `scenarios[].iterations` | int | (не выпущено) Сколько итераций закончилось; не число вызовов |
 | `scenarios[].categories` | object | (не выпущено) Исход каждой итерации по одной из 11 категорий ([категории](report.md#как-читать-отчёт)); все ключи есть всегда, сумма равна `iterations` |
 | `scenarios[].categories.success`, `scenarios[].categories.request_error`, `scenarios[].categories.overload`, `scenarios[].categories.failure`, `scenarios[].categories.timed_out`, `scenarios[].categories.cut_off`, `scenarios[].categories.unreachable`, `scenarios[].categories.client_error`, `scenarios[].categories.bad_response`, `scenarios[].categories.aborted`, `scenarios[].categories.unclassified` | int | (не выпущено) Сколько итераций кончилось этим исходом |
 | `scenarios[].latency` | object | (не выпущено) Задержка итерации: от тика расписания до конца последнего шага |

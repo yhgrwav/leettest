@@ -63,7 +63,9 @@ The config, a dataset, a report for `compare` and the settings file are UTF-8; a
 | `load.calls[].dataset_reuse` | `true` (left out) or `false`: with `false` no record goes out twice, in the whole process. Needs `dataset` |
 | `load.calls[].templates` | `true` or `false` (left out — `false`; a key with no value is an error): turns on the `{{uuid}}` and `{{seq}}` placeholders in `data`, see [below](#a-request-that-changes-templates). Needs at least one placeholder, not together with `dataset`. |
 | `load.calls[].scenario` | (not released yet) The scenario's name: the call itself becomes step 1, the `steps` follow it. Needs `steps`, and the other way round. Not empty, printed in the report as written; it must not equal a method. See [below](#scenario-steps-after-a-call) |
-| `load.calls[].steps` | (not released yet) A non-empty list of the steps after the call: `method` (required, the full name) and `timeout` (as for a call; left out — `2s`, not the call's timeout). Any other key of a step is not supported yet and is an error |
+| `load.calls[].steps` | (not released yet) A non-empty list of the steps after the call. Any key of a step other than the two below is not supported yet and is an error |
+| `load.calls[].steps[].method` | (not released yet) The step's method, the full name; required. It is checked before the load, like a call's method |
+| `load.calls[].steps[].timeout` | (not released yet) How long to wait for the step's reply, as `load.calls[].timeout`; left out — `2s`, not the call's timeout |
 | `load.calls[].pass` | The limits a run must meet to pass: `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, see [below](#pass-limits). Left out — no limits |
 | `load.breakpoint.from` | The first step's rate of a breaking-point search, calls a second. A whole number from 1; a fractional one is a config error (`rps must be a whole number of requests: 100.5`). Required: left out or below 1 — `invalid breakpoint: breakpoint.from: breaking-point plan: from 0, want at least 1 rps`, exit 1. The first step must measure at least 100 calls, `from` × (`hold` − `settle`), otherwise it is refused before any load with `invalid breakpoint: the first step measures 8 calls, a p99 needs 100: raise from, hold or lower settle`. With `app.mode: real` the ramp runs from 0 to `from` |
 | `load.breakpoint.to` | No step goes above this rate. A whole number, at least `from` (equal to `from` — one step). Required: left out or below `from` — `invalid breakpoint: breakpoint.to: breaking-point plan: to 50 is below from 100`, exit 1. If the search reaches the last step and it holds, the outcome is `held_all` |
@@ -367,7 +369,8 @@ load:
 The unit of the schedule is an iteration, not a call: `rps` is iterations a second. An iteration
 sends the call (step 1), then the steps in order; a step goes out when the one before it ends. If
 a step fails, does not go out or is aborted, the iteration has no later steps. A step's message is
-the empty message of its method. The steps' methods are checked before the load like the calls'
+the empty message of its method: a target that needs fields answers `request_error`, and the run
+turns invalid by the `request_error` rule; data for a step comes later. The steps' methods are checked before the load like the calls'
 methods; a typo in a step's method is a config error.
 
 The in-flight need is counted over the sum of the step timeouts (`rps` × Σ step timeouts); when it
@@ -844,7 +847,7 @@ in `methods[]` as ordinary methods, so `leettest compare` compares them the same
 | Field | Type | Meaning |
 |---|---|---|
 | `scenarios[].name` | string | (not released yet) The name from `load.calls[].scenario`, as written |
-| `scenarios[].iterations` | int | (not released yet) How many iterations began; not the number of calls |
+| `scenarios[].iterations` | int | (not released yet) How many iterations ended; not the number of calls |
 | `scenarios[].categories` | object | (not released yet) The outcome of each iteration in one of the 11 categories ([categories](report.md#reading-the-report)); every key is always there, the sum is `iterations` |
 | `scenarios[].categories.success`, `scenarios[].categories.request_error`, `scenarios[].categories.overload`, `scenarios[].categories.failure`, `scenarios[].categories.timed_out`, `scenarios[].categories.cut_off`, `scenarios[].categories.unreachable`, `scenarios[].categories.client_error`, `scenarios[].categories.bad_response`, `scenarios[].categories.aborted`, `scenarios[].categories.unclassified` | int | (not released yet) How many iterations ended with this outcome |
 | `scenarios[].latency` | object | (not released yet) The iteration's latency: from the schedule's tick to the end of the last step |

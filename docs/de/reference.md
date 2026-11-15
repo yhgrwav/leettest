@@ -836,7 +836,7 @@ Ein Objekt je Szenario. Gezählt wird in Iterationen: der Aufruf und die Schritt
 | Feld | Typ | Bedeutung |
 |---|---|---|
 | `scenarios[].name` | string | (nicht veröffentlicht) Der Name aus `load.calls[].scenario`, wie geschrieben |
-| `scenarios[].iterations` | int | (nicht veröffentlicht) Wie viele Iterationen begonnen haben; nicht die Zahl der Aufrufe |
+| `scenarios[].iterations` | int | (nicht veröffentlicht) Wie viele Iterationen beendet wurden; nicht die Zahl der Aufrufe |
 | `scenarios[].categories` | object | (nicht veröffentlicht) Das Ergebnis jeder Iteration in einer der 11 Kategorien; alle Schlüssel sind immer da, die Summe ist `iterations` |
 | `scenarios[].categories.success`, `scenarios[].categories.request_error`, `scenarios[].categories.overload`, `scenarios[].categories.failure`, `scenarios[].categories.timed_out`, `scenarios[].categories.cut_off`, `scenarios[].categories.unreachable`, `scenarios[].categories.client_error`, `scenarios[].categories.bad_response`, `scenarios[].categories.aborted`, `scenarios[].categories.unclassified` | int | (nicht veröffentlicht) Wie viele Iterationen mit diesem Ergebnis endeten |
 | `scenarios[].latency` | object | (nicht veröffentlicht) Latenz der Iteration: vom Takt des Zeitplans bis zum Ende des letzten Schritts |

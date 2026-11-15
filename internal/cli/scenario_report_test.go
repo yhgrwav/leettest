@@ -157,9 +157,9 @@ func TestPrintReport_AScenarioP99NeedsTheMinimumCount(t *testing.T) {
 		want      string
 	}{
 		{"no observations", 0, metrics.Quantile{}, metrics.Quantile{}, "p50 -, p99 too few observations (0 of 100)"},
-		{"one observation", 1, scExact(8 * time.Millisecond), metrics.Quantile{}, "p50 8ms, p99 too few observations (1 of 100)"},
-		{"one under the minimum", 99, scExact(8 * time.Millisecond), metrics.Quantile{}, "p50 8ms, p99 too few observations (99 of 100)"},
-		{"the minimum", 100, scExact(8 * time.Millisecond), scExact(150 * time.Millisecond), "p50 8ms, p99 150ms"},
+		{"one observation", 1, scExact(8 * time.Millisecond), metrics.Quantile{}, "p50 8.00ms, p99 too few observations (1 of 100)"},
+		{"one under the minimum", 99, scExact(8 * time.Millisecond), metrics.Quantile{}, "p50 8.00ms, p99 too few observations (99 of 100)"},
+		{"the minimum", 100, scExact(8 * time.Millisecond), scExact(150 * time.Millisecond), "p50 8.00ms, p99 150ms"},
 		{"a lower bound", 400, scLower(12300 * time.Microsecond), scLower(456 * time.Millisecond), "p50 >12.3ms, p99 >456ms"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -299,6 +299,66 @@ func TestPrintReport_AScenarioBlockOfTwoStepsWithALowerBound(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("line %d:\n got %q\nwant %q", i, got[i], want[i])
 		}
+	}
+}
+
+// The scenario ran and no iteration has ended yet (a stop in the first tick): the
+// block is still printed, its first line has no colon after the rate and no
+// categories, p50 is a dash, p99 tells the count, every step row is zeros.
+// Ground: contract — a boundary of the block, as the zero rows of a method.
+func TestPrintReport_AScenarioBlockWithNoIterationEnded(t *testing.T) {
+	run := scenarioRun()
+	run.Scenarios[0] = engine.ScenarioReport{
+		Name: "pay-and-check",
+		Steps: []engine.ScenarioStepReport{
+			{Method: scStep1}, {Method: scStep2}, {Method: scStep3},
+		},
+	}
+	want := []string{
+		"scenario pay-and-check",
+		"  0 iterations, started at 12/s",
+		"  iteration latency (tick to end of the last step): p50 -, p99 too few observations (0 of 100)",
+		"  step method                                        reached failed here aborted here not sent not reached",
+		"  1    pay.v1.Wallet/GetBalance                            0           0            0        0           0",
+		"  2    pay.v1.Wallet/Transfer                              0           0            0        0           0",
+		"  3    pay.v1.Wallet/GetHistory                            0           0            0        0           0",
+		scenarioNote,
+	}
+
+	got := blockAt(t, run, "pay-and-check", len(want))
+
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("line %d:\n got %q\nwant %q", i, got[i], want[i])
+		}
+	}
+}
+
+// A step method that went silent: its note keeps what the silence says (the
+// last answer) and has no rate, as a step has no plan and its sent rate is the
+// head call's tick seen from one step, not a rate the user set. The head call
+// keeps its rate.
+// Ground: contract — A5, a number the plan does not have is not printed.
+func TestRunNotes_AStepMethodSilenceNoteHasNoRate(t *testing.T) {
+	run := scenarioRun()
+	run.Methods[0].TimedOut, run.Methods[0].Timeout = 2, 3*time.Second
+	from, last := 3, 2500*time.Millisecond
+	step := &run.Methods[1]
+	step.TimedOut, step.Timeout = 3, 500*time.Millisecond
+	step.SilentFrom, step.LastAnswerAt, step.SentRPS = &from, &last, 9
+
+	got := noteOf(t, run, "pay.v1.Wallet/Transfer:")
+
+	want := "pay.v1.Wallet/Transfer: 3 of 94 calls (3.2%) got no answer within 500ms, " +
+		"and nothing after the call sent at 2.5s of the run got one."
+	if got != want {
+		t.Errorf("step note:\n got %q\nwant %q", got, want)
+	}
+	if strings.Contains(got, "rps") {
+		t.Errorf("a step method's note names a rate: %q", got)
+	}
+	if head := noteOf(t, run, "pay.v1.Wallet/GetBalance:"); !strings.Contains(head, "at 12 rps") {
+		t.Errorf("head note %q lost its rate, want \"at 12 rps\"", head)
 	}
 }
 

@@ -704,7 +704,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | 字段 | 类型 | 含义 |
 |---|---|---|
 | `scenarios[].name` | string | （未发布）`load.calls[].scenario` 中的名称，原样 |
-| `scenarios[].iterations` | int | （未发布）开始了多少次迭代；不是调用数 |
+| `scenarios[].iterations` | int | （未发布）有多少次迭代结束；不是调用数 |
 | `scenarios[].categories` | object | （未发布）每次迭代在 11 个类别之一中的结果；所有键始终存在，总和等于 `iterations` |
 | `scenarios[].categories.success`、`scenarios[].categories.request_error`、`scenarios[].categories.overload`、`scenarios[].categories.failure`、`scenarios[].categories.timed_out`、`scenarios[].categories.cut_off`、`scenarios[].categories.unreachable`、`scenarios[].categories.client_error`、`scenarios[].categories.bad_response`、`scenarios[].categories.aborted`、`scenarios[].categories.unclassified` | int | （未发布）以该结果结束的迭代数 |
 | `scenarios[].latency` | object | （未发布）迭代的延迟：从计划的节拍到最后一步结束 |
