@@ -713,6 +713,7 @@ unten den Typ „percentile?" hat.
 | `traffic` | object? | Nachrichtenkörper pro Sekunde des Sendefensters; `null` ohne Fenster |
 | `traffic.sent_bits_per_second`, `traffic.received_bits_per_second` | float | Bit pro Sekunde, nicht skaliert: Anfragekörper nach Größe auf der Leitung, Antworten erfolgreicher Aufrufe vor dem Entpacken. Ohne HTTP/2-Frames, Header und TLS |
 | `methods` | []object | Methoden, siehe unten |
+| `scenarios` | []object | (nicht veröffentlicht) Szenarien des Laufs, siehe unten; ohne Szenarien ein leeres Array `[]`, nicht `null` |
 | `unchecked` | []object | Methoden, die über Reflection nicht geprüft werden konnten |
 | `unchecked[].method` | string | Die Methode |
 | `unchecked[].reason` | string | `reflection_off` oder `reflection_failed` |
@@ -827,6 +828,28 @@ Gesamtwerten verglichen.
 | `methods[].windows[].failed` | int | Davon die fehlgeschlagenen, definiert wie `failed` der Methode. |
 | `methods[].windows[].p50_us`, `methods[].windows[].p99_us` | int? | Perzentile der Latenz des Fensters in Mikrosekunden; `null` in einem Fenster ohne Beobachtungen. |
 | `methods[].windows[].p99_bound` | bool | Das p99 des Fensters ist eine Untergrenze: ein nicht beendeter Aufruf erreicht es. |
+
+### Szenario: `scenarios[]`
+
+Ein Objekt je Szenario. Gezählt wird in Iterationen: der Aufruf und die Schritte danach, ausgelöst von einem Takt des Zeitplans. Die Methoden der Schritte stehen als gewöhnliche Methoden in `methods[]`.
+
+| Feld | Typ | Bedeutung |
+|---|---|---|
+| `scenarios[].name` | string | (nicht veröffentlicht) Der Name aus `load.calls[].scenario`, wie geschrieben |
+| `scenarios[].iterations` | int | (nicht veröffentlicht) Wie viele Iterationen beendet wurden; nicht die Zahl der Aufrufe |
+| `scenarios[].categories` | object | (nicht veröffentlicht) Das Ergebnis jeder Iteration in einer der 11 Kategorien; alle Schlüssel sind immer da, die Summe ist `iterations` |
+| `scenarios[].categories.success`, `scenarios[].categories.request_error`, `scenarios[].categories.overload`, `scenarios[].categories.failure`, `scenarios[].categories.timed_out`, `scenarios[].categories.cut_off`, `scenarios[].categories.unreachable`, `scenarios[].categories.client_error`, `scenarios[].categories.bad_response`, `scenarios[].categories.aborted`, `scenarios[].categories.unclassified` | int | (nicht veröffentlicht) Wie viele Iterationen mit diesem Ergebnis endeten |
+| `scenarios[].latency` | object | (nicht veröffentlicht) Latenz der Iteration: vom Takt des Zeitplans bis zum Ende des letzten Schritts |
+| `scenarios[].latency.p50`, `scenarios[].latency.p99` | percentile? | (nicht veröffentlicht) Perzentile über `observations`; `lower_bound` wie bei `methods[].latency`. `p99` ist `null` unter 100 Beobachtungen |
+| `scenarios[].observations` | int | (nicht veröffentlicht) Iterationen mit einer Latenz |
+| `scenarios[].censored` | int | (nicht veröffentlicht) Davon nur von unten bekannte |
+| `scenarios[].steps` | []object | (nicht veröffentlicht) Die Schritte der Reihe nach, der erste ist der Aufruf selbst |
+| `scenarios[].steps[].method` | string | (nicht veröffentlicht) Die Methode des Schritts, geschrieben wie `methods[].method` |
+| `scenarios[].steps[].reached` | int | (nicht veröffentlicht) Iterationen, die den Schritt erreicht haben |
+| `scenarios[].steps[].failed_here` | int | (nicht veröffentlicht) Davon die an diesem Schritt gescheiterten |
+| `scenarios[].steps[].aborted_here` | int | (nicht veröffentlicht) Davon die an diesem Schritt abgebrochenen |
+| `scenarios[].steps[].not_sent_here` | int | (nicht veröffentlicht) Davon die an diesem Schritt nicht gesendeten |
+| `scenarios[].steps[].not_reached` | int | (nicht veröffentlicht) Iterationen, die den Schritt nicht erreicht haben: `reached` + `not_reached` = `iterations` |
 
 ### Suche nach dem Bruchpunkt: `mode: "breakpoint"`
 

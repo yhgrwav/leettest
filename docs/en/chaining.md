@@ -5,8 +5,10 @@
 > Translated from [docs/ru/chaining.md](../ru/chaining.md) at feb2d1d, 2026-11-09. If they
 > differ, the Russian one is right.
 
-> **Status: planned, not working yet.** The example below is a draft of the format, not a working
-> config.
+> **Status: steps after a call work since v0.9 (`scenario` and `steps`, see the
+> [reference](reference.md#scenario-steps-after-a-call)); passing reply fields to the next step is
+> planned and will replace the pools described below.** The example below is a draft of the format,
+> not a working config.
 
 Half the methods of a real service cannot be called with static data. To load money transfers
 you need existing wallets: `Transfer` needs `from` and `to`, and those only come from

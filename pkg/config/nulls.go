@@ -30,6 +30,20 @@ var callDatasetPath = regexp.MustCompile(`^\$\.load\.calls\[\d+\]\.(dataset|data
 // match has a key, a limit inside it.
 var passPath = regexp.MustCompile(`^\$\.(load\.calls\[\d+\]|load\.breakpoint)\.pass(\.[A-Za-z0-9_]+)?$`)
 
+// scenarioKeyPath matches scenario and steps of a call, stepKeyPath a key of
+// one step.
+var (
+	scenarioKeyPath = regexp.MustCompile(`^\$\.load\.calls\[(\d+)\]\.(scenario|steps)$`)
+	stepKeyPath     = regexp.MustCompile(`^\$\.load\.calls\[(\d+)\]\.steps\[(\d+)\]\.([^.\[\]]+)$`)
+)
+
+// stepKeysLater are the keys of a call that a step will take, and does not yet:
+// refused by name, so the user does not read them as typos.
+var stepKeysLater = map[string]bool{
+	"data": true, "dataset": true, "dataset_order": true, "dataset_seed": true,
+	"dataset_reuse": true, "templates": true, "rps": true, "duration": true, "pass": true,
+}
+
 // errorsLimitPath is the search's errors_limit: left with no value it would
 // be read as left out, and the search would run at the default without a word.
 const errorsLimitPath = "$.load.breakpoint.errors_limit"
@@ -82,6 +96,11 @@ func (v *nullDatasetVisitor) Visit(node ast.Node) ast.Visitor {
 		return v
 	}
 	path := pair.GetPath()
+	if scenarioKeyPath.MatchString(path) || stepKeyPath.MatchString(path) {
+		v.visitScenarioKey(pair, path)
+
+		return v
+	}
 	if passPath.MatchString(path) {
 		if value, resolved := v.unwrap(pair.Value); resolved {
 			if _, null := value.(*ast.NullNode); null {
@@ -138,6 +157,30 @@ func (v *nullDatasetVisitor) Visit(node ast.Node) ast.Visitor {
 	}
 
 	return v
+}
+
+// visitScenarioKey refuses a scenario, steps, method or timeout written with no
+// value (the decoder reads it as left out), a step key a step does not take
+// yet, and one it does not have. Every message names the key by its path.
+func (v *nullDatasetVisitor) visitScenarioKey(pair *ast.MappingValueNode, path string) {
+	line := pair.Key.GetToken().Position.Line
+	name := strings.TrimPrefix(path, "$.")
+
+	if m := stepKeyPath.FindStringSubmatch(path); len(m) > 3 && m[3] != "method" && m[3] != "timeout" {
+		if stepKeysLater[m[3]] {
+			v.errs = append(v.errs, fmt.Errorf("line %d: %w: %s is not supported in a step yet", line, ErrScenario, name))
+		} else {
+			v.errs = append(v.errs, fmt.Errorf("line %d: %w: %s is not a step key: a step has method and timeout", line, ErrScenario, name))
+		}
+
+		return
+	}
+
+	if value, resolved := v.unwrap(pair.Value); resolved {
+		if _, null := value.(*ast.NullNode); null {
+			v.errs = append(v.errs, fmt.Errorf("line %d: %w: %s has no value: write it or leave it out", line, ErrScenario, name))
+		}
+	}
 }
 
 // unwrap strips anchors and tags and follows aliases to the node a value is.
