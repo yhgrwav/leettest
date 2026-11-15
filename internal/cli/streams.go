@@ -347,7 +347,9 @@ func streamNotes(report engine.Report) []string {
 	}
 	for _, m := range clientWaitsShifted(report) {
 		added := m.P99.Value - m.P99WithoutClientWaits.Value
-		if m.P99.Value <= 0 {
+		// The p99 without the waits can sit above the p99 by histogram rounding; waits
+		// add no negative time, so such a method gets no line.
+		if added <= 0 || m.P99.Value <= 0 {
 			continue
 		}
 		// Floored, not rounded: 9.55% rounded up would print the threshold's own 10% on a

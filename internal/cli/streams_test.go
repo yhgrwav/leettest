@@ -137,6 +137,12 @@ func TestNotes_AClientWaitUnderATenthOfP99IsANoteNotAVerdict(t *testing.T) {
 		{"under 1%", q(ms(20), true), q(ms(19.9), true), false, "to p99 (<1%)", "(0%)"},
 		// Whole nanoseconds, not ms(19.8): a float cut to 19799999ns would be 0.99999% and flip.
 		{"exactly 1%", q(20*time.Millisecond, true), q(19800*time.Microsecond, true), false, "client-side waits added 200us to p99 (1%)", "<1%"},
+		// Histogram rounding can put the p99 without the waits above the p99: waits cannot add a
+		// negative time, so no "added" line (and no "did not move" claim, the printed p99s differ).
+		{"without above p99", q(ms(20), true), q(ms(20.1), true), false, "", ""},
+		{"without far above p99", q(ms(20), true), q(ms(25), true), false, "", ""},
+		// Equal quantiles: the waits did not move p99, and nothing is "added".
+		{"without equals p99", q(ms(20), true), q(ms(20), true), false, "did not move p99", "waits added"},
 	} {
 		report := engine.Report{
 			Duration: 40 * time.Second, Planned: 40 * time.Second, Sent: 11100,
