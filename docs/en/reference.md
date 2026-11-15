@@ -62,6 +62,8 @@ The config, a dataset, a report for `compare` and the settings file are UTF-8; a
 | `load.calls[].dataset_seed` | A whole number from 0 to 9007199254740991 that fixes a random order. Needs `dataset_order: random`. Left out — one is drawn and the report prints it |
 | `load.calls[].dataset_reuse` | `true` (left out) or `false`: with `false` no record goes out twice, in the whole process. Needs `dataset` |
 | `load.calls[].templates` | `true` or `false` (left out — `false`; a key with no value is an error): turns on the `{{uuid}}` and `{{seq}}` placeholders in `data`, see [below](#a-request-that-changes-templates). Needs at least one placeholder, not together with `dataset`. |
+| `load.calls[].scenario` | (not released yet) The scenario's name: the call itself becomes step 1, the `steps` follow it. Needs `steps`, and the other way round. Not empty, printed in the report as written; it must not equal a method. See [below](#scenario-steps-after-a-call) |
+| `load.calls[].steps` | (not released yet) A non-empty list of the steps after the call: `method` (required, the full name) and `timeout` (as for a call; left out — `2s`, not the call's timeout). Any other key of a step is not supported yet and is an error |
 | `load.calls[].pass` | The limits a run must meet to pass: `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, see [below](#pass-limits). Left out — no limits |
 | `load.breakpoint.from` | The first step's rate of a breaking-point search, calls a second. A whole number from 1; a fractional one is a config error (`rps must be a whole number of requests: 100.5`). Required: left out or below 1 — `invalid breakpoint: breakpoint.from: breaking-point plan: from 0, want at least 1 rps`, exit 1. The first step must measure at least 100 calls, `from` × (`hold` − `settle`), otherwise it is refused before any load with `invalid breakpoint: the first step measures 8 calls, a p99 needs 100: raise from, hold or lower settle`. With `app.mode: real` the ramp runs from 0 to `from` |
 | `load.breakpoint.to` | No step goes above this rate. A whole number, at least `from` (equal to `from` — one step). Required: left out or below `from` — `invalid breakpoint: breakpoint.to: breaking-point plan: to 50 is below from 100`, exit 1. If the search reaches the last step and it holds, the outcome is `held_all` |
@@ -346,6 +348,43 @@ the file cannot cover is refused before anything is sent, with both numbers. A s
 a record the file no longer has stops like a Ctrl+C (exit code 3): the run in progress is not
 judged and the report says which file ran out and at which rate. One process only: records are
 not split between machines, and a stop leaves records unsent.
+
+## Scenario: steps after a call
+
+```yaml
+load:
+  calls:
+    - method: pay.v1.Wallet/Check
+      rps: 40
+      duration: 1m
+      scenario: pay
+      steps:
+        - method: pay.v1.Wallet/Transfer
+          timeout: 500ms
+        - method: pay.v1.Wallet/History
+```
+
+The unit of the schedule is an iteration, not a call: `rps` is iterations a second. An iteration
+sends the call (step 1), then the steps in order; a step goes out when the one before it ends. If
+a step fails, does not go out or is aborted, the iteration has no later steps. A step's message is
+the empty message of its method. The steps' methods are checked before the load like the calls'
+methods; a typo in a step's method is a config error.
+
+The in-flight need is counted over the sum of the step timeouts (`rps` × Σ step timeouts); when it
+is above `-max-in-flight` the run does not start, and the only advice is `-max-in-flight <N>`.
+
+Not supported yet, and a run with them is refused: a scenario together with `pass`, together with a
+breaking-point search (`load.breakpoint`), and `-dry-run` with a scenario. The live screen and the
+Prometheus metrics do not show a scenario; it is seen in the report only.
+
+The text report has a scenario block after the method table: the iterations and their outcomes,
+the iteration's latency (from the schedule's tick to the end of the last step; no p99 while there
+are fewer observations than the minimum) and a row per step: how many iterations reached the step,
+failed there, were aborted there, were not sent there and did not reach it. A step's latency is
+counted from the end of the previous step. The steps' methods stay ordinary rows of the method
+table, with no plan of their own. In the totals `sent` counts the steps' calls and `scheduled`
+counts iterations; "at N rps scheduled" in the lag warning is the iteration rate too, while the
+window counts the steps' calls.
 
 ## Flags
 
@@ -681,6 +720,7 @@ measured calls only. The first column is the field's full path.
 | `traffic` | object? | Message bodies per second of the measured sending window; `null` without a window |
 | `traffic.sent_bits_per_second`, `traffic.received_bits_per_second` | float | Bits per second, unscaled: request bodies of the measured calls that went out by wire size, replies of successful calls by size before decompression. Without HTTP/2 frames, headers and TLS |
 | `methods` | []object | Methods, see below |
+| `scenarios` | []object | (not released yet) The run's scenarios, see below; an empty array `[]`, not `null`, in a run without scenarios |
 | `unchecked` | []object | Methods that could not be checked through reflection |
 | `unchecked[].method` | string | The method |
 | `unchecked[].reason` | string | `reflection_off` or `reflection_failed` |
@@ -711,7 +751,7 @@ The rest are plain counters.
 | `methods[].rps` | float? | `sent/s`: calls sent divided by the sending time of this method; `null` — no calls |
 | `methods[].timeout_us` | int | The method's timeout |
 | `methods[].planned_rps_low`, `methods[].planned_rps_high` | int | Lowest and highest planned rate of the measured part of the plan, after the excluded window: a ramped call gives its `rps` twice |
-| `methods[].planned_duration_us` | int | How long the method was meant to go, as configured, the ramp included |
+| `methods[].planned_duration_us` | int | How long the method was meant to go, as configured, the ramp included. `0` on a scenario's step method (and `0` in `planned_rps_low`/`planned_rps_high`): it has no plan of its own, the steps are named in `scenarios[].steps[].method` |
 | `methods[].request_bytes` | object? | The request body, mean over the measured calls that went out; `null` without compression |
 | `methods[].request_bytes.raw`, `methods[].request_bytes.wire` | float | Bytes before compression and on the wire (without the 5-byte frame) |
 | `methods[].response_bytes` | float? | The reply body, mean over the measured successful calls, after decompression; `0` for empty replies, `null` when none succeeded |
@@ -795,6 +835,30 @@ have two significant digits, so they are not compared with the run's own by the 
 | `methods[].windows[].p50_us`, `methods[].windows[].p99_us` | int? | Percentiles of the window's latency in microseconds; `null` in a window with no observations. |
 | `methods[].windows[].p99_bound` | bool | The window's p99 is a lower bound: a call that did not finish reaches it. |
 
+### Scenario: `scenarios[]`
+
+One object per scenario. The unit of counting is an iteration: the call and the steps after it,
+sent by one tick of the schedule ([scenario](#scenario-steps-after-a-call)). The steps' methods are
+in `methods[]` as ordinary methods, so `leettest compare` compares them the same way.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `scenarios[].name` | string | (not released yet) The name from `load.calls[].scenario`, as written |
+| `scenarios[].iterations` | int | (not released yet) How many iterations began; not the number of calls |
+| `scenarios[].categories` | object | (not released yet) The outcome of each iteration in one of the 11 categories ([categories](report.md#reading-the-report)); every key is always there, the sum is `iterations` |
+| `scenarios[].categories.success`, `scenarios[].categories.request_error`, `scenarios[].categories.overload`, `scenarios[].categories.failure`, `scenarios[].categories.timed_out`, `scenarios[].categories.cut_off`, `scenarios[].categories.unreachable`, `scenarios[].categories.client_error`, `scenarios[].categories.bad_response`, `scenarios[].categories.aborted`, `scenarios[].categories.unclassified` | int | (not released yet) How many iterations ended with this outcome |
+| `scenarios[].latency` | object | (not released yet) The iteration's latency: from the schedule's tick to the end of the last step |
+| `scenarios[].latency.p50`, `scenarios[].latency.p99` | percentile? | (not released yet) Percentiles over `observations`; `lower_bound` as in `methods[].latency`: an iteration cut by a timeout or a stop lasted at least that long. `p99` is `null` under 100 observations |
+| `scenarios[].observations` | int | (not released yet) Iterations that have a latency |
+| `scenarios[].censored` | int | (not released yet) Of them, known from below only |
+| `scenarios[].steps` | []object | (not released yet) The steps in order, the first is the call itself |
+| `scenarios[].steps[].method` | string | (not released yet) The step's method, spelled as `methods[].method` |
+| `scenarios[].steps[].reached` | int | (not released yet) Iterations that reached the step |
+| `scenarios[].steps[].failed_here` | int | (not released yet) Of them, those that failed on this step |
+| `scenarios[].steps[].aborted_here` | int | (not released yet) Of them, those aborted on this step |
+| `scenarios[].steps[].not_sent_here` | int | (not released yet) Of them, those not sent on this step |
+| `scenarios[].steps[].not_reached` | int | (not released yet) Iterations that did not reach the step: `reached` + `not_reached` = `iterations`, and the next step's `reached` = `reached` minus the three counters before it |
+
 ### Breaking-point search: `mode: "breakpoint"`
 
 A search writes another object: `schema_version`, `leettest_version`, `target` and `started_at` are
@@ -836,6 +900,9 @@ searches or two runs — and prints what changed. Flags come before the files.
 The exit codes are the same for both formats: `0` within the limits or none given, `1` a report that
 could not be read or flags that do not fit, `2` reports that cannot be compared or a limit that
 cannot be decided, `4` a limit missed (also beside a check that cannot be decided).
+
+`compare` does not read a report's `scenarios` block: the steps' methods are compared as ordinary
+methods.
 
 ## Compare JSON
 

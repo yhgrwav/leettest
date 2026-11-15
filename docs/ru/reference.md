@@ -59,6 +59,8 @@ load:
 | `load.calls[].dataset_seed` | Целое от 0 до 9007199254740991, фиксирует случайный порядок. Нужен `dataset_order: random`. Не указан — выбирается сам и печатается в отчёте |
 | `load.calls[].dataset_reuse` | `true` (не указан) или `false`: при `false` ни одна запись не уходит дважды за весь процесс. Нужен `dataset` |
 | `load.calls[].templates` | `true` или `false` (не указан — `false`; ключ без значения — ошибка): включает в `data` подстановки `{{uuid}}` и `{{seq}}`, см. [ниже](#запрос-который-меняется-шаблоны). Нужен хотя бы один плейсхолдер, не вместе с `dataset`. |
+| `load.calls[].scenario` | (не выпущено) Имя сценария: сам вызов становится шагом 1, за ним идут `steps`. Нужен `steps`, и наоборот. Имя не пустое, в отчёте печатается как есть; оно не должно совпадать с методом. См. [ниже](#сценарий-шаги-за-вызовом) |
+| `load.calls[].steps` | (не выпущено) Непустой список шагов после вызова: `method` (обязателен, полное имя) и `timeout` (как у вызова; не указан — `2s`, а не таймаут вызова). Другие ключи шага пока не поддерживаются — ошибка |
 | `load.calls[].pass` | Пределы, по которым прогон проходит или нет: `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, см. [ниже](#пределы-pass). Не указано — пределов нет |
 | `load.breakpoint.from` | Темп первой ступени поиска точки отказа, вызовов в секунду. Целое от 1; дробное — ошибка конфига (`rps must be a whole number of requests: 100.5`). Обязателен: без него или меньше 1 — `invalid breakpoint: breakpoint.from: breaking-point plan: from 0, want at least 1 rps`, выход 1. Первая ступень должна измерить не меньше 100 вызовов, `from` × (`hold` − `settle`), иначе до нагрузки отказ `invalid breakpoint: the first step measures 8 calls, a p99 needs 100: raise from, hold or lower settle`. С `app.mode: real` разгон идёт с 0 до `from` |
 | `load.breakpoint.to` | Выше этого темпа ступеней нет. Целое, не меньше `from` (равное `from` — одна ступень). Обязателен: без него или ниже `from` — `invalid breakpoint: breakpoint.to: breaking-point plan: to 50 is below from 100`, выход 1. Если поиск дошёл до последней ступени и она выдержала, итог `held_all` |
@@ -333,6 +335,41 @@ reflection; ошибка называет строку, `wallets.jsonl:3`, и н
 нужна запись, а в файле её больше нет, останавливается как по Ctrl+C (код выхода 3): идущий
 прогон не судится, отчёт называет файл и скорость. Только один процесс: записи не делятся между
 машинами, а остановка оставляет записи неотправленными.
+
+## Сценарий: шаги за вызовом
+
+```yaml
+load:
+  calls:
+    - method: pay.v1.Wallet/Check
+      rps: 40
+      duration: 1m
+      scenario: pay
+      steps:
+        - method: pay.v1.Wallet/Transfer
+          timeout: 500ms
+        - method: pay.v1.Wallet/History
+```
+
+Единица расписания — итерация, а не вызов: `rps` — итераций в секунду. Итерация шлёт вызов (шаг 1),
+потом шаги по порядку; шаг идёт после конца предыдущего. Если шаг не удался, не ушёл или прерван,
+следующих шагов в этой итерации нет. Сообщение шага — пустое сообщение его метода. Методы шагов
+проверяются до нагрузки, как методы вызовов; опечатка в методе шага — ошибка конфига.
+
+Ожидание в полёте считается по сумме таймаутов шагов (`rps` × Σ таймаутов шагов); если она выше
+`-max-in-flight`, прогон не стартует, и совет один: `-max-in-flight <N>`.
+
+Пока не поддерживаются, и прогон с ними отказывается: сценарий вместе с `pass`, вместе с поиском
+точки отказа (`load.breakpoint`) и `-dry-run` со сценарием. Живой экран и метрики Prometheus
+сценарий не показывают, его видно только в отчёте.
+
+В текстовом отчёте после таблицы методов идёт блок сценария: итерации и их исходы, задержка
+итерации (от тика расписания до конца последнего шага; p99 не печатается, пока наблюдений меньше
+минимума) и строка на каждый шаг: сколько итераций дошло до шага, сколько на нём не удалось, было
+прервано, не ушло и не дошло. Задержка шага считается от конца предыдущего шага. Методы шагов
+остаются обычными строками таблицы методов, но без своего плана. В итогах `sent` считает вызовы
+шагов, а `scheduled` — итерации; «at N rps scheduled» в предупреждении про отставание — тоже темп
+итераций, а окно считает вызовы шагов.
 
 ## Флаги
 
@@ -663,6 +700,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `traffic` | object? | Тела сообщений на секунду окна отправки; `null` без окна |
 | `traffic.sent_bits_per_second`, `traffic.received_bits_per_second` | float | Бит в секунду без масштаба: тела запросов измеренных вызовов, ушедших к цели, по размеру на проводе; тела ответов успешных вызовов по размеру до распаковки. Без кадров HTTP/2, заголовков и TLS |
 | `methods` | []object | Методы, см. ниже |
+| `scenarios` | []object | (не выпущено) Сценарии прогона, см. ниже; у прогона без сценариев — пустой массив `[]`, не `null` |
 | `unchecked` | []object | Методы, которые не удалось проверить через reflection |
 | `unchecked[].method` | string | Метод |
 | `unchecked[].reason` | string | `reflection_off` или `reflection_failed` |
@@ -693,7 +731,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `methods[].rps` | float? | `sent/s`: отправленные, делённые на время отправки этого метода; `null` — ни одного вызова |
 | `methods[].timeout_us` | int | Таймаут метода |
 | `methods[].planned_rps_low`, `methods[].planned_rps_high` | int | Наименьший и наибольший плановый темп измеряемой части плана, после исключённого окна: вызов с разгоном даёт свой `rps` дважды |
-| `methods[].planned_duration_us` | int | Сколько метод должен был идти, как задано, разгон включён |
+| `methods[].planned_duration_us` | int | Сколько метод должен был идти, как задано, разгон включён. `0` у метода шага сценария (и `0` в `planned_rps_low`/`planned_rps_high`): своего плана у него нет, шаги названы в `scenarios[].steps[].method` |
 | `methods[].request_bytes` | object? | Тело запроса в среднем по измеренным вызовам, ушедшим к цели; `null` без сжатия |
 | `methods[].request_bytes.raw`, `methods[].request_bytes.wire` | float | Байт до сжатия и на проводе (без 5-байтовой рамки) |
 | `methods[].response_bytes` | float? | Тело ответа в среднем по измеренным успешным вызовам, после распаковки; `0` для пустых ответов, `null` — успехов не было |
@@ -776,6 +814,30 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `methods[].windows[].p50_us`, `methods[].windows[].p99_us` | int? | Перцентили задержки окна в микросекундах; `null` в окне без наблюдений. |
 | `methods[].windows[].p99_bound` | bool | p99 окна — нижняя граница: до него дотягивается вызов, не закончившийся. |
 
+### Сценарий: `scenarios[]`
+
+Один объект на сценарий. Единица счёта — итерация: вызов и шаги за ним, пущенные одним тиком
+расписания ([сценарий](#сценарий-шаги-за-вызовом)). Методы шагов лежат в `methods[]` как обычные
+методы, поэтому `leettest compare` сравнивает их так же.
+
+| Поле | Тип | Что значит |
+|---|---|---|
+| `scenarios[].name` | string | (не выпущено) Имя из `load.calls[].scenario`, как записано |
+| `scenarios[].iterations` | int | (не выпущено) Сколько итераций началось; не число вызовов |
+| `scenarios[].categories` | object | (не выпущено) Исход каждой итерации по одной из 11 категорий ([категории](report.md#как-читать-отчёт)); все ключи есть всегда, сумма равна `iterations` |
+| `scenarios[].categories.success`, `scenarios[].categories.request_error`, `scenarios[].categories.overload`, `scenarios[].categories.failure`, `scenarios[].categories.timed_out`, `scenarios[].categories.cut_off`, `scenarios[].categories.unreachable`, `scenarios[].categories.client_error`, `scenarios[].categories.bad_response`, `scenarios[].categories.aborted`, `scenarios[].categories.unclassified` | int | (не выпущено) Сколько итераций кончилось этим исходом |
+| `scenarios[].latency` | object | (не выпущено) Задержка итерации: от тика расписания до конца последнего шага |
+| `scenarios[].latency.p50`, `scenarios[].latency.p99` | перцентиль? | (не выпущено) Перцентили по `observations`; `lower_bound` — как у `methods[].latency`: итерация, которую оборвал таймаут или остановка, длилась не меньше. `p99` — `null` при менее 100 наблюдений |
+| `scenarios[].observations` | int | (не выпущено) Итерации, у которых есть задержка |
+| `scenarios[].censored` | int | (не выпущено) Из них известных только снизу |
+| `scenarios[].steps` | []object | (не выпущено) Шаги по порядку, первый — сам вызов |
+| `scenarios[].steps[].method` | string | (не выпущено) Метод шага, написан как `methods[].method` |
+| `scenarios[].steps[].reached` | int | (не выпущено) Итерации, дошедшие до шага |
+| `scenarios[].steps[].failed_here` | int | (не выпущено) Из них упавшие на этом шаге |
+| `scenarios[].steps[].aborted_here` | int | (не выпущено) Из них прерванные на этом шаге |
+| `scenarios[].steps[].not_sent_here` | int | (не выпущено) Из них не ушедшие на этом шаге |
+| `scenarios[].steps[].not_reached` | int | (не выпущено) Итерации, не дошедшие до шага: `reached` + `not_reached` = `iterations`, а `reached` следующего шага = `reached` минус три предыдущих счётчика |
+
 ### Поиск точки отказа: `mode: "breakpoint"`
 
 Поиск пишет другой объект: поля `schema_version`, `leettest_version`, `target`, `started_at` — как у
@@ -816,6 +878,8 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 Коды выхода одни для обоих форматов: `0` — в пределах или пределов нет, `1` — отчёт не прочитан или
 флаги не сошлись, `2` — отчёты несравнимы или предел нельзя решить, `4` — предел нарушен (и рядом с
 проверкой, которую решить нельзя).
+
+Блок `scenarios` отчёта `compare` не читает: методы шагов сравниваются как обычные методы.
 
 ## JSON сравнения
 

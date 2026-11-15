@@ -585,6 +585,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `traffic` | object? | 发送窗口内每秒的消息体流量；无窗口时为 `null` |
 | `traffic.sent_bits_per_second`, `traffic.received_bits_per_second` | float | 每秒比特数，未换算单位：请求体按线上大小，成功调用的响应体按解压前大小。不含 HTTP/2 帧、头部和 TLS |
 | `methods` | []object | 方法，见下文 |
+| `scenarios` | []object | （未发布）本次运行的场景，见下文；没有场景时是空数组 `[]`，不是 `null` |
 | `unchecked` | []object | 无法通过 reflection 检查的方法 |
 | `unchecked[].method` | string | 方法 |
 | `unchecked[].reason` | string | `reflection_off` 或 `reflection_failed` |
@@ -695,6 +696,28 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `methods[].windows[].failed` | int | 其中失败的调用，定义与方法的 `failed` 相同。 |
 | `methods[].windows[].p50_us`、`methods[].windows[].p99_us` | int? | 窗口延迟的百分位，单位微秒；没有观测的窗口为 `null`。 |
 | `methods[].windows[].p99_bound` | bool | 窗口的 p99 是下界：有未完成的调用达到了它。 |
+
+### 场景：`scenarios[]`
+
+每个场景一个对象。计数单位是迭代：一次调用和它之后的步骤，由计划的一个节拍发出。步骤的方法作为普通方法出现在 `methods[]` 中。
+
+| 字段 | 类型 | 含义 |
+|---|---|---|
+| `scenarios[].name` | string | （未发布）`load.calls[].scenario` 中的名称，原样 |
+| `scenarios[].iterations` | int | （未发布）开始了多少次迭代；不是调用数 |
+| `scenarios[].categories` | object | （未发布）每次迭代在 11 个类别之一中的结果；所有键始终存在，总和等于 `iterations` |
+| `scenarios[].categories.success`、`scenarios[].categories.request_error`、`scenarios[].categories.overload`、`scenarios[].categories.failure`、`scenarios[].categories.timed_out`、`scenarios[].categories.cut_off`、`scenarios[].categories.unreachable`、`scenarios[].categories.client_error`、`scenarios[].categories.bad_response`、`scenarios[].categories.aborted`、`scenarios[].categories.unclassified` | int | （未发布）以该结果结束的迭代数 |
+| `scenarios[].latency` | object | （未发布）迭代的延迟：从计划的节拍到最后一步结束 |
+| `scenarios[].latency.p50`、`scenarios[].latency.p99` | percentile? | （未发布）基于 `observations` 的百分位；`lower_bound` 同 `methods[].latency`。观测少于 100 时 `p99` 为 `null` |
+| `scenarios[].observations` | int | （未发布）有延迟的迭代数 |
+| `scenarios[].censored` | int | （未发布）其中只知道下界的 |
+| `scenarios[].steps` | []object | （未发布）按顺序的步骤，第一个是调用本身 |
+| `scenarios[].steps[].method` | string | （未发布）步骤的方法，写法同 `methods[].method` |
+| `scenarios[].steps[].reached` | int | （未发布）到达该步骤的迭代数 |
+| `scenarios[].steps[].failed_here` | int | （未发布）其中在该步骤失败的 |
+| `scenarios[].steps[].aborted_here` | int | （未发布）其中在该步骤被中止的 |
+| `scenarios[].steps[].not_sent_here` | int | （未发布）其中在该步骤未发出的 |
+| `scenarios[].steps[].not_reached` | int | （未发布）未到达该步骤的迭代数：`reached` + `not_reached` = `iterations` |
 
 ### 崩溃点搜索：`mode: "breakpoint"`
 
