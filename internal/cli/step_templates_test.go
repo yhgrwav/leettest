@@ -19,7 +19,9 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -492,5 +494,62 @@ func TestReport_TemplatesLineIsTheUnionOfCallAndSteps(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Ground: concurrency — the workers of every iteration in flight build their
+// step's body at once, from one builder: each body carries the seq it was asked
+// for and a uuid of its own, none is mixed with another's (a shared message or
+// buffer written without the lock). Meaningful under -race.
+// Mutation: the builder's lock is dropped.
+func TestAttachMethods_StepTemplateBuildIsSafeInParallel(t *testing.T) {
+	call := attachedStepped(t, steppedConfig(
+		map[string]any{"id": "{{uuid}}"},
+		tplStep(map[string]any{"id": "{{uuid}}", "note": "n-{{seq}}", "count": "{{seq}}"}),
+	))
+	build := call.Next[0].Build
+	if build == nil {
+		t.Fatal("the templated step has no Build")
+	}
+
+	const workers, perWorker = 64, 50
+
+	type built struct {
+		seq  uint64
+		body []byte
+	}
+
+	results := make(chan built, workers*perWorker)
+
+	var wg sync.WaitGroup
+	for w := range workers {
+		wg.Go(func() {
+			for i := range perWorker {
+				seq := uint64(w*perWorker + i + 1)
+				results <- built{seq: seq, body: build(seq)}
+			}
+		})
+	}
+	wg.Wait()
+	close(results)
+
+	ids := make(map[string]bool, workers*perWorker)
+	bad := 0
+
+	for r := range results {
+		msg := decodeOrder(t, r.body)
+		id := fieldOf(msg, "id").String()
+
+		if note, want := fieldOf(msg, "note").String(), "n-"+strconv.FormatUint(r.seq, 10); note != want || uint64(fieldOf(msg, "count").Int()) != r.seq || !uuidV4.MatchString(id) || ids[id] {
+			bad++
+			if bad <= 3 {
+				t.Errorf("seq %d: body has note %q, count %d, id %q (repeated: %v)", r.seq, note, fieldOf(msg, "count").Int(), id, ids[id])
+			}
+		}
+		ids[id] = true
+	}
+
+	if bad > 3 {
+		t.Errorf("%d bodies in all are wrong", bad)
 	}
 }
