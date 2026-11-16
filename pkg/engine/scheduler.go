@@ -148,10 +148,6 @@ func (s *Scheduler) runStage(ctx context.Context, out chan<- Request, stage Stag
 	}
 }
 
-func (s *Scheduler) newRequest(scheduledAt time.Time) Request {
-	return s.Call.newRequest(scheduledAt)
-}
-
 // newRequest is on the Call, not on a Scheduler made for the occasion: the
 // request keeps a pointer to c, and that must be a Call that lives on.
 func (c *Call) newRequest(scheduledAt time.Time) Request {

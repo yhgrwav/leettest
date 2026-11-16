@@ -284,7 +284,7 @@ func TestScheduler_BuildingARequestDoesNotUseUpItsRecord(t *testing.T) {
 	s := NewScheduler(datasetCall(3, counter, atRate(100, 1)))
 	at := time.Now()
 
-	first, second := s.newRequest(at), s.newRequest(at)
+	first, second := s.Call.newRequest(at), s.Call.newRequest(at)
 
 	if recordNumber(first) != 0 || recordNumber(second) != 0 {
 		t.Errorf("records = %d and %d, want 0 and 0: nothing was handed out", recordNumber(first), recordNumber(second))
@@ -305,12 +305,12 @@ func TestScheduler_NewRequestWithADatasetAllocatesNoMore(t *testing.T) {
 
 	// The request carries the record, not an empty payload: the comparison
 	// below is of a dataset call that does its work.
-	if got := with.newRequest(at); !slices.Equal(got.Payload, []byte{0}) {
+	if got := with.Call.newRequest(at); !slices.Equal(got.Payload, []byte{0}) {
 		t.Fatalf("payload = %v, want record 0", got.Payload)
 	}
 
-	withAllocs := testing.AllocsPerRun(1000, func() { sinkRequest = with.newRequest(at) })
-	withoutAllocs := testing.AllocsPerRun(1000, func() { sinkRequest = without.newRequest(at) })
+	withAllocs := testing.AllocsPerRun(1000, func() { sinkRequest = with.Call.newRequest(at) })
+	withoutAllocs := testing.AllocsPerRun(1000, func() { sinkRequest = without.Call.newRequest(at) })
 
 	if withAllocs > withoutAllocs {
 		t.Errorf("allocations per request: %v with a dataset, %v without", withAllocs, withoutAllocs)

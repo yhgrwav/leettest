@@ -85,7 +85,7 @@ type Step struct {
 // payload is the body of the call's next request: the record at S mod n, where
 // S is the number of requests the call has handed out so far. Reading S moves
 // nothing, so building a request does not use up its record. A templated call
-// does not come here (Scheduler.newRequest): the body check stays small enough
+// does not come here (Call.newRequest): the body check stays small enough
 // to be inlined, as it was before templates (BenchmarkNewRequest_Plain).
 func (c *Call) payload() []byte {
 	if c.Dataset == nil || len(c.Payloads) == 0 {

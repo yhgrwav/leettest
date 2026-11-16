@@ -451,10 +451,10 @@ func TestScheduler_PlainRequestCarriesNoSeq(t *testing.T) {
 	data := NewScheduler(datasetCall(3, NewRecordCounter(), atRate(10, 3)))
 	at := time.Now()
 
-	if req := plain.newRequest(at); req.Seq != 0 {
+	if req := plain.Call.newRequest(at); req.Seq != 0 {
 		t.Errorf("a plain request carries Seq %d, want 0", req.Seq)
 	}
-	if req := data.newRequest(at); req.Seq != 0 {
+	if req := data.Call.newRequest(at); req.Seq != 0 {
 		t.Errorf("a dataset request carries Seq %d, want 0", req.Seq)
 	}
 }

@@ -492,10 +492,10 @@ func TestScheduler_NewRequestWithoutTemplatesAllocatesNothing(t *testing.T) {
 	data := NewScheduler(datasetCall(3, NewRecordCounter(), atRate(10, 3)))
 	at := time.Now()
 
-	if n := testing.AllocsPerRun(1000, func() { _ = plain.newRequest(at) }); n != 0 {
+	if n := testing.AllocsPerRun(1000, func() { _ = plain.Call.newRequest(at) }); n != 0 {
 		t.Errorf("a plain call allocates %v per request, want 0", n)
 	}
-	if n := testing.AllocsPerRun(1000, func() { _ = data.newRequest(at) }); n != 0 {
+	if n := testing.AllocsPerRun(1000, func() { _ = data.Call.newRequest(at) }); n != 0 {
 		t.Errorf("a dataset call allocates %v per request, want 0", n)
 	}
 }

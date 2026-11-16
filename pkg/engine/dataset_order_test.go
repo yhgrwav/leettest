@@ -169,7 +169,7 @@ func TestScheduler_BuildingARandomRequestDoesNotUseUpItsRecord(t *testing.T) {
 	s := NewScheduler(datasetCall(5, counter, atRate(100, 1)))
 	at := time.Now()
 
-	first, second := s.newRequest(at), s.newRequest(at)
+	first, second := s.Call.newRequest(at), s.Call.newRequest(at)
 
 	if recordNumber(first) != 1 || recordNumber(second) != 1 {
 		t.Errorf("records = %d and %d, want 1 twice: the first of the permutation", recordNumber(first), recordNumber(second))
@@ -185,8 +185,8 @@ func TestScheduler_NewRequestWithARandomDatasetAllocatesNoMore(t *testing.T) {
 	with := NewScheduler(datasetCall(5, NewShuffledCounter(5, goldenSeed), atRate(100, 1)))
 	without := NewScheduler(Call{Method: "a.B/One", Payload: []byte{9}, Timeout: time.Second, Stages: []Stage{atRate(100, 1)}})
 
-	withAllocs := testing.AllocsPerRun(1000, func() { sinkRequest = with.newRequest(at) })
-	withoutAllocs := testing.AllocsPerRun(1000, func() { sinkRequest = without.newRequest(at) })
+	withAllocs := testing.AllocsPerRun(1000, func() { sinkRequest = with.Call.newRequest(at) })
+	withoutAllocs := testing.AllocsPerRun(1000, func() { sinkRequest = without.Call.newRequest(at) })
 
 	if withAllocs > withoutAllocs {
 		t.Errorf("allocations per request: %v with a random dataset, %v without", withAllocs, withoutAllocs)
