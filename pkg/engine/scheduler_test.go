@@ -164,6 +164,37 @@ func TestRunStopsOnCancel(t *testing.T) {
 	}
 }
 
+// Ground: contract — a run judges its schedule once, as the Dispatcher does ("nothing in Run asks
+// again"). A measure of the clock step per request costs 8..40 ms on Windows, 0.25 s on a 15.6 ms
+// clock: it delays every request and turns TestRunStopsOnCancel into a coin flip (8/20 and 16/20
+// red at -count=20).
+func TestRunMeasuresTheClockStepOnce(t *testing.T) {
+	const requests = 5
+
+	var measured int
+
+	saved := stepOf
+	stepOf = func(func() time.Time) time.Duration {
+		measured++
+
+		return time.Millisecond
+	}
+	t.Cleanup(func() { stepOf = saved })
+
+	s := NewScheduler(Call{Method: "a.B/C", Stages: []Stage{{StartRPS: 100, TargetRPS: 100, Duration: 50 * time.Millisecond}}})
+
+	got, err := collect(context.Background(), t, s)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if len(got) != requests {
+		t.Fatalf("got %d requests, want %d", len(got), requests)
+	}
+	if measured > 1 {
+		t.Errorf("the clock step was measured %d times for %d requests, want at most once per run", measured, len(got))
+	}
+}
+
 // Ground: contract — Scheduler is exported; its requests are what a library caller sends.
 func TestRequestsCarryCallFields(t *testing.T) {
 	call := Call{
