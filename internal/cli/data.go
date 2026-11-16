@@ -154,6 +154,10 @@ func AttachMethods(
 
 	methods = make([]*descriptor.Method, len(cfg.Load.Calls))
 
+	// The narrowest {{seq}} field of the templated steps of each call, folded
+	// into the call's template once every call has its own.
+	narrowest := make([]narrowestLimit, len(cfg.Load.Calls))
+
 	for i := range cfg.Load.Calls {
 		call := &cfg.Load.Calls[i]
 
@@ -168,6 +172,24 @@ func AttachMethods(
 				errs = append(errs, stepErr)
 			}
 			if stepMethod == nil || step.Data == nil {
+				continue
+			}
+
+			if step.TemplatesOn() {
+				// Made per iteration by the worker, with the iteration's seq; the step
+				// holds no ready body. The narrow field is remembered by its step.
+				at := fmt.Sprintf("load.calls[%d].steps[%d] (%s)", i, k, step.Method)
+
+				build, limit, tplErr := compileTemplate(stepMethod, at, step.Data)
+				if tplErr != nil {
+					errs = append(errs, tplErr)
+
+					continue
+				}
+
+				calls[i].Next[k].Build = build
+				narrowest[i].add(limit, fmt.Sprintf("%s (steps[%d])", calls[i].Next[k].Method, k))
+
 				continue
 			}
 
@@ -244,6 +266,11 @@ func AttachMethods(
 		}
 
 		if call.Data == nil {
+			if call.TemplatesOn() {
+				// Templated for the sake of its steps: step 1 is the empty message.
+				calls[i].Template = engine.NewTemplate(call.AllTemplatePlaceholders(), 0, func(uint64) []byte { return nil })
+			}
+
 			continue
 		}
 
@@ -268,6 +295,10 @@ func AttachMethods(
 		}
 
 		calls[i].Payload = body
+	}
+
+	for i := range narrowest {
+		narrowest[i].narrow(calls[i].Template)
 	}
 
 	return unchecked, methods, errors.Join(errs...)
