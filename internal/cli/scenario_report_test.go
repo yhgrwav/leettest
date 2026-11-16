@@ -334,6 +334,38 @@ func TestPrintReport_AScenarioBlockWithNoIterationEnded(t *testing.T) {
 	}
 }
 
+// A scenario that ended exactly one iteration says "1 iteration"; every other
+// count, zero included, stays plural. The rest of the line does not change: the
+// rate and the outcome split follow the word as before.
+// Ground: contract — the visible text of the block. Mutations "always plural"
+// dies on the count of 1, "always singular" dies on 0 and 2.
+func TestPrintReport_OneIterationIsSingular(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		iterations int
+		want       string
+	}{
+		{"one", 1, "  1 iteration, started at 12/s: success 1"},
+		{"none", 0, "  0 iterations, started at 12/s"},
+		{"two", 2, "  2 iterations, started at 12/s: success 2"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			run := scenarioRun()
+			run.Scenarios[0].Iterations = tc.iterations
+			run.Scenarios[0].ByCategory = nil
+			if tc.iterations > 0 {
+				run.Scenarios[0].ByCategory = map[engine.Category]int{engine.CategorySuccess: tc.iterations}
+			}
+
+			got := blockAt(t, run, "pay-and-check", 2)
+
+			if got[1] != tc.want {
+				t.Errorf("first line of the block:\n got %q\nwant %q", got[1], tc.want)
+			}
+		})
+	}
+}
+
 // A step method that went silent: its note keeps what the silence says (the
 // last answer) and has no rate, as a step has no plan and its sent rate is the
 // head call's tick seen from one step, not a rate the user set. The head call
