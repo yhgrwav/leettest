@@ -19,6 +19,7 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -551,5 +552,55 @@ func TestAttachMethods_StepTemplateBuildIsSafeInParallel(t *testing.T) {
 
 	if bad > 3 {
 		t.Errorf("%d bodies in all are wrong", bad)
+	}
+}
+
+// Ground: contract (spec 5) — a templated call whose own data has no
+// placeholder, the placeholders being in its step, still has a Template whose
+// Build is the call's data, the same bytes at every seq (the empty message for
+// no data); the limit is 0 and the placeholders are the step's only. A Build
+// that returned nil would send step 1 an empty request, and the rest of the
+// tests would not notice.
+// Mutation: the Build of the call returns nil.
+func TestAttachMethods_TemplatedCallWithoutOwnPlaceholdersSendsItsData(t *testing.T) {
+	fixed := map[string]any{"id": "fixed"}
+	wantFixed, err := RequestBody(orderMessage(t), fixed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wantFixed) == 0 {
+		t.Fatal("the expected body is empty: the test is not set up")
+	}
+
+	for _, tc := range []struct {
+		name string
+		data map[string]any
+		want []byte
+	}{
+		{"data without placeholders", fixed, wantFixed},
+		{"no data", nil, nil},
+		{"empty data", map[string]any{}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			call := attachedStepped(t, steppedConfig(tc.data, tplStep(map[string]any{"note": "n-{{seq}}"})))
+
+			if call.Template.Build == nil {
+				t.Fatal("the call's Template has no Build: step 1 would have no body")
+			}
+			for _, seq := range []uint64{1, 2} {
+				if got := call.Template.Build(seq); !bytes.Equal(got, tc.want) {
+					t.Errorf("Build(%d) = %x, want %x: the call's own data, the same at every seq", seq, got, tc.want)
+				}
+			}
+			if call.Template.Max != 0 {
+				t.Errorf("Max = %d, want 0: the call's body has no number field a seq goes into", call.Template.Max)
+			}
+			if want := []string{"seq"}; !slices.Equal(call.Template.Placeholders, want) {
+				t.Errorf("Placeholders = %q, want %q: the steps' only", call.Template.Placeholders, want)
+			}
+			if call.Payload != nil || call.Payloads != nil {
+				t.Errorf("the call holds a ready body beside the Template")
+			}
+		})
 	}
 }
