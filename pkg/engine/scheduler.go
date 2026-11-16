@@ -51,6 +51,9 @@ type Request struct {
 	// Seq is the seq the call's template built this request's body with, for
 	// the steps of its iteration; zero for a call without a template.
 	Seq uint64
+	// StepRows is the row each dataset step of Next takes in this iteration,
+	// indexed as Next; nil for a call without dataset steps.
+	StepRows []int32
 }
 
 type Scheduler struct {

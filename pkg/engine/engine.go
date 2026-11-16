@@ -35,6 +35,9 @@ var (
 	ErrScenarioNeedsName = errors.New("a call with steps needs a scenario name")
 	// ErrScenario is a call with a Scenario name and no Next.
 	ErrScenario = errors.New("scenario needs next steps: add them or drop the name")
+	// ErrStepDatasetOnce is a step whose Dataset has Once set: a step's rows
+	// are never spent, only wrapped, and Once on one would be ignored.
+	ErrStepDatasetOnce = errors.New("a step's dataset does not support Once")
 )
 
 type Call struct {
@@ -71,6 +74,12 @@ type Step struct {
 	// Build makes the step's body for the iteration whose seq is given; nil
 	// sends Payload.
 	Build func(seq uint64) []byte
+	// Payloads are the requests of a dataset step, one record each, and Dataset
+	// is what the report says of them, its Counter the step's own position.
+	// Iteration S sends Payloads[S mod len], or the Counter's shuffled row; nil
+	// Payloads: Payload.
+	Payloads [][]byte
+	Dataset  *DatasetRef
 }
 
 // payload is the body of the call's next request: the record at S mod n, where

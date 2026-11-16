@@ -449,6 +449,16 @@ type Step struct {
 	// sends the braces as text. true makes Data a template; it needs
 	// templates: true on the call and a placeholder in Data.
 	Templates *bool `yaml:"templates"`
+	// RawDataset, Dataset, Records, DatasetSHA256, DatasetOrder and DatasetSeed
+	// are the step's dataset, as the call's: the path as written, kept for what
+	// prints it, the file's requests read by LoadFile, the file's sha256, and the
+	// order and seed of the rows. Nil when left out.
+	RawDataset    *string         `yaml:"dataset"`
+	Dataset       string          `yaml:"-"`
+	Records       []DatasetRecord `yaml:"-"`
+	DatasetSHA256 string          `yaml:"-"`
+	DatasetOrder  *string         `yaml:"dataset_order"`
+	DatasetSeed   *int64          `yaml:"dataset_seed"`
 }
 
 // Pass is a call's pass: section as written, key to value, so that a wrong key
