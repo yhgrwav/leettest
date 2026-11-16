@@ -67,10 +67,17 @@ func steppedConfig(callData map[string]any, steps ...stepSpec) *config.MasterCon
 		out[k] = config.Step{Method: stepMethods[k], Timeout: 100 * time.Millisecond, Data: s.data, Templates: s.templates}
 	}
 
-	return &config.MasterConfig{Load: config.Load{Calls: []config.Call{{
+	call := config.Call{
 		Method: orderMethod, RPS: 50, Duration: 300 * time.Millisecond, Timeout: 100 * time.Millisecond,
-		Scenario: "order-flow", Steps: out, Data: callData, Templates: templatesOn(),
-	}}}}
+		Scenario: "order-flow", Steps: out, Templates: templatesOn(),
+	}
+	// No data is a nil Data, as a config without the key has it; a nil map in
+	// the interface would be data, taken the other way.
+	if callData != nil {
+		call.Data = callData
+	}
+
+	return &config.MasterConfig{Load: config.Load{Calls: []config.Call{call}}}
 }
 
 func stepResolver(t testing.TB) *fakeResolver {
