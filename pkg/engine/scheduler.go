@@ -166,13 +166,15 @@ func (c *Call) newRequest(scheduledAt time.Time) Request {
 	} else {
 		req.Payload = c.payload()
 	}
+	if c.Timeout > 0 {
+		req.Deadline = scheduledAt.Add(c.Timeout)
+	}
+	// Last on purpose: stepRows is a call that keeps c and scheduledAt alive
+	// across it, and placed earlier the compiler spills the arguments on every
+	// path, +1.5 ns on a call without steps.
 	if len(c.Next) > 0 {
 		req.scenario = c
 		req.StepRows = c.stepRows()
-	}
-
-	if c.Timeout > 0 {
-		req.Deadline = scheduledAt.Add(c.Timeout)
 	}
 
 	return req
