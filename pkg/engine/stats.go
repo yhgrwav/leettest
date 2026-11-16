@@ -136,6 +136,9 @@ type SeqOverflow struct {
 	Method string
 	// Limit is the largest seq the field can hold.
 	Limit uint64
+	// LimitAt is Template.MaxAt: the step whose field sets Limit, as
+	// "<method> (steps[k])"; empty when it is the call's own.
+	LimitAt string
 }
 
 type MethodReport struct {

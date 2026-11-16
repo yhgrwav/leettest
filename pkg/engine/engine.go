@@ -114,7 +114,7 @@ func (c *Call) seqOverflow() error {
 		return nil
 	}
 
-	return &SeqOverflowError{Method: c.Method, Limit: c.Template.Max}
+	return &SeqOverflowError{Method: c.Method, Limit: c.Template.Max, LimitAt: c.Template.MaxAt}
 }
 
 // SeqOverflowError is what the dispatcher and the scheduler return when the
@@ -123,6 +123,8 @@ func (c *Call) seqOverflow() error {
 type SeqOverflowError struct {
 	Method string
 	Limit  uint64
+	// LimitAt is Template.MaxAt: the step with the narrowest field, if it is a step.
+	LimitAt string
 }
 
 func (e *SeqOverflowError) Error() string {
@@ -752,7 +754,7 @@ func (e *Engine) Run(ctx context.Context) error {
 		if over := (*SeqOverflowError)(nil); errors.As(err, &over) {
 			// The next seq does not fit its field: the plan is cut short, calls
 			// in flight finish, and the run still reports what went out.
-			e.seqOverflow.Store(&SeqOverflow{Method: over.Method, Limit: over.Limit})
+			e.seqOverflow.Store(&SeqOverflow{Method: over.Method, Limit: over.Limit, LimitAt: over.LimitAt})
 			e.incomplete.Store(true)
 			stopScheduling()
 			scheduleMu.Lock()

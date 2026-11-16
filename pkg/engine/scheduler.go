@@ -144,8 +144,9 @@ func (s *Scheduler) newRequest(scheduledAt time.Time) Request {
 		Scenario:     s.Call.Scenario,
 		Next:         s.Call.Next,
 	}
-	if s.Call.Template != nil {
-		req.Payload = s.Call.Template.body()
+	if tpl := s.Call.Template; tpl != nil {
+		req.Seq = tpl.nextSeq()
+		req.Payload = tpl.bodyAt(req.Seq)
 	} else {
 		req.Payload = s.Call.payload()
 	}

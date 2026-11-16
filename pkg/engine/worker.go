@@ -394,6 +394,11 @@ func (p *WorkerPool) iterate(r *poolRun, first Request, out chan<- Result) {
 
 		next := first.Next[k]
 		req = Request{Method: next.Method, Payload: next.Payload, ScheduledAt: step.DoneAt}
+		if next.Build != nil {
+			// The body is built here, in the worker, with the seq of the iteration:
+			// its cost is step start lag, and the seq is the one of step 1.
+			req.Payload = next.Build(first.Seq)
+		}
 		if next.Timeout > 0 {
 			req.Deadline = req.ScheduledAt.Add(next.Timeout)
 		}
