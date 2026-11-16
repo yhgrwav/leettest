@@ -196,8 +196,8 @@ func TestRunStopsOnCancel(t *testing.T) {
 	}
 }
 
-// standsInSend reports whether some goroutine is blocked in a select whose own frame is
-// Scheduler.runStage: the select that sends to out, the one place Run waits on its reader (the
+// standsInSend reports whether some goroutine is blocked in a select (or a bare send) whose own
+// frame is Scheduler.runStage: the send to out, the one place Run waits on its reader (the
 // wait for the next tick is inside waitUntil, another frame). Run has no seam there, so the test
 // reads the stacks.
 func standsInSend() bool {
@@ -210,7 +210,8 @@ func standsInSend() bool {
 			continue
 		}
 
-		if strings.Contains(lines[0], "[select") && strings.Contains(lines[1], "(*Scheduler).runStage") {
+		blocked := strings.Contains(lines[0], "[select") || strings.Contains(lines[0], "[chan send")
+		if blocked && strings.Contains(lines[1], "(*Scheduler).runStage") {
 			return true
 		}
 	}
