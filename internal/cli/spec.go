@@ -56,10 +56,14 @@ func CallsFromConfig(cfg *config.MasterConfig) ([]engine.Call, error) {
 			// Their bodies (Payload, or Build for a templated step) come from
 			// AttachMethods; without it a step sends the empty message.
 			built.Scenario = call.Scenario
-			built.Next = make([]engine.Step, len(call.Steps))
-			for k, step := range call.Steps {
-				built.Next[k] = engine.Step{Method: "/" + step.Method, Timeout: step.Timeout}
+			steps, err := stepsFromConfig(call)
+			if err != nil {
+				errs = append(errs, err)
+
+				continue
 			}
+
+			built.Next = steps
 		}
 		if cfg.Load.Ramp > 0 {
 			// The ramp comes before the call's duration: it does not shorten it.
@@ -79,7 +83,7 @@ func CallsFromConfig(cfg *config.MasterConfig) ([]engine.Call, error) {
 			}
 
 			built.Payloads = make([][]byte, len(call.Records))
-			counter, err := datasetCounter(call)
+			counter, err := datasetCounter(call.DatasetOrder, call.DatasetSeed, len(call.Records))
 			if err != nil {
 				errs = append(errs, fmt.Errorf("%s: %w", call.Method, err))
 
@@ -114,13 +118,13 @@ func ExcludedWindow(cfg *config.MasterConfig) time.Duration {
 // datasetCounter is the counter of a dataset call: the file's order, or a
 // random one. A random order without a seed in the config draws one here, once
 // per call, so that the report can name it.
-func datasetCounter(call *config.Call) (*engine.RecordCounter, error) {
-	if call.DatasetOrder == nil || *call.DatasetOrder != config.DatasetOrderRandom {
+func datasetCounter(order *string, seed *int64, records int) (*engine.RecordCounter, error) {
+	if order == nil || *order != config.DatasetOrderRandom {
 		return engine.NewRecordCounter(), nil
 	}
 
-	if call.DatasetSeed != nil {
-		return engine.NewShuffledCounter(len(call.Records), uint64(*call.DatasetSeed)), nil //nolint:gosec // config validation keeps dataset_seed in 0 to 2^53-1 (ErrDatasetSeed)
+	if seed != nil {
+		return engine.NewShuffledCounter(records, uint64(*seed)), nil //nolint:gosec // config validation keeps dataset_seed in 0 to 2^53-1 (ErrDatasetSeed)
 	}
 
 	var raw [8]byte
@@ -128,7 +132,44 @@ func datasetCounter(call *config.Call) (*engine.RecordCounter, error) {
 		return nil, fmt.Errorf("draw a seed: %w", err)
 	}
 
-	return engine.NewShuffledCounter(len(call.Records), binary.LittleEndian.Uint64(raw[:])&engine.MaxShuffleSeed), nil
+	return engine.NewShuffledCounter(records, binary.LittleEndian.Uint64(raw[:])&engine.MaxShuffleSeed), nil
+}
+
+// stepsFromConfig is the steps of a call as engine steps. A step with a dataset
+// gets one empty payload per record and a counter of its own, as a call does;
+// its records go in later, in AttachMethods. A dataset whose records were never
+// read is an error, as the call's is.
+func stepsFromConfig(call *config.Call) ([]engine.Step, error) {
+	steps := make([]engine.Step, len(call.Steps))
+
+	var errs []error
+
+	for k := range call.Steps {
+		step := &call.Steps[k]
+		steps[k] = engine.Step{Method: "/" + step.Method, Timeout: step.Timeout}
+
+		if step.Dataset == "" {
+			continue
+		}
+		if len(step.Records) == 0 {
+			errs = append(errs, fmt.Errorf("%s: steps[%d]: dataset %s: not read; load the config with LoadFile",
+				call.Method, k, step.Dataset))
+
+			continue
+		}
+
+		counter, err := datasetCounter(step.DatasetOrder, step.DatasetSeed, len(step.Records))
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: steps[%d]: %w", call.Method, k, err))
+
+			continue
+		}
+
+		steps[k].Payloads = make([][]byte, len(step.Records))
+		steps[k].Dataset = &engine.DatasetRef{File: step.Dataset, SHA256: step.DatasetSHA256, Counter: counter}
+	}
+
+	return steps, errors.Join(errs...)
 }
 
 // displayMethod shows a method the way the config names it: the engine carries

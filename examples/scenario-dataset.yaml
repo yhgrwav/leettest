@@ -1,0 +1,27 @@
+# A scenario whose step takes its request body from a file: one iteration is a balance
+# check followed by a transfer, and each iteration's transfer is the next record of the
+# file. The step has its own position in the file, apart from the call's. Against the
+# reference stand, from the repository root:
+#   go run ./test/stand/cmd/stand -delay 20ms
+#   leettest -c examples/scenario-dataset.yaml
+
+app:
+  target:
+    ip: 127.0.0.1
+    port: 50051
+  tls: false
+
+load:
+  calls:
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 50
+      duration: 1m
+      data:
+        wallet_id: "w-42"
+      scenario: pay-and-check
+      steps:
+        - method: wallet.v1.WalletService/Transfer
+          timeout: 500ms
+          dataset: transfers.jsonl  # a different transfer each iteration: one JSON per line, in order, then again
+          dataset_order: random     # file (default) or random: a new permutation of the file on each pass
+          dataset_seed: 42          # random only; left out, a seed is drawn and the report prints it

@@ -33,8 +33,8 @@ type DatasetRecord struct {
 	JSON json.RawMessage
 }
 
-// readDatasets reads the file of every call that names one, from dir when its
-// path is relative. A dataset's error names the call and the path as the config
+// readDatasets reads the file of every call and every step that names one, from
+// dir when its path is relative. A dataset's error names the call or the step and the path as the config
 // wrote it, never the joined one and never the content of a line: it may be a
 // secret.
 func (m *MasterConfig) readDatasets(dir string) error {
@@ -42,26 +42,63 @@ func (m *MasterConfig) readDatasets(dir string) error {
 
 	for i := range m.Load.Calls {
 		call := &m.Load.Calls[i]
-		if call.RawDataset == nil {
-			continue
+		if call.RawDataset != nil {
+			records, sum, err := readDataset(datasetPath(dir, call.Dataset), call.Dataset)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("%s: dataset %w", call.where(i), err))
+			} else {
+				call.Records = records
+				call.DatasetSHA256 = sum
+			}
 		}
 
-		path := call.Dataset
-		if !filepath.IsAbs(path) {
-			path = filepath.Join(dir, path)
+		for k := range call.Steps {
+			errs = append(errs, call.readStepDataset(dir, i, k)...)
 		}
-
-		records, sum, err := readDataset(path, call.Dataset)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("%s: dataset %w", call.where(i), err))
-
-			continue
-		}
-		call.Records = records
-		call.DatasetSHA256 = sum
 	}
 
 	return errors.Join(errs...)
+}
+
+func datasetPath(dir, written string) string {
+	if filepath.IsAbs(written) {
+		return written
+	}
+
+	return filepath.Join(dir, written)
+}
+
+// readStepDataset reads the file of step k of call i, named by the step's path.
+// The records of a file are not templated, so braces in one, in a step of a
+// templated call that left templates out, are refused: the user may think they
+// work. templates: false on the step says they are text.
+func (c *Call) readStepDataset(dir string, i, k int) []error {
+	step := &c.Steps[k]
+	if step.RawDataset == nil {
+		return nil
+	}
+
+	at := fmt.Sprintf("load.calls[%d].steps[%d]", i, k)
+
+	records, sum, err := readDataset(datasetPath(dir, step.Dataset), step.Dataset)
+	if err != nil {
+		return []error{fmt.Errorf("%s: dataset %w", at, err)}
+	}
+
+	if c.TemplatesOn() && step.Templates == nil {
+		for _, r := range records {
+			if bytes.Contains(r.JSON, []byte("{{")) {
+				return []error{fmt.Errorf("%w: %s.dataset: %s:%d: the record has {{ and the call has templates: true; "+
+					"the records of a file are not templated; set templates: false on the step to send the braces as text",
+					ErrScenario, at, step.Dataset, r.Line)}
+			}
+		}
+	}
+
+	step.Records = records
+	step.DatasetSHA256 = sum
+
+	return nil
 }
 
 // readDataset reads the whole file at once, so that a line has no length limit,

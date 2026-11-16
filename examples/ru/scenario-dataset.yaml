@@ -1,0 +1,26 @@
+# Сценарий, шаг которого берёт тело запроса из файла: одна итерация — проверка баланса и
+# затем перевод, и перевод каждой итерации — следующая запись файла. У шага своя позиция в
+# файле, отдельная от позиции вызова. На эталонном стенде, из корня репозитория:
+#   go run ./test/stand/cmd/stand -delay 20ms
+#   leettest -c examples/ru/scenario-dataset.yaml
+
+app:
+  target:
+    ip: 127.0.0.1
+    port: 50051
+  tls: false
+
+load:
+  calls:
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 50
+      duration: 1m
+      data:
+        wallet_id: "w-42"
+      scenario: pay-and-check
+      steps:
+        - method: wallet.v1.WalletService/Transfer
+          timeout: 500ms
+          dataset: transfers.jsonl  # каждая итерация с новым переводом: по JSON на строку, по порядку, затем снова
+          dataset_order: random     # file (по умолчанию) или random: на каждом проходе файла новая перестановка
+          dataset_seed: 42          # только для random; не задан — seed выбирается сам и печатается в отчёте

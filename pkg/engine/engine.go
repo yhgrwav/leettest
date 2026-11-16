@@ -106,6 +106,53 @@ func (c *Call) handedOut() {
 	if c.Dataset != nil {
 		c.Dataset.Counter.add()
 	}
+	if len(c.Next) > 0 {
+		c.stepsHandedOut()
+	}
+}
+
+// stepsHandedOut moves the counter of every dataset step once: per iteration
+// handed out, not per step sent, so a step an iteration never reached still
+// spent its row.
+func (c *Call) stepsHandedOut() {
+	for k := range c.Next {
+		if ref := c.Next[k].Dataset; ref != nil {
+			ref.Counter.add()
+		}
+	}
+}
+
+// checkStepDatasets refuses a step whose dataset has Once: its rows wrap and
+// are never spent, so the flag would be ignored without a word.
+func (c *Call) checkStepDatasets() error {
+	for k := range c.Next {
+		if ref := c.Next[k].Dataset; ref != nil && ref.Once {
+			return fmt.Errorf("%s: %w: %s", c.Method, ErrStepDatasetOnce, c.Next[k].Method)
+		}
+	}
+
+	return nil
+}
+
+// stepRows is the row each dataset step takes in the iteration being built,
+// indexed as Next, read before handedOut moves the counters; nil when no step
+// of the call has a dataset, which allocates nothing.
+func (c *Call) stepRows() []int32 {
+	var rows []int32
+
+	for k := range c.Next {
+		step := &c.Next[k]
+		if step.Dataset == nil || len(step.Payloads) == 0 {
+			continue
+		}
+		if rows == nil {
+			rows = make([]int32, len(c.Next))
+		}
+
+		rows[k] = int32(step.Dataset.Counter.row(len(step.Payloads))) //nolint:gosec // a row is below len(Payloads), a file of records that fit in memory
+	}
+
+	return rows
 }
 
 // spent says the call needs a record for its next request and has none: a Once
@@ -180,12 +227,35 @@ func counted(call Call) Call {
 		tpl.Counter = NewRecordCounter()
 		call.Template = &tpl
 	}
+	if call.stepsNeedCounter() {
+		// A copy of Next: the caller's slice and its steps stay as they were.
+		call.Next = slices.Clone(call.Next)
+
+		for k := range call.Next {
+			if ref := call.Next[k].Dataset; ref != nil && ref.Counter == nil {
+				own := *ref
+				own.Counter = NewRecordCounter()
+				call.Next[k].Dataset = &own
+			}
+		}
+	}
 
 	return call
 }
 
 func (c *Call) needsCounter() bool {
-	return (c.Dataset != nil && c.Dataset.Counter == nil) || (c.Template != nil && c.Template.Counter == nil)
+	return (c.Dataset != nil && c.Dataset.Counter == nil) || (c.Template != nil && c.Template.Counter == nil) || c.stepsNeedCounter()
+}
+
+// stepsNeedCounter says some dataset step has no counter.
+func (c *Call) stepsNeedCounter() bool {
+	for k := range c.Next {
+		if ref := c.Next[k].Dataset; ref != nil && ref.Counter == nil {
+			return true
+		}
+	}
+
+	return false
 }
 
 // countedCalls is calls with every dataset call counted; calls itself when
@@ -243,6 +313,16 @@ func (c *RecordCounter) Handed() int {
 	}
 
 	return int(c.n.Load())
+}
+
+// row is the record the next request takes of n: the one the shuffle stands
+// on, or S mod n. Reading S moves nothing.
+func (c *RecordCounter) row(n int) int {
+	if c.shuffle != nil {
+		return int(c.shuffle.current.Load())
+	}
+
+	return c.Handed() % n
 }
 
 func (c *RecordCounter) add() {
@@ -343,6 +423,9 @@ func CheckOptions(opts Options) error {
 			if err := claim(i, call.Next[k].Method); err != nil {
 				return err
 			}
+		}
+		if err := call.checkStepDatasets(); err != nil {
+			return fmt.Errorf("call %d: %w", i, err)
 		}
 	}
 
@@ -497,6 +580,9 @@ func (e *Engine) Report() Report {
 			for _, step := range call.Next {
 				if step.Method == m.Method {
 					m.Timeout = step.Timeout
+					if step.Dataset != nil {
+						m.Dataset = e.datasetReport(step.Method, step.Dataset, len(step.Payloads))
+					}
 				}
 			}
 			if call.Method != m.Method {
@@ -509,7 +595,7 @@ func (e *Engine) Report() Report {
 				m.PlannedDuration += stage.Duration
 			}
 			if call.Dataset != nil {
-				m.Dataset = e.datasetReport(call)
+				m.Dataset = e.datasetReport(call.Method, call.Dataset, len(call.Payloads))
 			}
 			if call.Template != nil {
 				m.Templates = e.templatesReport(call)
@@ -524,22 +610,22 @@ func (e *Engine) Report() Report {
 	return report
 }
 
-// datasetReport is how call used its file, from S at the end of this run: the
-// requests handed out in the process to that moment, warm-up included. While
-// the run is on, S is the counter's now.
-func (e *Engine) datasetReport(call Call) *DatasetReport {
-	s := call.Dataset.Counter.Handed()
+// datasetReport is how the call or step of method used its file of n records,
+// from S at the end of this run: the requests (for a step, iterations) handed
+// out in the process to that moment, warm-up included. While the run is on, S
+// is the counter's now.
+func (e *Engine) datasetReport(method string, ref *DatasetRef, n int) *DatasetReport {
+	s := ref.Counter.Handed()
 	if ended := e.handed.Load(); ended != nil {
-		s = (*ended)[call.Method]
+		s = (*ended)[method]
 	}
 
-	n := len(call.Payloads)
-	report := &DatasetReport{File: call.Dataset.File, SHA256: call.Dataset.SHA256, Records: n, Used: min(s, n)}
+	report := &DatasetReport{File: ref.File, SHA256: ref.SHA256, Records: n, Used: min(s, n)}
 	if n > 0 {
 		report.UsedMax = (s + n - 1) / n
 	}
-	report.Once = call.Dataset.Once
-	if shuffle := call.Dataset.Counter.shuffle; shuffle != nil {
+	report.Once = ref.Once
+	if shuffle := ref.Counter.shuffle; shuffle != nil {
 		report.Random, report.Seed = true, shuffle.seed
 	}
 
@@ -567,6 +653,12 @@ func (e *Engine) noteHanded() {
 			ended[call.Method] = call.Dataset.Counter.Handed()
 		case call.Template != nil:
 			ended[call.Method] = call.Template.Counter.Handed()
+		}
+
+		for k := range call.Next {
+			if ref := call.Next[k].Dataset; ref != nil {
+				ended[call.Next[k].Method] = ref.Counter.Handed()
+			}
 		}
 	}
 

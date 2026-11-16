@@ -394,6 +394,11 @@ func (p *WorkerPool) iterate(r *poolRun, first Request, out chan<- Result) {
 
 		next := first.Next[k]
 		req = Request{Method: next.Method, Payload: next.Payload, ScheduledAt: step.DoneAt}
+		if k < len(first.StepRows) && len(next.Payloads) > 0 {
+			// The row was taken when the iteration was handed out, by its own
+			// number: the worker keeps no position.
+			req.Payload = next.Payloads[first.StepRows[k]]
+		}
 		if next.Build != nil {
 			// The body is built here, in the worker, with the seq of the iteration:
 			// its cost is step start lag, and the seq is the one of step 1.

@@ -497,6 +497,9 @@ func (c *Call) resolveScenario() {
 		if s.RawTimeout != nil {
 			s.Timeout = *s.RawTimeout
 		}
+		if s.RawDataset != nil {
+			s.Dataset = *s.RawDataset
+		}
 		c.Steps[i] = s
 	}
 }
@@ -552,7 +555,12 @@ func (c Call) validateScenario(i int) []error {
 		if t := s.RawTimeout; t != nil && *t >= maxLatencyLimit {
 			errs = append(errs, fmt.Errorf("%s.timeout: timeout %s is not below 1h: %w", step, *t, ErrTimeoutTooLong))
 		}
-		errs = append(errs, c.validateStepTemplates(step, s)...)
+		errs = append(errs, s.validateStepDataset(step)...)
+		// The records of a file are not templated: the braces in them are refused
+		// when the file is read, and templates: true is refused above.
+		if s.RawDataset == nil {
+			errs = append(errs, c.validateStepTemplates(step, s)...)
+		}
 	}
 
 	return errs
@@ -695,32 +703,64 @@ func (c Call) Validate() error {
 // validateDatasetOrder checks dataset_order and dataset_seed: the values, and
 // that they stand with a dataset and, for the seed, with the random order.
 func (c Call) validateDatasetOrder() []error {
+	errs := checkDatasetOrder(c.DatasetOrder, c.DatasetSeed, c.RawDataset != nil)
+	if c.DatasetReuse != nil && c.RawDataset == nil {
+		errs = append(errs, ErrReuseWithoutDataset)
+	}
+
+	return errs
+}
+
+// checkDatasetOrder is the rule of dataset_order and dataset_seed for a call and
+// for a step: the values, and that they stand with a dataset and, for the seed,
+// with the random order.
+func checkDatasetOrder(order *string, seed *int64, hasDataset bool) []error {
 	var errs []error
 
 	random := false
 
-	if c.DatasetOrder != nil {
-		switch *c.DatasetOrder {
+	if order != nil {
+		switch *order {
 		case DatasetOrderFile:
 		case DatasetOrderRandom:
 			random = true
 		default:
-			errs = append(errs, fmt.Errorf("%w: %q", ErrDatasetOrder, *c.DatasetOrder))
+			errs = append(errs, fmt.Errorf("%w: %q", ErrDatasetOrder, *order))
 		}
 	}
-	if (c.DatasetOrder != nil || c.DatasetSeed != nil) && c.RawDataset == nil {
+	if (order != nil || seed != nil) && !hasDataset {
 		errs = append(errs, ErrOrderWithoutDataset)
 	}
-	if c.DatasetReuse != nil && c.RawDataset == nil {
-		errs = append(errs, ErrReuseWithoutDataset)
-	}
-	if c.DatasetSeed != nil {
-		if *c.DatasetSeed < 0 || *c.DatasetSeed > MaxDatasetSeed {
-			errs = append(errs, fmt.Errorf("%w: %d", ErrDatasetSeed, *c.DatasetSeed))
+	if seed != nil {
+		if *seed < 0 || *seed > MaxDatasetSeed {
+			errs = append(errs, fmt.Errorf("%w: %d", ErrDatasetSeed, *seed))
 		}
-		if !random && (c.DatasetOrder == nil || *c.DatasetOrder == DatasetOrderFile) {
+		if !random && (order == nil || *order == DatasetOrderFile) {
 			errs = append(errs, ErrSeedWithoutRandom)
 		}
+	}
+
+	return errs
+}
+
+// validateStepDataset checks the dataset keys of one step by its path, as a
+// call's: a path, one source of the body, the order and the seed, and no
+// templates: true, which a file's records do not take.
+func (s Step) validateStepDataset(step string) []error {
+	var errs []error
+
+	if s.RawDataset != nil && strings.TrimSpace(*s.RawDataset) == "" {
+		errs = append(errs, fmt.Errorf("%s: %w", step, ErrEmptyDatasetPath))
+	}
+	if s.RawDataset != nil && s.Data != nil {
+		errs = append(errs, fmt.Errorf("%s: %w", step, ErrDataAndDataset))
+	}
+	if s.RawDataset != nil && s.TemplatesOn() {
+		errs = append(errs, fmt.Errorf("%s: %w: templates: true with a dataset; the records of a file are not templated",
+			step, ErrTemplatesWithDataset))
+	}
+	for _, err := range checkDatasetOrder(s.DatasetOrder, s.DatasetSeed, s.RawDataset != nil) {
+		errs = append(errs, fmt.Errorf("%s: %w", step, err))
 	}
 
 	return errs

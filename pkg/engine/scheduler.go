@@ -95,6 +95,9 @@ func (s *Scheduler) validate() error {
 	if len(s.Call.Stages) == 0 {
 		return ErrNoStages
 	}
+	if err := s.Call.checkStepDatasets(); err != nil {
+		return err
+	}
 
 	for i, stage := range s.Call.Stages {
 		// A ramp may start or end at 0; a stage idle at both ends has no tick.
@@ -156,6 +159,9 @@ func (s *Scheduler) newRequest(scheduledAt time.Time) Request {
 		req.Payload = tpl.bodyAt(req.Seq)
 	} else {
 		req.Payload = s.Call.payload()
+	}
+	if len(s.Call.Next) > 0 {
+		req.StepRows = s.Call.stepRows()
 	}
 
 	if s.Call.Timeout > 0 {
