@@ -138,7 +138,7 @@ func (s *Scheduler) runStage(ctx context.Context, out chan<- Request, stage Stag
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case out <- s.newRequest(scheduledAt):
+		case out <- s.Call.newRequest(scheduledAt):
 		}
 		s.Call.handedOut()
 

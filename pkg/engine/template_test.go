@@ -507,7 +507,7 @@ func BenchmarkNewRequest_Plain(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		_ = s.newRequest(at)
+		_ = s.Call.newRequest(at)
 	}
 }
 
@@ -520,7 +520,7 @@ func BenchmarkNewRequest_StepDataset(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		_ = s.newRequest(at)
+		_ = s.Call.newRequest(at)
 	}
 }
 
@@ -531,6 +531,6 @@ func BenchmarkNewRequest_Templated(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		_ = s.newRequest(at)
+		_ = s.Call.newRequest(at)
 	}
 }
