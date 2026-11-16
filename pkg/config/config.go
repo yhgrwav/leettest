@@ -441,6 +441,9 @@ type Step struct {
 	Method     string         `yaml:"method"`
 	RawTimeout *time.Duration `yaml:"timeout"`
 	Timeout    time.Duration  `yaml:"-"`
+	// Data is the step's request body as written; nil sends an empty message.
+	// Compile stub of the red tests: not read from the file yet.
+	Data any `yaml:"-"`
 }
 
 // Pass is a call's pass: section as written, key to value, so that a wrong key
