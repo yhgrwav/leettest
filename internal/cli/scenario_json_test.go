@@ -249,3 +249,72 @@ func TestCompare_ScenariosKeyDoesNotChangeTheComparison(t *testing.T) {
 		}
 	}
 }
+
+// Two scenarios in one run: scenarios[] has both, in the order of the config,
+// each entry with its own counts and its own steps. The first entry is the
+// entry the same scenario has in a run of its own, so nothing of the second
+// leaked into it.
+// Ground: contract — one scenarios[] entry per scenario, in config order.
+// Mutation "put the steps of every scenario into the first entry" dies here.
+func TestJSON_TwoScenariosAreTwoEntriesInConfigOrder(t *testing.T) {
+	run := twoScenariosRun()
+	out := writeJSON(t, jsonRun(run.Report))
+
+	list, ok := field(t, out, "scenarios").([]any)
+	if !ok || len(list) != 2 {
+		t.Fatalf("scenarios = %v, want 2 entries", field(t, out, "scenarios"))
+	}
+	methods := field(t, out, "methods").([]any)
+	name := func(k int) string { return methods[k].(map[string]any)["method"].(string) }
+
+	if got, want := scenarioEntry(t, run, 0), scenarioEntry(t, scenarioRun(), 0); !reflect.DeepEqual(got, want) {
+		t.Errorf("scenarios[0] of the two-scenario run differs from the same scenario alone:\n got %v\nwant %v", got, want)
+	}
+
+	want := decodeExpected(t, `{
+		"name": "refund", "iterations": 50,
+		"categories": {"success": 43, "request_error": 4, "overload": 0, "failure": 3, "timed_out": 0,
+			"cut_off": 0, "unreachable": 0, "client_error": 0, "bad_response": 0, "aborted": 0, "unclassified": 0},
+		"latency": {"p50": {"us": 5000, "ns": 5000000, "lower_bound": false}, "p99": null},
+		"observations": 50, "censored": 0,
+		"steps": [
+			{"method": "`+name(3)+`", "reached": 50, "failed_here": 4, "aborted_here": 0, "not_sent_here": 0, "not_reached": 0},
+			{"method": "`+name(4)+`", "reached": 46, "failed_here": 3, "aborted_here": 0, "not_sent_here": 0, "not_reached": 4}
+		]
+	}`)
+	if got := scenarioEntry(t, run, 1); !reflect.DeepEqual(got, want) {
+		gotJSON, _ := json.MarshalIndent(got, "", "  ")
+		wantJSON, _ := json.MarshalIndent(want, "", "  ")
+		t.Errorf("scenarios[1]:\n%s\nwant:\n%s", gotJSON, wantJSON)
+	}
+}
+
+// scenarios is null for nobody: no scenarios, a nil list and an empty list all
+// write [], and a scenario with no steps writes "steps": []. The schema guard
+// cannot tell nil from empty (its line is "scenarios []object" either way), so
+// this pins it on the function that builds the list.
+// Ground: contract — json.go, «without scenarios, never null».
+// Mutation "scenariosJSON starts from a nil slice" (null for no scenario) dies here.
+func TestJSON_ScenariosAreNeverNull(t *testing.T) {
+	for name, tc := range map[string]struct {
+		in   []engine.ScenarioReport
+		want string
+	}{
+		"nil":      {nil, `[]`},
+		"empty":    {[]engine.ScenarioReport{}, `[]`},
+		"no steps": {[]engine.ScenarioReport{{Name: "s"}}, `"steps":[]`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := json.Marshal(scenariosJSON(tc.in))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tc.want == `[]` && string(got) != `[]` {
+				t.Errorf("scenariosJSON(%v) = %s, want []", tc.in, got)
+			}
+			if !bytes.Contains(got, []byte(tc.want)) {
+				t.Errorf("scenariosJSON(%v) = %s, want it to hold %s", tc.in, got, tc.want)
+			}
+		})
+	}
+}

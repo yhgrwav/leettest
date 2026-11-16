@@ -456,3 +456,103 @@ func TestGeneratorLate_ScenarioEntryChangesNeitherTheVerdictNorTheCause(t *testi
 		t.Errorf("wait verdict %v/%v with the scenario entry, %v/%v without", causeWith, okWith, causeWithout, okWithout)
 	}
 }
+
+const (
+	scStep4 = "/pay.v1.Wallet/Refund"
+	scStep5 = "/pay.v1.Wallet/Notify"
+)
+
+// twoScenariosRun is scenarioRun with a second scenario, "refund", from its own
+// head call at 7/s: 50 iterations, four failed at step 1, three at step 2, 43
+// to the end. Every number differs from the first scenario's, and the second
+// scenario has two steps against the first one's three, so a row or a count
+// that landed in the wrong block shows.
+func twoScenariosRun() RunReport {
+	run := scenarioRun()
+	run.Sent, run.Failed, run.Scheduled = run.Sent+96, run.Failed+7, run.Scheduled+70
+	run.Methods = append(run.Methods,
+		engine.MethodReport{Method: scStep4, Sent: 50, Failed: 4, RPS: 5, RPSLow: 7, RPSHigh: 7, PlannedDuration: 10 * time.Second},
+		engine.MethodReport{Method: scStep5, Sent: 46, Failed: 3, RPS: 4},
+	)
+	run.Scenarios = append(run.Scenarios, engine.ScenarioReport{
+		Name: "refund", Iterations: 50,
+		ByCategory: map[engine.Category]int{
+			engine.CategorySuccess: 43, engine.CategoryClientFault: 4, engine.CategoryServerFault: 3,
+		},
+		P50: scExact(5 * time.Millisecond), Latencies: 50,
+		Steps: []engine.ScenarioStepReport{
+			{Method: scStep4, Reached: 50, FailedHere: 4, NotReached: 0},
+			{Method: scStep5, Reached: 46, FailedHere: 3, NotReached: 4},
+		},
+	})
+
+	return run
+}
+
+// Two scenarios in one run, each from its own head call: both are printed, in
+// the order of the config, each with its own name, iterations, rate, outcome
+// split and step rows, and nothing of one is in the other's block. The step
+// methods of both are rows of the method table with no plan line, so the plan
+// lines are the two head calls'.
+// Ground: contract — one block per scenario, in config order.
+// Mutations "print the first scenario's block for every scenario" and "put the
+// steps of every scenario into the first block" die here.
+func TestPrintReport_TwoScenariosEachHaveTheirOwnBlock(t *testing.T) {
+	run := twoScenariosRun()
+
+	first := blockAt(t, run, "pay-and-check", 8)
+	second := blockAt(t, run, "refund", 7)
+
+	wantFirst := []string{
+		"scenario pay-and-check",
+		"  100 iterations, started at 12/s: success 84, request_error 3, overload 2, failure 4, timed_out 4, aborted 3",
+		"  iteration latency (tick to end of the last step): p50 31.2ms, p99 too few observations (91 of 100)",
+	}
+	wantSecond := []string{
+		"scenario refund",
+		"  50 iterations, started at 7/s: success 43, request_error 4, failure 3",
+		"  iteration latency (tick to end of the last step): p50 5.00ms, p99 too few observations (50 of 100)",
+	}
+	for i := range wantFirst {
+		if first[i] != wantFirst[i] {
+			t.Errorf("first block, line %d:\n got %q\nwant %q", i, first[i], wantFirst[i])
+		}
+		if second[i] != wantSecond[i] {
+			t.Errorf("second block, line %d:\n got %q\nwant %q", i, second[i], wantSecond[i])
+		}
+	}
+
+	for name, want := range map[string][][]string{
+		"pay-and-check": {
+			{"1", "pay.v1.Wallet/GetBalance", "100", "3", "2", "1", "0"},
+			{"2", "pay.v1.Wallet/Transfer", "94", "5", "1", "0", "6"},
+			{"3", "pay.v1.Wallet/GetHistory", "88", "4", "0", "0", "12"},
+		},
+		"refund": {
+			{"1", "pay.v1.Wallet/Refund", "50", "4", "0", "0", "0"},
+			{"2", "pay.v1.Wallet/Notify", "46", "3", "0", "0", "4"},
+		},
+	} {
+		_, rows := printedRows(t, run, name, len(want))
+		for k := range want {
+			if strings.Join(rows[k], " ") != strings.Join(want[k], " ") {
+				t.Errorf("%s step %d: %v, want %v", name, k+1, rows[k], want[k])
+			}
+		}
+	}
+
+	lines := echoLines(run)
+	text := strings.Join(lines, "\n")
+	if n := strings.Count(text, "\nscenario "); n != 2 {
+		t.Errorf("%d scenario blocks, want 2:\n%s", n, text)
+	}
+	if a, b := indexOfPrefix(lines, "scenario pay-and-check"), indexOfPrefix(lines, "scenario refund"); a < 0 || b < a {
+		t.Errorf("blocks at lines %d and %d, want pay-and-check before refund", a, b)
+	}
+	if got := strings.Join(first, "\n"); strings.Contains(got, "Refund") || strings.Contains(got, "Notify") {
+		t.Errorf("the first block holds the second scenario's steps:\n%s", got)
+	}
+	if n := strings.Count(text, "  plan: "); n != 2 {
+		t.Errorf("%d plan lines, want 2 (the head calls'): a step method of the second scenario got one or lost none", n)
+	}
+}
