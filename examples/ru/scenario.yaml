@@ -16,12 +16,19 @@ load:
     - method: wallet.v1.WalletService/GetBalance
       rps: 50
       duration: 1m
+      # {{seq}} — номер итерации: проверка баланса и перевод одной итерации несут один и
+      # тот же, то есть говорят об одном кошельке.
+      templates: true
+      data:
+        wallet_id: "wallet-{{seq}}"
       scenario: pay-and-check
       steps:
         - method: wallet.v1.WalletService/Transfer
           timeout: 500ms
+          # Шаблоны шага включаются на самом шаге и требуют templates: true у вызова.
+          templates: true
           # Своё тело запроса шага: проверяется по методу шага до нагрузки.
           data:
-            from: wallet-1
-            to: wallet-2
+            from: "wallet-{{seq}}"
+            to: "{{uuid}}"
             amount: 100

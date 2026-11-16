@@ -22,10 +22,15 @@ var ErrSeqOverflow = errors.New("seq does not fit its field")
 
 // Template makes the body of a call whose request changes with each request.
 type Template struct {
-	// Placeholders are the ones the call's data uses, sorted.
+	// Placeholders are the ones the call's data and the data of its templated
+	// steps use, sorted, each once.
 	Placeholders []string
-	// Max is the largest seq the call's field can hold; 0 is no limit.
+	// Max is the largest seq the narrowest field of the call's body and of the
+	// bodies of its templated steps can hold; 0 is no limit.
 	Max uint64
+	// MaxAt names the step whose field sets Max, as "<method> (steps[k])"; empty
+	// when the call's own field does, or there is none.
+	MaxAt string
 	// Counter is the call's seq: the requests handed out so far, shared by
 	// every Call copied from this one.
 	Counter *RecordCounter
@@ -33,14 +38,21 @@ type Template struct {
 	Build func(seq uint64) []byte
 }
 
-// body is the body of the call's next request: seq is the requests handed out
-// so far plus one. No Build is a template that only counts, with an empty body.
-func (t *Template) body() []byte {
+// nextSeq is the seq of the call's next request: the requests handed out so far
+// plus one. The scheduler takes it once and uses it for the body of step 1 and
+// for the steps after it.
+func (t *Template) nextSeq() uint64 {
+	return uint64(t.Counter.Handed()) + 1 //nolint:gosec // Handed counts Add(1) calls from zero, never negative
+}
+
+// bodyAt is the body of the request number seq. No Build is a template that
+// only counts, with an empty body.
+func (t *Template) bodyAt(seq uint64) []byte {
 	if t.Build == nil {
 		return nil
 	}
 
-	return t.Build(uint64(t.Counter.Handed()) + 1) //nolint:gosec // Handed counts Add(1) calls from zero, never negative
+	return t.Build(seq)
 }
 
 // handedOut counts one request of the call as handed to a worker.

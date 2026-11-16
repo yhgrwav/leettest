@@ -68,9 +68,15 @@ func CheckTemplatesFit(calls []engine.Call) error {
 		}
 
 		if total > call.Template.Max {
-			errs = append(errs, fmt.Errorf("%w: %s: the plan hands out %d requests and {{seq}} goes into a field that holds %d; "+
+			// A narrow field in a step is named: the call's method is not the one to edit.
+			field := "a field"
+			if at := call.Template.MaxAt; at != "" {
+				field = "a field of " + at
+			}
+
+			errs = append(errs, fmt.Errorf("%w: %s: the plan hands out %d requests and {{seq}} goes into %s that holds %d; "+
 				"shorten the plan, or put {{seq}} into a 64-bit number or a string",
-				engine.ErrSeqOverflow, call.Method, total, call.Template.Max))
+				engine.ErrSeqOverflow, call.Method, total, field, call.Template.Max))
 		}
 	}
 
@@ -99,37 +105,56 @@ func seqOverflowNote(report engine.Report) []string {
 		return nil
 	}
 
-	return []string{noteLine("stopped: the next request of %s would carry a {{seq}} above %d, the largest its field\n"+
+	field := "its field"
+	if o.LimitAt != "" {
+		field = "the field of " + displayMethod(o.LimitAt)
+	}
+
+	return []string{noteLine("stopped: the next request of %s would carry a {{seq}} above %d, the largest %s\n"+
 		"holds, so it was not built (a wrapped number would send a body that is not the one in\n"+
 		"the config). Put {{seq}} into a 64-bit number or a string, or run a shorter plan.",
-		displayMethod(o.Method), o.Limit)}
+		displayMethod(o.Method), o.Limit, field)}
 }
 
-// buildTemplate makes the engine template of a call whose data has
-// placeholders. The type of each field the placeholders stand in comes from the
-// method's descriptor, never from the look of the YAML.
+// buildTemplate makes the engine template of a templated call. Its
+// placeholders are those of the call and of its templated steps; its limit is
+// the call's own, and AttachMethods narrows it with the steps'.
+func buildTemplate(method *descriptor.Method, call *config.Call) (*engine.Template, error) {
+	build, limit, err := compileTemplate(method, call.Method, call.Data)
+	if err != nil {
+		return nil, err
+	}
+
+	return engine.NewTemplate(call.AllTemplatePlaceholders(), limit, build), nil
+}
+
+// compileTemplate makes the body builder of data, the data of a call or of a
+// step of the method; name is what the errors call it. The type of each field
+// the placeholders stand in comes from the method's descriptor, never from the
+// look of the YAML. limit is the largest seq the narrowest number field holds,
+// 0 when there is none.
 //
 // The body is made from a message built once from the data, with a few places
 // (slots) overwritten per request; the bytes are those of the plain path,
 // substitute the text and build the message anew (the reference test).
-func buildTemplate(method *descriptor.Method, call *config.Call) (*engine.Template, error) {
-	c := templateCompiler{method: call.Method}
-	data := c.message(method.Input, call.Data, "data", nil)
+func compileTemplate(method *descriptor.Method, name string, data any) (build func(seq uint64) []byte, limit uint64, err error) {
+	c := templateCompiler{method: name}
+	prepared := c.message(method.Input, data, "data", nil)
 
 	if len(c.errs) > 0 {
-		return nil, errors.Join(c.errs...)
+		return nil, 0, errors.Join(c.errs...)
 	}
 
-	msg, err := requestMessage(method.UnmarshalOptions(), method.Input, data)
+	msg, err := requestMessage(method.UnmarshalOptions(), method.Input, prepared)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s: %w", ErrRequestData, call.Method, err)
+		return nil, 0, fmt.Errorf("%w: %s: %w", ErrRequestData, name, err)
 	}
 
 	builder := &templateBuilder{msg: msg.ProtoReflect()}
 	for _, s := range c.slots {
 		bound, err := s.bind(msg.ProtoReflect())
 		if err != nil {
-			return nil, fmt.Errorf("%w: %s: %w", ErrRequestData, call.Method, err)
+			return nil, 0, fmt.Errorf("%w: %s: %w", ErrRequestData, name, err)
 		}
 		builder.slots = append(builder.slots, bound)
 	}
@@ -137,10 +162,34 @@ func buildTemplate(method *descriptor.Method, call *config.Call) (*engine.Templa
 	// A trial: a body that cannot be written fails here, not as an empty request
 	// in the middle of a run.
 	if _, err := builder.write(1); err != nil {
-		return nil, fmt.Errorf("%w: %s: %w", ErrRequestData, call.Method, err)
+		return nil, 0, fmt.Errorf("%w: %s: %w", ErrRequestData, name, err)
 	}
 
-	return engine.NewTemplate(call.TemplatePlaceholders(), c.limit, builder.build), nil
+	return builder.build, c.limit, nil
+}
+
+// narrowestLimit is the smallest non-zero limit the templated steps of one call
+// have, and the step it is in; 0 when no step has one. A plain min would let a
+// step with no limit (0) switch the guard of the call off.
+type narrowestLimit struct {
+	limit uint64
+	at    string
+}
+
+func (n *narrowestLimit) add(limit uint64, at string) {
+	if limit != 0 && (n.limit == 0 || limit < n.limit) {
+		n.limit, n.at = limit, at
+	}
+}
+
+// narrow folds the steps' limit into the template of the call: its own limit
+// stays when it is the smaller or the same.
+func (n narrowestLimit) narrow(t *engine.Template) {
+	if t == nil || n.limit == 0 || (t.Max != 0 && t.Max <= n.limit) {
+		return
+	}
+
+	t.Max, t.MaxAt = n.limit, n.at
 }
 
 type hopMode int

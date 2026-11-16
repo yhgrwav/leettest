@@ -51,9 +51,10 @@ func CallsFromConfig(cfg *config.MasterConfig) ([]engine.Call, error) {
 			}},
 		}
 		if len(call.Steps) > 0 {
-			// The call is step 1; the steps send the empty message of their method
-			// (a step has no data yet) and carry no stages: the iteration is
-			// the unit of the schedule, so the ramp and the warm-up stay on the call.
+			// The call is step 1; the steps carry no stages: the iteration is the
+			// unit of the schedule, so the ramp and the warm-up stay on the call.
+			// Their bodies (Payload, or Build for a templated step) come from
+			// AttachMethods; without it a step sends the empty message.
 			built.Scenario = call.Scenario
 			built.Next = make([]engine.Step, len(call.Steps))
 			for k, step := range call.Steps {
@@ -90,7 +91,7 @@ func CallsFromConfig(cfg *config.MasterConfig) ([]engine.Call, error) {
 		if call.TemplatesOn() {
 			// Counts and builds nothing: the body needs a schema, which AttachMethods
 			// brings and replaces this with; under -fake there is none.
-			built.Template = engine.NewTemplate(call.TemplatePlaceholders(), 0, nil)
+			built.Template = engine.NewTemplate(call.AllTemplatePlaceholders(), 0, nil)
 		}
 
 		calls = append(calls, built)

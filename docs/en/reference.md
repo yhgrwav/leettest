@@ -61,12 +61,13 @@ The config, a dataset, a report for `compare` and the settings file are UTF-8; a
 | `load.calls[].dataset_order` | `file` (left out) or `random`: the order of the dataset's requests. Needs `dataset` |
 | `load.calls[].dataset_seed` | A whole number from 0 to 9007199254740991 that fixes a random order. Needs `dataset_order: random`. Left out — one is drawn and the report prints it |
 | `load.calls[].dataset_reuse` | `true` (left out) or `false`: with `false` no record goes out twice, in the whole process. Needs `dataset` |
-| `load.calls[].templates` | `true` or `false` (left out — `false`; a key with no value is an error): turns on the `{{uuid}}` and `{{seq}}` placeholders in `data`, see [below](#a-request-that-changes-templates). Needs at least one placeholder, not together with `dataset`. |
+| `load.calls[].templates` | `true` or `false` (left out — `false`; a key with no value is an error): turns on the `{{uuid}}` and `{{seq}}` placeholders in `data`, see [below](#a-request-that-changes-templates). Needs at least one placeholder, in its `data` or in the `data` of a step with `templates: true`; not together with `dataset`. |
 | `load.calls[].scenario` | (not released yet) The scenario's name: the call itself becomes step 1, the `steps` follow it. Needs `steps`, and the other way round. Not empty, printed in the report as written; it must not equal a method. See [below](#scenario-steps-after-a-call) |
-| `load.calls[].steps` | (not released yet) A non-empty list of the steps after the call. Any key of a step other than the three below is not supported yet and is an error |
+| `load.calls[].steps` | (not released yet) A non-empty list of the steps after the call. Any key of a step other than the four below is not supported yet and is an error |
 | `load.calls[].steps[].method` | (not released yet) The step's method, the full name; required. It is checked before the load, like a call's method |
 | `load.calls[].steps[].timeout` | (not released yet) How long to wait for the step's reply, as `load.calls[].timeout`; left out — `2s`, not the call's timeout |
-| `load.calls[].steps[].data` | (not released yet) The step's request body, written as `load.calls[].data` (see [below](#request-body)) and checked before the load against the step's own method; a wrong field is a config error, as for a call. Left out — an empty message. `{{…}}` in it goes out as written. Needs reflection, or `app.proto` / `app.protoset`, as a call's `data` does |
+| `load.calls[].steps[].data` | (not released yet) The step's request body, written as `load.calls[].data` (see [below](#request-body)) and checked before the load against the step's own method; a wrong field is a config error, as for a call. Left out — an empty message. `{{…}}` in it is text only with `templates: false` or in a call without `templates: true`; see the next row. Needs reflection, or `app.proto` / `app.protoset`, as a call's `data` does |
+| `load.calls[].steps[].templates` | (not released yet) `true` or `false` (a key with no value, or anything but `true`/`false`, is an error): `true` turns on `{{uuid}}` and `{{seq}}` in the step's `data`, see [below](#templates-in-a-step). Needs `templates: true` on the call and a placeholder of its own in the step's `data`. Left out: the body is plain, and braces in `data` under a call with `templates: true` are an error — write `templates: true` on the step, or `templates: false` to send the braces as text |
 | `load.calls[].pass` | The limits a run must meet to pass: `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, see [below](#pass-limits). Left out — no limits |
 | `load.breakpoint.from` | The first step's rate of a breaking-point search, calls a second. A whole number from 1; a fractional one is a config error (`rps must be a whole number of requests: 100.5`). Required: left out or below 1 — `invalid breakpoint: breakpoint.from: breaking-point plan: from 0, want at least 1 rps`, exit 1. The first step must measure at least 100 calls, `from` × (`hold` − `settle`), otherwise it is refused before any load with `invalid breakpoint: the first step measures 8 calls, a p99 needs 100: raise from, hold or lower settle`. With `app.mode: real` the ramp runs from 0 to `from` |
 | `load.breakpoint.to` | No step goes above this rate. A whole number, at least `from` (equal to `from` — one step). Required: left out or below `from` — `invalid breakpoint: breakpoint.to: breaking-point plan: to 50 is below from 100`, exit 1. If the search reaches the last step and it holds, the outcome is `held_all` |
@@ -310,6 +311,46 @@ it counts as start lag.
 Under the method's row the report says `data: templated, seq uuid (last seq 7, ramp and warm-up counted)`.
 In JSON this is `methods[].templates`, an **object** `{"placeholders": ["seq", "uuid"], "last_seq": 7}`
 and not a list; `null` — the call has no templates.
+
+### Templates in a step
+
+*(Not released yet.)* A step of a scenario takes the placeholders with its own `templates: true`;
+the call needs `templates: true` too, because the counter lives on the call.
+
+```yaml
+    - method: orders.v1.OrderService/Create
+      rps: 100
+      duration: 1m
+      templates: true
+      data:
+        order_id: "{{seq}}"
+      scenario: create-and-pay
+      steps:
+        - method: orders.v1.OrderService/Pay
+          templates: true
+          data:
+            order_id: "{{seq}}"
+            payment_key: "{{uuid}}"
+```
+
+- **One `{{seq}}` for the whole iteration.** The call and every step of one iteration carry the
+  same number: "order 5 created, order 5 paid". The counter moves once per iteration sent, not per
+  step. `{{uuid}}` is new each time a body is built, so two steps do not share one.
+- **The same rules as for a call:** an unknown `{{…}}` or braces in a key are an error with the
+  path `load.calls[i].steps[k].data…`; a field the placeholder does not fit is an error before the
+  run, naming the step's method and its place; `templates: true` on a step with no placeholder of
+  its own is an error.
+- **A call may be templated for the sake of its steps:** `templates: true` on the call counts the
+  placeholders of its steps, so a call without any of its own is valid then.
+- **Braces in a step that leaves `templates` out**, under a call with `templates: true`, are an
+  error: they were most likely meant as a template. `templates: false` sends them as text. Under a
+  call without `templates: true` braces in a step are text.
+- **A 32-bit field in a step** is held to its limit too. The limit of the call is the narrowest
+  over its own `data` and its steps; the refusal before the run and the line of a run the limit
+  stopped name the step with the narrowest field (`steps[k]`). In JSON `seq_overflow.method` is
+  still the call's method.
+- **The body of a step is built in the worker** after the step before it ended; the time it takes
+  counts as the step's start lag. `-dry-run` prints the call's body and no steps yet.
 
 ## A different request each call: a dataset
 
@@ -661,7 +702,7 @@ measured calls only. The first column is the field's full path.
 | `stop.in_flight` | int | The calls in flight at that moment (begun, not finished): on a hanging target, what the window cannot show. |
 | `stop.planned_rps` | float? | The rate the plan of that method offered at the moment of the stop, calls per second, rounded to 3 places; the stop line prints it to whole calls: `the plan offered 1700 rps at that moment`. `null` when the stop came at or after the end of the method's plan, and the line says `the plan had ended`. The moment of the stop is the moment of judging, not of sending: the failed calls may have left earlier, by up to the call's timeout, so the rate they left at is the one the `ramp by second` block shows. |
 | `seq_overflow` | object? | Where a `{{seq}}` did not fit its field and the run stopped; `null` when that did not happen. `stop_reason` is then `seq_overflow` and the run ends softly (exit 3). |
-| `seq_overflow.method` | string | The method whose field overflowed, written as in `methods[].method`, leading `/` included. |
+| `seq_overflow.method` | string | The method whose field overflowed, written as in `methods[].method`, leading `/` included. It is the call's method also when the narrow field is in one of its steps: the text report names the step, the JSON does not. |
 | `seq_overflow.limit` | int | The largest `seq` the method's narrowest field holds. |
 | `started_at` | string | Start of the schedule, RFC 3339 UTC, warm-up included. Every `_us` and `_s` counts from it |
 | `duration_us` | int | How long the run went, warm-up included |

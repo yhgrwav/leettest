@@ -41,7 +41,7 @@ var (
 // refused by name, so the user does not read them as typos.
 var stepKeysLater = map[string]bool{
 	"dataset": true, "dataset_order": true, "dataset_seed": true,
-	"dataset_reuse": true, "templates": true, "rps": true, "duration": true, "pass": true,
+	"dataset_reuse": true, "rps": true, "duration": true, "pass": true,
 }
 
 // errorsLimitPath is the search's errors_limit: left with no value it would
@@ -167,17 +167,30 @@ func (v *nullDatasetVisitor) visitScenarioKey(pair *ast.MappingValueNode, path s
 	name := strings.TrimPrefix(path, "$.")
 
 	m := stepKeyPath.FindStringSubmatch(path)
-	if len(m) > 3 && m[3] != "method" && m[3] != "timeout" && m[3] != "data" {
+	if len(m) > 3 && m[3] != "method" && m[3] != "timeout" && m[3] != "data" && m[3] != "templates" {
 		if stepKeysLater[m[3]] {
 			v.errs = append(v.errs, fmt.Errorf("line %d: %w: %s is not supported in a step yet", line, ErrScenario, name))
 		} else {
-			v.errs = append(v.errs, fmt.Errorf("line %d: %w: %s is not a step key: a step has method, timeout and data", line, ErrScenario, name))
+			v.errs = append(v.errs, fmt.Errorf("line %d: %w: %s is not a step key: a step has method, timeout, data and templates",
+				line, ErrScenario, name))
 		}
 
 		return
 	}
 	// data with no value is an empty message, as in a call.
 	if len(m) > 3 && m[3] == "data" {
+		return
+	}
+	// templates is true or false: the decoder reads no value as the key left
+	// out, and takes "true" and 1 for a bool.
+	if len(m) > 3 && m[3] == "templates" {
+		if value, resolved := v.unwrap(pair.Value); resolved {
+			if _, isBool := value.(*ast.BoolNode); !isBool {
+				v.errs = append(v.errs, fmt.Errorf("line %d: %w: %s is not true or false: write one of them or leave it out",
+					line, ErrTemplatesValue, name))
+			}
+		}
+
 		return
 	}
 

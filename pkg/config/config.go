@@ -444,6 +444,11 @@ type Step struct {
 	// Data is the step's request body as written, checked against the step's
 	// method before the run; nil sends an empty message.
 	Data any `yaml:"data"`
+	// Templates says what {{uuid}} and {{seq}} in Data are. nil is the key left
+	// out: a plain body, and in a templated call braces in Data are refused. false
+	// sends the braces as text. true makes Data a template; it needs
+	// templates: true on the call and a placeholder in Data.
+	Templates *bool `yaml:"templates"`
 }
 
 // Pass is a call's pass: section as written, key to value, so that a wrong key
@@ -537,6 +542,7 @@ func (c Call) validateScenario(i int) []error {
 		if t := s.RawTimeout; t != nil && *t >= maxLatencyLimit {
 			errs = append(errs, fmt.Errorf("%s.timeout: timeout %s is not below 1h: %w", step, *t, ErrTimeoutTooLong))
 		}
+		errs = append(errs, c.validateStepTemplates(step, s)...)
 	}
 
 	return errs

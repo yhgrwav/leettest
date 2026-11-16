@@ -98,9 +98,13 @@ func TestExamples_RunAgainstStand(t *testing.T) {
 
 			for _, call := range calls {
 				// A dataset call sends each of its records, a plain one its body.
+				// A templated call builds its body, here the one of the first request.
 				payloads := call.Payloads
 				if len(payloads) == 0 {
 					payloads = [][]byte{call.Payload}
+					if call.Template != nil && call.Template.Build != nil {
+						payloads = [][]byte{call.Template.Build(1)}
+					}
 				}
 				for _, payload := range payloads {
 					now := time.Now()
@@ -118,12 +122,17 @@ func TestExamples_RunAgainstStand(t *testing.T) {
 			// a body on the wire and for being answered with it.
 			for i, call := range calls {
 				for k, step := range call.Next {
-					if cfg.Load.Calls[i].Steps[k].Data != nil && len(step.Payload) == 0 {
+					// A templated step builds its body per iteration, here for seq 1.
+					body := step.Payload
+					if step.Build != nil {
+						body = step.Build(1)
+					}
+					if cfg.Load.Calls[i].Steps[k].Data != nil && len(body) == 0 {
 						t.Errorf("%s step %d: data in the config, no body in the step", call.Method, k)
 					}
 					now := time.Now()
 					out, err := sender.Send(ctx, engine.Request{
-						Method: step.Method, Payload: step.Payload, ScheduledAt: now, Deadline: now.Add(step.Timeout),
+						Method: step.Method, Payload: body, ScheduledAt: now, Deadline: now.Add(step.Timeout),
 					})
 					if err != nil || out.Category != engine.CategorySuccess {
 						t.Errorf("%s step %d: category %v, error %v, status %v", step.Method, k, out.Category, err, out.Err)

@@ -48,6 +48,9 @@ type Request struct {
 	// one after another inside this request's in-flight slot.
 	Scenario string
 	Next     []Step
+	// Seq is the seq the call's template built this request's body with, for
+	// the steps of its iteration; zero for a call without a template.
+	Seq uint64
 }
 
 type Scheduler struct {
@@ -141,8 +144,9 @@ func (s *Scheduler) newRequest(scheduledAt time.Time) Request {
 		Scenario:     s.Call.Scenario,
 		Next:         s.Call.Next,
 	}
-	if s.Call.Template != nil {
-		req.Payload = s.Call.Template.body()
+	if tpl := s.Call.Template; tpl != nil {
+		req.Seq = tpl.nextSeq()
+		req.Payload = tpl.bodyAt(req.Seq)
 	} else {
 		req.Payload = s.Call.payload()
 	}
