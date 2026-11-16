@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 )
@@ -123,22 +124,40 @@ func TestEngine_ARampedRunMeasuresTheHold(t *testing.T) {
 
 // Ground: contract — cancelling the context is how a library caller stops a run.
 func TestEngineStopsOnCancel(t *testing.T) {
+	// The first request cancels the run, not a short deadline: starting the run
+	// takes 8..40 ms on Windows (the clock step is measured), enough to eat a
+	// 60 ms budget before the first request. The guard only fails a run that
+	// never stops, as DeadlineExceeded, which the check below refuses.
+	const guard = 10 * time.Second
+
+	guarded, stop := context.WithTimeout(context.Background(), guard)
+	defer stop()
+
+	ctx, cancel := context.WithCancel(guarded)
+	defer cancel()
+
+	var once sync.Once
+
+	fake := FakeSender{Delay: time.Millisecond}
+	sender := senderFunc(func(ctx context.Context, req Request) (Outcome, error) {
+		once.Do(cancel)
+
+		return fake.Send(ctx, req)
+	})
+
 	eng, err := New(Options{
 		Calls:       []Call{{Method: "a.B/One", Timeout: 100 * time.Millisecond, Stages: []Stage{{StartRPS: 100, TargetRPS: 100, Duration: time.Hour}}}},
-		Sender:      FakeSender{Delay: time.Millisecond},
+		Sender:      sender,
 		MaxInFlight: 64,
 	})
 	if err != nil {
 		t.Fatalf("new: %v", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Millisecond)
-	defer cancel()
-
 	err = eng.Run(ctx)
 
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("error = %v, want %v", err, context.DeadlineExceeded)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want %v", err, context.Canceled)
 	}
 	if eng.Report().Sent == 0 {
 		t.Error("no requests recorded before cancel")
