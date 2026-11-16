@@ -63,9 +63,10 @@ The config, a dataset, a report for `compare` and the settings file are UTF-8; a
 | `load.calls[].dataset_reuse` | `true` (left out) or `false`: with `false` no record goes out twice, in the whole process. Needs `dataset` |
 | `load.calls[].templates` | `true` or `false` (left out — `false`; a key with no value is an error): turns on the `{{uuid}}` and `{{seq}}` placeholders in `data`, see [below](#a-request-that-changes-templates). Needs at least one placeholder, not together with `dataset`. |
 | `load.calls[].scenario` | (not released yet) The scenario's name: the call itself becomes step 1, the `steps` follow it. Needs `steps`, and the other way round. Not empty, printed in the report as written; it must not equal a method. See [below](#scenario-steps-after-a-call) |
-| `load.calls[].steps` | (not released yet) A non-empty list of the steps after the call. Any key of a step other than the two below is not supported yet and is an error |
+| `load.calls[].steps` | (not released yet) A non-empty list of the steps after the call. Any key of a step other than the three below is not supported yet and is an error |
 | `load.calls[].steps[].method` | (not released yet) The step's method, the full name; required. It is checked before the load, like a call's method |
 | `load.calls[].steps[].timeout` | (not released yet) How long to wait for the step's reply, as `load.calls[].timeout`; left out — `2s`, not the call's timeout |
+| `load.calls[].steps[].data` | (not released yet) The step's request body, written as `load.calls[].data` (see [below](#request-body)) and checked before the load against the step's own method; a wrong field is a config error, as for a call. Left out — an empty message. `{{…}}` in it goes out as written. Needs reflection, or `app.proto` / `app.protoset`, as a call's `data` does |
 | `load.calls[].pass` | The limits a run must meet to pass: `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, see [below](#pass-limits). Left out — no limits |
 | `load.breakpoint.from` | The first step's rate of a breaking-point search, calls a second. A whole number from 1; a fractional one is a config error (`rps must be a whole number of requests: 100.5`). Required: left out or below 1 — `invalid breakpoint: breakpoint.from: breaking-point plan: from 0, want at least 1 rps`, exit 1. The first step must measure at least 100 calls, `from` × (`hold` − `settle`), otherwise it is refused before any load with `invalid breakpoint: the first step measures 8 calls, a p99 needs 100: raise from, hold or lower settle`. With `app.mode: real` the ramp runs from 0 to `from` |
 | `load.breakpoint.to` | No step goes above this rate. A whole number, at least `from` (equal to `from` — one step). Required: left out or below `from` — `invalid breakpoint: breakpoint.to: breaking-point plan: to 50 is below from 100`, exit 1. If the search reaches the last step and it holds, the outcome is `held_all` |
@@ -363,15 +364,17 @@ load:
       steps:
         - method: pay.v1.Wallet/Transfer
           timeout: 500ms
+          data: {from: wallet-1, to: wallet-2, amount: 100}
         - method: pay.v1.Wallet/History
 ```
 
 The unit of the schedule is an iteration, not a call: `rps` is iterations a second. An iteration
 sends the call (step 1), then the steps in order; a step goes out when the one before it ends. If
 a step fails, does not go out or is aborted, the iteration has no later steps. A step's message is
-the empty message of its method: a target that needs fields answers `request_error`, and the run
-turns invalid by the `request_error` rule; data for a step comes later. The steps' methods are checked before the load like the calls'
-methods; a typo in a step's method is a config error.
+its `data`, the same every iteration, or the empty message of its method when it has none: a target
+that needs fields then answers `request_error`, and the run turns invalid by the `request_error`
+rule. The steps' methods are checked before the load like the calls' methods, and a step's `data`
+against its own method: a typo in a step's method or field is a config error.
 
 The in-flight need is counted over the sum of the step timeouts (`rps` × Σ step timeouts); when it
 is above `-max-in-flight` the run does not start, and the only advice is `-max-in-flight <N>`.
