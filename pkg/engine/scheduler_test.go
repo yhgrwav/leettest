@@ -146,21 +146,51 @@ func TestScheduledTimeDoesNotAccumulateRounding(t *testing.T) {
 
 // Ground: contract — Scheduler is exported; its requests are what a library caller sends.
 func TestRunStopsOnCancel(t *testing.T) {
-	s := NewScheduler(Call{Method: "a.B/C", Stages: []Stage{{StartRPS: 100, TargetRPS: 100, Duration: time.Hour}}})
+	// The consumer cancels, not a short deadline: Run measures the clock step once, and that
+	// takes 8..40 ms on Windows, enough to eat a 60 ms budget before the first request.
+	const guard = 10 * time.Second
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Millisecond)
+	stage := Stage{StartRPS: 100, TargetRPS: 100, Duration: time.Hour}
+	s := NewScheduler(Call{Method: "a.B/C", Stages: []Stage{stage}})
+
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	got, err := collect(ctx, t, s)
+	out := make(chan Request)
+	errc := make(chan error, 1)
 
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("error = %v, want %v", err, context.DeadlineExceeded)
+	go func() {
+		errc <- s.Run(ctx, out)
+		close(out)
+	}()
+
+	timer := time.NewTimer(guard)
+	defer timer.Stop()
+
+	var emitted int
+
+	for open := true; open; {
+		select {
+		case _, ok := <-out:
+			open = ok
+			if ok {
+				emitted++
+				cancel()
+			}
+		case <-timer.C:
+			t.Fatalf("Run did not stop within %s: %d requests emitted", guard, emitted)
+		}
 	}
-	if len(got) == 0 {
+
+	if err := <-errc; !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v, want %v", err, context.Canceled)
+	}
+	if emitted == 0 {
 		t.Error("no requests emitted before cancel")
 	}
-	if len(got) > 20 {
-		t.Errorf("emitted %d requests, want the run to stop early", len(got))
+	// Stopped early: under a thousandth of what the stage plans.
+	if limit := int(stage.Ticks() / 1000); emitted > limit {
+		t.Errorf("emitted %d requests, want at most %d (a thousandth of the stage's %d)", emitted, limit, stage.Ticks())
 	}
 }
 
