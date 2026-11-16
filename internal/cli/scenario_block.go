@@ -49,7 +49,11 @@ func printScenarioBlocks(w io.Writer, run RunReport) {
 func printScenarioBlock(w io.Writer, run RunReport, s *engine.ScenarioReport) {
 	fmt.Fprintf(w, "\nscenario %s\n", s.Name)
 
-	line := fmt.Sprintf("  %d iterations", s.Iterations)
+	noun := "iterations"
+	if s.Iterations == 1 {
+		noun = "iteration"
+	}
+	line := fmt.Sprintf("  %d %s", s.Iterations, noun)
 	if rate := scenarioRate(run, s); rate != "" {
 		line += ", started at " + rate + "/s"
 	}
