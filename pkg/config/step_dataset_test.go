@@ -419,8 +419,14 @@ func TestParse_StepDatasetInATemplatedCallIsValid(t *testing.T) {
 
 // 7a: a record with {{ in a step of a templated call, the step with no templates
 // key of its own, is refused as the braces of a step's data are: the user may
-// think they work. The error names the file and the line, never the record.
-// Ground: contract — spec 7a, the 3b rule (2d) for the records of a file.
+// think they work. The error is the scenario's (ErrScenario, as 3b's), names the
+// file and the line, never the record, and offers the way out that exists for a
+// dataset: templates: false on the step. It must not offer templates: true on the
+// step (stepNeedsKey), which is refused for a step with a dataset
+// (ErrTemplatesWithDataset): two refusals that send the user to each other.
+// Ground: contract — spec 7a, the 3b rule (2d) for the records of a file, with its
+// own words (round 1 of the review).
+// Mutation: the refusal in the words of 3b (stepNeedsKey).
 func TestLoad_BracesInAStepDatasetOfATemplatedCallAreRefused(t *testing.T) {
 	for name, records := range map[string]string{
 		"a value":        "{\"id\":1}\n{\"id\":\"{{seq}}-hunter2\"}\n",
@@ -433,8 +439,17 @@ func TestLoad_BracesInAStepDatasetOfATemplatedCallAreRefused(t *testing.T) {
 			if err == nil {
 				t.Fatal("LoadFile() = nil, want a refusal of braces in the records of a step")
 			}
+			if !errors.Is(err, config.ErrScenario) {
+				t.Errorf("error = %v, want config.ErrScenario, as the braces of a step's data", err)
+			}
 			if want := "load.calls[0].steps[0].dataset: steps.jsonl:2"; !strings.Contains(err.Error(), want) {
 				t.Errorf("error = %q, want it to say %q", err, want)
+			}
+			if want := "templates: false on the step"; !strings.Contains(err.Error(), want) {
+				t.Errorf("error = %q, want it to offer %q", err, want)
+			}
+			if bad := "templates: true on the step"; strings.Contains(err.Error(), bad) {
+				t.Errorf("error = %q offers %q: a step with a dataset refuses it", err, bad)
 			}
 			if strings.Contains(err.Error(), "hunter2") {
 				t.Errorf("error = %q quotes the record", err)
@@ -488,6 +503,9 @@ func TestLoad_BracesInAStepDatasetNameTheStepsOwnPath(t *testing.T) {
 
 	if want := "load.calls[1].steps[0].dataset: steps.jsonl:1"; err == nil || !strings.Contains(err.Error(), want) {
 		t.Errorf("error = %v, want it to say %q", err, want)
+	}
+	if !errors.Is(err, config.ErrScenario) {
+		t.Errorf("error = %v, want config.ErrScenario", err)
 	}
 }
 

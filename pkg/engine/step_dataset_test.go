@@ -467,8 +467,11 @@ func TestEngine_StepDatasetUsedIsIterationsHandedOutNotStepsReached(t *testing.T
 	}
 
 	sc := scenarioOf(t, report, "flow")
-	if len(sc.Steps) == 2 && sc.Steps[1].Reached != 0 {
-		t.Errorf("step 2 reached by %d iterations, want 0", sc.Steps[1].Reached)
+	if len(sc.Steps) != 2 {
+		t.Fatalf("the scenario has %d steps, want 2", len(sc.Steps))
+	}
+	if got := sc.Steps[1].Reached; got != 0 {
+		t.Errorf("step 2 reached by %d iterations, want 0: used %d and reached 0 are both true of one report", got, records)
 	}
 	if m, ok := methodRow(report, "a/One"); !ok || m.Dataset != nil {
 		t.Errorf("a/One dataset = %+v (found %v), want none: the call has no file", m.Dataset, ok)

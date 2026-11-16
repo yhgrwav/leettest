@@ -477,7 +477,21 @@ func TestReport_StepDatasetUsedCountsIterationsNotStepsReached(t *testing.T) {
 		t.Errorf("methods[%s].dataset = %v, want null: the call has no file", orderMethod, v)
 	}
 
-	for _, s := range field(t, doc, "scenarios").([]any) {
+	// The same report says the step was reached by no iteration: both numbers
+	// are true, and the report must not make one of the other.
+	scenarios := field(t, doc, "scenarios").([]any)
+	if len(scenarios) != 1 {
+		t.Fatalf("%d scenarios, want 1", len(scenarios))
+	}
+	steps := field(t, scenarios[0], "steps").([]any)
+	if len(steps) != 2 {
+		t.Fatalf("%d scenario steps, want 2", len(steps))
+	}
+	if got := field(t, steps[1], "reached"); got != 0.0 {
+		t.Errorf("scenarios[0].steps[1].reached = %v, want 0 beside used 10", got)
+	}
+
+	for _, s := range scenarios {
 		for _, st := range field(t, s, "steps").([]any) {
 			if _, has := st.(map[string]any)["dataset"]; has {
 				t.Errorf("a scenario step has a dataset key: %v; the dataset is on methods[], schema 1 has no other path", st)
