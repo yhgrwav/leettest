@@ -334,12 +334,17 @@ func TestScenario_StepDataNullAndEmptyFollowTheCall(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			asCall, callErr := config.Parse([]byte(callWithData(tc.written)))
-			if callErr != nil {
-				t.Fatalf("Parse() of the same data in a call = %v: the case is not a call's valid form", callErr)
-			}
-
 			cfg, err := config.Parse([]byte(stepWithData(tc.written)))
 
+			// The outcome is the call's: a form the call cannot read (the decoder's
+			// own error) is refused for a step too, and then there is nothing to compare.
+			if callErr != nil {
+				if err == nil {
+					t.Errorf("Parse() = nil, want a refusal: the call refuses the same data (%v)", callErr)
+				}
+
+				return
+			}
 			if err != nil {
 				t.Fatalf("Parse() = %v, want it accepted as a call's data is", err)
 			}

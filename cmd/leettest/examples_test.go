@@ -111,22 +111,22 @@ func TestExamples_RunAgainstStand(t *testing.T) {
 						t.Errorf("%s: category %v, error %v, status %v", call.Method, out.Category, err, out.Err)
 					}
 				}
+			}
 
-				// A scenario's steps go out with their own body: the stand does not
-				// show what it received, so a step with data is checked for having
-				// a body on the wire and for being answered with it.
-				for i, call := range calls {
-					for k, step := range call.Next {
-						if cfg.Load.Calls[i].Steps[k].Data != nil && len(step.Payload) == 0 {
-							t.Errorf("%s step %d: data in the config, no body in the step", call.Method, k)
-						}
-						now := time.Now()
-						out, err := sender.Send(ctx, engine.Request{
-							Method: step.Method, Payload: step.Payload, ScheduledAt: now, Deadline: now.Add(step.Timeout),
-						})
-						if err != nil || out.Category != engine.CategorySuccess {
-							t.Errorf("%s step %d: category %v, error %v, status %v", step.Method, k, out.Category, err, out.Err)
-						}
+			// A scenario's steps go out with their own body: the stand does not
+			// show what it received, so a step with data is checked for having
+			// a body on the wire and for being answered with it.
+			for i, call := range calls {
+				for k, step := range call.Next {
+					if cfg.Load.Calls[i].Steps[k].Data != nil && len(step.Payload) == 0 {
+						t.Errorf("%s step %d: data in the config, no body in the step", call.Method, k)
+					}
+					now := time.Now()
+					out, err := sender.Send(ctx, engine.Request{
+						Method: step.Method, Payload: step.Payload, ScheduledAt: now, Deadline: now.Add(step.Timeout),
+					})
+					if err != nil || out.Category != engine.CategorySuccess {
+						t.Errorf("%s step %d: category %v, error %v, status %v", step.Method, k, out.Category, err, out.Err)
 					}
 				}
 			}
