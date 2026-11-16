@@ -23,6 +23,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -553,6 +554,30 @@ func TestAttachMethods_StepTemplateBuildIsSafeInParallel(t *testing.T) {
 	if bad > 3 {
 		t.Errorf("%d bodies in all are wrong", bad)
 	}
+}
+
+// The step builder under every worker at once, as a run with many iterations
+// in flight uses it (one builder per step, one lock inside). Run with -cpu 1,8:
+// the per-op time at 8 against 1 is the cost of the lock.
+func BenchmarkStepTemplateBuild_Parallel(b *testing.B) {
+	call := attachedStepped(b, steppedConfig(
+		map[string]any{"id": "{{uuid}}"},
+		tplStep(benchBody),
+	))
+	build := call.Next[0].Build
+	if build == nil {
+		b.Fatal("the templated step has no Build")
+	}
+
+	b.ReportAllocs()
+
+	var seq atomic.Uint64
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			_ = build(seq.Add(1))
+		}
+	})
 }
 
 // Ground: contract (spec 5) — a templated call whose own data has no
