@@ -18,6 +18,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -191,6 +193,66 @@ func TestRunStopsOnCancel(t *testing.T) {
 	// Stopped early: under a thousandth of what the stage plans.
 	if limit := int(stage.Ticks() / 1000); emitted > limit {
 		t.Errorf("emitted %d requests, want at most %d (a thousandth of the stage's %d)", emitted, limit, stage.Ticks())
+	}
+}
+
+// standsInSend reports whether some goroutine is blocked in a select whose own frame is
+// Scheduler.runStage: the select that sends to out, the one place Run waits on its reader (the
+// wait for the next tick is inside waitUntil, another frame). Run has no seam there, so the test
+// reads the stacks.
+func standsInSend() bool {
+	buf := make([]byte, 1<<20)
+	buf = buf[:runtime.Stack(buf, true)]
+
+	for _, g := range strings.Split(string(buf), "\n\n") {
+		lines := strings.SplitN(g, "\n", 3)
+		if len(lines) < 2 {
+			continue
+		}
+
+		if strings.Contains(lines[0], "[select") && strings.Contains(lines[1], "(*Scheduler).runStage") {
+			return true
+		}
+	}
+
+	return false
+}
+
+// Ground: contract — Run returns on cancel when nobody reads: it stands in the send to out, and
+// the context is its only way out. Mutation: remove `case <-ctx.Done()` from that select, the run
+// never returns and the guard fails the test.
+func TestRunStopsOnCancelWhileStandingInTheSend(t *testing.T) {
+	const guard = 10 * time.Second
+
+	s := NewScheduler(Call{Method: "a.B/C", Stages: []Stage{{StartRPS: 1000, TargetRPS: 1000, Duration: time.Hour}}})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Nothing receives from out: the first request builds and Run waits on it for good.
+	out := make(chan Request)
+	errc := make(chan error, 1)
+
+	go func() { errc <- s.Run(ctx, out) }()
+
+	limit := time.Now().Add(guard)
+	for !standsInSend() {
+		if time.Now().After(limit) {
+			t.Fatalf("Run did not reach the send to out within %s", guard)
+		}
+
+		time.Sleep(time.Millisecond)
+	}
+
+	cancel()
+
+	select {
+	case err := <-errc:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("error = %v, want %v", err, context.Canceled)
+		}
+	case <-time.After(guard):
+		t.Fatalf("Run did not return within %s of the cancel while standing in the send to out", guard)
 	}
 }
 
