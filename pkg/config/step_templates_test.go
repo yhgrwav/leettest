@@ -62,7 +62,12 @@ func stepData(templates, data string) string {
 // secondCall is a plain second call whose scenario has one Close step; the step
 // lines (10 spaces deep) go after its method.
 func secondCall(stepLines string) string {
-	return "    - method: " + getHistory + "\n      rps: 5\n      duration: 1s\n      scenario: s2\n      steps:\n" +
+	return secondCallWith("", stepLines)
+}
+
+// secondCallWith is secondCall with callLines (6 spaces deep) among the keys of the call.
+func secondCallWith(callLines, stepLines string) string {
+	return "    - method: " + getHistory + "\n      rps: 5\n      duration: 1s\n" + callLines + "      scenario: s2\n      steps:\n" +
 		"        - method: wallet.v1.WalletService/Close\n" + stepLines
 }
 
@@ -160,7 +165,8 @@ func TestScenario_StepTemplatesNeedTheCallsTemplates(t *testing.T) {
 	}{
 		{"call without the key", tplScenario("      data:\n        id: fixed\n", templatedStep), "load.calls[0].steps[0]"},
 		{"call with templates false", tplScenario("      templates: false\n      data:\n        id: fixed\n", templatedStep), "load.calls[0].steps[0]"},
-		{"the second step", tplScenario("      data:\n        id: fixed\n", "        - method: "+getHistory+"\n"+
+		{"the second step", tplScenario("      data:\n        id: fixed\n", "        - method: "+transfer+"\n"+
+			"        - method: "+getHistory+"\n"+
 			"          templates: true\n          data:\n            note: \"{{seq}}\"\n"), "load.calls[0].steps[1]"},
 		{"the second call", scenarioCall(templatedCall) + secondCall("          templates: true\n          data:\n            note: \"{{seq}}\"\n"),
 			"load.calls[1].steps[0]"},
@@ -198,7 +204,7 @@ func TestScenario_StepTemplatesUnknownBracesAndKeyBraces(t *testing.T) {
 	}
 
 	t.Run("the second step names its own index", func(t *testing.T) {
-		raw := tplScenario(templatedCall, "        - method: "+getHistory+"\n"+
+		raw := tplScenario(templatedCall, "        - method: "+transfer+"\n"+"        - method: "+getHistory+"\n"+
 			"          templates: true\n          data:\n            ok: \"{{seq}}\"\n            note: \"{{nope}}\"\n")
 
 		requireRefusal(t, raw, config.ErrTemplatesUnknown, "load.calls[0].steps[1].data.note")
@@ -279,7 +285,8 @@ func TestScenario_BracesInAPlainStepOfATemplatedCallAreRefused(t *testing.T) {
 	})
 
 	t.Run("the second call", func(t *testing.T) {
-		raw := scenarioCall(templatedCall) + secondCall("          data:\n            note: \"{{seq}}\"\n")
+		// The second call is the templated one: a plain call's steps may hold braces.
+		raw := scenarioCall(templatedCall) + secondCallWith(templatedCall, "          data:\n            note: \"{{seq}}\"\n")
 
 		requireRefusal(t, raw, config.ErrScenario, "load.calls[1].steps[0]", stepNeedsKey)
 	})
@@ -341,6 +348,17 @@ func TestScenario_StepTemplatesNotABoolIsAnError(t *testing.T) {
 
 		requireRefusal(t, raw, config.ErrTemplatesValue, "line ", "load.calls[0].steps[0].templates")
 	})
+}
+
+// Braces in a step of a call that has no templates are text, as they are in the
+// call itself: 2d is about a templated call only.
+// Ground: contract — spec 2d; guard, green before and after.
+func TestScenario_BracesInAStepOfAPlainCallAreText(t *testing.T) {
+	raw := scenarioCall(templatedCall) + secondCall("          data:\n            note: \"{{seq}}\"\n")
+
+	if _, err := config.Parse([]byte(raw)); err != nil {
+		t.Errorf("Parse() = %v, want the braces of a plain call's step accepted as text", err)
+	}
 }
 
 // A templated call with plain steps without braces is valid and was before

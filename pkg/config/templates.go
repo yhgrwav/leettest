@@ -94,9 +94,56 @@ func (c Call) TemplatesOn() bool {
 	return c.Templates != nil && *c.Templates
 }
 
-// TemplatesOn says the step's data is a template.
+// TemplatesOn says the step's data is a template: templates: true was written.
 func (s Step) TemplatesOn() bool {
-	return false
+	return s.Templates != nil && *s.Templates
+}
+
+// TemplatePlaceholders are the placeholders the step's data uses, sorted; nil
+// when the step's templates are off.
+func (s Step) TemplatePlaceholders() []string {
+	if !s.TemplatesOn() {
+		return nil
+	}
+
+	var scan templateScan
+	scan.walk("data", s.Data)
+
+	return scan.names()
+}
+
+// AllTemplatePlaceholders are the placeholders of the call's data and of the
+// data of its templated steps, sorted, each once; nil when the call's templates
+// are off.
+func (c Call) AllTemplatePlaceholders() []string {
+	if !c.TemplatesOn() {
+		return nil
+	}
+
+	found := map[string]bool{}
+
+	for _, name := range c.TemplatePlaceholders() {
+		found[name] = true
+	}
+
+	for _, step := range c.Steps {
+		for _, name := range step.TemplatePlaceholders() {
+			found[name] = true
+		}
+	}
+
+	if len(found) == 0 {
+		return nil
+	}
+
+	out := make([]string, 0, len(found))
+	for name := range found {
+		out = append(out, name)
+	}
+
+	sort.Strings(out)
+
+	return out
 }
 
 // TemplatePlaceholders are the placeholders the call's data uses, sorted; nil
@@ -190,7 +237,9 @@ func (s *templateScan) text(path, text string) {
 }
 
 // validateTemplates checks a call that asks for templates: they work with data
-// only, and the data must use a placeholder, spelled as the list above.
+// only, and the data must use a placeholder, spelled as the list above. The data
+// of a step with templates: true counts: a call may be templated for the sake of
+// its steps.
 func (c Call) validateTemplates() []error {
 	if !c.TemplatesOn() {
 		return nil
@@ -202,9 +251,63 @@ func (c Call) validateTemplates() []error {
 	var scan templateScan
 	scan.walk("data", c.Data)
 
+	if !scan.braces && !c.stepsHaveBraces() {
+		return []error{fmt.Errorf("%w: templates: true changes nothing; put {{%s}} or {{%s}} into a string of data, "+
+			"or of a step with templates: true, or remove the key", ErrTemplatesNoPlaceholders, PlaceholderUUID, PlaceholderSeq)}
+	}
+
+	return scan.errs
+}
+
+// stepsHaveBraces says some step with templates: true has braces in its data.
+func (c Call) stepsHaveBraces() bool {
+	for _, step := range c.Steps {
+		if !step.TemplatesOn() {
+			continue
+		}
+
+		var scan templateScan
+		scan.walk("data", step.Data)
+
+		if scan.braces {
+			return true
+		}
+	}
+
+	return false
+}
+
+// validateStepTemplates checks the templates of one step by its path: a step
+// takes them only from a call that has them (2a), uses a placeholder of its own
+// (2e) spelled right (2b), and braces in a step that left the key out are
+// refused, for a templated call (2d). templates: false sends the braces as text.
+func (c Call) validateStepTemplates(step string, s Step) []error {
+	switch {
+	case s.Templates != nil && !*s.Templates:
+		return nil
+	case s.Templates == nil && !c.TemplatesOn():
+		return nil
+	}
+
+	if s.TemplatesOn() && !c.TemplatesOn() {
+		return []error{fmt.Errorf("%w: %s: a step's templates need templates: true on the call", ErrScenario, step)}
+	}
+
+	var scan templateScan
+	scan.walk(step+".data", s.Data)
+
+	if !s.TemplatesOn() {
+		if !scan.braces {
+			return nil
+		}
+
+		return []error{fmt.Errorf("%w: %s: the data has {{ and the call has templates: true; "+
+			"set templates: true on the step, or templates: false to send the braces as text", ErrScenario, step)}
+	}
+
 	if !scan.braces {
-		return []error{fmt.Errorf("%w: templates: true changes nothing; put {{%s}} or {{%s}} into a string of data "+
-			"or remove the key", ErrTemplatesNoPlaceholders, PlaceholderUUID, PlaceholderSeq)}
+		return []error{fmt.Errorf("%w: %s: templates: true changes nothing; put {{%s}} or {{%s}} into a string of "+
+			"the step's data or remove the key", ErrTemplatesNoPlaceholders, step, PlaceholderUUID, PlaceholderSeq)}
 	}
 
 	return scan.errs
