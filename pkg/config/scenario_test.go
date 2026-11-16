@@ -16,6 +16,7 @@ package config_test
 
 import (
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -260,13 +261,129 @@ func TestScenario_Refusals(t *testing.T) {
 	}
 }
 
+// stepWithData is a two-step scenario whose first step is Transfer with the
+// given `data:` line tail (the text after the colon, with its own space).
+func stepWithData(written string) string {
+	return twoStepScenario("        - method: " + transfer + "\n          data:" + written + "\n")
+}
+
+// callWithData is a plain call whose `data:` line is written the same way.
+func callWithData(written string) string {
+	return scenarioCall("      data:" + written + "\n")
+}
+
+// A step takes `data` as a call does: the same value forms, and what the
+// config holds is what the same text gives a call, not a copy of it changed on
+// the way. The step after it has none.
+// Ground: contract — spec 1, a step's body is written as a call's.
+func TestScenario_StepDataIsAccepted(t *testing.T) {
+	const written = " {from: a-1, to: a-2, amount: 100, note: \"two words\", ids: [1, 2]}"
+
+	cfg, err := config.Parse([]byte(twoStepScenario(
+		"        - method: " + transfer + "\n          data:" + written + "\n" +
+			"        - method: " + getHistory + "\n")))
+	if err != nil {
+		t.Fatalf("Parse() = %v, want a step with data accepted", err)
+	}
+	asCall, err := config.Parse([]byte(callWithData(written)))
+	if err != nil {
+		t.Fatalf("Parse() of the same data in a call = %v", err)
+	}
+
+	steps := cfg.Load.Calls[0].Steps
+	if len(steps) != 2 {
+		t.Fatalf("len(Steps) = %d, want 2", len(steps))
+	}
+	if steps[0].Data == nil {
+		t.Fatal("Steps[0].Data = nil, want the data as written")
+	}
+	if want := asCall.Load.Calls[0].Data; !reflect.DeepEqual(steps[0].Data, want) {
+		t.Errorf("Steps[0].Data = %#v, want what a call gets from the same text: %#v", steps[0].Data, want)
+	}
+	if got, ok := steps[0].Data.(map[string]any); !ok || got["from"] != "a-1" || got["note"] != "two words" {
+		t.Errorf("Steps[0].Data = %#v, want a map with from a-1 and note \"two words\"", steps[0].Data)
+	}
+	if steps[1].Data != nil {
+		t.Errorf("Steps[1].Data = %#v, want nil: a step without data sends the empty message", steps[1].Data)
+	}
+	if cfg.Load.Calls[0].Data != nil {
+		t.Errorf("the call's Data = %#v, want nil: a step's data is not the call's", cfg.Load.Calls[0].Data)
+	}
+}
+
+// A step's data null, empty or behind an anchor or a tag is read as a call's
+// is: null is no data (the empty message), `{}` is data that is empty, and the
+// config says nothing about either. A key inside the data that is named like a
+// step key is the data's own.
+// Ground: contract — spec 1, no null rule of its own for a step.
+func TestScenario_StepDataNullAndEmptyFollowTheCall(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		written string
+		wantNil bool
+	}{
+		{"tilde", " ~", true},
+		{"null", " null", true},
+		{"no value", "", true},
+		{"anchor on a tilde", " &a ~", true},
+		{"anchor with no value", " &a", true},
+		{"null tag", " !!null ~", true},
+		{"empty map", " {}", false},
+		{"a key named dataset inside", " {dataset: ~}", false},
+		{"a key named method inside", " {method: ~, timeout: ~}", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			asCall, callErr := config.Parse([]byte(callWithData(tc.written)))
+			cfg, err := config.Parse([]byte(stepWithData(tc.written)))
+
+			// The outcome is the call's: a form the call cannot read (the decoder's
+			// own error) is refused for a step too, and then there is nothing to compare.
+			if callErr != nil {
+				if err == nil {
+					t.Errorf("Parse() = nil, want a refusal: the call refuses the same data (%v)", callErr)
+				}
+
+				return
+			}
+			if err != nil {
+				t.Fatalf("Parse() = %v, want it accepted as a call's data is", err)
+			}
+			got := cfg.Load.Calls[0].Steps[0].Data
+			if (got == nil) != tc.wantNil {
+				t.Errorf("Steps[0].Data = %#v, want nil: %v", got, tc.wantNil)
+			}
+			if want := asCall.Load.Calls[0].Data; !reflect.DeepEqual(got, want) {
+				t.Errorf("Steps[0].Data = %#v, want what the call gets: %#v", got, want)
+			}
+		})
+	}
+}
+
+// A `{{` in a step's data is text, as in a call with templates off: nothing in
+// it is checked and it stays as written. The step has no templates key (unit 3b).
+// Ground: contract — spec 5, no new rule.
+func TestScenario_StepDataBracesAreTextAsInACallWithTemplatesOff(t *testing.T) {
+	for _, text := range []string{"{{uuid}}", "{{nope}}", "{{ seq }}", "{{", "a {{b", "{{uuid"} {
+		t.Run(text, func(t *testing.T) {
+			cfg, err := config.Parse([]byte(stepWithData(" {note: \"" + text + "\"}")))
+			if err != nil {
+				t.Fatalf("Parse() = %v, want the text accepted as written", err)
+			}
+
+			want := map[string]any{"note": text}
+			if got := cfg.Load.Calls[0].Steps[0].Data; !reflect.DeepEqual(got, want) {
+				t.Errorf("Steps[0].Data = %#v, want %#v: the text as written", got, want)
+			}
+		})
+	}
+}
+
 // A step key this unit does not read is refused by name, in words that say it
 // is coming and not a typo: the generic unknown-key error would read as a
-// mistake of the user.
+// mistake of the user. `data` left this list when a step took it (unit 3a).
 // Ground: contract — П13 and П29: no silent partial scenario.
-func TestScenario_StepKeysNotSupportedYet(t *testing.T) {
+func TestScenario_StepKeysStillRefused(t *testing.T) {
 	for key, value := range map[string]string{
-		"data":          "{account: a-1}",
 		"dataset":       "x.jsonl",
 		"dataset_order": "random",
 		"dataset_seed":  "7",

@@ -40,7 +40,7 @@ var (
 // stepKeysLater are the keys of a call that a step will take, and does not yet:
 // refused by name, so the user does not read them as typos.
 var stepKeysLater = map[string]bool{
-	"data": true, "dataset": true, "dataset_order": true, "dataset_seed": true,
+	"dataset": true, "dataset_order": true, "dataset_seed": true,
 	"dataset_reuse": true, "templates": true, "rps": true, "duration": true, "pass": true,
 }
 
@@ -166,13 +166,18 @@ func (v *nullDatasetVisitor) visitScenarioKey(pair *ast.MappingValueNode, path s
 	line := pair.Key.GetToken().Position.Line
 	name := strings.TrimPrefix(path, "$.")
 
-	if m := stepKeyPath.FindStringSubmatch(path); len(m) > 3 && m[3] != "method" && m[3] != "timeout" {
+	m := stepKeyPath.FindStringSubmatch(path)
+	if len(m) > 3 && m[3] != "method" && m[3] != "timeout" && m[3] != "data" {
 		if stepKeysLater[m[3]] {
 			v.errs = append(v.errs, fmt.Errorf("line %d: %w: %s is not supported in a step yet", line, ErrScenario, name))
 		} else {
-			v.errs = append(v.errs, fmt.Errorf("line %d: %w: %s is not a step key: a step has method and timeout", line, ErrScenario, name))
+			v.errs = append(v.errs, fmt.Errorf("line %d: %w: %s is not a step key: a step has method, timeout and data", line, ErrScenario, name))
 		}
 
+		return
+	}
+	// data with no value is an empty message, as in a call.
+	if len(m) > 3 && m[3] == "data" {
 		return
 	}
 

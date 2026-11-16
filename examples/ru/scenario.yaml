@@ -20,3 +20,8 @@ load:
       steps:
         - method: wallet.v1.WalletService/Transfer
           timeout: 500ms
+          # Своё тело запроса шага: проверяется по методу шага до нагрузки.
+          data:
+            from: wallet-1
+            to: wallet-2
+            amount: 100

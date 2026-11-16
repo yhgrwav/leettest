@@ -43,7 +43,7 @@ var referenceOnlyKeys = map[string]string{}
 var undocumentedExampleKeys = map[string]string{}
 
 // openKeys take keys of the user's own naming below them: a label, a header, a field of the message.
-var openKeys = []string{"labels", "app.metadata", "load.calls[].data"}
+var openKeys = []string{"labels", "app.metadata", "load.calls[].data", "load.calls[].steps[].data"}
 
 var backtickSpan = regexp.MustCompile("`([^`]+)`")
 

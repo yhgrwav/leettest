@@ -20,3 +20,8 @@ load:
       steps:
         - method: wallet.v1.WalletService/Transfer
           timeout: 500ms
+          # The step's own request body, checked against its method before the load.
+          data:
+            from: wallet-1
+            to: wallet-2
+            amount: 100
