@@ -16,12 +16,19 @@ load:
     - method: wallet.v1.WalletService/GetBalance
       rps: 50
       duration: 1m
+      # {{seq}} is the number of the iteration: the balance check and the transfer
+      # of one iteration carry the same one, so they speak of the same wallet.
+      templates: true
+      data:
+        wallet_id: "wallet-{{seq}}"
       scenario: pay-and-check
       steps:
         - method: wallet.v1.WalletService/Transfer
           timeout: 500ms
+          # The step's templates are its own switch, and need templates: true on the call.
+          templates: true
           # The step's own request body, checked against its method before the load.
           data:
-            from: wallet-1
-            to: wallet-2
+            from: "wallet-{{seq}}"
+            to: "{{uuid}}"
             amount: 100
