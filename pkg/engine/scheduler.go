@@ -48,6 +48,9 @@ type Request struct {
 	// one after another inside this request's in-flight slot.
 	Scenario string
 	Next     []Step
+	// Seq is the seq the call's template built this request's body with, for
+	// the steps of its iteration; zero for a call without a template.
+	Seq uint64
 }
 
 type Scheduler struct {

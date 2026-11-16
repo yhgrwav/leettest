@@ -444,6 +444,9 @@ type Step struct {
 	// Data is the step's request body as written, checked against the step's
 	// method before the run; nil sends an empty message.
 	Data any `yaml:"data"`
+	// Templates is templates; nil when left out, which on a step is refused if
+	// the data has braces, and means a plain body otherwise.
+	Templates *bool `yaml:"templates"`
 }
 
 // Pass is a call's pass: section as written, key to value, so that a wrong key

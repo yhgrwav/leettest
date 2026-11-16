@@ -360,7 +360,8 @@ func TestScenario_StepDataNullAndEmptyFollowTheCall(t *testing.T) {
 }
 
 // A `{{` in a step's data is text, as in a call with templates off: nothing in
-// it is checked and it stays as written. The step has no templates key (unit 3b).
+// it is checked and it stays as written. The call's templates are off here; a
+// step under a templated call is in step_templates_test.go.
 // Ground: contract — spec 5, no new rule.
 func TestScenario_StepDataBracesAreTextAsInACallWithTemplatesOff(t *testing.T) {
 	for _, text := range []string{"{{uuid}}", "{{nope}}", "{{ seq }}", "{{", "a {{b", "{{uuid"} {
@@ -380,7 +381,8 @@ func TestScenario_StepDataBracesAreTextAsInACallWithTemplatesOff(t *testing.T) {
 
 // A step key this unit does not read is refused by name, in words that say it
 // is coming and not a typo: the generic unknown-key error would read as a
-// mistake of the user. `data` left this list when a step took it (unit 3a).
+// mistake of the user. `data` left this list when a step took it (unit 3a),
+// `templates` when it took that (unit 3b).
 // Ground: contract — П13 and П29: no silent partial scenario.
 func TestScenario_StepKeysStillRefused(t *testing.T) {
 	for key, value := range map[string]string{
@@ -388,7 +390,6 @@ func TestScenario_StepKeysStillRefused(t *testing.T) {
 		"dataset_order": "random",
 		"dataset_seed":  "7",
 		"dataset_reuse": "false",
-		"templates":     "true",
 		"rps":           "5",
 		"duration":      "1s",
 		"pass":          "{errors: 1%}",

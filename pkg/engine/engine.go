@@ -68,6 +68,9 @@ type Step struct {
 	Method  string
 	Payload []byte
 	Timeout time.Duration
+	// Build makes the step's body for the iteration whose seq is given; nil
+	// sends Payload.
+	Build func(seq uint64) []byte
 }
 
 // payload is the body of the call's next request: the record at S mod n, where

@@ -94,6 +94,11 @@ func (c Call) TemplatesOn() bool {
 	return c.Templates != nil && *c.Templates
 }
 
+// TemplatesOn says the step's data is a template.
+func (s Step) TemplatesOn() bool {
+	return false
+}
+
 // TemplatePlaceholders are the placeholders the call's data uses, sorted; nil
 // when templates are off.
 func (c Call) TemplatePlaceholders() []string {
