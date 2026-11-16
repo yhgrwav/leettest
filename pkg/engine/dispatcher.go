@@ -115,7 +115,7 @@ func (d *Dispatcher) Run(ctx context.Context, out chan<- Request) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case out <- NewScheduler(c.call).newRequest(c.at):
+		case out <- c.call.newRequest(c.at):
 		}
 		// The count of the call is S, not c.i: that one starts over with each
 		// stage. It moves once the request has left, so a request built and

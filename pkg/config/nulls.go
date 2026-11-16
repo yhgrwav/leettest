@@ -40,9 +40,11 @@ var (
 // stepKeysLater are the keys of a call that a step will take, and does not yet:
 // refused by name, so the user does not read them as typos.
 var stepKeysLater = map[string]bool{
-	"dataset": true, "dataset_order": true, "dataset_seed": true,
 	"dataset_reuse": true, "rps": true, "duration": true, "pass": true,
 }
+
+// stepDatasetKeys are the dataset keys a step takes, as a call does.
+var stepDatasetKeys = map[string]bool{"dataset": true, "dataset_order": true, "dataset_seed": true}
 
 // errorsLimitPath is the search's errors_limit: left with no value it would
 // be read as left out, and the search would run at the default without a word.
@@ -167,12 +169,33 @@ func (v *nullDatasetVisitor) visitScenarioKey(pair *ast.MappingValueNode, path s
 	name := strings.TrimPrefix(path, "$.")
 
 	m := stepKeyPath.FindStringSubmatch(path)
-	if len(m) > 3 && m[3] != "method" && m[3] != "timeout" && m[3] != "data" && m[3] != "templates" {
+	if len(m) > 3 && m[3] != "method" && m[3] != "timeout" && m[3] != "data" && m[3] != "templates" && !stepDatasetKeys[m[3]] {
 		if stepKeysLater[m[3]] {
 			v.errs = append(v.errs, fmt.Errorf("line %d: %w: %s is not supported in a step yet", line, ErrScenario, name))
 		} else {
-			v.errs = append(v.errs, fmt.Errorf("line %d: %w: %s is not a step key: a step has method, timeout, data and templates",
-				line, ErrScenario, name))
+			v.errs = append(v.errs, fmt.Errorf("line %d: %w: %s is not a step key: a step has method, timeout, data, templates, "+
+				"dataset, dataset_order and dataset_seed", line, ErrScenario, name))
+		}
+
+		return
+	}
+	// A dataset key with no value is lost by the decoder as left out: the step
+	// would run on its own data, as the call's keys (emptyKeyErrors). A seed is a
+	// whole number, which the decoder does not insist on.
+	if len(m) > 3 && stepDatasetKeys[m[3]] {
+		value, resolved := v.unwrap(pair.Value)
+		if !resolved {
+			return
+		}
+
+		_, null := value.(*ast.NullNode)
+		_, whole := value.(*ast.IntegerNode)
+
+		switch {
+		case null:
+			v.errs = append(v.errs, fmt.Errorf("line %d: %w: %s has no value: write it or leave it out", line, emptyKeyErrors[m[3]], name))
+		case m[3] == "dataset_seed" && !whole:
+			v.errs = append(v.errs, fmt.Errorf("line %d: %w: %s is not a whole number", line, ErrDatasetSeed, name))
 		}
 
 		return

@@ -44,13 +44,18 @@ type Request struct {
 	// KeepResponse says whether to keep the response body; needed for the
 	// dependency graph, always false in the MVP.
 	KeepResponse bool
-	// Scenario and Next are the call's, carried to the worker: it runs Next
-	// one after another inside this request's in-flight slot.
-	Scenario string
-	Next     []Step
+	// scenario is the call, for a call with steps and nil otherwise: the worker
+	// runs its Next one after another inside this request's in-flight slot.
+	// One pointer keeps Request small (a field per request is paid by every
+	// call), and it points at a Call that outlives the run: a copy made for one
+	// request would be an allocation per request.
+	scenario *Call
 	// Seq is the seq the call's template built this request's body with, for
 	// the steps of its iteration; zero for a call without a template.
 	Seq uint64
+	// StepRows is the row each dataset step of Next takes in this iteration,
+	// indexed as Next; nil for a call without dataset steps.
+	StepRows []int32
 }
 
 type Scheduler struct {
@@ -92,6 +97,9 @@ func (s *Scheduler) validate() error {
 	if len(s.Call.Stages) == 0 {
 		return ErrNoStages
 	}
+	if err := s.Call.checkStepDatasets(); err != nil {
+		return err
+	}
 
 	for i, stage := range s.Call.Stages {
 		// A ramp may start or end at 0; a stage idle at both ends has no tick.
@@ -130,7 +138,7 @@ func (s *Scheduler) runStage(ctx context.Context, out chan<- Request, stage Stag
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case out <- s.newRequest(scheduledAt):
+		case out <- s.Call.newRequest(scheduledAt):
 		}
 		s.Call.handedOut()
 
@@ -141,22 +149,32 @@ func (s *Scheduler) runStage(ctx context.Context, out chan<- Request, stage Stag
 }
 
 func (s *Scheduler) newRequest(scheduledAt time.Time) Request {
+	return s.Call.newRequest(scheduledAt)
+}
+
+// newRequest is on the Call, not on a Scheduler made for the occasion: the
+// request keeps a pointer to c, and that must be a Call that lives on.
+func (c *Call) newRequest(scheduledAt time.Time) Request {
 	req := Request{
-		Method:       s.Call.Method,
+		Method:       c.Method,
 		ScheduledAt:  scheduledAt,
-		KeepResponse: s.Call.KeepResponse,
-		Scenario:     s.Call.Scenario,
-		Next:         s.Call.Next,
+		KeepResponse: c.KeepResponse,
 	}
-	if tpl := s.Call.Template; tpl != nil {
+	if tpl := c.Template; tpl != nil {
 		req.Seq = tpl.nextSeq()
 		req.Payload = tpl.bodyAt(req.Seq)
 	} else {
-		req.Payload = s.Call.payload()
+		req.Payload = c.payload()
 	}
-
-	if s.Call.Timeout > 0 {
-		req.Deadline = scheduledAt.Add(s.Call.Timeout)
+	if c.Timeout > 0 {
+		req.Deadline = scheduledAt.Add(c.Timeout)
+	}
+	// Last on purpose: stepRows is a call that keeps c and scheduledAt alive
+	// across it, and placed earlier the compiler spills the arguments on every
+	// path, +1.5 ns on a call without steps.
+	if len(c.Next) > 0 {
+		req.scenario = c
+		req.StepRows = c.stepRows()
 	}
 
 	return req

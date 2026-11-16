@@ -507,7 +507,20 @@ func BenchmarkNewRequest_Plain(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		_ = s.newRequest(at)
+		_ = s.Call.newRequest(at)
+	}
+}
+
+// A call with one dataset step: the iteration's row is the one []int32 the
+// request carries. Compared with Plain it is the cost of steps[].dataset.
+func BenchmarkNewRequest_StepDataset(b *testing.B) {
+	s := NewScheduler(stepDatasetCall([]Step{datasetStep("a/Two", "t", 3, NewRecordCounter())}))
+	at := time.Now()
+
+	b.ReportAllocs()
+
+	for b.Loop() {
+		_ = s.Call.newRequest(at)
 	}
 }
 
@@ -518,6 +531,6 @@ func BenchmarkNewRequest_Templated(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		_ = s.newRequest(at)
+		_ = s.Call.newRequest(at)
 	}
 }

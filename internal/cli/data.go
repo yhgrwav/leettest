@@ -100,19 +100,30 @@ func recordBody(opts protojson.UnmarshalOptions, desc protoreflect.MessageDescri
 // datasetBodies builds every record of call's dataset, in file order. The
 // first record that does not fit is the error, named by its line in the file.
 func datasetBodies(opts protojson.UnmarshalOptions, desc protoreflect.MessageDescriptor, call *config.Call) ([][]byte, error) {
-	bodies := make([][]byte, len(call.Records))
+	bodies, bad := recordBodies(opts, desc, call.Records)
+	if bad > 0 {
+		return nil, fmt.Errorf("%w: %s: dataset %s:%d: does not fit %s",
+			ErrRequestData, call.Method, call.Dataset, bad, desc.FullName())
+	}
 
-	for i, record := range call.Records {
+	return bodies, nil
+}
+
+// recordBodies builds every record in file order. bad is the line of the first
+// record that does not fit, 0 when all do; bodies are then nil: all or none.
+func recordBodies(opts protojson.UnmarshalOptions, desc protoreflect.MessageDescriptor, records []config.DatasetRecord) (bodies [][]byte, bad int) {
+	bodies = make([][]byte, len(records))
+
+	for i, record := range records {
 		body, fits := recordBody(opts, desc, record.JSON)
 		if !fits {
-			return nil, fmt.Errorf("%w: %s: dataset %s:%d: does not fit %s",
-				ErrRequestData, call.Method, call.Dataset, record.Line, desc.FullName())
+			return nil, record.Line
 		}
 
 		bodies[i] = body
 	}
 
-	return bodies, nil
+	return bodies, 0
 }
 
 // Unchecked is a method nothing could be checked against before the run, and
@@ -171,7 +182,24 @@ func AttachMethods(
 			if stepErr != nil {
 				errs = append(errs, stepErr)
 			}
-			if stepMethod == nil || step.Data == nil {
+			if stepMethod == nil {
+				continue
+			}
+			if step.Dataset != "" {
+				// The step's own method checks its own file: all or none, as the call's.
+				bodies, bad := recordBodies(stepMethod.UnmarshalOptions(), stepMethod.Input, step.Records)
+				if bad > 0 {
+					errs = append(errs, fmt.Errorf("%w: load.calls[%d].steps[%d].dataset: %s:%d: does not fit %s",
+						ErrRequestData, i, k, step.Dataset, bad, stepMethod.Input.FullName()))
+
+					continue
+				}
+
+				calls[i].Next[k].Payloads = bodies
+
+				continue
+			}
+			if step.Data == nil {
 				continue
 			}
 
@@ -326,11 +354,15 @@ func checkStepMethod(
 		return nil, nil, fmt.Errorf("%s: %w (%s)", at, ErrCredentialsRejected, codes.Unauthenticated)
 	case errors.Is(err, descriptor.ErrMethodNotFound):
 		return nil, nil, fmt.Errorf("%s: %w", at, err)
+	case step.Dataset != "" && errors.Is(err, descriptor.ErrReflectionUnsupported):
+		return nil, nil, fmt.Errorf("%s: %w: the schema for its dataset comes from reflection; "+
+			"set app.proto or app.protoset to give it another way, or drop the dataset: "+
+			"without dataset the step runs with an empty message", at, err)
 	case step.Data != nil && errors.Is(err, descriptor.ErrReflectionUnsupported):
 		return nil, nil, fmt.Errorf("%s: %w: the schema for its data comes from reflection; "+
 			"set app.proto or app.protoset to give it another way, or drop the data: "+
 			"without data the step runs with an empty message", at, err)
-	case step.Data != nil:
+	case step.Data != nil || step.Dataset != "":
 		return nil, nil, fmt.Errorf("%s: %w", at, err)
 	}
 

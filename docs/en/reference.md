@@ -63,11 +63,14 @@ The config, a dataset, a report for `compare` and the settings file are UTF-8; a
 | `load.calls[].dataset_reuse` | `true` (left out) or `false`: with `false` no record goes out twice, in the whole process. Needs `dataset` |
 | `load.calls[].templates` | `true` or `false` (left out — `false`; a key with no value is an error): turns on the `{{uuid}}` and `{{seq}}` placeholders in `data`, see [below](#a-request-that-changes-templates). Needs at least one placeholder, in its `data` or in the `data` of a step with `templates: true`; not together with `dataset`. |
 | `load.calls[].scenario` | (not released yet) The scenario's name: the call itself becomes step 1, the `steps` follow it. Needs `steps`, and the other way round. Not empty, printed in the report as written; it must not equal a method. See [below](#scenario-steps-after-a-call) |
-| `load.calls[].steps` | (not released yet) A non-empty list of the steps after the call. Any key of a step other than the four below is not supported yet and is an error |
+| `load.calls[].steps` | (not released yet) A non-empty list of the steps after the call. Any key of a step other than the seven below is not supported yet and is an error |
 | `load.calls[].steps[].method` | (not released yet) The step's method, the full name; required. It is checked before the load, like a call's method |
 | `load.calls[].steps[].timeout` | (not released yet) How long to wait for the step's reply, as `load.calls[].timeout`; left out — `2s`, not the call's timeout |
 | `load.calls[].steps[].data` | (not released yet) The step's request body, written as `load.calls[].data` (see [below](#request-body)) and checked before the load against the step's own method; a wrong field is a config error, as for a call. Left out — an empty message. `{{…}}` in it is text only with `templates: false` or in a call without `templates: true`; see the next row. Needs reflection, or `app.proto` / `app.protoset`, as a call's `data` does |
 | `load.calls[].steps[].templates` | (not released yet) `true` or `false` (a key with no value, or anything but `true`/`false`, is an error): `true` turns on `{{uuid}}` and `{{seq}}` in the step's `data`, see [below](#templates-in-a-step). Needs `templates: true` on the call and a placeholder of its own in the step's `data`. Left out: the body is plain, and braces in `data` under a call with `templates: true` are an error — write `templates: true` on the step, or `templates: false` to send the braces as text |
+| `load.calls[].steps[].dataset` | (not released yet) A file of request bodies for the step instead of its `data`, see [below](#dataset-in-a-step). Read and checked like a call's, against the step's own method. Not together with the step's `data` or `templates: true` |
+| `load.calls[].steps[].dataset_order` | (not released yet) `file` (left out) or `random`: the order of the step's records. Needs the step's `dataset` |
+| `load.calls[].steps[].dataset_seed` | (not released yet) The seed of a random order, a whole number from 0 to 9007199254740991, as `load.calls[].dataset_seed`. Needs `dataset_order: random` on the step |
 | `load.calls[].pass` | The limits a run must meet to pass: `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, see [below](#pass-limits). Left out — no limits |
 | `load.breakpoint.from` | The first step's rate of a breaking-point search, calls a second. A whole number from 1; a fractional one is a config error (`rps must be a whole number of requests: 100.5`). Required: left out or below 1 — `invalid breakpoint: breakpoint.from: breaking-point plan: from 0, want at least 1 rps`, exit 1. The first step must measure at least 100 calls, `from` × (`hold` − `settle`), otherwise it is refused before any load with `invalid breakpoint: the first step measures 8 calls, a p99 needs 100: raise from, hold or lower settle`. With `app.mode: real` the ramp runs from 0 to `from` |
 | `load.breakpoint.to` | No step goes above this rate. A whole number, at least `from` (equal to `from` — one step). Required: left out or below `from` — `invalid breakpoint: breakpoint.to: breaking-point plan: to 50 is below from 100`, exit 1. If the search reaches the last step and it holds, the outcome is `held_all` |
@@ -351,6 +354,36 @@ the call needs `templates: true` too, because the counter lives on the call.
   still the call's method.
 - **The body of a step is built in the worker** after the step before it ended; the time it takes
   counts as the step's start lag. `-dry-run` prints the call's body and no steps yet.
+
+### Dataset in a step
+
+*(Not released yet.)* A step takes its body from a file, as a call does.
+
+```yaml
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 50
+      duration: 1m
+      scenario: pay-and-check
+      steps:
+        - method: wallet.v1.WalletService/Transfer
+          dataset: transfers.jsonl
+          dataset_order: random
+          dataset_seed: 42
+```
+
+- **The same file rules as for a call:** one JSON per line, a relative path from the config's
+  directory, every line checked before the load against the step's own method; an error names
+  `load.calls[i].steps[k].dataset: transfers.jsonl:3` and never prints the line.
+- **The step has its own position in its file**, apart from the call's. It moves once per iteration
+  sent, not once per step reached: iteration 5 takes the fifth record even if iteration 4 failed
+  before the step.
+- **Not together with the step's `data` or with `templates: true`** on it. The records of a file are
+  not templated: under a call with `templates: true`, a record with `{{` is an error naming the
+  line; write `templates: false` on the step to send the braces as text.
+- **`dataset_reuse: false` is not supported in a step yet**, and neither are `rps`, `duration` and
+  `pass`.
+- **In the report** the step's method row carries the dataset line and `methods[].dataset`.
+  `used` counts the iterations handed out with the step, not the steps that were reached.
 
 ## A different request each call: a dataset
 
@@ -831,7 +864,7 @@ The rest are plain counters.
 | `methods[].silent_sent_rps` | int? | Calls sent in the second before it (in the first, if the silence starts there) |
 | `methods[].silent_planned_rps_low`, `methods[].silent_planned_rps_high` | int? | The planned rate of the stages in that second; `null` also when no stage ran in it |
 | `methods[].last_answer_at_us` | int? | When the last call the target answered went out; `null` — it never answered |
-| `methods[].dataset` | object? | The call's dataset file; `null` — it has none |
+| `methods[].dataset` | object? | The dataset file of the call or of the scenario step that sends this method; `null` — it has none. For a step, `used` and `used_max` count the iterations handed out with it, not the iterations that reached it (`scenarios[].steps[].reached`) |
 | `methods[].dataset.file` | string | The path as the config wrote it |
 | `methods[].dataset.sha256` | string | SHA-256 of the file as it lies on disk, a byte-order mark included, 64 hex digits |
 | `methods[].dataset.records` | int | Requests in the file |

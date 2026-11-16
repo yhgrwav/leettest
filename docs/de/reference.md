@@ -777,7 +777,7 @@ Die übrigen sind einfache Zähler.
 | `methods[].silent_sent_rps` | int? | In der Sekunde davor gesendete Aufrufe (in der ersten, wenn das Schweigen dort beginnt) |
 | `methods[].silent_planned_rps_low`, `methods[].silent_planned_rps_high` | int? | Die geplante Rate der Stufen in dieser Sekunde; `null` auch, wenn darin keine Stufe lief |
 | `methods[].last_answer_at_us` | int? | Wann der letzte Aufruf rausging, den das Ziel beantwortet hat; `null` — es hat nie geantwortet |
-| `methods[].dataset` | object? | Die Anfragedatei des Aufrufs; `null` — er hat keine |
+| `methods[].dataset` | object? | Die Anfragedatei des Aufrufs oder des Szenario-Schritts, der diese Methode sendet; `null` — es gibt keine. Bei einem Schritt zählen `used` und `used_max` die Iterationen, die mit ihm rausgingen, nicht die, die ihn erreicht haben (`scenarios[].steps[].reached`) |
 | `methods[].dataset.file` | string | Der Pfad, wie ihn die Konfiguration schreibt |
 | `methods[].dataset.sha256` | string | SHA-256 der Datei, wie sie auf der Platte liegt, eine Byte-Order-Mark eingeschlossen, 64 Hexziffern |
 | `methods[].dataset.records` | int | Anfragen in der Datei |

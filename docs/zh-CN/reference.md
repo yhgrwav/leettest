@@ -648,7 +648,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `methods[].silent_sent_rps` | int? | 在那之前一秒发出的调用数（如果沉默从第一秒开始，则为第一秒） |
 | `methods[].silent_planned_rps_low`、`methods[].silent_planned_rps_high` | int? | 那一秒各阶段的计划速率；那一秒没有阶段在运行时也为 `null` |
 | `methods[].last_answer_at_us` | int? | 目标应答过的最后一个调用的发出时刻；`null`——从未应答 |
-| `methods[].dataset` | object? | 该调用的请求文件；`null`——没有 |
+| `methods[].dataset` | object? | 发出该方法的调用或场景步骤的请求文件；`null`——没有。对步骤而言，`used` 和 `used_max` 统计随它一起发出的迭代数，而不是到达它的迭代数（`scenarios[].steps[].reached`） |
 | `methods[].dataset.file` | string | 配置里写的路径 |
 | `methods[].dataset.sha256` | string | 文件在磁盘上原样的 SHA-256（含字节序标记），64 位十六进制 |
 | `methods[].dataset.records` | int | 文件中的请求数 |

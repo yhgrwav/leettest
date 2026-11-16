@@ -382,13 +382,11 @@ func TestScenario_StepDataBracesAreTextAsInACallWithTemplatesOff(t *testing.T) {
 // A step key this unit does not read is refused by name, in words that say it
 // is coming and not a typo: the generic unknown-key error would read as a
 // mistake of the user. `data` left this list when a step took it (unit 3a),
-// `templates` when it took that (unit 3b).
+// `templates` when it took that (unit 3b), `dataset`, `dataset_order` and
+// `dataset_seed` when it took those (unit 3c).
 // Ground: contract — П13 and П29: no silent partial scenario.
 func TestScenario_StepKeysStillRefused(t *testing.T) {
 	for key, value := range map[string]string{
-		"dataset":       "x.jsonl",
-		"dataset_order": "random",
-		"dataset_seed":  "7",
 		"dataset_reuse": "false",
 		"rps":           "5",
 		"duration":      "1s",
