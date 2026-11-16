@@ -69,13 +69,17 @@ func (s *Scheduler) Run(ctx context.Context, out chan<- Request) error {
 		return fmt.Errorf("%s: %w", s.Call.Method, ErrOnceNeedsEngine)
 	}
 
+	// Judged once, as newDispatcher does: a measure of the clock step takes
+	// milliseconds and must not delay each request.
+	exact := exactSchedule()
+
 	stageStart := time.Now()
 
 	// A dataset call with no counter counts this run from its first record.
 	run := &Scheduler{Call: counted(s.Call)}
 
 	for i, stage := range s.Call.Stages {
-		if err := run.runStage(ctx, out, stage, stageStart); err != nil {
+		if err := run.runStage(ctx, out, stage, stageStart, exact); err != nil {
 			return fmt.Errorf("stage %d: %w", i, err)
 		}
 		stageStart = stageStart.Add(stage.Duration)
@@ -102,7 +106,7 @@ func (s *Scheduler) validate() error {
 	return nil
 }
 
-func (s *Scheduler) runStage(ctx context.Context, out chan<- Request, stage Stage, stageStart time.Time) error {
+func (s *Scheduler) runStage(ctx context.Context, out chan<- Request, stage Stage, stageStart time.Time, exact bool) error {
 	for i := 0; ; i++ {
 		offset, ok := stage.offset(i)
 		if !ok {
@@ -111,7 +115,7 @@ func (s *Scheduler) runStage(ctx context.Context, out chan<- Request, stage Stag
 
 		scheduledAt := stageStart.Add(offset)
 
-		if err := waitUntil(ctx, scheduledAt, exactSchedule()); err != nil {
+		if err := waitUntil(ctx, scheduledAt, exact); err != nil {
 			return err
 		}
 

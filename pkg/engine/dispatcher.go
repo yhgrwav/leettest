@@ -185,8 +185,12 @@ func (q *cursors) Pop() any {
 // exactSchedule says whether the dispatcher waits to each moment exactly, on
 // this host.
 func exactSchedule() bool {
-	return exactScheduleFor(preciseSleep, clock.StepOf(time.Now), runtime.GOMAXPROCS(0))
+	return exactScheduleFor(preciseSleep, stepOf(time.Now), runtime.GOMAXPROCS(0))
 }
+
+// stepOf is the clock-step measure exactSchedule reads; a variable so a test
+// can count how often a run measures.
+var stepOf = clock.StepOf
 
 // exactScheduleFor is exactSchedule on a host that can or cannot sleep to a
 // microsecond (Linux, clock_nanosleep), has a clock of step and procs Ps. Not
