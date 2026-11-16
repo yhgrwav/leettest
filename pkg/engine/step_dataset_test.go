@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"slices"
 	"sort"
 	"strconv"
@@ -358,6 +359,44 @@ func TestMovers_CallWithoutDatasetStepsCarriesNoStepRows(t *testing.T) {
 			if reqs[i].StepRows != nil {
 				t.Errorf("%s: request %d carries StepRows %v, want nil", m.name, i, reqs[i].StepRows)
 			}
+		}
+	}
+}
+
+// Ground: hot path — a mover hands out a scenario request with one allocation,
+// the row slice, and a plain request with none: the call is carried by a pointer
+// to the caller's own Call, not to a copy built per request. Counted over the
+// whole hand-out because Dispatcher.Run is a loop, not a function to call once.
+// Mutation: Dispatcher.Run builds a temporary Scheduler for each request.
+func TestMovers_HandOutAllocatesOneForAScenarioRequestAndNoneForAPlainOne(t *testing.T) {
+	const n = 1000
+
+	mallocsPerRequest := func(m mover, call Call) float64 {
+		out := make(chan Request, n+24)
+		var before, after runtime.MemStats
+		runtime.ReadMemStats(&before)
+		if err := m.run(t.Context(), call, out); err != nil {
+			t.Fatalf("%s run: %v", m.name, err)
+		}
+		runtime.ReadMemStats(&after)
+
+		if len(out) != n {
+			t.Fatalf("%s: handed out %d, want %d", m.name, len(out), n)
+		}
+
+		return float64(after.Mallocs-before.Mallocs) / n
+	}
+
+	for _, m := range movers {
+		scenario := stepDatasetCall([]Step{datasetStep("a/Two", "two-", 3, NewRecordCounter())}, atRate(1000000, n))
+		plain := stepDatasetCall([]Step{{Method: "a/Two", Timeout: stepTimeout, Payload: []byte("plain")}}, atRate(1000000, n))
+
+		// A constant few allocations of the run itself, spread over n, stay under 0.1.
+		if got := mallocsPerRequest(m, scenario); got > 1.1 {
+			t.Errorf("%s: %.2f allocations per scenario request, want 1 (the row slice)", m.name, got)
+		}
+		if got := mallocsPerRequest(m, plain); got > 0.1 {
+			t.Errorf("%s: %.2f allocations per plain request, want 0", m.name, got)
 		}
 	}
 }
