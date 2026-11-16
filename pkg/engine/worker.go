@@ -289,7 +289,7 @@ func (r *poolRun) launch(p *WorkerPool, req Request, out chan<- Result) error {
 	go func() {
 		defer r.wg.Done()
 
-		if len(req.Next) > 0 {
+		if req.scenario != nil {
 			p.iterate(r, req, out)
 
 			return
@@ -350,7 +350,8 @@ func (p *WorkerPool) send(r *poolRun, req Request, out chan<- Result, release fu
 // its results go to out only after the slot is back, so a slow collector never
 // delays a step. A fatal failure anywhere drops the whole iteration.
 func (p *WorkerPool) iterate(r *poolRun, first Request, out chan<- Result) {
-	results := make([]Result, 0, len(first.Next)+2)
+	sc := first.scenario
+	results := make([]Result, 0, len(sc.Next)+2)
 	req := first
 
 	var end Result
@@ -365,7 +366,7 @@ func (p *WorkerPool) iterate(r *poolRun, first Request, out chan<- Result) {
 		step.IterationTick = first.ScheduledAt
 		results = append(results, step)
 
-		if step.Category != CategorySuccess || k == len(first.Next) {
+		if step.Category != CategorySuccess || k == len(sc.Next) {
 			end = iterationResult(first, results[0], step, k)
 
 			break
@@ -381,7 +382,7 @@ func (p *WorkerPool) iterate(r *poolRun, first Request, out chan<- Result) {
 				return
 			}
 			end = Result{
-				Method: first.Scenario, ScheduledAt: first.ScheduledAt, BegunAt: results[0].BegunAt,
+				Method: sc.Scenario, ScheduledAt: first.ScheduledAt, BegunAt: results[0].BegunAt,
 				IterationTick: first.ScheduledAt, Iteration: true, IterationStep: k + 1,
 				Outcome: Outcome{
 					Category: CategoryAborted, Err: r.sendCtx.Err(),
@@ -392,7 +393,7 @@ func (p *WorkerPool) iterate(r *poolRun, first Request, out chan<- Result) {
 			break
 		}
 
-		next := first.Next[k]
+		next := sc.Next[k]
 		req = Request{Method: next.Method, Payload: next.Payload, ScheduledAt: step.DoneAt}
 		if k < len(first.StepRows) && len(next.Payloads) > 0 {
 			// The row was taken when the iteration was handed out, by its own
@@ -426,7 +427,7 @@ func (p *WorkerPool) iterate(r *poolRun, first Request, out chan<- Result) {
 // deadline, end and outcome of that step.
 func iterationResult(first Request, one, last Result, k int) Result {
 	return Result{
-		Method:        first.Scenario,
+		Method:        first.scenario.Scenario,
 		ScheduledAt:   first.ScheduledAt,
 		BegunAt:       one.BegunAt,
 		Deadline:      last.Deadline,

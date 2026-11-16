@@ -323,8 +323,8 @@ func TestEngine_ScenarioTemplatedStepUnsentIterationSpendsNoSeq(t *testing.T) {
 			if req.Seq != uint64(i) {
 				t.Fatalf("request %d carries Seq %d, want %d", i, req.Seq, i)
 			}
-			if len(req.Next) != 1 {
-				t.Fatalf("request %d carries %d steps, want 1", i, len(req.Next))
+			if req.scenario == nil || len(req.scenario.Next) != 1 {
+				t.Fatalf("request %d carries the call %+v, want one step", i, req.scenario)
 			}
 		case <-time.After(5 * time.Second):
 			t.Fatalf("request %d did not arrive", i)
