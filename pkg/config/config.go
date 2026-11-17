@@ -85,6 +85,9 @@ var (
 	ErrInvalidMode = errors.New("app.mode must be local or real, or left out")
 	// ErrRealNeedsRamp is app.mode: real without load.ramp.
 	ErrRealNeedsRamp = errors.New("app.mode: real needs load.ramp (a ramp from 0 to rps), e.g. load.ramp: 30s")
+	// ErrInvalidMetadataRefresh is an app.metadata_refresh below 1s, with no
+	// value, or with no ${file:PATH} in app.metadata to read again.
+	ErrInvalidMetadataRefresh = errors.New("invalid app.metadata_refresh")
 	// ErrInvalidStopOnErrors is a load.stop_on_errors that is not a percent
 	// above 0 and up to 100, or has no value.
 	ErrInvalidStopOnErrors = errors.New("invalid load.stop_on_errors")
@@ -160,6 +163,12 @@ type App struct {
 	// carries: keys lowercased, ${NAME} replaced from the environment; nil
 	// when there is none.
 	RawMetadata map[string]string `yaml:"metadata"`
+	// RawMetadataRefresh is app.metadata_refresh as written, nil when it was
+	// left out. MetadataRefresh is how often every ${file:PATH} of app.metadata
+	// is read again during the run, at least 1s; 0 reads each file once at the
+	// start.
+	RawMetadataRefresh *time.Duration `yaml:"metadata_refresh"`
+	MetadataRefresh    time.Duration  `yaml:"-"`
 	// RawMaxResponseSize is the field as written, such as 16MiB; the unit is
 	// required. MaxResponseBytes is it in bytes, 0 when left out: the
 	// transport's own limit of 4 MiB.
