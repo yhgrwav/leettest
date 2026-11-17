@@ -72,6 +72,16 @@ type Call struct {
 	Values int
 }
 
+// extractOf is the function that takes the values out of the reply of step k of
+// an iteration (0 is the call itself), nil when it takes none.
+func (c *Call) extractOf(k int) func([]byte, []string) error {
+	if k == 0 {
+		return c.Extract
+	}
+
+	return c.Next[k-1].Extract
+}
+
 // Step is a call of a scenario after its first. Each step is sent when the
 // one before it ended in success, and is judged by its own Timeout.
 type Step struct {

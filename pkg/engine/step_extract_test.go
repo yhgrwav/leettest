@@ -24,6 +24,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unsafe"
 )
 
 // Extract in a scenario (v0.9 unit 4b, the engine side). The engine knows no
@@ -432,5 +433,19 @@ func TestIterate_TheValuesSliceIsMadeOnlyWhenThereAreNames(t *testing.T) {
 				t.Errorf("Build got vals %q (nil %v), want nil %v and %d of them", got, got == nil, tc.wantNil, tc.wantLen)
 			}
 		})
+	}
+}
+
+// Ground: hot path — Request is copied by value on every send and its size is
+// what decisions «Горячий путь» of v0.9 unit 4 promised not to change: extract
+// adds nothing to it, the keep-response flag it uses was there.
+// Mutation: a field added to Request.
+func TestRequest_SizeIsWhatTheHotPathWasMeasuredWith(t *testing.T) {
+	if strconv.IntSize != 64 {
+		t.Skip("the size is 136 bytes on 64-bit platforms")
+	}
+
+	if got := unsafe.Sizeof(Request{}); got != 136 {
+		t.Errorf("sizeof(Request) = %d, want 136: a new field costs every send, see decisions «Горячий путь»", got)
 	}
 }

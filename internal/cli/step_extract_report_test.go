@@ -133,6 +133,59 @@ func TestInvalidNote_ABadResponseThatIsNotAnExtractIsStillTheEncoding(t *testing
 	}
 }
 
+// A call templated only for its steps' {{extract.<name>}} has no placeholder of
+// the engine's: the line must not print an empty list between the commas.
+// Ground: boundary — the empty list of placeholders.
+// Mutation: the list joined unconditionally (two spaces in the line).
+func TestTemplatesLine_NoPlaceholdersLeavesNoGap(t *testing.T) {
+	got := templatesLine(&engine.TemplatesReport{LastSeq: 40})
+
+	if want := "  data: templated (last seq 40, ramp and warm-up counted)"; got != want {
+		t.Errorf("line = %q, want %q", got, want)
+	}
+
+	withSome := templatesLine(&engine.TemplatesReport{Placeholders: []string{"seq", "uuid"}, LastSeq: 40})
+	if want := "  data: templated, seq uuid (last seq 40, ramp and warm-up counted)"; withSome != want {
+		t.Errorf("line = %q, want %q", withSome, want)
+	}
+}
+
+// A method whose bad responses are half the extract's and half something else
+// has no single cause to name: the general line, with the counts. The extract
+// note needs every bad response to be the target's OK, the encoding note needs
+// none of them to be.
+// Ground: boundary — the discriminator is "all" for the extract and "none" for
+// the encoding; the middle belongs to neither.
+// Mutations: missed > 0 where missed == bad (the extract note for the mix);
+// oversized == 0 alone where oversized == 0 && missed == 0 (the encoding note
+// for the mix).
+func TestInvalidNote_MixedBadResponsesGetTheGeneralLine(t *testing.T) {
+	const half = 6
+
+	m := engine.MethodReport{
+		Method: "wallet.v1.WalletService/GetBalance", Sent: 2 * half, Failed: 2 * half,
+		BadResponse: refusals(2*half, time.Millisecond),
+		FailureCodes: []engine.CodeCount{
+			{Code: "OK", Count: half, FromTarget: true},
+			{Code: "Internal", Count: half, FromTarget: false},
+		},
+	}
+
+	got := invalidNote(&m, "")
+
+	if !strings.HasPrefix(got, "invalid run") {
+		t.Fatalf("note = %q, want an invalid run note", got)
+	}
+	if want := "request error 0, client error 0, bad response 12"; !strings.Contains(got, want) {
+		t.Errorf("note = %q, want the general line with %q", got, want)
+	}
+	for _, wrong := range []string{"extract", "encoding", "compressed"} {
+		if strings.Contains(got, wrong) {
+			t.Errorf("note = %q, want no %q: neither cause holds for all of the replies", got, wrong)
+		}
+	}
+}
+
 // The notes of a run carry it: one invalid-run line for the method, the
 // extract's, in the place the other invalid-run lines have.
 // Ground: contract — the note reaches the report through reportNotes.
