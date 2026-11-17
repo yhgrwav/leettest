@@ -83,6 +83,10 @@ type Options struct {
 	// and the connection-specific ones HTTP/2 forbids are not checked here:
 	// pkg/config refuses them.
 	Metadata map[string]string
+	// MetadataRefresh reads the metadata again every Every during the run, for a
+	// token in a file that is rewritten. nil keeps Metadata as it is, with
+	// nothing added to a call or to the process.
+	MetadataRefresh *MetadataRefresh
 	// MaxResponseBytes raises or lowers the largest reply a call accepts;
 	// 0 keeps grpc-go's default of 4 MiB, above math.MaxInt32 fails Connect.
 	// A larger reply fails the call as a bad response with
