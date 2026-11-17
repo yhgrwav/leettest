@@ -170,6 +170,10 @@ type Sender struct {
 	// meta is the metadata of every call when Options.MetadataRefresh asks for
 	// it to be replaced, set by Connect and only then; nil means static.
 	meta *dynamicMetadata
+	// refresh is the goroutine that replaces it, started once the connections
+	// are published; counters are its numbers, under a lock of their own.
+	refresh  *refresher
+	counters refreshCounters
 }
 
 // checkIdle refuses an idle timeout shorter than the time ctx leaves Connect:
@@ -246,6 +250,32 @@ func (s *Sender) Connect(ctx context.Context) error {
 		return err
 	}
 
+	refresh, err := s.newRefresher()
+	if err != nil {
+		return err
+	}
+
+	if refresh != nil {
+		s.meta = refresh.meta
+	}
+
+	if err = s.connect(ctx, creds, limit); err != nil {
+		s.meta = nil
+
+		return err
+	}
+
+	// Only now: a Connect that fails leaves no goroutine behind.
+	if refresh != nil {
+		s.refresh = refresh
+		refresh.begin()
+	}
+
+	return nil
+}
+
+// connect dials and publishes the connections.
+func (s *Sender) connect(ctx context.Context, creds credentials.TransportCredentials, limit int) error {
 	if s.opts.Connections > 1 {
 		return s.connectMany(ctx, creds, limit)
 	}
@@ -312,7 +342,11 @@ func (s *Sender) dialOptions(l *link, creds credentials.TransportCredentials, au
 		// grpc-go's own name after it.
 		dialOpts = append(dialOpts, grpc.WithUserAgent(userAgent))
 	}
-	if len(perCall) > 0 {
+	switch {
+	case s.meta != nil:
+		// One object for every connection: a replacement reaches them all.
+		dialOpts = append(dialOpts, grpc.WithPerRPCCredentials(s.meta))
+	case len(perCall) > 0:
 		// Per-RPC credentials rather than a context per call: gRPC attaches
 		// them itself, and a run without metadata has nothing in the send path.
 		dialOpts = append(dialOpts, grpc.WithPerRPCCredentials(staticMetadata(perCall)))
@@ -540,6 +574,13 @@ func (s *Sender) Close() error {
 
 		l.stopWatch()
 		<-l.watched
+	}
+
+	// After the connections, so a Read stuck on a hung file system delays only
+	// this return, by refreshCloseWait at most.
+	if s.refresh != nil {
+		s.refresh.stop()
+		s.refresh = nil
 	}
 
 	return err
