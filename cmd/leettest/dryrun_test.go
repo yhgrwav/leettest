@@ -17,10 +17,13 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -32,6 +35,8 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
+
+	"github.com/yhgrwav/leettest/pkg/engine"
 )
 
 const emptyCallMethod = "grpc.testing.TestService/EmptyCall"
@@ -473,5 +478,403 @@ func TestRun_DryRunStopsOnCtrlC(t *testing.T) {
 	}
 	if n := len(target.recorder.allSimple()); n != 0 {
 		t.Errorf("the second call reached the target %d times after Ctrl+C", n)
+	}
+}
+
+// scriptedSender answers each method with a canned outcome, keeps what it was
+// asked, and drops the reply unless the request asks for it, as the real sender
+// does.
+type scriptedSender struct {
+	replies map[string]engine.Outcome
+
+	mu   sync.Mutex
+	sent []engine.Request
+}
+
+func (s *scriptedSender) Send(_ context.Context, req engine.Request) (engine.Outcome, error) {
+	s.mu.Lock()
+	s.sent = append(s.sent, req)
+	s.mu.Unlock()
+
+	out, ok := s.replies[req.Method]
+	if !ok {
+		out = okWith("")
+	}
+	if !req.KeepResponse {
+		out.Response = nil
+	}
+
+	return out, nil
+}
+
+func (s *scriptedSender) methods() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var out []string
+	for _, req := range s.sent {
+		out = append(out, req.Method)
+	}
+
+	return out
+}
+
+func okWith(reply string) engine.Outcome {
+	return engine.Outcome{Category: engine.CategorySuccess, Code: "OK", CodeFromTarget: true, Response: []byte(reply)}
+}
+
+// twoSteps is a scenario of a.B/One and a.B/Two planned for 100 rps over 5 s,
+// as a config would write it: step 1's reply is its first value, and step 2's
+// body carries it.
+func twoSteps() engine.Call {
+	return engine.Call{
+		Method: "a.B/One", Payload: []byte("one"), Scenario: "s", KeepResponse: true, Values: 1,
+		Extract: func(resp []byte, vals []string) error {
+			vals[0] = string(resp)
+
+			return nil
+		},
+		Next: []engine.Step{{
+			Method: "a.B/Two",
+			Build:  func(_ uint64, vals []string) []byte { return []byte("two:" + vals[0]) },
+		}},
+		Stages: []engine.Stage{{StartRPS: 100, TargetRPS: 100, Duration: 5 * time.Second}},
+	}
+}
+
+// One iteration is the call, then each step in order, each once; the plan's rate
+// and duration play no part. Step 2 carries what the reply of step 1 held, the
+// worker's own extract, and the reply of the last step (which extracts nothing)
+// is kept for the screen.
+// Ground: contract — spec 1: exactly one iteration, same engine path as the run.
+// Mutations: send the first step only (steps and sends are 1); ignore the
+// extracted value (step 2 sends "two:"); do not ask the sender to keep the reply
+// (the last step's response is empty).
+func TestDryScenario_SendsEachStepOnceInOrderWithTheExtractedValue(t *testing.T) {
+	sender := &scriptedSender{replies: map[string]engine.Outcome{"a.B/One": okWith("hello"), "a.B/Two": okWith("bye")}}
+
+	began := time.Now()
+	steps, err := runDryScenario(t.Context(), sender, twoSteps())
+	elapsed := time.Since(began)
+
+	if err != nil {
+		t.Fatalf("runDryScenario: %v", err)
+	}
+	if got, want := sender.methods(), []string{"a.B/One", "a.B/Two"}; !slices.Equal(got, want) {
+		t.Fatalf("sent %v, want %v", got, want)
+	}
+	if got := string(sender.sent[0].Payload); got != "one" {
+		t.Errorf("step 1 sent %q, want %q", got, "one")
+	}
+	if got := string(sender.sent[1].Payload); got != "two:hello" {
+		t.Errorf("step 2 sent %q, want the value of step 1's reply: %q", got, "two:hello")
+	}
+	if elapsed >= 2*time.Second {
+		t.Errorf("one iteration of a scenario planned for 5 s took %v", elapsed)
+	}
+
+	if len(steps) != 2 {
+		t.Fatalf("%d steps back, want 2", len(steps))
+	}
+	for i, want := range []struct{ method, payload, reply string }{
+		{"a.B/One", "one", "hello"}, {"a.B/Two", "two:hello", "bye"},
+	} {
+		got := steps[i]
+		if got.Request.Method != want.method || string(got.Request.Payload) != want.payload {
+			t.Errorf("step %d request = %s %q, want %s %q", i+1, got.Request.Method, got.Request.Payload, want.method, want.payload)
+		}
+		if got.Outcome.Category != engine.CategorySuccess || string(got.Outcome.Response) != want.reply {
+			t.Errorf("step %d outcome = %v %q, want success with the reply %q", i+1, got.Outcome.Category, got.Outcome.Response, want.reply)
+		}
+		if got.Started.IsZero() || got.Returned.Before(got.Started) {
+			t.Errorf("step %d: started %v, returned %v", i+1, got.Started, got.Returned)
+		}
+	}
+}
+
+// A step that does not succeed ends the iteration there: the next is not sent,
+// and the step is the last of those returned, with the category the worker gave.
+// Ground: contract — spec 2: any non-success category ends the dry run at that step.
+// Mutation: keep sending after a failure (the sender gets step 2).
+func TestDryScenario_AFailedStepEndsTheIteration(t *testing.T) {
+	failed := engine.Outcome{
+		Category: engine.CategoryClientFault, Code: "InvalidArgument", CodeFromTarget: true,
+		Err: status.Error(codes.InvalidArgument, "no such wallet"),
+	}
+	sender := &scriptedSender{replies: map[string]engine.Outcome{"a.B/One": failed}}
+
+	steps, err := runDryScenario(t.Context(), sender, twoSteps())
+
+	if err != nil {
+		t.Fatalf("runDryScenario: %v: a failed step is a result, not an error", err)
+	}
+	if got, want := sender.methods(), []string{"a.B/One"}; !slices.Equal(got, want) {
+		t.Fatalf("sent %v, want %v: a step is not sent after one that failed", got, want)
+	}
+	if len(steps) != 1 || steps[0].Outcome.Category != engine.CategoryClientFault {
+		t.Errorf("steps = %+v, want the one failed step", steps)
+	}
+}
+
+// A reply without the value a later step reads is a bad_response of that step,
+// with the code the target sent; the iteration ends there.
+// Ground: contract — spec 2, the missing extract value.
+// Mutation: take the missing value as empty and go on (step 2 is sent).
+func TestDryScenario_AMissingExtractValueIsABadResponse(t *testing.T) {
+	call := twoSteps()
+	call.Extract = func([]byte, []string) error { return errors.New("the reply has no wallet_id") }
+
+	sender := &scriptedSender{replies: map[string]engine.Outcome{"a.B/One": okWith("hello")}}
+
+	steps, err := runDryScenario(t.Context(), sender, call)
+
+	if err != nil {
+		t.Fatalf("runDryScenario: %v", err)
+	}
+	if got, want := sender.methods(), []string{"a.B/One"}; !slices.Equal(got, want) {
+		t.Fatalf("sent %v, want %v", got, want)
+	}
+	if len(steps) != 1 {
+		t.Fatalf("%d steps back, want 1", len(steps))
+	}
+
+	out := steps[0].Outcome
+	if out.Category != engine.CategoryBadResponse || out.Code != "OK" || !out.CodeFromTarget {
+		t.Errorf("outcome = %v %q from target %v, want bad_response with the target's OK", out.Category, out.Code, out.CodeFromTarget)
+	}
+	if out.Err == nil || !strings.Contains(out.Err.Error(), "the reply has no wallet_id") {
+		t.Errorf("error = %v, want the extract's", out.Err)
+	}
+}
+
+// A dry run is its own process: the call and each dataset step take record 1 of
+// their file, whatever the order a run would take, and a templated body is the
+// one of seq 1, for the call and for its steps.
+// Ground: contract — spec 1: data as for a plain call (dataset record 0, seq 1).
+// Mutations: keep the shuffled counters of the config (the bodies are r1 and s1);
+// build step bodies with a seq of 0.
+func TestDryScenario_TakesRecordOneAndSeqOne(t *testing.T) {
+	t.Run("datasets", func(t *testing.T) {
+		call := engine.Call{
+			Method: "a.B/One", Scenario: "s",
+			Payloads: [][]byte{[]byte("r0"), []byte("r1"), []byte("r2")},
+			// With this seed and three records a run's first row is not the first.
+			Dataset: &engine.DatasetRef{File: "f", Counter: engine.NewShuffledCounter(3, 1)},
+			Next: []engine.Step{{
+				Method:   "a.B/Two",
+				Payloads: [][]byte{[]byte("s0"), []byte("s1"), []byte("s2")},
+				Dataset:  &engine.DatasetRef{File: "g", Counter: engine.NewShuffledCounter(3, 1)},
+			}},
+			Stages: []engine.Stage{{StartRPS: 100, TargetRPS: 100, Duration: 5 * time.Second}},
+		}
+		sender := &scriptedSender{}
+
+		if _, err := runDryScenario(t.Context(), sender, call); err != nil {
+			t.Fatalf("runDryScenario: %v", err)
+		}
+		if len(sender.sent) != 2 || string(sender.sent[0].Payload) != "r0" || string(sender.sent[1].Payload) != "s0" {
+			t.Errorf("sent %v, want record 1 of each file: r0, s0", sender.sent)
+		}
+	})
+
+	t.Run("templates", func(t *testing.T) {
+		call := engine.Call{
+			Method: "a.B/One", Scenario: "s",
+			Template: engine.NewTemplate(nil, 0, func(seq uint64) []byte { return fmt.Appendf(nil, "one-%d", seq) }),
+			Next: []engine.Step{{
+				Method: "a.B/Two",
+				Build:  func(seq uint64, _ []string) []byte { return fmt.Appendf(nil, "two-%d", seq) },
+			}},
+			Stages: []engine.Stage{{StartRPS: 100, TargetRPS: 100, Duration: 5 * time.Second}},
+		}
+		sender := &scriptedSender{}
+
+		if _, err := runDryScenario(t.Context(), sender, call); err != nil {
+			t.Fatalf("runDryScenario: %v", err)
+		}
+		if len(sender.sent) != 2 || string(sender.sent[0].Payload) != "one-1" || string(sender.sent[1].Payload) != "two-1" {
+			t.Errorf("sent %v, want the bodies of seq 1: one-1, two-1", sender.sent)
+		}
+	})
+}
+
+// A dry run of a scenario sends the call and each step once, over the real
+// connection, and the screen has a block per step with the request as it went
+// out: the wallet and the amount of step 2 are what step 1's reply held.
+// Ground: contract — spec 1 and 3, the whole path with the config of
+// examples/scenario-extract.yaml's first two steps.
+// Mutations: the first step only (no block 2); extract ignored (amount 0).
+func TestRun_DryRunOfAScenarioSendsEachStepOnce(t *testing.T) {
+	addr, wallet := startWalletTarget(t, false)
+
+	res := runCLI(t.Context(), t, 10*time.Second, "-c", dryConfig(t, addr, "", payAndCheck), "-dry-run")
+
+	if res.err != nil {
+		t.Fatalf("run: %v\nstdout:\n%s\nstderr:\n%s", res.err, res.stdout, res.stderr)
+	}
+
+	seen := wallet.seen()
+	if len(seen) != 1 || seen[0].from != "wallet-1" || seen[0].amount != 1001 {
+		t.Errorf("Transfer got %+v, want one transfer of 1001 from wallet-1", seen)
+	}
+
+	for _, want := range []string{
+		"dry run: 1 call, one iteration, nothing measured\n",
+		"1/1 scenario pay, step 1 of 2, wallet.v1.WalletService/GetBalance: success, OK, ",
+		"  request: {\"wallet_id\":\"wallet-1\"}\n  response: {\"wallet_id\":\"wallet-1\",\"amount\":\"1001\"}\n",
+		"1/1 scenario pay, step 2 of 2, wallet.v1.WalletService/Transfer: success, OK, ",
+		"  response: {\"id\":\"tx-wallet-1\"}\n",
+	} {
+		if !strings.Contains(res.stdout, want) {
+			t.Errorf("stdout lacks %q:\n%s", want, res.stdout)
+		}
+	}
+
+	if !regexp.MustCompile(`  request: \{"from":"wallet-1","to":"[0-9a-f-]{36}","amount":"1001"\}\n`).MatchString(res.stdout) {
+		t.Errorf("no request of step 2 with the wallet and the balance of step 1:\n%s", res.stdout)
+	}
+	for _, not := range []string{"run finished", "not reached", "isn't supported yet"} {
+		if strings.Contains(res.stdout+res.stderr, not) {
+			t.Errorf("the output has %q:\n%s", not, res.stdout+res.stderr)
+		}
+	}
+}
+
+// A reply without the value ends the dry run at that step: it is a bad_response
+// with the message of the extract, the steps after it are listed as not reached
+// and not sent, and the exit is that of a plain call that failed.
+// Ground: contract — spec 2 and 3.
+// Mutation: go on after the missing value (Transfer is sent with amount 0).
+func TestRun_DryRunStopsAScenarioAtAMissingValue(t *testing.T) {
+	addr, wallet := startWalletTarget(t, true)
+
+	res := runCLI(t.Context(), t, 10*time.Second, "-c", dryConfig(t, addr, "", payAndCheck), "-dry-run")
+
+	if got := exitCode(res.err); got != 1 {
+		t.Fatalf("exit code %d, want 1\nerr %v\nstdout:\n%s", got, res.err, res.stdout)
+	}
+	if all := res.err.Error() + res.stderr; !strings.Contains(all, "dry run: 1 of 1 calls did not succeed") {
+		t.Errorf("no verdict line:\n%s", all)
+	}
+	if got := len(wallet.seen()); got != 0 {
+		t.Errorf("Transfer got %d requests, want none: a step is not sent after one that failed", got)
+	}
+
+	for _, want := range []string{
+		"1/1 scenario pay, step 1 of 2, wallet.v1.WalletService/GetBalance: bad_response, OK sent by the target, ",
+		"  message: ",
+		"1/1 scenario pay, step 2 of 2, wallet.v1.WalletService/Transfer: not reached\n",
+	} {
+		if !strings.Contains(res.stdout, want) {
+			t.Errorf("stdout lacks %q:\n%s", want, res.stdout)
+		}
+	}
+}
+
+// A first step the target refuses is a failed call like a plain one: the same
+// exit code, the steps after it not sent and listed.
+// Ground: contract — spec 2: "exit code: same as a failed plain dry-run call".
+// Mutation: keep sending after a failure (UnaryCall is sent).
+func TestRun_DryRunStopsAScenarioAtAFailedStep(t *testing.T) {
+	target := startReflectingTarget(t)
+	// The test service leaves EmptyCall unimplemented: UNIMPLEMENTED from the target.
+	scenario := "    - method: " + emptyCallMethod + "\n      rps: 100\n      duration: 5s\n      scenario: s\n      steps:\n" + stepUnary
+
+	plain := runCLI(t.Context(), t, 5*time.Second, "-c", dryConfig(t, target.addr, "", dryCall(emptyCallMethod, "")), "-dry-run")
+	res := runCLI(t.Context(), t, 5*time.Second, "-c", dryConfig(t, target.addr, "", scenario), "-dry-run")
+
+	if got, want := exitCode(res.err), exitCode(plain.err); got != want || got != 1 {
+		t.Fatalf("exit code %d, want %d (a failed plain call), and 1\nerr %v\nstdout:\n%s", got, want, res.err, res.stdout)
+	}
+	if n := len(target.recorder.allSimple()); n != 0 {
+		t.Errorf("UnaryCall got %d requests, want none after a failed step 1", n)
+	}
+
+	for _, want := range []string{
+		"1/1 scenario s, step 1 of 2, " + emptyCallMethod + ": request_error, Unimplemented sent by the target, ",
+		"1/1 scenario s, step 2 of 2, " + unaryCallMethod + ": not reached\n",
+	} {
+		if !strings.Contains(res.stdout, want) {
+			t.Errorf("stdout lacks %q:\n%s", want, res.stdout)
+		}
+	}
+}
+
+// A config with plain calls and a scenario keeps one request per plain call and
+// runs one iteration per scenario, in the order of the config.
+// Ground: contract — spec 4.
+// Mutation: run the scenarios after the plain calls (the blocks are out of order).
+func TestRun_DryRunOfCallsAndAScenarioKeepsTheConfigOrder(t *testing.T) {
+	target := startReflectingTarget(t)
+	scenario := "    - method: " + unaryCallMethod + "\n      rps: 100\n      duration: 5s\n      scenario: s\n      steps:\n" +
+		"        - method: grpc.channelz.v1.Channelz/GetSocket\n"
+	cfg := dryConfig(t, target.addr, "", scenario+dryCall(checkMethod, ""))
+
+	res := runCLI(t.Context(), t, 5*time.Second, "-c", cfg, "-dry-run")
+
+	if res.err != nil {
+		t.Fatalf("run: %v\nstdout:\n%s\nstderr:\n%s", res.err, res.stdout, res.stderr)
+	}
+	if got := target.health.calls.Load(); got != 1 {
+		t.Errorf("Health/Check got %d requests, want 1", got)
+	}
+	if got := len(target.recorder.allSimple()); got != 1 {
+		t.Errorf("UnaryCall got %d requests, want 1", got)
+	}
+	if target.recorder.lastSocket() == nil {
+		t.Error("GetSocket, step 2, got no request")
+	}
+
+	last := -1
+	for _, want := range []string{
+		"dry run: 2 calls, one request per call and one iteration per scenario, nothing measured\n",
+		"1/2 scenario s, step 1 of 2, " + unaryCallMethod + ": success, OK, ",
+		"1/2 scenario s, step 2 of 2, grpc.channelz.v1.Channelz/GetSocket: success, OK, ",
+		"2/2 " + checkMethod + ": success, OK, ",
+	} {
+		at := strings.Index(res.stdout, want)
+		if at < 0 {
+			t.Fatalf("stdout lacks %q:\n%s", want, res.stdout)
+		}
+		if at < last {
+			t.Errorf("%q comes before the block that precedes it in the config:\n%s", want, res.stdout)
+		}
+		last = at
+	}
+}
+
+// The secret of the metadata is handed to the target and never shown, in the
+// reply of a step or in the message of a step that failed.
+// Ground: contract — П11/#81 and spec 3: a dry run must not leak secrets.
+// Mutation: print a step's reply and message without the redactor (the token is shown).
+func TestRun_DryRunOfAScenarioNeverPrintsAnEnvSecret(t *testing.T) {
+	t.Setenv("LT_DRY_TOKEN", "s3cr3t")
+
+	addr, echo := startEchoTarget(t, "")
+	app := "  metadata:\n    authorization: Bearer ${LT_DRY_TOKEN}\n"
+	scenario := "    - method: " + unaryCallMethod + "\n      rps: 100\n      duration: 5s\n      scenario: s\n      steps:\n" +
+		"        - method: " + emptyCallMethod + "\n"
+
+	res := runCLI(t.Context(), t, 5*time.Second, "-c", dryConfig(t, addr, app, scenario), "-dry-run")
+
+	if got := exitCode(res.err); got != 1 {
+		t.Fatalf("exit code %d, want 1 (EmptyCall is refused)\nerr %v\nstdout:\n%s", got, res.err, res.stdout)
+	}
+	if all := res.stdout + res.stderr + res.err.Error(); strings.Contains(all, "s3cr3t") {
+		t.Fatalf("the secret is on the screen:\n%s", all)
+	}
+
+	for _, want := range []string{
+		"  response: {\"username\":\"Bearer ${LT_DRY_TOKEN} \"}\n",
+		"  message: invalid token \"Bearer ${LT_DRY_TOKEN}\"\n",
+	} {
+		if !strings.Contains(res.stdout, want) {
+			t.Errorf("stdout lacks %q:\n%s", want, res.stdout)
+		}
+	}
+	for _, auth := range echo.received() {
+		if auth != "Bearer s3cr3t" {
+			t.Errorf("the target got authorization %q, want the expanded Bearer s3cr3t", auth)
+		}
 	}
 }

@@ -138,6 +138,21 @@ func runDryRun(ctx context.Context, stdout, stderr io.Writer, cfg *config.Master
 	return nil
 }
 
+// dryStep is one step of a scenario's dry iteration: what went out, when, and
+// how the worker judged the reply, the reply itself kept in Outcome.Response.
+type dryStep struct {
+	Request           engine.Request
+	Started, Returned time.Time
+	Outcome           engine.Outcome
+}
+
+// runDryScenario runs one iteration of call, the scenario, through the engine's
+// own worker: step 1, then each step after it while the one before succeeded.
+// It returns the steps that were sent, in order.
+func runDryScenario(_ context.Context, _ engine.Sender, _ engine.Call) ([]dryStep, error) {
+	return nil, nil
+}
+
 // dryRunCall is the call's request: its data, or the first record of its
 // dataset in file order, whatever the order a run would take.
 func dryRunCall(cfgCall *config.Call, call *engine.Call) cli.DryRunCall {

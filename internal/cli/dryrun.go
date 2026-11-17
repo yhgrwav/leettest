@@ -59,6 +59,10 @@ type DryRunCall struct {
 	// the latency runs from Started to Outcome.DoneAt, or to Returned when the
 	// sender left DoneAt zero.
 	Started, Returned time.Time
+	// Scenario names the scenario this block is a step of, and Step and Steps
+	// say which: step 1 of 3. Empty and zero for a plain call.
+	Scenario    string
+	Step, Steps int
 }
 
 // DryRunPrinter writes a dry run's screen call by call, so that a stop in the
@@ -67,6 +71,9 @@ type DryRunPrinter struct {
 	W io.Writer
 	// Total is the number of calls the run plans.
 	Total int
+	// Scenarios is how many of the Total calls are scenarios, each run as one
+	// iteration of its steps.
+	Scenarios int
 	// Redact is applied to the target's message and to the reply's JSON before
 	// the cut; nil leaves them as they came.
 	Redact func(string) string
@@ -149,6 +156,10 @@ func (p *DryRunPrinter) Call(call DryRunCall) {
 
 	_, _ = io.WriteString(p.W, b.String())
 }
+
+// NotReached prints the block of a step the iteration never got to, because an
+// earlier step did not succeed.
+func (p *DryRunPrinter) NotReached(_ string, _, _ int, _ string) {}
 
 // Metadata prints the metadata line, from the values as the config wrote them.
 func (p *DryRunPrinter) Metadata(raw map[string]string) {

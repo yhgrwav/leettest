@@ -603,6 +603,105 @@ func TestDryRunRedactor_OnlySubstitutedNamesAreReplaced(t *testing.T) {
 	}
 }
 
+// asStep is one block of a scenario's iteration: step n of steps, of the scenario
+// name.
+func asStep(name string, n, steps int, c cli.DryRunCall) cli.DryRunCall {
+	c.Scenario, c.Step, c.Steps = name, n, steps
+
+	return c
+}
+
+// A scenario's blocks are headed by its name and the step, numbered by the call
+// of the config they belong to, and the steps after a failed one are listed as
+// not reached, without a request, a reply or a latency.
+// Ground: contract — spec 3: one block per step, headed by scenario name and step
+// number; the steps not reached are listed.
+// Mutations: number the blocks 1/2, 2/2 (one per step instead of one per call);
+// leave out the not-reached line; give the not-reached line a request.
+func TestDryRun_ScenarioBlocksNameTheStepAndListWhatWasNotReached(t *testing.T) {
+	health := healthMethod()
+	ok := engine.Outcome{
+		Category: engine.CategorySuccess, Code: "OK", CodeFromTarget: true,
+		Response: wire(t, &grpc_health_v1.HealthCheckResponse{Status: grpc_health_v1.HealthCheckResponse_SERVING}),
+	}
+
+	var out bytes.Buffer
+
+	p := &cli.DryRunPrinter{W: &out, Total: 2, Scenarios: 1}
+	p.Header()
+	p.Call(asStep("pay", 1, 3, done("grpc.health.v1.Health/Check", health,
+		wire(t, &grpc_health_v1.HealthCheckRequest{Service: "wallet"}), ok, 1200*time.Microsecond)))
+	p.Call(asStep("pay", 2, 3, done("wallet.Wallet/Transfer", health, nil,
+		targetSays(codes.NotFound, "no such wallet"), 3*time.Millisecond)))
+	p.NotReached("pay", 3, 3, "wallet.Wallet/Close")
+	p.Call(done("grpc.health.v1.Health/Watch", health, nil, ok, time.Millisecond))
+
+	want := "dry run: 2 calls, one request per call and one iteration per scenario, nothing measured\n" +
+		"1/2 scenario pay, step 1 of 3, grpc.health.v1.Health/Check: success, OK, 1.20ms\n" +
+		"  request: {\"service\":\"wallet\"}\n" +
+		"  response: {\"status\":\"SERVING\"}\n" +
+		"1/2 scenario pay, step 2 of 3, wallet.Wallet/Transfer: request_error, NotFound sent by the target, 3.00ms\n" +
+		"  request: {}\n" +
+		"  message: no such wallet\n" +
+		"1/2 scenario pay, step 3 of 3, wallet.Wallet/Close: not reached\n" +
+		"2/2 grpc.health.v1.Health/Watch: success, OK, 1.00ms\n" +
+		"  request: {}\n" +
+		"  response: {\"status\":\"SERVING\"}\n"
+
+	if got := out.String(); got != want {
+		t.Errorf("screen:\n%s\nwant:\n%s", got, want)
+	}
+	if got := p.Printed(); got != 2 {
+		t.Errorf("Printed = %d, want 2: the steps of a scenario are one call", got)
+	}
+}
+
+// The header says what a dry run does with the calls it has: one request per
+// plain call, one iteration per scenario.
+// Ground: contract — spec 4.
+// Mutation: the plain header for a scenario (it would say "one request each").
+func TestDryRun_HeaderSaysIterationForAScenario(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		total, scenarios int
+		want             string
+	}{
+		{"one scenario", 1, 1, "dry run: 1 call, one iteration, nothing measured\n"},
+		{"scenarios only", 3, 3, "dry run: 3 calls, one iteration each, nothing measured\n"},
+		{"mixed", 3, 1, "dry run: 3 calls, one request per call and one iteration per scenario, nothing measured\n"},
+		{"plain one", 1, 0, "dry run: 1 call, one request, nothing measured\n"},
+		{"plain many", 3, 0, "dry run: 3 calls, one request each, nothing measured\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var out bytes.Buffer
+
+			(&cli.DryRunPrinter{W: &out, Total: tc.total, Scenarios: tc.scenarios}).Header()
+
+			if got := out.String(); got != tc.want {
+				t.Errorf("header = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// A step's message and reply are shown as a plain call's are: the secret
+// replaced, the control characters written out.
+// Ground: contract — П11: a dry run must not leak secrets, in a step as in a plain call.
+// Mutation: skip the redactor for a step's block (the token is shown).
+func TestDryRun_ScenarioStepIsRedactedLikeAPlainCall(t *testing.T) {
+	redact := cli.DryRunRedactor(map[string]string{"authorization": "${LT_TOKEN}"}, func(string) (string, bool) { return "tok3n", true })
+
+	got := screen(1, redact, nil, asStep("pay", 2, 2, done("wallet.Wallet/Transfer", healthMethod(), nil,
+		targetSays(codes.PermissionDenied, "bad token tok3n \x1b[31m"), time.Millisecond)))
+
+	if strings.Contains(got, "tok3n") || strings.Contains(got, "\x1b") {
+		t.Errorf("secret or escape on the screen:\n%q", got)
+	}
+	if want := "  message: bad token ${LT_TOKEN} \\x1b[31m\n"; !strings.Contains(got, want) {
+		t.Errorf("screen lacks %q:\n%s", want, got)
+	}
+}
+
 func tail(s string, n int) string {
 	if len(s) <= n {
 		return s
