@@ -741,6 +741,8 @@ func TestMetadataRefresh_CloseDoesNotWaitForAHungRead(t *testing.T) {
 			t.Errorf("Close took %v on a hung Read, want about refreshCloseWait (%v) at most", took, refreshCloseWait)
 		}
 	case <-time.After(5 * time.Second):
+		// Released first: the test's own cleanup calls Close too, and would wait behind this one.
+		hang.open()
 		t.Fatal("Close did not return in 5s on a hung Read")
 	}
 
