@@ -141,6 +141,11 @@ func TestMetadataFile_TheValueIsTheWholeFileMinusOneTrailingBreak(t *testing.T) 
 		{name: "non-ASCII", content: topSecret + "é", why: outside},
 		{name: "byte order mark", content: "\xef\xbb\xbf" + topSecret, why: outside},
 		{name: "64 KiB and a byte", content: topSecret + strings.Repeat("a", 64<<10+1-len(topSecret)), why: large},
+		// The limit is the size of the file, the line break in it included.
+		{name: "64 KiB and a trailing break", content: strings.Repeat("a", 64<<10) + "\n", why: large},
+		// The order of the checks: size, empty, line break, byte range.
+		{name: "size beats the byte range", content: topSecret + "é" + strings.Repeat("a", 64<<10), why: large},
+		{name: "a break beats the byte range", content: "x\né", why: lineBreak},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			inTempDir(t)
@@ -257,14 +262,21 @@ func TestMetadataFile_NoColonIsAnEnvironmentVariable(t *testing.T) {
 	}
 }
 
-// Ground: contract (spec §1.2) — a reference needs a path, and the path takes no
-// '$' or '{': ${file:${DIR}/t} is an error, not a feature. The path in the
-// message is the text up to the first '}', as written.
+// Ground: contract (spec §1.2, round 1 F1) — a reference needs a path, and the
+// path takes no '$' or '{': ${file:${DIR}/t} is an error, not a feature. The path
+// in the message is the text up to the first '}', as written. An unescaped
+// "${file:" with no '}' after it is an error too: left as text it would send the
+// words of the config to the target as a token.
 func TestMetadataFile_BadReferencesAreRefused(t *testing.T) {
-	const taken = "must not contain '$' or '{': paths are taken as written"
+	const (
+		taken     = "must not contain '$' or '{': paths are taken as written"
+		notClosed = `invalid metadata: key "authorization": ${file: is not closed: write the path and a closing }`
+	)
 
 	for _, tc := range []struct{ name, value, want string }{
 		{"no path", "${file:}", `invalid metadata: key "authorization": ${file:} needs a path`},
+		{"not closed", "${file:token.txt", notClosed},
+		{"not closed, no path", "${file:", notClosed},
 		{"dollar", "${file:a$b}", `invalid metadata: key "authorization": file path "a$b" ` + taken},
 		{"nested", "${file:${DIR}/t}", `invalid metadata: key "authorization": file path "${DIR" ` + taken},
 		{"brace", "${file:a{b}", `invalid metadata: key "authorization": file path "a{b" ` + taken},
@@ -404,13 +416,10 @@ func TestMetadataFile_LoadFileResolvesRelativePathsFromTheConfigDirectory(t *tes
 		t.Errorf("ReadMetadata map = %v, want %v", got, want)
 	}
 
-	slices.SortFunc(files, func(a, b config.FileValue) int { return strings.Compare(a.Path, b.Path) })
-
-	want := []config.FileValue{{Path: abs, Value: "xyz"}, {Path: "token.txt", Value: "abc"}}
-	slices.SortFunc(want, func(a, b config.FileValue) int { return strings.Compare(a.Path, b.Path) })
-
+	// Headers are read by ascending key: authorization, then x-abs.
+	want := []config.FileValue{{Path: "token.txt", Value: "abc"}, {Path: abs, Value: "xyz"}}
 	if !slices.Equal(files, want) {
-		t.Errorf("files = %v, want %v (paths as written)", files, want)
+		t.Errorf("files = %v, want %v (paths as written, in the order of the keys)", files, want)
 	}
 }
 
@@ -505,10 +514,8 @@ func TestMetadataFile_ReadMetadataReadsAgainAndReadsEveryFile(t *testing.T) {
 		t.Errorf("first map = %v, want %v", first, want)
 	}
 
-	slices.SortFunc(files, func(a, b config.FileValue) int { return strings.Compare(a.Path, b.Path) })
-
 	if want := []config.FileValue{{Path: "a.txt", Value: "v1"}, {Path: "b.txt", Value: "w1"}}; !slices.Equal(files, want) {
-		t.Errorf("first files = %v, want %v", files, want)
+		t.Errorf("first files = %v, want %v, in the order of the keys", files, want)
 	}
 
 	putFile(t, "a.txt", "v2\n")
@@ -531,5 +538,24 @@ func TestMetadataFile_ReadMetadataReadsAgainAndReadsEveryFile(t *testing.T) {
 	_, _, err = cfg.App.ReadMetadata()
 	if !errors.Is(err, config.ErrInvalidMetadata) || !strings.Contains(err.Error(), `key "x-b": file b.txt: `) {
 		t.Errorf("error = %v, want the read of x-b to fail the call", err)
+	}
+}
+
+// Ground: contract (spec §3.1, round 1 F2) — headers are read by ascending key and
+// the first failure is returned, the rest not read: the last_error of a report
+// must not change from run to run with the order a map is walked in.
+func TestMetadataFile_TheFirstFailureInKeyOrderIsReported(t *testing.T) {
+	inTempDir(t)
+
+	cfg := parseApp(t, "  metadata:\n    x-b: '${file:nob.txt}'\n    x-a: '${file:noa.txt}'\n")
+
+	for i := range 20 {
+		_, _, err := cfg.App.ReadMetadata()
+		if err == nil {
+			t.Fatalf("call %d: ReadMetadata read files that are not there", i)
+		}
+		if !strings.Contains(err.Error(), `key "x-a": file noa.txt: `) || strings.Contains(err.Error(), "nob.txt") {
+			t.Fatalf("call %d: error %q, want the failure of x-a alone", i, err)
+		}
 	}
 }
