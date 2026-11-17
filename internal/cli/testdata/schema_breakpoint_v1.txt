@@ -13,6 +13,13 @@ settings.connections int
 settings.warmup_us int
 settings.ramp_us int
 settings.compression string?
+metadata_refresh object?
+metadata_refresh.interval_us int
+metadata_refresh.reads int
+metadata_refresh.changed int
+metadata_refresh.failures int
+metadata_refresh.failing_at_end bool
+metadata_refresh.last_error string?
 passport object?
 passport.config_sha256 string
 passport.os string

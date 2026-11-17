@@ -417,6 +417,7 @@ func TestDryRun_SecretsAreReplacedBeforeTheCut(t *testing.T) {
 	redact := cli.DryRunRedactor(
 		map[string]string{"authorization": "Bearer ${LT_DRY_TOKEN}"},
 		func(name string) (string, bool) { return "s3cr3t", name == "LT_DRY_TOKEN" },
+		nil,
 	)
 
 	// `{"text":"` is 9 bytes: the secret starts at byte 4093 of the JSON.
@@ -445,6 +446,7 @@ func TestDryRun_ARedactedMessageShowsThePlaceholder(t *testing.T) {
 	redact := cli.DryRunRedactor(
 		map[string]string{"authorization": "Bearer ${LT_DRY_TOKEN}"},
 		func(string) (string, bool) { return "s3cr3t", true },
+		nil,
 	)
 	out := targetSays(codes.Unauthenticated, `invalid token "Bearer s3cr3t"`)
 
@@ -526,7 +528,7 @@ func TestDryRunRedactor_ALongerValueWinsOverItsSubstring(t *testing.T) {
 	for range 50 {
 		redact := cli.DryRunRedactor(map[string]string{
 			"authorization": "Bearer ${TOKEN}", "x-shard": "${SHARD}",
-		}, lookup)
+		}, lookup, nil)
 		if got, want := redact("Bearer ab1cd, shard 1"), "Bearer ${TOKEN}, shard ${SHARD}"; got != want {
 			t.Fatalf("redact = %q, want %q", got, want)
 		}
@@ -535,7 +537,7 @@ func TestDryRunRedactor_ALongerValueWinsOverItsSubstring(t *testing.T) {
 		// wins, so the longer one must come first.
 		redact = cli.DryRunRedactor(map[string]string{
 			"authorization": "Bearer ${TOKEN}", "x-pre": "${PRE}",
-		}, func(name string) (string, bool) { return map[string]string{"TOKEN": "ab1cd", "PRE": "ab"}[name], true })
+		}, func(name string) (string, bool) { return map[string]string{"TOKEN": "ab1cd", "PRE": "ab"}[name], true }, nil)
 		if got, want := redact("Bearer ab1cd"), "Bearer ${TOKEN}"; got != want {
 			t.Fatalf("redact = %q, want %q", got, want)
 		}
@@ -546,7 +548,7 @@ func TestDryRunRedactor_ALongerValueWinsOverItsSubstring(t *testing.T) {
 			"authorization": "Bearer ${TOKEN}", "x-shard": "${SHARD}",
 		}, func(name string) (string, bool) {
 			return map[string]string{"TOKEN": "ab1cd", "SHARD": "xab"}[name], true
-		})
+		}, nil)
 		if got, want := redact("xab1cd"), "${TOKEN}"; got != want {
 			t.Fatalf("redact = %q, want %q", got, want)
 		}
@@ -556,7 +558,7 @@ func TestDryRunRedactor_ALongerValueWinsOverItsSubstring(t *testing.T) {
 
 		// A value that is the name of another variable must not eat the
 		// placeholder just put in: a second pass would make ${${LT_B}}.
-		redact = cli.DryRunRedactor(map[string]string{"a": "${LT_A}", "b": "${LT_B}"}, lookup)
+		redact = cli.DryRunRedactor(map[string]string{"a": "${LT_A}", "b": "${LT_B}"}, lookup, nil)
 		if got, want := redact("xyz12345"), "${LT_A}"; got != want {
 			t.Fatalf("redact = %q, want %q", got, want)
 		}
@@ -570,6 +572,7 @@ func TestDryRunRedactor_ReplacesTheRawAndTheJSONEscapedForm(t *testing.T) {
 	redact := cli.DryRunRedactor(
 		map[string]string{"authorization": "${LT_T}"},
 		func(string) (string, bool) { return `ab"c\d`, true },
+		nil,
 	)
 
 	if got, want := redact(`token ab"c\d`), `token ${LT_T}`; got != want {
@@ -593,7 +596,7 @@ func TestDryRunRedactor_OnlySubstitutedNamesAreReplaced(t *testing.T) {
 		"x-empty":       "${LT_EMPTY}",
 		"x-unset":       "${LT_UNSET}",
 		"x-again":       "${LT_TOKEN}",
-	}, lookup)
+	}, lookup, nil)
 
 	if got, want := redact("home /home/acme, tok3n, tok3n"), "home /home/acme, ${LT_TOKEN}, ${LT_TOKEN}"; got != want {
 		t.Errorf("redact = %q, want %q", got, want)
@@ -689,7 +692,7 @@ func TestDryRun_HeaderSaysIterationForAScenario(t *testing.T) {
 // Ground: contract — П11: a dry run must not leak secrets, in a step as in a plain call.
 // Mutation: skip the redactor for a step's block (the token is shown).
 func TestDryRun_ScenarioStepIsRedactedLikeAPlainCall(t *testing.T) {
-	redact := cli.DryRunRedactor(map[string]string{"authorization": "${LT_TOKEN}"}, func(string) (string, bool) { return "tok3n", true })
+	redact := cli.DryRunRedactor(map[string]string{"authorization": "${LT_TOKEN}"}, func(string) (string, bool) { return "tok3n", true }, nil)
 
 	got := screen(1, redact, nil, asStep("pay", 2, 2, done("wallet.Wallet/Transfer", healthMethod(), nil,
 		targetSays(codes.PermissionDenied, "bad token tok3n \x1b[31m"), time.Millisecond)))

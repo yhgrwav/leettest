@@ -63,7 +63,7 @@ func checkDryRunFlags(flags *flag.FlagSet, dryRun bool) error {
 // here too, so that a CI step «dry run, then load» does not pass the first and
 // fail the second.
 func runDryRun(ctx context.Context, stdout, stderr io.Writer, cfg *config.MasterConfig, sender engine.Sender,
-	grpcSender *grpcsender.Sender, flags runFlags,
+	grpcSender *grpcsender.Sender, files []config.FileValue, flags runFlags,
 ) error {
 	_, calls, _, err := engineOptions(cfg, sender, flags.maxInFlight, 0)
 	if err != nil {
@@ -98,7 +98,7 @@ func runDryRun(ctx context.Context, stdout, stderr io.Writer, cfg *config.Master
 	}
 
 	printer := &cli.DryRunPrinter{
-		W: stdout, Total: len(calls), Scenarios: scenarios, Redact: cli.DryRunRedactor(cfg.App.RawMetadata, os.LookupEnv),
+		W: stdout, Total: len(calls), Scenarios: scenarios, Redact: cli.DryRunRedactor(cfg.App.RawMetadata, os.LookupEnv, files),
 	}
 	printer.Header()
 

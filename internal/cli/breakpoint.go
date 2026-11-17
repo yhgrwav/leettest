@@ -68,6 +68,9 @@ type BreakpointRun struct {
 	// Ramp is load.ramp as configured: the rise from 0 to Plan.From before the
 	// first step. 0 prints no ramp.
 	Ramp time.Duration
+	// MetadataRefresh is what the refresh of app.metadata did over the whole
+	// search; nil when there is none.
+	MetadataRefresh *MetadataRefresh
 	// Passport is the config and the machine of the search; nil prints no
 	// machine line and leaves the passport out of the JSON.
 	Passport *Passport

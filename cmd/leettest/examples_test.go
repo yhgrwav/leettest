@@ -72,7 +72,7 @@ func TestExamples_RunAgainstStand(t *testing.T) {
 			defer s.Stop()
 			cfg.App.Address = config.ConnectionString(s.Target())
 
-			senderOpts, err := senderOptions(&cfg.App)
+			senderOpts, _, err := senderOptions(&cfg.App, false)
 			if err != nil {
 				t.Fatal(err)
 			}

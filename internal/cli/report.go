@@ -57,6 +57,9 @@ type RunReport struct {
 	Name string
 	// Settings are what the run was started with; nil prints no settings line.
 	Settings *RunSettings
+	// MetadataRefresh is what the refresh of app.metadata did; nil when there
+	// is none, which prints no line and writes null.
+	MetadataRefresh *MetadataRefresh
 	// Passport is the config and the machine of the run; nil prints no machine
 	// line and leaves the passport out of the JSON.
 	Passport *Passport

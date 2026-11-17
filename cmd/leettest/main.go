@@ -256,7 +256,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		return err
 	}
 
-	sender, grpcSender, target, err := buildSender(cfg, flags.fake, flags.fakeDelay, flags.fakeJitter, flags.fakeFail)
+	sender, grpcSender, target, files, err := buildSender(cfg, flags)
 	if err != nil {
 		return err
 	}
@@ -267,7 +267,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 	}
 
 	if flags.dryRun {
-		return runDryRun(ctx, stdout, stderr, cfg, sender, grpcSender, flags)
+		return runDryRun(ctx, stdout, stderr, cfg, sender, grpcSender, files, flags)
 	}
 
 	// Measure, run, measure: the floor of "waited" is set by the step before
@@ -589,25 +589,25 @@ func loadConfig(path string, flagLabels map[string]string) (*config.MasterConfig
 }
 
 // buildSender makes the sender a run sends with, fake or real, and the target
-// the report names.
-func buildSender(cfg *config.MasterConfig, fake bool, fakeDelay, fakeJitter time.Duration,
-	fakeFail float64,
-) (sender engine.Sender, grpcSender *grpcsender.Sender, target string, err error) {
+// the report names. files are the values read from app.metadata's files at the
+// start, for the dry run's redactor.
+func buildSender(cfg *config.MasterConfig, flags runFlags,
+) (sender engine.Sender, grpcSender *grpcsender.Sender, target string, files []config.FileValue, err error) {
 	target = string(cfg.App.Address)
 
-	if fake {
+	if flags.fake {
 		target = cli.FakeTarget
-		sender = engine.FakeSender{Delay: fakeDelay, Jitter: fakeJitter, FailRatio: fakeFail}
+		sender = engine.FakeSender{Delay: flags.fakeDelay, Jitter: flags.fakeJitter, FailRatio: flags.fakeFail}
 	} else {
 		var senderOpts grpcsender.Options
-		if senderOpts, err = senderOptions(&cfg.App); err != nil {
-			return nil, nil, "", err
+		if senderOpts, files, err = senderOptions(&cfg.App, flags.dryRun); err != nil {
+			return nil, nil, "", nil, err
 		}
 		grpcSender = grpcsender.New(senderOpts)
 		sender = grpcSender
 	}
 
-	return sender, grpcSender, target, nil
+	return sender, grpcSender, target, files, nil
 }
 
 // engineOptions builds the engine's options and checks them before the network.
@@ -941,8 +941,10 @@ func withBudgetAdvice(err error, opts engine.Options) error {
 }
 
 // senderOptions reads the certificate files the config names, before any
-// connection: a wrong path is a config error, not a failed handshake.
-func senderOptions(app *config.App) (grpcsender.Options, error) {
+// connection: a wrong path is a config error, not a failed handshake. files
+// are the values the ${file:PATH} of app.metadata held; dryRun turns the
+// refresh of the metadata off.
+func senderOptions(app *config.App, _ bool) (grpcsender.Options, []config.FileValue, error) {
 	opts := grpcsender.Options{
 		Target:           string(app.Address),
 		TLS:              app.UseTLS,
@@ -956,28 +958,28 @@ func senderOptions(app *config.App) (grpcsender.Options, error) {
 	if app.CA != "" {
 		raw, err := os.ReadFile(app.CA)
 		if err != nil {
-			return opts, fmt.Errorf("app.ca: %w", err)
+			return opts, nil, fmt.Errorf("app.ca: %w", err)
 		}
 
 		opts.RootCAs = x509.NewCertPool()
 		if !opts.RootCAs.AppendCertsFromPEM(raw) {
-			return opts, fmt.Errorf("app.ca: %s holds no PEM certificate", app.CA)
+			return opts, nil, fmt.Errorf("app.ca: %s holds no PEM certificate", app.CA)
 		}
 	}
 
 	if app.Cert != "" {
 		if err := refuseEncryptedKey(app.Key); err != nil {
-			return opts, err
+			return opts, nil, err
 		}
 
 		cert, err := tls.LoadX509KeyPair(app.Cert, app.Key)
 		if err != nil {
-			return opts, fmt.Errorf("app.cert %s, app.key %s: %w", app.Cert, app.Key, err)
+			return opts, nil, fmt.Errorf("app.cert %s, app.key %s: %w", app.Cert, app.Key, err)
 		}
 		opts.Certificates = []tls.Certificate{cert}
 	}
 
-	return opts, nil
+	return opts, nil, nil
 }
 
 // refuseEncryptedKey names a password-protected key for what it is; the

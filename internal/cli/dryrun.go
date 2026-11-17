@@ -290,7 +290,7 @@ func dryRunJSON(m *descriptor.Method, desc protoreflect.MessageDescriptor, body 
 // takes the placeholder of the longest value in it, so that neither the order
 // of the variables nor a short value can leave part of a secret. Nothing that
 // was put in is searched again.
-func DryRunRedactor(raw map[string]string, lookup func(string) (string, bool)) func(string) string {
+func DryRunRedactor(raw map[string]string, lookup func(string) (string, bool), _ []config.FileValue) func(string) string {
 	seen := map[string]bool{}
 
 	var names []string
