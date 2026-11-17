@@ -393,6 +393,7 @@ func TestMetadataRefresh_AFailedReadKeepsTheLastGoodValue(t *testing.T) {
 
 	hold := newGate(t)
 	holdNew := newGate(t)
+	inFourth := make(chan struct{})
 	target := &tokenTarget{}
 	opts := listen(t, target)
 	opts.Metadata = map[string]string{"authorization": bearer(1)}
@@ -401,6 +402,7 @@ func TestMetadataRefresh_AFailedReadKeepsTheLastGoodValue(t *testing.T) {
 		case n <= 3:
 			return nil, errors.New(emptyFile)
 		case n == 4:
+			close(inFourth)
 			hold.wait()
 
 			return map[string]string{"authorization": bearer(1)}, nil
@@ -414,6 +416,13 @@ func TestMetadataRefresh_AFailedReadKeepsTheLastGoodValue(t *testing.T) {
 	sender := connected(t, opts)
 
 	eventually(t, "three failed reads", func() bool { return statsOf(t, sender).Failures >= 3 })
+
+	// Wait until the fourth Read is really inside the gate: only then does "not counted yet" mean something.
+	select {
+	case <-inFourth:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the fourth Read was not called")
+	}
 
 	for range 5 {
 		sendOne(t, sender)
