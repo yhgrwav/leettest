@@ -1,7 +1,7 @@
 # Сценарий, где шаг берёт то, что было в ответе раньше: extract называет поле ответа, а
-# следующий шаг читает его как {{extract.<имя>}}. Пока не запускается: пока нет стороны
-# запуска, leettest проверяет этот файл и отказывает с «extract: not supported yet».
-# GetTransfer нет на эталонном стенде, так что этот пример — для своего сервиса:
+# следующий шаг читает его как {{extract.<имя>}}. Если в ответе поля нет, этот шаг
+# засчитывается как bad_response, и итерация на нём заканчивается. Работает против
+# эталонного стенда (`make stand`):
 #   leettest -c examples/ru/scenario-extract.yaml
 
 app:
@@ -37,7 +37,9 @@ load:
             from: "{{extract.wallet}}"
             to: "{{uuid}}"
             amount: "{{extract.funds}}"
-        - method: wallet.v1.WalletService/GetTransfer
+        # На стенде нет метода, который читает перевод обратно, поэтому последний шаг
+        # спрашивает health-сервис про id перевода: строковое поле берёт его как любой текст.
+        - method: grpc.health.v1.Health/Check
           templates: true
           data:
-            id: "{{extract.tx}}"
+            service: "{{extract.tx}}"

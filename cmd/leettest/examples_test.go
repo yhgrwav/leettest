@@ -41,15 +41,8 @@ func TestExamples_RunAgainstStand(t *testing.T) {
 	if err != nil || len(names) == 0 {
 		t.Fatalf("no examples: %v", err)
 	}
-	// An example the stand cannot answer, with the reason; it still loads in the config tests.
-	notOnStand := map[string]string{
-		"scenario-extract.yaml": "extract is refused until its run side (v0.9 unit 4b), and GetTransfer is not on the stand",
-	}
 	for _, name := range names {
 		t.Run(filepath.Base(name), func(t *testing.T) {
-			if reason, skip := notOnStand[filepath.Base(name)]; skip {
-				t.Skip(reason)
-			}
 			cfg, err := config.LoadFile(name)
 			if err != nil {
 				t.Fatal(err)
@@ -103,7 +96,20 @@ func TestExamples_RunAgainstStand(t *testing.T) {
 				t.Errorf("%s not checked against the stand: %v", u.Method, u.Err)
 			}
 
-			for _, call := range calls {
+			// What each scenario's iteration extracted, by call: the chain of one
+			// iteration (seq 1) is run in order, the way a worker runs it.
+			values := make([][]string, len(calls))
+
+			for i, call := range calls {
+				if got, want := call.Extract != nil, len(cfg.Load.Calls[i].Extract) > 0; got != want {
+					t.Errorf("%s: Extract set = %v, config extracts = %v", call.Method, got, want)
+				}
+				if call.KeepResponse != (call.Extract != nil) {
+					t.Errorf("%s: KeepResponse = %v with Extract set = %v: the reply is kept for an extract and for nothing else",
+						call.Method, call.KeepResponse, call.Extract != nil)
+				}
+				values[i] = make([]string, call.Values)
+
 				// A dataset call sends each of its records, a plain one its body.
 				// A templated call builds its body, here the one of the first request.
 				payloads := call.Payloads
@@ -117,9 +123,15 @@ func TestExamples_RunAgainstStand(t *testing.T) {
 					now := time.Now()
 					out, err := sender.Send(ctx, engine.Request{
 						Method: call.Method, Payload: payload, ScheduledAt: now, Deadline: now.Add(call.Timeout),
+						KeepResponse: call.KeepResponse,
 					})
 					if err != nil || out.Category != engine.CategorySuccess {
 						t.Errorf("%s: category %v, error %v, status %v", call.Method, out.Category, err, out.Err)
+					}
+					if call.Extract != nil {
+						if extractErr := call.Extract(out.Response, values[i]); extractErr != nil {
+							t.Errorf("%s: extract: %v", call.Method, extractErr)
+						}
 					}
 				}
 			}
@@ -133,7 +145,10 @@ func TestExamples_RunAgainstStand(t *testing.T) {
 					// a dataset step sends each of its records.
 					bodies := [][]byte{step.Payload}
 					if step.Build != nil {
-						bodies = [][]byte{step.Build(1)}
+						bodies = [][]byte{step.Build(1, values[i])}
+					}
+					if got, want := step.Extract != nil, len(cfg.Load.Calls[i].Steps[k].Extract) > 0; got != want {
+						t.Errorf("%s step %d: Extract set = %v, config extracts = %v", step.Method, k, got, want)
 					}
 					if len(step.Payloads) > 0 {
 						bodies = step.Payloads
@@ -145,9 +160,15 @@ func TestExamples_RunAgainstStand(t *testing.T) {
 						now := time.Now()
 						out, err := sender.Send(ctx, engine.Request{
 							Method: step.Method, Payload: body, ScheduledAt: now, Deadline: now.Add(step.Timeout),
+							KeepResponse: step.Extract != nil,
 						})
 						if err != nil || out.Category != engine.CategorySuccess {
 							t.Errorf("%s step %d: category %v, error %v, status %v", step.Method, k, out.Category, err, out.Err)
+						}
+						if step.Extract != nil {
+							if extractErr := step.Extract(out.Response, values[i]); extractErr != nil {
+								t.Errorf("%s step %d: extract: %v", step.Method, k, extractErr)
+							}
 						}
 					}
 				}

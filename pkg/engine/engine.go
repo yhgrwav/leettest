@@ -63,6 +63,13 @@ type Call struct {
 	// steps after it. Empty for a plain call; Next needs it.
 	Scenario string
 	Next     []Step
+	// Extract takes the values the call's reply gives the later steps, into vals
+	// (Values of them, by index); nil when the call extracts nothing. An error is
+	// a value the reply did not have: the call's result becomes bad_response.
+	Extract func(resp []byte, vals []string) error
+	// Values is how many names the scenario extracts in all: the length of the
+	// slice an iteration makes. Zero: no slice is made.
+	Values int
 }
 
 // Step is a call of a scenario after its first. Each step is sent when the
@@ -71,9 +78,12 @@ type Step struct {
 	Method  string
 	Payload []byte
 	Timeout time.Duration
-	// Build makes the step's body for the iteration whose seq is given; nil
-	// sends Payload.
-	Build func(seq uint64) []byte
+	// Build makes the step's body for the iteration whose seq is given, with the
+	// values the earlier steps extracted in this iteration (nil when the
+	// scenario extracts nothing); nil sends Payload.
+	Build func(seq uint64, vals []string) []byte
+	// Extract is as Call.Extract, for this step's reply.
+	Extract func(resp []byte, vals []string) error
 	// Payloads are the requests of a dataset step, one record each, and Dataset
 	// is what the report says of them, its Counter the step's own position.
 	// Iteration S sends Payloads[S mod len], or the Counter's shuffled row; nil

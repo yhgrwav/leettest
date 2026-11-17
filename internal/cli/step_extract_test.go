@@ -34,13 +34,9 @@ import (
 // Extract (v0.9 unit 4a, the descriptor side; the checks of the config alone
 // are in pkg/config). The config is built by hand. The source of every value
 // is a method whose reply is replyMessage; the step that reads it takes the
-// order message. Stub: cli.ErrExtractNotYet exists, AttachMethods does not
-// look at extract, so every test that expects a refusal is red until the code;
-// the guard tests at the end are green now and stay so.
-//
-// After every check passes, AttachMethods refuses a config with extract with
-// ErrExtractNotYet (removed in 4b), and only then: a refusal of a check never
-// carries it.
+// order message. A config that passes every check is accepted (4b: the run
+// side is there; 4a refused it as not supported yet). The run side is in
+// step_extract_run_test.go.
 
 const (
 	extractSource = "wallet.v1.Wallet/Open"
@@ -202,7 +198,7 @@ func attachExtract(t testing.TB, cfg *config.MasterConfig, resolver descriptor.R
 
 // Ground: contract — spec 1, 3 and 6: a path that does not lead to a scalar of
 // the reply is refused before the load, by the path of the extract and the
-// segment that is wrong, and never with the not-yet refusal.
+// segment that is wrong.
 func TestAttachMethods_ExtractSourceIsRefused(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -237,9 +233,6 @@ func TestAttachMethods_ExtractSourceIsRefused(t *testing.T) {
 			}
 			if !errors.Is(err, config.ErrScenario) {
 				t.Errorf("error = %v, want it to be config.ErrScenario", err)
-			}
-			if errors.Is(err, ErrExtractNotYet) {
-				t.Errorf("error = %v, want a refusal of the check, not %v: that comes only after every check", err, ErrExtractNotYet)
 			}
 			for _, text := range tc.want {
 				if !strings.Contains(err.Error(), text) {
@@ -290,9 +283,6 @@ func TestAttachMethods_ExtractDestinationIsRefused(t *testing.T) {
 			}
 			if !errors.Is(err, ErrTemplateField) {
 				t.Errorf("error = %v, want it to be ErrTemplateField", err)
-			}
-			if errors.Is(err, ErrExtractNotYet) {
-				t.Errorf("error = %v, want a refusal of the check, not %v: that comes only after every check", err, ErrExtractNotYet)
 			}
 			for _, text := range append([]string{"steps[0]"}, tc.want...) {
 				if !strings.Contains(err.Error(), text) {
@@ -352,9 +342,6 @@ func TestAttachMethods_ExtractNeedsASchema(t *testing.T) {
 			if !errors.Is(err, descriptor.ErrReflectionUnsupported) {
 				t.Fatalf("error = %v, want it to be ErrReflectionUnsupported", err)
 			}
-			if errors.Is(err, ErrExtractNotYet) {
-				t.Errorf("error = %v, want a refusal of the check, not %v", err, ErrExtractNotYet)
-			}
 			for _, text := range tc.want {
 				if !strings.Contains(err.Error(), text) {
 					t.Errorf("error = %q, want it to contain %q", err, text)
@@ -365,9 +352,9 @@ func TestAttachMethods_ExtractNeedsASchema(t *testing.T) {
 }
 
 // Ground: contract — spec 1, 3: the paths and the fits the spec allows pass
-// every check; what is then refused is the run side, not yet there: that one
-// refusal, in one line, and nothing else.
-func TestAttachMethods_ExtractThatPassesIsRefusedAsNotYet(t *testing.T) {
+// every check and the config is accepted, with the extract set on the call.
+// Mutation: a config with extract still refused after the checks.
+func TestAttachMethods_ExtractThatPassesIsAccepted(t *testing.T) {
 	const whole = "{{extract.x}}"
 
 	for _, tc := range []struct {
@@ -395,47 +382,38 @@ func TestAttachMethods_ExtractThatPassesIsRefusedAsNotYet(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := extractConfig(map[string]string{"x": tc.source}, readerStep(tc.data))
 
-			requireNotYet(t, attachExtract(t, cfg, newExtractResolver(t, nil)))
+			if err := attachExtract(t, cfg, newExtractResolver(t, nil)); err != nil {
+				t.Fatalf("AttachMethods() = %v, want the config accepted", err)
+			}
 		})
 	}
 }
 
 // The step takes the extract as the call does, and a call and a step may both.
 // Ground: contract — spec 1, extract on the call entry or on a step.
-func TestAttachMethods_ExtractOfAStepAndOfTheCallIsRefusedAsNotYet(t *testing.T) {
+func TestAttachMethods_ExtractOfAStepAndOfTheCallIsAccepted(t *testing.T) {
 	cfg := extractConfig(
 		map[string]string{"w": "wallet_id"},
 		middleStep(map[string]string{"amount": "balance.amount"}),
 		readerStep(map[string]any{"id": "{{extract.w}}", "big": "{{extract.amount}}"}),
 	)
 
-	requireNotYet(t, attachExtract(t, cfg, newExtractResolver(t, nil)))
-}
-
-// requireNotYet says err is the not-yet refusal and nothing else.
-func requireNotYet(t *testing.T, err error) {
-	t.Helper()
-
-	if !errors.Is(err, ErrExtractNotYet) {
-		t.Fatalf("AttachMethods() = %v, want %v", err, ErrExtractNotYet)
-	}
-	if got := err.Error(); strings.Contains(got, "\n") || !strings.Contains(got, "extract: not supported yet") {
-		t.Errorf("error = %q, want that one line only", got)
+	if err := attachExtract(t, cfg, newExtractResolver(t, nil)); err != nil {
+		t.Fatalf("AttachMethods() = %v, want the config accepted", err)
 	}
 }
 
-// One bad path among the good is still the refusal of the check: the not-yet
-// text is for a config that has nothing else wrong.
-// Ground: contract — "after all checks pass".
-func TestAttachMethods_ExtractNotYetIsOnlyForAConfigWithNothingElseWrong(t *testing.T) {
+// One bad path among the good is still refused, by the path of the bad one.
+// Ground: contract — every check speaks; the good paths do not hide the bad.
+func TestAttachMethods_ABadExtractPathAmongTheGoodIsRefused(t *testing.T) {
 	cfg := extractConfig(
 		map[string]string{"w": "wallet_id", "bad": "nope"},
 		readerStep(map[string]any{"id": "{{extract.w}}", "note": "{{extract.bad}}"}),
 	)
 
 	err := attachExtract(t, cfg, newExtractResolver(t, nil))
-	if err == nil || errors.Is(err, ErrExtractNotYet) {
-		t.Fatalf("AttachMethods() = %v, want the refusal of the bad path alone", err)
+	if err == nil {
+		t.Fatalf("AttachMethods() = nil, want the refusal of the bad path")
 	}
 	if !strings.Contains(err.Error(), "load.calls[0].extract.bad") {
 		t.Errorf("error = %q, want it to name load.calls[0].extract.bad", err)

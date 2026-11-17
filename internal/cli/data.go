@@ -238,7 +238,7 @@ func AttachMethods(
 					continue
 				}
 
-				calls[i].Next[k].Build = build
+				calls[i].Next[k].Build = func(seq uint64, _ []string) []byte { return build(seq) }
 				narrowest[i].add(limit, fmt.Sprintf("%s (steps[%d])", calls[i].Next[k].Method, k))
 
 				continue
