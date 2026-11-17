@@ -167,6 +167,9 @@ type Sender struct {
 	// check it: both set by Connect.
 	limit int
 	call  []grpc.CallOption
+	// meta is the metadata of every call when Options.MetadataRefresh asks for
+	// it to be replaced, set by Connect and only then; nil means static.
+	meta *dynamicMetadata
 }
 
 // checkIdle refuses an idle timeout shorter than the time ctx leaves Connect:

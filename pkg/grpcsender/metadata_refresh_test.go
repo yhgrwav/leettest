@@ -184,6 +184,7 @@ func sendUntilLast(t *testing.T, sender *Sender, target *tokenTarget, want strin
 }
 
 // statsOf is the sender's refresh counters; a sender that has none fails the test.
+// Every snapshot is checked against the invariants the counters keep together.
 func statsOf(t *testing.T, sender *Sender) RefreshStats {
 	t.Helper()
 
@@ -192,8 +193,47 @@ func statsOf(t *testing.T, sender *Sender) RefreshStats {
 		t.Fatal("MetadataRefresh reports no refresh on a sender that was given one")
 	}
 
+	if st.Changed+st.Failures > st.Reads {
+		t.Fatalf("stats %+v: changed + failures is more than reads", st)
+	}
+
+	if st.FailingAtEnd && st.Failures == 0 {
+		t.Fatalf("stats %+v: failing at the end with no failure", st)
+	}
+
+	if (st.LastError != "") != (st.Failures > 0) {
+		t.Fatalf("stats %+v: last error and failures disagree", st)
+	}
+
 	return st
 }
+
+// publishedOf is the map calls carry now; a sender with no dynamic metadata fails the test.
+func publishedOf(t *testing.T, sender *Sender) map[string]string {
+	t.Helper()
+
+	if sender.meta == nil || sender.meta.p == nil {
+		t.Fatal("a sender that was given a MetadataRefresh has no dynamic metadata")
+	}
+
+	p := sender.meta.p.Load()
+	if p == nil {
+		t.Fatal("the dynamic metadata holds no map")
+	}
+
+	return *p
+}
+
+// sameMap reports whether a and b are one map, not two with equal content.
+func sameMap(a, b map[string]string) bool {
+	return reflect.ValueOf(a).Pointer() == reflect.ValueOf(b).Pointer()
+}
+
+// Exact texts of the failures the sender itself makes (spec round 1, point 4).
+const (
+	errKeysChanged  = "the set of metadata keys changed: it is fixed when the run starts"
+	errAgentChanged = "the user-agent changed: it is set when the connection is made"
+)
 
 // runSenders has n goroutines send calls one after another for d.
 func runSenders(t *testing.T, sender *Sender, n int, d time.Duration) {
@@ -227,7 +267,11 @@ func runSenders(t *testing.T, sender *Sender, n int, d time.Duration) {
 // ownGoroutines counts the goroutines this package started: the ones whose
 // stack says "created by .../pkg/grpcsender.". gRPC's own goroutines come and
 // go on their own schedule and are left out; the package's are started and
-// ended by Connect and Close alone.
+// ended by Connect and Close alone. It counts a goroutine started by a plain
+// go statement in the package: one started through wg.Go, errgroup or
+// context.AfterFunc has "created by" naming sync or another package and would
+// count as none. Comparisons "none left" use <=, not ==: a goroutine of an
+// earlier test may still be dying.
 func ownGoroutines() int {
 	buf := make([]byte, 1<<20)
 
@@ -313,11 +357,19 @@ func TestMetadataRefresh_OffAddsNothingToTheProcess(t *testing.T) {
 		t.Error("a sender without MetadataRefresh reports one")
 	}
 
+	if a.meta != nil {
+		t.Error("a sender without MetadataRefresh has dynamic metadata: the call path is not the static one")
+	}
+
 	mid := ownGoroutines()
 	b := connected(t, refreshing)
 
 	if extra := ownGoroutines() - mid - base; extra != 1 {
 		t.Errorf("a refreshing sender started %d goroutines of its own beyond a plain one's, want 1", extra)
+	}
+
+	if b.meta == nil || b.meta.p == nil {
+		t.Error("a refreshing sender has no dynamic metadata")
 	}
 
 	if n := src.count(); n != 0 {
@@ -327,17 +379,20 @@ func TestMetadataRefresh_OffAddsNothingToTheProcess(t *testing.T) {
 	_ = a.Close()
 	_ = b.Close()
 
-	eventually(t, "the package's goroutines gone after Close", func() bool { return ownGoroutines() == start })
+	eventually(t, "the package's goroutines gone after Close", func() bool { return ownGoroutines() <= start })
 }
 
 // --- S3: a failed read keeps the last good value ---------------------------
 
 // Ground: contract — a Read that fails keeps the published value, counts the failure and keeps
-// the last error; a later good read replaces the value, ends FailingAtEnd and leaves the count.
+// the last error; a later good read ends FailingAtEnd and leaves the count, whether it brings the
+// same value (nothing changed) or a new one (replaced). Reads counts a finished attempt: a Read
+// still running is not counted.
 func TestMetadataRefresh_AFailedReadKeepsTheLastGoodValue(t *testing.T) {
 	const emptyFile = "token file is empty"
 
 	hold := newGate(t)
+	holdNew := newGate(t)
 	target := &tokenTarget{}
 	opts := listen(t, target)
 	opts.Metadata = map[string]string{"authorization": bearer(1)}
@@ -347,6 +402,10 @@ func TestMetadataRefresh_AFailedReadKeepsTheLastGoodValue(t *testing.T) {
 			return nil, errors.New(emptyFile)
 		case n == 4:
 			hold.wait()
+
+			return map[string]string{"authorization": bearer(1)}, nil
+		case n == 5:
+			holdNew.wait()
 		}
 
 		return map[string]string{"authorization": bearer(2)}, nil
@@ -367,17 +426,32 @@ func TestMetadataRefresh_AFailedReadKeepsTheLastGoodValue(t *testing.T) {
 	}
 
 	st := statsOf(t, sender)
-	if st.Failures != 3 || !st.FailingAtEnd || st.LastError != emptyFile || st.Changed != 0 || st.Reads < 3 || st.Reads > 4 {
-		t.Errorf("stats %+v, want 3 failures, failing at the end, last error %q, nothing changed", st, emptyFile)
+	// The fourth Read is stuck on the gate: not a finished attempt, so Reads is exactly 3.
+	if st.Failures != 3 || !st.FailingAtEnd || st.LastError != emptyFile || st.Changed != 0 || st.Reads != 3 {
+		t.Errorf("stats %+v, want 3 reads, 3 failures, failing at the end, last error %q, nothing changed", st, emptyFile)
 	}
 
+	// The fourth Read brings the value already published: the failing ends, nothing is replaced.
 	hold.open()
-	sendUntilLast(t, sender, target, bearer(2))
 	eventually(t, "the recovery counted", func() bool { return !statsOf(t, sender).FailingAtEnd })
 
 	st = statsOf(t, sender)
-	if st.Failures != 3 || st.Changed != 1 || st.LastError != emptyFile {
-		t.Errorf("stats %+v after the recovery, want the 3 failures and the last error kept, 1 changed", st)
+	if st.Failures != 3 || st.Changed != 0 || st.LastError != emptyFile {
+		t.Errorf("stats %+v after a good read of the same value, want 3 failures, none changed, the last error kept", st)
+	}
+
+	if auth, _ := target.last(); auth != bearer(1) {
+		t.Errorf("the last call carried %q, want %q until a new value is read", auth, bearer(1))
+	}
+
+	// The fifth Read brings a new value: it is replaced and counted.
+	holdNew.open()
+	sendUntilLast(t, sender, target, bearer(2))
+	eventually(t, "the replacement counted", func() bool { return statsOf(t, sender).Changed == 1 })
+
+	st = statsOf(t, sender)
+	if st.Failures != 3 || st.FailingAtEnd || st.LastError != emptyFile {
+		t.Errorf("stats %+v after the replacement, want 3 failures kept, not failing, the last error kept", st)
 	}
 }
 
@@ -436,6 +510,60 @@ func TestMetadataRefresh_AChangedShapeIsAFailure(t *testing.T) {
 
 	if st = statsOf(t, sender); st.Failures != 4 || st.Changed != 1 {
 		t.Errorf("stats %+v after the good read, want 4 failures and 1 changed", st)
+	}
+}
+
+// Ground: contract — each kind of changed shape is one failure with the sender's own text: another
+// key set (extra key, missing key, no map) says the keys are fixed, the same keys with another
+// user-agent says the user-agent is set at connection; the key set is checked first. The old value
+// stays on the calls.
+func TestMetadataRefresh_EachChangedShapeIsRefusedWithItsText(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		bad  map[string]string
+		want string
+	}{
+		{"an extra key", map[string]string{"authorization": bearer(9), "user-agent": "bench/1", "x-extra": "1"}, errKeysChanged},
+		{"a missing key", map[string]string{"user-agent": "bench/1"}, errKeysChanged},
+		{"no map", nil, errKeysChanged},
+		{"another user-agent", map[string]string{"authorization": bearer(9), "user-agent": "bench/2"}, errAgentChanged},
+		{"another key set and another user-agent", map[string]string{"x-other": "1", "user-agent": "bench/2"}, errKeysChanged},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			hold := newGate(t)
+			target := &tokenTarget{}
+			opts := listen(t, target)
+			opts.Metadata = map[string]string{"authorization": bearer(1), "user-agent": "bench/1"}
+			src := &tokenSource{script: func(n int) (map[string]string, error) {
+				switch n {
+				case 1:
+					return tt.bad, nil
+				case 2:
+					hold.wait()
+				}
+
+				return map[string]string{"authorization": bearer(2), "user-agent": "bench/1"}, nil
+			}}
+			opts.MetadataRefresh = src.every(10 * time.Millisecond)
+			sender := connected(t, opts)
+
+			eventually(t, "the refused read", func() bool { return statsOf(t, sender).Failures >= 1 })
+
+			for range 3 {
+				sendOne(t, sender)
+			}
+
+			st := statsOf(t, sender)
+			if st.Failures != 1 || st.LastError != tt.want || st.Changed != 0 || !st.FailingAtEnd {
+				t.Errorf("stats %+v, want 1 failure with last error %q, none changed, failing at the end", st, tt.want)
+			}
+
+			for i, v := range target.seen() {
+				if v != bearer(1) {
+					t.Errorf("call %d carried %q after a refused read, want %q", i, v, bearer(1))
+				}
+			}
+		})
 	}
 }
 
@@ -525,16 +653,31 @@ func TestMetadataRefresh_CloseStopsTheReads(t *testing.T) {
 
 	eventually(t, "three reads", func() bool { return src.count() >= 3 })
 
+	began := time.Now()
 	if err := sender.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
 
+	// An idle goroutine is stopped at once: Close does not sit out the wait it allows a stuck Read.
+	if took := time.Since(began); took >= refreshCloseWait/2 {
+		t.Errorf("Close took %v with no Read in flight, want well under %v", took, refreshCloseWait)
+	}
+
 	reads := src.count()
+
+	st1, ok := sender.MetadataRefresh()
+	if !ok || st1.Reads < 3 {
+		t.Fatalf("after Close: %+v, %v, want the counters kept with at least 3 reads", st1, ok)
+	}
 
 	<-time.After(5 * 10 * time.Millisecond * 2)
 
 	if got := src.count(); got != reads {
 		t.Errorf("Read was called %d more times after Close returned", got-reads)
+	}
+
+	if st2, _ := sender.MetadataRefresh(); st2 != st1 {
+		t.Errorf("counters moved after Close returned: %+v, then %+v", st1, st2)
 	}
 }
 
@@ -564,13 +707,41 @@ func TestMetadataRefresh_CloseDoesNotWaitForAHungRead(t *testing.T) {
 		t.Fatal("Read was not called")
 	}
 
-	start := time.Now()
-	if err := sender.Close(); err != nil {
-		t.Errorf("close: %v", err)
+	// Close runs in its own goroutine: a Close that waits for ever fails here in 5 s, not at the
+	// timeout of the whole test binary.
+	closed := make(chan time.Duration, 1)
+
+	go func() {
+		began := time.Now()
+		_ = sender.Close()
+		closed <- time.Since(began)
+	}()
+
+	// While Close waits, the counters are readable: they are not behind the lock Close holds. The
+	// pause is to let Close take its lock first, not an assertion.
+	<-time.After(100 * time.Millisecond)
+
+	readable := make(chan struct{})
+
+	go func() {
+		_, _ = sender.MetadataRefresh()
+
+		close(readable)
+	}()
+
+	select {
+	case <-readable:
+	case <-time.After(500 * time.Millisecond):
+		t.Error("MetadataRefresh blocked while Close waited for the Read")
 	}
 
-	if took := time.Since(start); took > refreshCloseWait+time.Second {
-		t.Errorf("Close took %v on a hung Read, want about refreshCloseWait (%v) at most", took, refreshCloseWait)
+	select {
+	case took := <-closed:
+		if took > refreshCloseWait+time.Second {
+			t.Errorf("Close took %v on a hung Read, want about refreshCloseWait (%v) at most", took, refreshCloseWait)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close did not return in 5s on a hung Read")
 	}
 
 	reads := src.count()
@@ -583,8 +754,117 @@ func TestMetadataRefresh_CloseDoesNotWaitForAHungRead(t *testing.T) {
 		t.Errorf("Read was called %d more times after Close and the release", got-reads)
 	}
 
-	if st, ok := sender.MetadataRefresh(); ok && st.Changed != 0 {
-		t.Errorf("Changed = %d: a value read after Close was published", st.Changed)
+	// The Read that was stuck has returned a value after Close: it is neither counted nor published.
+	if st, ok := sender.MetadataRefresh(); !ok || st != (RefreshStats{}) {
+		t.Errorf("stats %+v, %v after the stuck Read returned, want nothing counted", st, ok)
+	}
+}
+
+// Ground: contract — Close waits for a Read that is in flight (within refreshCloseWait): when it
+// returns, that Read has finished, and what it returned is neither published nor counted.
+func TestMetadataRefresh_CloseWaitsForAReadInFlight(t *testing.T) {
+	var finished atomic.Bool
+
+	entered := make(chan struct{}, 1)
+	opts := listen(t, &tokenTarget{})
+	opts.Metadata = map[string]string{"authorization": bearer(1)}
+	src := &tokenSource{script: func(n int) (map[string]string, error) {
+		if n > 1 {
+			return map[string]string{"authorization": bearer(1)}, nil
+		}
+
+		entered <- struct{}{}
+
+		time.Sleep(200 * time.Millisecond)
+		finished.Store(true)
+
+		return map[string]string{"authorization": bearer(2)}, nil
+	}}
+	opts.MetadataRefresh = src.every(10 * time.Millisecond)
+	sender := connected(t, opts)
+
+	published := publishedOf(t, sender)
+
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Read was not called")
+	}
+
+	began := time.Now()
+	if err := sender.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	took := time.Since(began)
+
+	if !finished.Load() {
+		t.Error("Close returned before the Read in flight had finished")
+	}
+
+	if took < 100*time.Millisecond || took >= refreshCloseWait {
+		t.Errorf("Close took %v, want it to wait for the Read: between 100ms and %v", took, refreshCloseWait)
+	}
+
+	if st, ok := sender.MetadataRefresh(); !ok || st != (RefreshStats{}) {
+		t.Errorf("stats %+v, %v after Close, want the Read that finished during it not counted", st, ok)
+	}
+
+	if !sameMap(publishedOf(t, sender), published) {
+		t.Error("a value read while Close waited was published")
+	}
+}
+
+// Ground: contract — the map a call carries is never changed in place: a replacement is a new
+// map; the first value is a copy of Options.Metadata and every published map is a copy of what Read
+// returned, so neither the caller's nor the implementor's map is the one the calls read.
+func TestMetadataRefresh_ThePublishedMapIsNeverChangedInPlace(t *testing.T) {
+	var (
+		mu       sync.Mutex
+		returned []map[string]string
+	)
+
+	opts := listen(t, &tokenTarget{})
+	opts.Metadata = map[string]string{"authorization": bearer(1)}
+	src := &tokenSource{script: func(n int) (map[string]string, error) {
+		m := map[string]string{"authorization": bearer(n + 1)}
+
+		mu.Lock()
+		returned = append(returned, m)
+		mu.Unlock()
+
+		return m, nil
+	}}
+	opts.MetadataRefresh = src.every(5 * time.Millisecond)
+	sender := connected(t, opts)
+
+	first := publishedOf(t, sender)
+	snap := maps.Clone(first)
+
+	eventually(t, "two replacements", func() bool { return statsOf(t, sender).Changed >= 2 })
+
+	if !reflect.DeepEqual(first, snap) {
+		t.Errorf("the first published map is now %v, was %v: it was changed in place", first, snap)
+	}
+
+	last := publishedOf(t, sender)
+	if sameMap(last, first) {
+		t.Error("the published map is still the first one after two replacements")
+	}
+
+	if sameMap(first, opts.Metadata) {
+		t.Error("the first published map is Options.Metadata itself, want a copy made at Connect")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	for i, m := range returned {
+		for _, p := range []map[string]string{first, last} {
+			if sameMap(p, m) {
+				t.Errorf("a published map is the map read %d returned, want a copy made before publishing", i+1)
+			}
+		}
 	}
 }
 
@@ -639,7 +919,7 @@ func TestMetadataRefresh_AFailedConnectLeavesNoGoroutine(t *testing.T) {
 		t.Errorf("Read was called %d times after a failed Connect", n)
 	}
 
-	eventually(t, "no goroutine of the package left", func() bool { return ownGoroutines() == start })
+	eventually(t, "no goroutine of the package left", func() bool { return ownGoroutines() <= start })
 }
 
 // Ground: contract — a second Connect on a connected sender is a no-op: one goroutine reads, at
@@ -659,16 +939,19 @@ func TestMetadataRefresh_ASecondConnectStartsNoSecondGoroutine(t *testing.T) {
 
 	eventually(t, "three reads", func() bool { return src.count() >= 3 })
 
-	const window = 10 * every
-
 	before := src.count()
+	began := time.Now()
 
-	<-time.After(window)
+	<-time.After(10 * every)
 
-	// A ticker gives at most one read per Every: a window of ten intervals holds ten, one more at
-	// the edge. Two goroutines would give twenty.
-	if got := src.count() - before; got > 11 {
-		t.Errorf("%d reads in %v at one per %v: more than one goroutine is reading", got, window, every)
+	got := src.count() - before
+	elapsed := time.Since(began)
+
+	// A ticker gives at most one read per Every: the window holds elapsed/every reads, one more at
+	// the edge. Under load the wake-up is late, and the bound follows the time really passed. Two
+	// goroutines would give twice as many.
+	if limit := int(elapsed/every) + 1; got > limit {
+		t.Errorf("%d reads in %v at one per %v (at most %d): more than one goroutine is reading", got, elapsed, every, limit)
 	}
 }
 
