@@ -120,7 +120,8 @@ func seqOverflowNote(report engine.Report) []string {
 // placeholders are those of the call and of its templated steps; its limit is
 // the call's own, and AttachMethods narrows it with the steps'.
 func buildTemplate(method *descriptor.Method, call *config.Call) (*engine.Template, error) {
-	build, limit, err := compileTemplate(method, call.Method, call.Data)
+	// The call's own data reads no extract: it goes out before any reply.
+	build, limit, err := compileTemplate(method, call.Method, call.Data, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -134,11 +135,16 @@ func buildTemplate(method *descriptor.Method, call *config.Call) (*engine.Templa
 // look of the YAML. limit is the largest seq the narrowest number field holds,
 // 0 when there is none.
 //
+// extract is the field each {{extract.<name>}} of data reads, by name; a name
+// that is not in it was refused where it was declared, and is not refused twice.
+//
 // The body is made from a message built once from the data, with a few places
 // (slots) overwritten per request; the bytes are those of the plain path,
 // substitute the text and build the message anew (the reference test).
-func compileTemplate(method *descriptor.Method, name string, data any) (build func(seq uint64) []byte, limit uint64, err error) {
-	c := templateCompiler{method: name}
+func compileTemplate(
+	method *descriptor.Method, name string, data any, extract map[string]protoreflect.FieldDescriptor,
+) (build func(seq uint64) []byte, limit uint64, err error) {
+	c := templateCompiler{method: name, extract: extract}
 	prepared := c.message(method.Input, data, "data", nil)
 
 	if len(c.errs) > 0 {
@@ -218,9 +224,10 @@ type slot struct {
 }
 
 type templateCompiler struct {
-	method string
-	slots  []slot
-	errs   []error
+	method  string
+	extract map[string]protoreflect.FieldDescriptor
+	slots   []slot
+	errs    []error
 	// limit is the largest seq the narrowest number field holds; 0 is none.
 	limit uint64
 }
@@ -299,7 +306,8 @@ func (c *templateCompiler) value(kfd protoreflect.FieldDescriptor, v any, path s
 	switch kfd.Kind() {
 	case protoreflect.StringKind:
 		if text, ok := v.(string); ok {
-			if parts, _ := config.ParseTemplate(text); hasPlaceholder(parts) {
+			// Any scalar the extract reads is written as text: no fit to check here.
+			if parts, _ := config.ParseTemplate(text); generates(parts) {
 				c.slots = append(c.slots, slot{path: steps, leaf: at, parts: parts})
 			}
 		}
@@ -329,7 +337,8 @@ func (c *templateCompiler) value(kfd protoreflect.FieldDescriptor, v any, path s
 }
 
 // number is a value of a number field: only a whole {{seq}} fits, and then it
-// is the field's seq of the largest limit (0: 64-bit, none).
+// is the field's seq of the largest limit (0: 64-bit, none); or a whole
+// {{extract.<name>}} of an integer that fits the field.
 func (c *templateCompiler) number(kfd protoreflect.FieldDescriptor, v any, path string, steps []step, at step, limit uint64) any {
 	text, ok := v.(string)
 	if !ok {
@@ -339,6 +348,23 @@ func (c *templateCompiler) number(kfd protoreflect.FieldDescriptor, v any, path 
 	parts, _ := config.ParseTemplate(text)
 	if !hasPlaceholder(parts) {
 		return v
+	}
+
+	if name := firstExtract(parts); name != "" {
+		if len(parts) != 1 {
+			c.fail(path, "a %s field takes only a whole {{extract.%s}}, not %q", kfd.Kind(), name, text)
+
+			return v
+		}
+
+		if src := c.extract[name]; src != nil {
+			if why := extractFit(src.Kind(), kfd.Kind()); why != "" {
+				c.fail(path, "{{extract.%s}} is %s", name, why)
+			}
+		}
+
+		// The value is not known before the run: the place holds 0 while the body is built.
+		return 0
 	}
 
 	if len(parts) != 1 || parts[0].Placeholder != config.PlaceholderSeq {
@@ -364,7 +390,20 @@ func (c *templateCompiler) opaque(path string, v any) any {
 	return v
 }
 
+// hasPlaceholder says parts hold a placeholder of any of the three forms.
 func hasPlaceholder(parts []config.TemplatePart) bool {
+	for _, p := range parts {
+		if p.Placeholder != "" || p.Extract != "" {
+			return true
+		}
+	}
+
+	return false
+}
+
+// generates says parts hold a {{seq}} or a {{uuid}}: a value the builder makes
+// itself, as against one read from a reply.
+func generates(parts []config.TemplatePart) bool {
 	for _, p := range parts {
 		if p.Placeholder != "" {
 			return true
@@ -372,6 +411,17 @@ func hasPlaceholder(parts []config.TemplatePart) bool {
 	}
 
 	return false
+}
+
+// firstExtract is the name of the first {{extract.<name>}} in parts, "" if none.
+func firstExtract(parts []config.TemplatePart) string {
+	for _, p := range parts {
+		if p.Extract != "" {
+			return p.Extract
+		}
+	}
+
+	return ""
 }
 
 func containsPlaceholder(v any) bool {

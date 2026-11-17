@@ -1,0 +1,44 @@
+# A scenario whose step uses what an earlier reply held: extract names a field of the
+# reply, and a later step reads it as {{extract.<name>}}. Not runnable yet: until the run
+# side of extract lands, leettest checks this file and then refuses it with
+# "extract: not supported yet". GetTransfer is not on the reference stand, so this one
+# is for a service of your own:
+#   leettest -c examples/scenario-extract.yaml
+
+app:
+  target:
+    ip: 127.0.0.1
+    port: 50051
+  tls: false
+
+load:
+  calls:
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 50
+      duration: 1m
+      templates: true
+      data:
+        wallet_id: "wallet-{{seq}}"
+      # name: path in the reply, fields joined by dots (balance.amount for a field of a
+      # message). The path is checked against the method's schema before the load.
+      extract:
+        wallet: wallet_id
+        funds: amount
+      scenario: pay-and-check
+      steps:
+        - method: wallet.v1.WalletService/Transfer
+          timeout: 500ms
+          templates: true
+          # A step extracts as the call does; a name is taken once in a scenario.
+          extract:
+            tx: id
+          data:
+            # A string takes the value among other text; a number takes a whole
+            # {{extract.<name>}} of an integer that fits it (int64 into int64 here).
+            from: "{{extract.wallet}}"
+            to: "{{uuid}}"
+            amount: "{{extract.funds}}"
+        - method: wallet.v1.WalletService/GetTransfer
+          templates: true
+          data:
+            id: "{{extract.tx}}"

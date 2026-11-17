@@ -40,7 +40,13 @@ var referenceOnlyKeys = map[string]string{}
 
 // undocumentedExampleKeys are keys the examples set that no row of the reference tables names.
 // Each has a reason. A key that gets a row must leave this map.
-var undocumentedExampleKeys = map[string]string{}
+var undocumentedExampleKeys = map[string]string{
+	// The names under extract are the user's own, so each name the example sets is a path here;
+	// the page gets its rows, and these entries go, with the run side of extract (v0.9 unit 4b).
+	"load.calls[].extract.wallet":     "extract is documented with its run side (v0.9 unit 4b); until then it only loads and is checked",
+	"load.calls[].extract.funds":      "extract is documented with its run side (v0.9 unit 4b); until then it only loads and is checked",
+	"load.calls[].steps[].extract.tx": "extract is documented with its run side (v0.9 unit 4b); until then it only loads and is checked",
+}
 
 // openKeys take keys of the user's own naming below them: a label, a header, a field of the message.
 var openKeys = []string{"labels", "app.metadata", "load.calls[].data", "load.calls[].steps[].data"}

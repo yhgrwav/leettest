@@ -172,6 +172,26 @@ func AttachMethods(
 	for i := range cfg.Load.Calls {
 		call := &cfg.Load.Calls[i]
 
+		// What each extract name reads, by name, from the replies met so far. The
+		// call's own extract comes first: its method is resolved before the steps,
+		// for once, so that a step that reads it finds it.
+		sources := map[string]protoreflect.FieldDescriptor{}
+
+		var (
+			method     *descriptor.Method
+			resolveErr error
+			resolved   bool
+		)
+
+		if len(call.Extract) > 0 {
+			method, resolveErr = resolver.Resolve(ctx, call.Method)
+			resolved = true
+
+			if resolveErr == nil {
+				errs = append(errs, extractSources(method, fmt.Sprintf("load.calls[%d]", i), call.Extract, sources)...)
+			}
+		}
+
 		// The steps first: whatever the call itself turns out to be, a typo
 		// in a step, or a body that does not fit it, costs the run too.
 		for k, step := range call.Steps {
@@ -184,6 +204,9 @@ func AttachMethods(
 			}
 			if stepMethod == nil {
 				continue
+			}
+			if len(step.Extract) > 0 {
+				errs = append(errs, extractSources(stepMethod, fmt.Sprintf("load.calls[%d].steps[%d]", i, k), step.Extract, sources)...)
 			}
 			if step.Dataset != "" {
 				// The step's own method checks its own file: all or none, as the call's.
@@ -208,7 +231,7 @@ func AttachMethods(
 				// holds no ready body. The narrow field is remembered by its step.
 				at := fmt.Sprintf("load.calls[%d].steps[%d] (%s)", i, k, step.Method)
 
-				build, limit, tplErr := compileTemplate(stepMethod, at, step.Data)
+				build, limit, tplErr := compileTemplate(stepMethod, at, step.Data, sources)
 				if tplErr != nil {
 					errs = append(errs, tplErr)
 
@@ -232,7 +255,9 @@ func AttachMethods(
 			calls[i].Next[k].Payload = body
 		}
 
-		method, resolveErr := resolver.Resolve(ctx, call.Method)
+		if !resolved {
+			method, resolveErr = resolver.Resolve(ctx, call.Method)
+		}
 		if resolveErr == nil {
 			methods[i] = method
 		}
@@ -249,11 +274,18 @@ func AttachMethods(
 
 			continue
 		case resolveErr == nil:
+		// An extract is a promise about the reply, which only a schema can check.
+		case len(call.Extract) > 0 && errors.Is(resolveErr, descriptor.ErrReflectionUnsupported):
+			errs = append(errs, fmt.Errorf("load.calls[%d] (%s): %w: the schema for its extract comes from reflection; "+
+				"set app.proto or app.protoset to give it another way, or drop the extract: "+
+				"a value cannot be read from a reply that has no schema", i, call.Method, resolveErr))
+
+			continue
 		// A method with no data needs no schema, so a resolver that could not
 		// answer only costs the check, not the run. Which it was matters: a
 		// target that never enabled reflection is not the same as one that
 		// asked for credentials or did not answer in time.
-		case call.Data == nil && call.Dataset == "" && !errors.Is(resolveErr, descriptor.ErrMethodNotFound):
+		case call.Data == nil && call.Dataset == "" && len(call.Extract) == 0 && !errors.Is(resolveErr, descriptor.ErrMethodNotFound):
 			if status.Code(resolveErr) == codes.Unauthenticated {
 				resolveErr = fmt.Errorf("target requires credentials; app.metadata is not set: %w", resolveErr)
 			}
@@ -329,7 +361,30 @@ func AttachMethods(
 		narrowest[i].narrow(calls[i].Template)
 	}
 
+	if len(errs) == 0 && extractIn(cfg) {
+		// Every check passed; the run side of extract is not there yet.
+		return unchecked, methods, ErrExtractNotYet
+	}
+
 	return unchecked, methods, errors.Join(errs...)
+}
+
+// extractIn says some call or step of cfg has an extract.
+func extractIn(cfg *config.MasterConfig) bool {
+	for i := range cfg.Load.Calls {
+		call := &cfg.Load.Calls[i]
+		if len(call.Extract) > 0 {
+			return true
+		}
+
+		for _, step := range call.Steps {
+			if len(step.Extract) > 0 {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 // checkStepMethod asks the target about step k (counting from 0, after the
@@ -362,7 +417,11 @@ func checkStepMethod(
 		return nil, nil, fmt.Errorf("%s: %w: the schema for its data comes from reflection; "+
 			"set app.proto or app.protoset to give it another way, or drop the data: "+
 			"without data the step runs with an empty message", at, err)
-	case step.Data != nil || step.Dataset != "":
+	case len(step.Extract) > 0 && errors.Is(err, descriptor.ErrReflectionUnsupported):
+		return nil, nil, fmt.Errorf("%s: %w: the schema for its extract comes from reflection; "+
+			"set app.proto or app.protoset to give it another way, or drop the extract: "+
+			"a value cannot be read from a reply that has no schema", at, err)
+	case step.Data != nil || step.Dataset != "" || len(step.Extract) > 0:
 		return nil, nil, fmt.Errorf("%s: %w", at, err)
 	}
 

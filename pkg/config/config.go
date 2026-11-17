@@ -419,6 +419,10 @@ type Call struct {
 	DatasetReuse *bool `yaml:"dataset_reuse"`
 	// Templates is templates; nil when left out, which is false.
 	Templates *bool `yaml:"templates"`
+	// Extract is extract as written: the name of a value to the path of a field
+	// of the reply, for the later steps of the scenario to read as
+	// {{extract.<name>}}. Nil when left out; only a call with steps has it.
+	Extract map[string]string `yaml:"extract"`
 	// RawTimeout is the field as written; nil means it was left out.
 	RawTimeout *time.Duration `yaml:"timeout"`
 	Timeout    time.Duration  `yaml:"-"`
@@ -449,6 +453,8 @@ type Step struct {
 	// sends the braces as text. true makes Data a template; it needs
 	// templates: true on the call and a placeholder in Data.
 	Templates *bool `yaml:"templates"`
+	// Extract is the step's extract, as the call's.
+	Extract map[string]string `yaml:"extract"`
 	// RawDataset, Dataset, Records, DatasetSHA256, DatasetOrder and DatasetSeed
 	// are the step's dataset, as the call's: the path as written, kept for what
 	// prints it, the file's requests read by LoadFile, the file's sha256, and the
@@ -511,13 +517,19 @@ func (c Call) isScenario() bool {
 
 // validateScenario checks the scenario and steps keys of call i by their path.
 func (c Call) validateScenario(i int) []error {
+	at := fmt.Sprintf("load.calls[%d]", i)
+
 	if !c.isScenario() {
-		return nil
+		if len(c.Extract) == 0 {
+			return nil
+		}
+
+		return []error{fmt.Errorf("%w: %s.extract: extract needs steps: a value is read by a step after the call, "+
+			"so add scenario and steps or drop the extract", ErrScenario, at)}
 	}
 
 	var errs []error
 
-	at := fmt.Sprintf("load.calls[%d]", i)
 	fail := func(format string, args ...any) {
 		errs = append(errs, fmt.Errorf("%w: %s", ErrScenario, fmt.Sprintf(format, args...)))
 	}
@@ -563,7 +575,7 @@ func (c Call) validateScenario(i int) []error {
 		}
 	}
 
-	return errs
+	return append(errs, c.validateExtract(at)...)
 }
 
 func (c ConnectionStringTarget) CreateConnectionString() (ConnectionString, error) {
