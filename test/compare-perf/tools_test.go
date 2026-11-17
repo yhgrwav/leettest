@@ -108,6 +108,26 @@ func TestParseK6Summary_ReadsBothShapesOfValues(t *testing.T) {
 	}
 }
 
+// The note is read by a person: one dropped iteration is "1 iteration", as the
+// scenario block of the report says it.
+func TestParseK6Summary_OneDroppedIterationIsSingular(t *testing.T) {
+	for count, want := range map[string]string{
+		"1": "dropped 1 iteration",
+		"2": "dropped 2 iterations",
+	} {
+		data := `{"metrics":{"grpc_req_duration":{"type":"trend","values":{"count":100,"p(50)":1,"p(99)":2}},` +
+			`"dropped_iterations":{"type":"counter","values":{"count":` + count + `}}}}`
+
+		r, err := parseK6Summary([]byte(data))
+		if err != nil {
+			t.Fatalf("count %s: %v", count, err)
+		}
+		if r.Note != want {
+			t.Errorf("count %s: note %q, want %q", count, r.Note, want)
+		}
+	}
+}
+
 // testdata/k6-summary.json is what handleSummary wrote in a real k6 v2.3.0 run
 // (1000 rps, 5 s): the old form, no grpc_reqs, perf_errors absent while
 // nothing added to it.

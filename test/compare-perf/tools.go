@@ -304,7 +304,11 @@ func parseK6Summary(data []byte) (toolResult, error) {
 		r.Failed = int(errs)
 	}
 	if dropped, ok := value("dropped_iterations", "count"); ok && dropped > 0 {
-		r.Note = fmt.Sprintf("dropped %d iterations", int(dropped))
+		noun := "iterations"
+		if int(dropped) == 1 {
+			noun = "iteration"
+		}
+		r.Note = fmt.Sprintf("dropped %d %s", int(dropped), noun)
 	}
 
 	return r, nil
