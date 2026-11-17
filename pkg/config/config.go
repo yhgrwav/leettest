@@ -419,6 +419,10 @@ type Call struct {
 	DatasetReuse *bool `yaml:"dataset_reuse"`
 	// Templates is templates; nil when left out, which is false.
 	Templates *bool `yaml:"templates"`
+	// Extract is extract as written: the name of a value to the path of a field
+	// of the reply, for the later steps of the scenario to read as
+	// {{extract.<name>}}. Nil when left out; only a call with steps has it.
+	Extract map[string]string `yaml:"extract"`
 	// RawTimeout is the field as written; nil means it was left out.
 	RawTimeout *time.Duration `yaml:"timeout"`
 	Timeout    time.Duration  `yaml:"-"`
@@ -449,6 +453,8 @@ type Step struct {
 	// sends the braces as text. true makes Data a template; it needs
 	// templates: true on the call and a placeholder in Data.
 	Templates *bool `yaml:"templates"`
+	// Extract is the step's extract, as the call's.
+	Extract map[string]string `yaml:"extract"`
 	// RawDataset, Dataset, Records, DatasetSHA256, DatasetOrder and DatasetSeed
 	// are the step's dataset, as the call's: the path as written, kept for what
 	// prints it, the file's requests read by LoadFile, the file's sha256, and the

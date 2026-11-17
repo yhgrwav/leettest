@@ -42,10 +42,13 @@ const (
 )
 
 // TemplatePart is a piece of a text with placeholders: a literal text, or, when
-// Placeholder is set, the placeholder of that name (Text is then empty).
+// Placeholder is set, the placeholder of that name (Text is then empty), or,
+// when Extract is set, the value extracted under that name from the reply of an
+// earlier step ({{extract.<name>}}; Text and Placeholder are then empty).
 type TemplatePart struct {
 	Text        string
 	Placeholder string
+	Extract     string
 }
 
 // ParseTemplate splits text into literal pieces and placeholders. Only
