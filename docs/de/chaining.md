@@ -2,13 +2,15 @@
 
 [← Zur Übersicht](README.md)
 
-> Übersetzt aus [docs/ru/chaining.md](../ru/chaining.md) bei feb2d1d, 2026-11-10. Bei Abweichungen gilt die
+> Übersetzt aus [docs/ru/chaining.md](../ru/chaining.md) bei 1b6e8ec, 2026-11-15. Bei Abweichungen gilt die
 > russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/chaining.md).
 
-> **Status: geplant, funktioniert noch nicht.** Das Beispiel unten ist ein Entwurf des Formats,
-> keine funktionierende Konfiguration.
+> **Status: Schritte nach dem Aufruf funktionieren ab v0.9 (`scenario` und `steps`, siehe
+> [Referenz](reference.md#szenario-schritte-nach-dem-aufruf)); die Übergabe von Antwortfeldern an den
+> nächsten Schritt ist geplant und ersetzt die unten beschriebenen Pools.** Das Beispiel unten ist ein
+> Entwurf des Formats, keine funktionierende Konfiguration.
 
 Die Hälfte der Methoden eines echten Dienstes lässt sich nicht mit statischen Daten aufrufen. Um
 Überweisungen zu belasten, braucht man existierende Wallets: `Transfer` verlangt `from` und `to`,
