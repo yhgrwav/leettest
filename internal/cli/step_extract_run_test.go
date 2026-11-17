@@ -36,9 +36,7 @@ import (
 // Extract (v0.9 unit 4b, the run side). The extract of a call or a step reads
 // a value out of the reply bytes into the iteration's vals; Build of a later
 // step writes it into the request. Both are checked here on bytes, through
-// AttachMethods as the run makes them. Stub: the engine fields exist,
-// AttachMethods still refuses a config with extract as not supported yet, so
-// every test below that attaches is red until the code.
+// AttachMethods as the run makes them.
 //
 // wideReply has a field of every scalar kind a path may end in; the order
 // message of the 4a tests is the request.

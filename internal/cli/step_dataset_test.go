@@ -253,14 +253,25 @@ func TestAttachMethods_StepDatasetNeedsASchemaFromReflectionOrAProto(t *testing.
 }
 
 // stepSender answers every request, keeps for each method the number of the
-// record it carried (the first byte; -1 for an empty body) in the order the
-// requests came, and fails the calls of failMethod. An empty body never panics
+// record it carried (the first byte; -1 for an empty body) with the schedule of
+// the request, and fails the calls of failMethod. An empty body never panics
 // it: the stubs of the red phase send empty ones.
+//
+// With endsAtTheTick set, every call ends at the moment it was scheduled for, so
+// a step is scheduled at its iteration's tick and recordsByIteration can put the
+// records in iteration order whatever order the goroutines reached the sender in.
 type stepSender struct {
-	failMethod string
+	failMethod    string
+	endsAtTheTick bool
 
-	mu   sync.Mutex
-	seen map[string][]int
+	mu      sync.Mutex
+	stamped map[string][]stampedRecord
+}
+
+// stampedRecord is a record with the schedule of the request that carried it.
+type stampedRecord struct {
+	at     time.Time
+	record int
 }
 
 func (s *stepSender) Send(_ context.Context, req engine.Request) (engine.Outcome, error) {
@@ -270,13 +281,16 @@ func (s *stepSender) Send(_ context.Context, req engine.Request) (engine.Outcome
 	}
 
 	s.mu.Lock()
-	if s.seen == nil {
-		s.seen = map[string][]int{}
+	if s.stamped == nil {
+		s.stamped = map[string][]stampedRecord{}
 	}
-	s.seen[req.Method] = append(s.seen[req.Method], record)
+	s.stamped[req.Method] = append(s.stamped[req.Method], stampedRecord{req.ScheduledAt, record})
 	s.mu.Unlock()
 
 	now := time.Now()
+	if s.endsAtTheTick {
+		now = req.ScheduledAt
+	}
 	out := engine.Outcome{Category: engine.CategorySuccess, SentAt: now, DoneAt: now}
 	if req.Method == s.failMethod {
 		out.Category = engine.CategoryServerFault
@@ -285,11 +299,22 @@ func (s *stepSender) Send(_ context.Context, req engine.Request) (engine.Outcome
 	return out, nil
 }
 
-func (s *stepSender) recordsOf(method string) []int {
+// recordsByIteration is the records of method in the order of the iterations that
+// carried them: by the schedule of the request, which is the tick of the
+// iteration when the sender ends at the tick. Arrival order is not that order.
+func (s *stepSender) recordsByIteration(method string) []int {
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	got := slices.Clone(s.stamped[method])
+	s.mu.Unlock()
 
-	return slices.Clone(s.seen[method])
+	slices.SortStableFunc(got, func(a, b stampedRecord) int { return a.at.Compare(b.at) })
+
+	records := make([]int, len(got))
+	for i := range got {
+		records[i] = got[i].record
+	}
+
+	return records
 }
 
 // sdRun runs the calls CallsFromConfig builds from cfg, each record of a step
@@ -359,7 +384,7 @@ func TestRun_StepDatasetDrawnSeedIsReportedAndRepeatsTheRun(t *testing.T) {
 		return cfg
 	}
 
-	sender := &stepSender{}
+	sender := &stepSender{endsAtTheTick: true}
 	report := sdRun(t, build(nil, nil), sender)
 
 	seeds := make([]int64, len(methods))
@@ -374,7 +399,7 @@ func TestRun_StepDatasetDrawnSeedIsReportedAndRepeatsTheRun(t *testing.T) {
 		}
 		seeds[k] = int64(ds.Seed)
 
-		first[k] = sender.recordsOf("/" + m)
+		first[k] = sender.recordsByIteration("/" + m)
 		if len(first[k]) != 15 {
 			t.Fatalf("%s: %d requests, want 15", m, len(first[k]))
 		}
@@ -390,10 +415,10 @@ func TestRun_StepDatasetDrawnSeedIsReportedAndRepeatsTheRun(t *testing.T) {
 		t.Errorf("both steps drew seed %d: each dataset draws its own", seeds[0])
 	}
 
-	again := &stepSender{}
+	again := &stepSender{endsAtTheTick: true}
 	sdRun(t, build(&seeds[0], &seeds[1]), again)
 	for k, m := range methods {
-		if got := again.recordsOf("/" + m); !slices.Equal(got, first[k]) {
+		if got := again.recordsByIteration("/" + m); !slices.Equal(got, first[k]) {
 			t.Errorf("%s: with seed %d the run sent %v, want %v as before", m, seeds[k], got, first[k])
 		}
 	}
