@@ -23,6 +23,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -86,24 +88,44 @@ func (m *mrTarget) tokens() []string {
 	return append([]string(nil), m.seen...)
 }
 
-// mrWorkDir is a directory that is the working directory of the test, holding
-// token.txt with value: a relative ${file:token.txt} is read from there.
-func mrWorkDir(t *testing.T, value string) string {
+// mrDir is a directory holding token.txt with value, for a config written next
+// to it: a relative ${file:token.txt} is read from the config's directory
+// (spec §1.2). The working directory of the test is another, empty one, so a
+// read from the cwd finds nothing.
+func mrDir(t *testing.T, value string) string {
 	t.Helper()
 
 	dir := t.TempDir()
-	t.Chdir(dir)
-
 	if err := os.WriteFile(filepath.Join(dir, "token.txt"), []byte(value), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
+	t.Chdir(t.TempDir())
+
 	return dir
 }
 
-// mrConfig writes a plaintext config of one call of the given duration, with
-// the app lines after app.tls.
-func mrConfig(t *testing.T, addr, appLines, duration string) string {
+// mrWorkDir is mrDir with the test's working directory in it: config.Parse
+// leaves a relative path as written, and senderOptions reads it from the cwd.
+func mrWorkDir(t *testing.T, value string) string {
+	t.Helper()
+
+	dir := mrDir(t, value)
+	t.Chdir(dir)
+
+	return dir
+}
+
+// mrConfig writes a plaintext config of one call of the given duration into
+// dir, next to the token file, with the app lines after app.tls.
+func mrConfig(t *testing.T, dir, addr, appLines, duration string) string {
+	t.Helper()
+
+	return mrConfigWith(t, dir, addr, appLines, duration, "")
+}
+
+// mrConfigWith is mrConfig with top-level lines after the calls.
+func mrConfigWith(t *testing.T, dir, addr, appLines, duration, topLines string) string {
 	t.Helper()
 
 	host, port, err := net.SplitHostPort(addr)
@@ -112,9 +134,9 @@ func mrConfig(t *testing.T, addr, appLines, duration string) string {
 	}
 
 	cfg := "app:\n  target:\n    ip: " + host + "\n    port: " + port + "\n  tls: false\n" + appLines +
-		"load:\n  calls:\n    - method: " + checkMethod + "\n      rps: 50\n      duration: " + duration + "\n"
+		"load:\n  calls:\n    - method: " + checkMethod + "\n      rps: 50\n      duration: " + duration + "\n" + topLines
 
-	path := filepath.Join(t.TempDir(), "leettest.yaml")
+	path := filepath.Join(dir, "leettest.yaml")
 	if err = os.WriteFile(path, []byte(cfg), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -163,10 +185,10 @@ func mrReplace(t *testing.T, path string, delay time.Duration, value string) (do
 // target with the file's value, the line break at the end cut. Without refresh
 // the report has no refresh line and the value is never printed.
 func TestMetadataFile_ARunSendsTheValueOfTheFile(t *testing.T) {
-	mrWorkDir(t, "tok-one\n")
+	dir := mrDir(t, "tok-one\n")
 	target := startMRTarget(t)
 
-	res := runCLI(t.Context(), t, 10*time.Second, "-c", mrConfig(t, target.addr, mrFileApp, "300ms"))
+	res := runCLI(t.Context(), t, 10*time.Second, "-c", mrConfig(t, dir, target.addr, mrFileApp, "300ms"))
 	if res.err != nil {
 		t.Fatalf("run: %v\nstderr:\n%s", res.err, res.stderr)
 	}
@@ -191,9 +213,9 @@ func TestMetadataFile_ARunSendsTheValueOfTheFile(t *testing.T) {
 // reaches the target within the interval, in order: once the new value has
 // come, the old one does not. The report counts the change.
 func TestMetadataRefresh_ANewValueReachesTheTargetDuringTheRun(t *testing.T) {
-	dir := mrWorkDir(t, "tok-one\n")
+	dir := mrDir(t, "tok-one\n")
 	target := startMRTarget(t)
-	cfg := mrConfig(t, target.addr, mrFileApp+"  metadata_refresh: 1s\n", "3500ms")
+	cfg := mrConfig(t, dir, target.addr, mrFileApp+"  metadata_refresh: 1s\n", "3500ms")
 
 	done := mrReplace(t, filepath.Join(dir, "token.txt"), 1300*time.Millisecond, "tok-two\n")
 
@@ -247,9 +269,9 @@ func TestMetadataRefresh_ANewValueReachesTheTargetDuringTheRun(t *testing.T) {
 // error, and the report says the refresh was failing at the end.
 // Mutation M25 (a stderr line per failed read) dies on the count.
 func TestMetadataRefresh_AFailedReadIsOneLineOnStderrAndInTheReport(t *testing.T) {
-	dir := mrWorkDir(t, "tok-one\n")
+	dir := mrDir(t, "tok-one\n")
 	target := startMRTarget(t)
-	cfg := mrConfig(t, target.addr, mrFileApp+"  metadata_refresh: 1s\n", "5s")
+	cfg := mrConfig(t, dir, target.addr, mrFileApp+"  metadata_refresh: 1s\n", "5s")
 
 	go func() {
 		time.Sleep(1300 * time.Millisecond)
@@ -257,7 +279,7 @@ func TestMetadataRefresh_AFailedReadIsOneLineOnStderrAndInTheReport(t *testing.T
 	}()
 
 	res := runCLI(t.Context(), t, 20*time.Second, "-c", cfg)
-	if res.err != nil {
+	if res.err != nil && !errors.Is(res.err, ErrInvalidRun) {
 		t.Fatalf("run: %v\nstderr:\n%s", res.err, res.stderr)
 	}
 
@@ -273,10 +295,18 @@ func TestMetadataRefresh_AFailedReadIsOneLineOnStderrAndInTheReport(t *testing.T
 		t.Errorf("stderr lines %q, want exactly one: %q\nstderr:\n%s", lines, mrStderr, res.stderr)
 	}
 
-	report := regexp.MustCompile(`(?m)^metadata refresh: every 1s, \d+ reads, 0 changed, \d+ failed \(failing at the end\); ` +
+	report := regexp.MustCompile(`(?m)^metadata refresh: every 1s, \d+ reads, 0 changed, (\d+) failed \(failing at the end\); ` +
 		`the last good value stayed in use; last error: ` + regexp.QuoteMeta(mrLastError) + `$`)
-	if !report.MatchString(res.stdout) {
-		t.Errorf("no refresh line with the failure in the report:\n%s", res.stdout)
+
+	m := report.FindStringSubmatch(res.stdout)
+	if m == nil {
+		t.Fatalf("no refresh line with the failure in the report:\n%s", res.stdout)
+	}
+
+	// The file stays empty for 3 or more reads: the report counts each of them
+	// while stderr said it once.
+	if failed, _ := strconv.Atoi(m[1]); failed < 2 {
+		t.Errorf("the report counts %d failed reads, want at least 2: one line on stderr must stand for several", failed)
 	}
 
 	for i, tok := range target.tokens() {
@@ -289,9 +319,9 @@ func TestMetadataRefresh_AFailedReadIsOneLineOnStderrAndInTheReport(t *testing.T
 // Ground: contract (spec §5.2, §6.5) — -output json keeps stdout one JSON
 // document with the counters in it; the interval is in microseconds.
 func TestMetadataRefresh_JSONCarriesTheCounters(t *testing.T) {
-	mrWorkDir(t, "tok-one\n")
+	dir := mrDir(t, "tok-one\n")
 	target := startMRTarget(t)
-	cfg := mrConfig(t, target.addr, mrFileApp+"  metadata_refresh: 1s\n", "1500ms")
+	cfg := mrConfig(t, dir, target.addr, mrFileApp+"  metadata_refresh: 1s\n", "1500ms")
 
 	res := runCLI(t.Context(), t, 15*time.Second, "-c", cfg, "-output", "json")
 	if res.err != nil {
@@ -325,10 +355,10 @@ func TestMetadataRefresh_JSONCarriesTheCounters(t *testing.T) {
 // the key is null in the JSON; a file in the header changes neither.
 // Mutation M26 (a line when off) dies on the text half.
 func TestMetadataRefresh_OffAddsNothingToTheReport(t *testing.T) {
-	mrWorkDir(t, "tok-one\n")
+	dir := mrDir(t, "tok-one\n")
 	target := startMRTarget(t)
 
-	text := runCLI(t.Context(), t, 10*time.Second, "-c", mrConfig(t, target.addr, mrFileApp, "300ms"))
+	text := runCLI(t.Context(), t, 10*time.Second, "-c", mrConfig(t, dir, target.addr, mrFileApp, "300ms"))
 	if text.err != nil {
 		t.Fatalf("run: %v\nstderr:\n%s", text.err, text.stderr)
 	}
@@ -337,7 +367,7 @@ func TestMetadataRefresh_OffAddsNothingToTheReport(t *testing.T) {
 		t.Errorf("a refresh line with refresh off:\n%s", text.stdout)
 	}
 
-	js := runCLI(t.Context(), t, 10*time.Second, "-c", mrConfig(t, target.addr, mrFileApp, "300ms"), "-output", "json")
+	js := runCLI(t.Context(), t, 10*time.Second, "-c", mrConfig(t, dir, target.addr, mrFileApp, "300ms"), "-output", "json")
 	if js.err != nil {
 		t.Fatalf("run: %v\nstderr:\n%s", js.err, js.stderr)
 	}
@@ -359,7 +389,8 @@ func TestMetadataRefresh_OffAddsNothingToTheReport(t *testing.T) {
 // Ground: contract (spec §4.1, §6.2, C2) — a file that cannot be read is a
 // config error before any connection: exit 1, ErrInvalidMetadata, the key, the
 // file and the reason, never what the file holds, never a byte position.
-// Mutation M24 (the content or the position in the error) dies on the secret.
+// Mutation M24 (the content or the position in the error) dies on the secret and
+// on the end of the message: the reason is the last thing it says.
 func TestMetadataFile_AnUnreadableFileFailsBeforeConnecting(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -375,7 +406,7 @@ func TestMetadataFile_AnUnreadableFileFailsBeforeConnecting(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			dir := mrWorkDir(t, "")
+			dir := mrDir(t, "")
 			if c.content == nil {
 				if err := os.Remove(filepath.Join(dir, "token.txt")); err != nil {
 					t.Fatal(err)
@@ -384,7 +415,7 @@ func TestMetadataFile_AnUnreadableFileFailsBeforeConnecting(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			res := runCLI(t.Context(), t, 5*time.Second, "-c", mrConfig(t, closedPort(t), mrFileApp, "300ms"))
+			res := runCLI(t.Context(), t, 5*time.Second, "-c", mrConfig(t, dir, closedPort(t), mrFileApp, "300ms"))
 			if res.err == nil {
 				t.Fatal("run succeeded")
 			}
@@ -398,8 +429,13 @@ func TestMetadataFile_AnUnreadableFileFailsBeforeConnecting(t *testing.T) {
 			}
 
 			want := `key "authorization": file token.txt: ` + c.reason
-			if !strings.Contains(res.err.Error(), want) {
-				t.Errorf("err = %q, want it to hold %q", res.err, want)
+			if c.reason == "" {
+				// The reason is the text of the operating system.
+				if !strings.Contains(res.err.Error(), want) {
+					t.Errorf("err = %q, want it to hold %q", res.err, want)
+				}
+			} else if !strings.HasSuffix(res.err.Error(), want) {
+				t.Errorf("err = %q, want it to end with %q: nothing after the reason", res.err, want)
 			}
 
 			if strings.Contains(res.err.Error()+res.stdout+res.stderr, secretMark) {
@@ -566,17 +602,37 @@ func TestBuildSender_TheRefreshFollowsTheMode(t *testing.T) {
 	}
 }
 
+// mrDryConfig is dryConfig written into dir, next to the token file.
+func mrDryConfig(t *testing.T, dir, addr, appLines, calls string) string {
+	t.Helper()
+
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		t.Fatalf("split %q: %v", addr, err)
+	}
+
+	cfg := "app:\n  target:\n    ip: " + host + "\n    port: " + port + "\n  tls: false\n" + appLines +
+		"load:\n  calls:\n" + calls
+
+	path := filepath.Join(dir, "leettest.yaml")
+	if err = os.WriteFile(path, []byte(cfg), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	return path
+}
+
 // Ground: contract (spec §4.2, C5) — a dry run hands the target the value of the
 // file and shows it nowhere: the metadata line, the reply and the error message
 // show ${file:PATH}, the prefix "Bearer " left as it is. A refresh set in the
 // config is not started: the run returns at once and says nothing about it.
 // Mutation M23 (a redactor without the file values) and M27 die here.
 func TestRun_DryRunNeverPrintsTheValueOfAFile(t *testing.T) {
-	mrWorkDir(t, "f1le-s3cr3t\n")
+	dir := mrDir(t, "f1le-s3cr3t\n")
 
 	addr, echo := startEchoTarget(t, "")
 	app := "  metadata:\n    authorization: Bearer ${file:token.txt}\n  metadata_refresh: 1s\n"
-	cfg := dryConfig(t, addr, app, dryCall(unaryCallMethod, "")+dryCall(emptyCallMethod, ""))
+	cfg := mrDryConfig(t, dir, addr, app, dryCall(unaryCallMethod, "")+dryCall(emptyCallMethod, ""))
 
 	res := runCLI(t.Context(), t, 5*time.Second, "-c", cfg, "-dry-run")
 	if got := exitCode(res.err); got != 1 {
@@ -610,6 +666,169 @@ func TestRun_DryRunNeverPrintsTheValueOfAFile(t *testing.T) {
 
 	if len(echo.received()) != 2 {
 		t.Errorf("the target got %d calls, want 2", len(echo.received()))
+	}
+}
+
+// Ground: contract (spec §4.2, C5) — the token a file holds is as secret as one
+// written in the config: whether the run succeeds, the config is refused, the
+// target refuses the token, or the file's value is invalid, it is on no screen
+// and in no error. The file sits next to the config, the cwd is elsewhere.
+// Mutation M24 (the content in the error) dies on the last two.
+func TestRun_TheTokenOfAFileIsNeverPrinted(t *testing.T) {
+	dir, g := mutual(t)
+	t.Chdir(t.TempDir())
+
+	const tlsLines = "  ca: server.pem\n  cert: client.pem\n  key: client.key\n"
+	const fileLine = "  metadata:\n    authorization: '${file:token.txt}'\n"
+
+	scenarios := []struct {
+		name, content, app string
+		wantOK             bool
+	}{
+		{"success", secretToken, tlsLines + fileLine, true},
+		// The token sits in a header the config refuses for another reason.
+		{"config error", secretToken, tlsLines + fileLine + "    grpc-bad: '${file:token.txt}'\n", false},
+		{"target refuses", secretToken + "-wrong", tlsLines + fileLine, false},
+		{"bad value", secretToken + "é", tlsLines + fileLine, false},
+		{"line break inside", secretToken + "\nsecond", tlsLines + fileLine, false},
+	}
+
+	for _, sc := range scenarios {
+		t.Run(sc.name, func(t *testing.T) {
+			if err := os.WriteFile(filepath.Join(dir, "token.txt"), []byte(sc.content), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			res := runCLI(t.Context(), t, 10*time.Second, "-c", guardedConfig(t, dir, g.addr, sc.app, ""))
+
+			if sc.wantOK && res.err != nil {
+				t.Fatalf("run: %v\nstderr:\n%s", res.err, res.stderr)
+			}
+
+			if !sc.wantOK && res.err == nil {
+				t.Fatalf("run succeeded\nstdout:\n%s", res.stdout)
+			}
+
+			all := res.stdout + res.stderr
+			if res.err != nil {
+				all += res.err.Error()
+			}
+
+			if strings.Contains(all, secretMark) {
+				t.Errorf("the token of the file appears in the output:\n%s", all)
+			}
+		})
+	}
+}
+
+// Ground: contract (spec §4.1, §4.2, C3, C5) — a read at refresh that fails on
+// a file holding a secret says why and never what: the report, the JSON and
+// stderr hold the reason only, one line on stderr, and the target keeps getting
+// the last good value, never the secret.
+// Mutation M24 (the content in the error of a reread) dies here.
+func TestMetadataRefresh_ASecretInAFailedReadIsNeverPrinted(t *testing.T) {
+	dir := mrDir(t, "tok-one\n")
+	target := startMRTarget(t)
+	cfg := mrConfig(t, dir, target.addr, mrFileApp+"  metadata_refresh: 1s\n", "4s")
+	path := filepath.Join(dir, "token.txt")
+
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		<-mrReplace(t, path, 1300*time.Millisecond, secretMark+"é")
+		<-mrReplace(t, path, time.Second, secretMark+"\nsecond")
+	}()
+
+	res := runCLI(t.Context(), t, 20*time.Second, "-c", cfg, "-output", "json")
+	<-done
+
+	if res.err != nil && !errors.Is(res.err, ErrInvalidRun) {
+		t.Fatalf("run: %v\nstderr:\n%s", res.err, res.stderr)
+	}
+
+	if all := res.stdout + res.stderr; strings.Contains(all, secretMark) {
+		t.Fatalf("the secret of the file is on the screen:\n%s", all)
+	}
+
+	reasons := []string{
+		`key "authorization": file token.txt: has a byte outside printable ASCII (%x20-%x7E)`,
+		`key "authorization": file token.txt: has a line break inside the value (one at the end is cut)`,
+	}
+
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(res.stdout), &doc); err != nil {
+		t.Fatalf("stdout is not one JSON document: %v\n%s", err, res.stdout)
+	}
+
+	obj, ok := doc["metadata_refresh"].(map[string]any)
+	if !ok {
+		t.Fatalf("metadata_refresh = %v, want an object", doc["metadata_refresh"])
+	}
+
+	if failures, _ := obj["failures"].(float64); failures < 1 || obj["failing_at_end"] != true {
+		t.Errorf("metadata_refresh = %v, want failures and failing at the end", obj)
+	}
+
+	if last, _ := obj["last_error"].(string); !slices.Contains(reasons, last) {
+		t.Errorf("last_error = %q, want the key, the file and the reason, one of %q", last, reasons)
+	}
+
+	var lines []string
+
+	for l := range strings.SplitSeq(res.stderr, "\n") {
+		if strings.HasPrefix(l, "metadata refresh failed: ") {
+			lines = append(lines, l)
+		}
+	}
+
+	if len(lines) != 1 {
+		t.Fatalf("stderr lines %q, want exactly one\nstderr:\n%s", lines, res.stderr)
+	}
+
+	const tail = "; the last good value stays in use (the report counts every failed read)"
+
+	reason := strings.TrimSuffix(strings.TrimPrefix(lines[0], "metadata refresh failed: "), tail)
+	if !slices.Contains(reasons, reason) {
+		t.Errorf("stderr line %q, want the line with one of the reasons %q", lines[0], reasons)
+	}
+
+	for i, tok := range target.tokens() {
+		if tok != "tok-one" {
+			t.Fatalf("call %d carried %q, want the last good value tok-one", i, tok)
+		}
+	}
+}
+
+// Ground: contract (spec §4.2, C5) — the scrape body has no value from a file,
+// no path of one and no header name, while the file's value reaches the target.
+func TestExportRun_NoFileTokenInTheBody(t *testing.T) {
+	dir := mrDir(t, secretMark)
+	target := startMRTarget(t)
+	cfg := mrConfigWith(t, dir, target.addr, mrFileApp+"  metadata_refresh: 1s\n", "600ms", exportSection("30s"))
+
+	lr := startLive(t, "-output", "json", "-c", cfg)
+	addr := lr.addr(t)
+	lr.report(t)
+
+	body := scrape(t, addr)
+	if !strings.Contains(body, "leettest_calls_total") {
+		t.Fatalf("the body has no calls_total, nothing to check it against:\n%s", body)
+	}
+
+	for _, secret := range []string{secretMark, "token.txt", "authorization"} {
+		if strings.Contains(strings.ToLower(body), strings.ToLower(secret)) {
+			t.Errorf("the body holds %q", secret)
+		}
+	}
+
+	if got := target.tokens(); len(got) == 0 || got[0] != secretMark {
+		t.Errorf("the target saw %q, want the value of the file first: the run did not use it", got)
+	}
+
+	if strings.Contains(lr.stderr.String(), secretMark) {
+		t.Errorf("stderr holds the secret:\n%s", lr.stderr.String())
 	}
 }
 
@@ -776,6 +995,29 @@ func TestRefreshNotice_WhenTheLineIsPrinted(t *testing.T) {
 
 		if got := stderr.String(); got != line+"\n" {
 			t.Errorf("stderr = %q, want the line at once: the view is gone", got)
+		}
+	})
+
+	// The watch delivers from its goroutine while the view leaves in main's:
+	// in either order the line is printed once and the race detector is quiet.
+	t.Run("the view leaves while a line arrives", func(t *testing.T) {
+		for range 200 {
+			var stderr syncBuf
+
+			n := &refreshNotice{stderr: &stderr, live: true}
+
+			var wg sync.WaitGroup
+
+			wg.Add(2)
+
+			go func() { defer wg.Done(); n.deliver(line) }()
+			go func() { defer wg.Done(); n.afterView() }()
+
+			wg.Wait()
+
+			if got := stderr.String(); got != line+"\n" {
+				t.Fatalf("stderr = %q, want the line once whichever came first", got)
+			}
 		}
 	})
 }
