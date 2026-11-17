@@ -237,6 +237,11 @@ func TestScenario_Refusals(t *testing.T) {
 		{"scenario named as a step method of another scenario", scenarioCall("      scenario: s\n      steps:\n"+oneStep) +
 			"    - method: " + getHistory + "\n      rps: 5\n      duration: 1s\n      scenario: " + transfer + "\n      steps:\n" +
 			"        - method: wallet.v1.WalletService/Close\n", config.ErrDuplicateMethod, nil},
+		// The name comes first in file order, the method after it (reviewer N1): a check
+		// of the name against the methods seen so far would miss it.
+		{"scenario named as a step method of a later scenario", scenarioCall("      scenario: "+getHistory+"\n      steps:\n"+oneStep) +
+			"    - method: " + transfer + "\n      rps: 5\n      duration: 1s\n      scenario: s2\n      steps:\n" +
+			"        - method: " + getHistory + "\n", config.ErrDuplicateMethod, nil},
 		{"scenario named as a repeated method", scenarioCall("      scenario: " + transfer + "\n      steps:\n" + oneStep + oneStep),
 			config.ErrDuplicateMethod, nil},
 		{"two scenarios with one name, both repeating a method", scenarioCall("      scenario: s\n      steps:\n"+oneStep+oneStep) +

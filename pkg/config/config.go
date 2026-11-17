@@ -39,7 +39,7 @@ var (
 	ErrInvalidWarmup       = errors.New("warmup must not be negative")
 	ErrInvalidRamp         = errors.New("ramp must not be negative")
 	ErrEmptyName           = errors.New("name must not be empty: leave it out to use the service or file name")
-	ErrDuplicateMethod     = errors.New("method appears in more than one call: the report is per method, keep one call for it")
+	ErrDuplicateMethod     = errors.New("a report name is used twice")
 	ErrFractionalRPS       = errors.New("rps must be a whole number of requests")
 	ErrWarmupCoversTheCall = errors.New("warmup must be shorter than the call: otherwise nothing of it is measured")
 	ErrInvalidMetadata     = errors.New("invalid metadata")
@@ -611,8 +611,7 @@ func (l Load) Validate() error {
 	if l.Breakpoint != nil {
 		errs = append(errs, l.validateSearch()...)
 	}
-	first := make(map[string]int, len(l.Calls))
-	names := map[string]string{}
+	names := newReportNames(len(l.Calls))
 	for i := range l.Calls {
 		call := &l.Calls[i]
 		checked := *call
@@ -627,45 +626,87 @@ func (l Load) Validate() error {
 			errs = append(errs, fmt.Errorf("%s: %w: warmup %s, duration %s",
 				call.where(i), ErrWarmupCoversTheCall, l.Warmup, call.Duration))
 		}
-		if j, ok := first[call.Method]; ok && call.Method != "" {
-			errs = append(errs, fmt.Errorf("%s: %w: %q, as call %d", call.where(i), ErrDuplicateMethod, call.Method, j))
-			continue
-		}
-		first[call.Method] = i
-
 		errs = append(errs, call.validateScenario(i)...)
-		errs = append(errs, claimNames(names, call, i)...)
+		errs = append(errs, names.claim(call, i)...)
 	}
+	errs = append(errs, names.refuseScenarioNamesOfMethods()...)
 
 	return errors.Join(errs...)
 }
 
-// claimNames records the names call i takes in the report's namespace (its
-// method, the scenario's name, the step methods) and refuses one already taken:
-// the scenario name stands where a method does in the report and in the JSON.
-func claimNames(names map[string]string, call *Call, i int) []error {
-	var errs []error
+// reportNames is the report's namespace: a method may stand in the run many
+// times (calls, heads, steps), but two plain calls of one method share a row,
+// and a scenario's name stands where a method does in the report and the JSON,
+// so it may be neither another scenario's name nor any method of the run.
+type reportNames struct {
+	plain     map[string]int    // method of a plain call -> the call's index
+	methods   map[string]string // every method of the run -> its first place
+	scenarios map[string]string // scenario name -> its place
+	named     []scenarioName    // scenario names in file order
+}
 
-	claim := func(name, at, owner string) {
-		if name == "" {
-			return
-		}
-		if prev, taken := names[name]; taken {
-			errs = append(errs, fmt.Errorf("%s: %w: %q is already %s", at, ErrDuplicateMethod, name, prev))
+type scenarioName struct{ name, at string }
 
-			return
-		}
-		names[name] = owner
+func newReportNames(calls int) *reportNames {
+	return &reportNames{
+		plain:     make(map[string]int, calls),
+		methods:   make(map[string]string, calls),
+		scenarios: map[string]string{},
 	}
+}
 
+// claim records the names call i takes and refuses the two plain calls of one
+// method and a scenario name already taken by another scenario. A scenario name
+// against the methods is judged after every call is seen (refuseScenarioNamesOfMethods):
+// it must not depend on which stands first in the file.
+func (n *reportNames) claim(call *Call, i int) []error {
+	var errs []error
 	at := fmt.Sprintf("load.calls[%d]", i)
-	claim(call.Method, at+".method", fmt.Sprintf("the method of call %d", i))
-	if call.RawScenario != nil {
-		claim(*call.RawScenario, at+".scenario", fmt.Sprintf("the scenario of call %d", i))
+
+	if call.Method != "" {
+		if !call.isScenario() {
+			if j, ok := n.plain[call.Method]; ok {
+				errs = append(errs, fmt.Errorf(
+					"%s.method: %w: %q is also the method of call %d: two plain calls share one report row, keep one plain call per method or repeat the method as a step of a scenario",
+					at, ErrDuplicateMethod, call.Method, j))
+			} else {
+				n.plain[call.Method] = i
+			}
+		}
+		n.noteMethod(call.Method, fmt.Sprintf("the method of call %d", i))
 	}
 	if call.RawSteps != nil {
 		for k, s := range *call.RawSteps {
-			claim(s.Method, fmt.Sprintf("%s.steps[%d]", at, k), fmt.Sprintf("step %d of call %d", k+2, i))
+			if s.Method != "" {
+				n.noteMethod(s.Method, fmt.Sprintf("step %d of call %d", k+2, i))
+			}
+		}
+	}
+	if call.RawScenario != nil && *call.RawScenario != "" {
+		name := *call.RawScenario
+		place := at + ".scenario"
+		if prev, taken := n.scenarios[name]; taken {
+			errs = append(errs, fmt.Errorf("%s: %w: %q is already %s", place, ErrDuplicateMethod, name, prev))
+		} else {
+			n.scenarios[name] = fmt.Sprintf("the scenario of call %d", i)
+			n.named = append(n.named, scenarioName{name, place})
+		}
+	}
+
+	return errs
+}
+
+func (n *reportNames) noteMethod(method, owner string) {
+	if _, seen := n.methods[method]; !seen {
+		n.methods[method] = owner
+	}
+}
+
+func (n *reportNames) refuseScenarioNamesOfMethods() []error {
+	var errs []error
+	for _, s := range n.named {
+		if owner, ok := n.methods[s.name]; ok {
+			errs = append(errs, fmt.Errorf("%s: %w: %q is already %s", s.at, ErrDuplicateMethod, s.name, owner))
 		}
 	}
 
