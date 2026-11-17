@@ -59,7 +59,7 @@ func TestExtract_IsAccepted(t *testing.T) {
 	raw := tplScenario(templatedCall+extractWAndAmount,
 		readStep("          extract:\n            tx: id\n",
 			"            from: \"{{extract.w}}\"\n            note: \"pay-{{extract.w}}-{{seq}}\"\n            amount: \"{{extract.amount}}\"\n")+
-			readStep("", "            id: \"tx-{{extract.tx}}\"\n"))
+			plainStep+"          templates: true\n          data:\n            id: \"tx-{{extract.tx}}\"\n")
 
 	cfg, err := config.Parse([]byte(raw))
 	if err != nil {

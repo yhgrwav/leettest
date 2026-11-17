@@ -269,6 +269,7 @@ func TestAttachMethods_ExtractDestinationIsRefused(t *testing.T) {
 		{"int64 into int32", "balance.amount", "count", whole, []string{"data.count", "does not fit", "int64", "int32"}},
 		{"uint64 into int64", "limit", "big", whole, []string{"data.big", "does not fit", "uint64", "int64"}},
 		{"int32 into uint32", "delta", "u32", whole, []string{"data.u32", "does not fit", "int32", "uint32"}},
+		{"int32 into uint64", "delta", "u64", whole, []string{"data.u64", "does not fit", "int32", "uint64"}},
 		{"uint32 into int32", "seq_no", "count", whole, []string{"data.count", "does not fit", "uint32", "int32"}},
 		{"uint64 into uint32", "limit", "u32", whole, []string{"data.u32", "does not fit", "uint64", "uint32"}},
 		{"a double into an int64", "ratio", "big", whole, []string{"data.big", "double", "not an integer"}},

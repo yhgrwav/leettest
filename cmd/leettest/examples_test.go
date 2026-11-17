@@ -41,8 +41,15 @@ func TestExamples_RunAgainstStand(t *testing.T) {
 	if err != nil || len(names) == 0 {
 		t.Fatalf("no examples: %v", err)
 	}
+	// An example the stand cannot answer, with the reason; it still loads in the config tests.
+	notOnStand := map[string]string{
+		"scenario-extract.yaml": "extract is refused until its run side (v0.9 unit 4b), and GetTransfer is not on the stand",
+	}
 	for _, name := range names {
 		t.Run(filepath.Base(name), func(t *testing.T) {
+			if reason, skip := notOnStand[filepath.Base(name)]; skip {
+				t.Skip(reason)
+			}
 			cfg, err := config.LoadFile(name)
 			if err != nil {
 				t.Fatal(err)

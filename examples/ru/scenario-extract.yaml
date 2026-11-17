@@ -1,0 +1,43 @@
+# Сценарий, где шаг берёт то, что было в ответе раньше: extract называет поле ответа, а
+# следующий шаг читает его как {{extract.<имя>}}. Пока не запускается: пока нет стороны
+# запуска, leettest проверяет этот файл и отказывает с «extract: not supported yet».
+# GetTransfer нет на эталонном стенде, так что этот пример — для своего сервиса:
+#   leettest -c examples/ru/scenario-extract.yaml
+
+app:
+  target:
+    ip: 127.0.0.1
+    port: 50051
+  tls: false
+
+load:
+  calls:
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 50
+      duration: 1m
+      templates: true
+      data:
+        wallet_id: "wallet-{{seq}}"
+      # имя: путь в ответе, поля через точку (balance.amount — поле вложенного сообщения).
+      # Путь проверяется по схеме метода до нагрузки.
+      extract:
+        wallet: wallet_id
+        funds: amount
+      scenario: pay-and-check
+      steps:
+        - method: wallet.v1.WalletService/Transfer
+          timeout: 500ms
+          templates: true
+          # Шаг берёт значения так же, как вызов; имя в сценарии занимают один раз.
+          extract:
+            tx: id
+          data:
+            # В строку значение встаёт среди другого текста; в число — только целиком
+            # {{extract.<имя>}} и только целое, которое в него помещается (здесь int64 в int64).
+            from: "{{extract.wallet}}"
+            to: "{{uuid}}"
+            amount: "{{extract.funds}}"
+        - method: wallet.v1.WalletService/GetTransfer
+          templates: true
+          data:
+            id: "{{extract.tx}}"

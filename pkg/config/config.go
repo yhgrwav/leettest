@@ -517,13 +517,19 @@ func (c Call) isScenario() bool {
 
 // validateScenario checks the scenario and steps keys of call i by their path.
 func (c Call) validateScenario(i int) []error {
+	at := fmt.Sprintf("load.calls[%d]", i)
+
 	if !c.isScenario() {
-		return nil
+		if len(c.Extract) == 0 {
+			return nil
+		}
+
+		return []error{fmt.Errorf("%w: %s.extract: extract needs steps: a value is read by a step after the call, "+
+			"so add scenario and steps or drop the extract", ErrScenario, at)}
 	}
 
 	var errs []error
 
-	at := fmt.Sprintf("load.calls[%d]", i)
 	fail := func(format string, args ...any) {
 		errs = append(errs, fmt.Errorf("%w: %s", ErrScenario, fmt.Sprintf(format, args...)))
 	}
@@ -569,7 +575,7 @@ func (c Call) validateScenario(i int) []error {
 		}
 	}
 
-	return errs
+	return append(errs, c.validateExtract(at)...)
 }
 
 func (c ConnectionStringTarget) CreateConnectionString() (ConnectionString, error) {

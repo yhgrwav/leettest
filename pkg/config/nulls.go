@@ -26,6 +26,9 @@ import (
 
 var callDatasetPath = regexp.MustCompile(`^\$\.load\.calls\[\d+\]\.(dataset|dataset_order|dataset_seed|dataset_reuse|templates)$`)
 
+// callExtractPath matches the extract of a call.
+var callExtractPath = regexp.MustCompile(`^\$\.load\.calls\[\d+\]\.extract$`)
+
 // passPath matches a pass section of a call or of the search and, when the
 // match has a key, a limit inside it.
 var passPath = regexp.MustCompile(`^\$\.(load\.calls\[\d+\]|load\.breakpoint)\.pass(\.[A-Za-z0-9_]+)?$`)
@@ -98,6 +101,11 @@ func (v *nullDatasetVisitor) Visit(node ast.Node) ast.Visitor {
 		return v
 	}
 	path := pair.GetPath()
+	if callExtractPath.MatchString(path) {
+		v.visitExtract(pair, path)
+
+		return v
+	}
 	if scenarioKeyPath.MatchString(path) || stepKeyPath.MatchString(path) {
 		v.visitScenarioKey(pair, path)
 
@@ -169,13 +177,19 @@ func (v *nullDatasetVisitor) visitScenarioKey(pair *ast.MappingValueNode, path s
 	name := strings.TrimPrefix(path, "$.")
 
 	m := stepKeyPath.FindStringSubmatch(path)
-	if len(m) > 3 && m[3] != "method" && m[3] != "timeout" && m[3] != "data" && m[3] != "templates" && !stepDatasetKeys[m[3]] {
+	if len(m) > 3 && m[3] != "method" && m[3] != "timeout" && m[3] != "data" && m[3] != "templates" && m[3] != "extract" &&
+		!stepDatasetKeys[m[3]] {
 		if stepKeysLater[m[3]] {
 			v.errs = append(v.errs, fmt.Errorf("line %d: %w: %s is not supported in a step yet", line, ErrScenario, name))
 		} else {
 			v.errs = append(v.errs, fmt.Errorf("line %d: %w: %s is not a step key: a step has method, timeout, data, templates, "+
-				"dataset, dataset_order and dataset_seed", line, ErrScenario, name))
+				"extract, dataset, dataset_order and dataset_seed", line, ErrScenario, name))
 		}
+
+		return
+	}
+	if len(m) > 3 && m[3] == "extract" {
+		v.visitExtract(pair, path)
 
 		return
 	}
@@ -221,6 +235,62 @@ func (v *nullDatasetVisitor) visitScenarioKey(pair *ast.MappingValueNode, path s
 		if _, null := value.(*ast.NullNode); null {
 			v.errs = append(v.errs, fmt.Errorf("line %d: %w: %s has no value: write it or leave it out", line, ErrScenario, name))
 		}
+	}
+}
+
+// visitExtract refuses an extract that the decoder would lose or bend: with no
+// value (read as left out), empty, not a mapping, or with a path that is not a
+// non-empty string (a number, a null and an empty text decode into a string
+// without a word). Each message names the key by its path.
+func (v *nullDatasetVisitor) visitExtract(pair *ast.MappingValueNode, path string) {
+	line := pair.Key.GetToken().Position.Line
+	name := strings.TrimPrefix(path, "$.")
+
+	value, resolved := v.unwrap(pair.Value)
+	if !resolved {
+		return
+	}
+
+	var entries []*ast.MappingValueNode
+
+	switch x := value.(type) {
+	case *ast.NullNode:
+		v.errs = append(v.errs, fmt.Errorf("line %d: %w: %s has no value: write names and paths, or leave it out", line, ErrScenario, name))
+
+		return
+	case *ast.MappingNode:
+		entries = x.Values
+	case *ast.MappingValueNode:
+		entries = []*ast.MappingValueNode{x}
+	default:
+		v.errs = append(v.errs, fmt.Errorf("line %d: %w: %s must map names to paths, as w: wallet_id", line, ErrScenario, name))
+
+		return
+	}
+
+	if len(entries) == 0 {
+		v.errs = append(v.errs, fmt.Errorf("line %d: %w: %s must not be empty: write names and paths, or leave it out", line, ErrScenario, name))
+
+		return
+	}
+
+	for _, entry := range entries {
+		key := entry.Key.GetToken().Value
+		if s, ok := entry.Key.(*ast.StringNode); ok {
+			key = s.Value
+		}
+
+		target, ok := v.unwrap(entry.Value)
+		if !ok {
+			continue
+		}
+
+		if s, isString := target.(*ast.StringNode); isString && s.Value != "" {
+			continue
+		}
+
+		v.errs = append(v.errs, fmt.Errorf("line %d: %w: %s.%s is not a path: write the field of the reply, "+
+			"or fields joined by dots, as balance.amount", entry.Key.GetToken().Position.Line, ErrScenario, name, key))
 	}
 }
 

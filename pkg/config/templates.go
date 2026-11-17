@@ -51,10 +51,53 @@ type TemplatePart struct {
 	Extract     string
 }
 
+// ExtractPrefix opens {{extract.<name>}}, the placeholder of a value taken from
+// the reply of an earlier step of a scenario.
+const ExtractPrefix = "{{extract."
+
+// ValidExtractName says name is a letter or underscore and then letters, digits
+// and underscores: what {{extract.<name>}} and a key of extract may be.
+func ValidExtractName(name string) bool {
+	if name == "" {
+		return false
+	}
+
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+
+		switch {
+		case c == '_', c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z':
+		case c >= '0' && c <= '9' && i > 0:
+		default:
+			return false
+		}
+	}
+
+	return true
+}
+
+// extractAt reads {{extract.<name>}} at the start of rest: the name and the
+// length of the placeholder.
+func extractAt(rest string) (name string, size int, ok bool) {
+	if !strings.HasPrefix(rest, ExtractPrefix) {
+		return "", 0, false
+	}
+
+	end := strings.Index(rest, "}}")
+	if end < 0 {
+		return "", 0, false
+	}
+
+	name = rest[len(ExtractPrefix):end]
+
+	return name, end + 2, ValidExtractName(name)
+}
+
 // ParseTemplate splits text into literal pieces and placeholders. Only
-// {{uuid}} and {{seq}} are placeholders, written exactly: no spaces, no other
-// case, no escape. bad is the first fragment that starts a placeholder and is
-// none, from its {{ to the next }} or the end of the text; parts are then nil.
+// {{uuid}}, {{seq}} and {{extract.<name>}} are placeholders, written exactly: no
+// spaces, no other case, no escape. bad is the first fragment that starts a
+// placeholder and is none, from its {{ to the next }} or the end of the text;
+// parts are then nil.
 func ParseTemplate(text string) (parts []TemplatePart, bad string) {
 	rest := text
 
@@ -69,6 +112,8 @@ func ParseTemplate(text string) (parts []TemplatePart, bad string) {
 
 		rest = rest[i:]
 
+		name, size, isExtract := extractAt(rest)
+
 		switch {
 		case strings.HasPrefix(rest, "{{"+PlaceholderUUID+"}}"):
 			parts = append(parts, TemplatePart{Placeholder: PlaceholderUUID})
@@ -76,6 +121,9 @@ func ParseTemplate(text string) (parts []TemplatePart, bad string) {
 		case strings.HasPrefix(rest, "{{"+PlaceholderSeq+"}}"):
 			parts = append(parts, TemplatePart{Placeholder: PlaceholderSeq})
 			rest = rest[len("{{"+PlaceholderSeq+"}}"):]
+		case isExtract:
+			parts = append(parts, TemplatePart{Extract: name})
+			rest = rest[size:]
 		default:
 			if end := strings.Index(rest[2:], "}}"); end >= 0 {
 				return nil, rest[:end+4]
@@ -162,11 +210,25 @@ func (c Call) TemplatePlaceholders() []string {
 	return scan.names()
 }
 
-// templateScan is one walk over a call's data.
+// templateScan is one walk over a call's data. found holds uuid and seq, reads
+// the names {{extract.<name>}} reads: those are not placeholders to list.
 type templateScan struct {
 	found  map[string]bool
+	reads  map[string]bool
 	braces bool
 	errs   []error
+}
+
+// readNames are the extract names the walk saw read, sorted.
+func (s *templateScan) readNames() []string {
+	out := make([]string, 0, len(s.reads))
+	for name := range s.reads {
+		out = append(out, name)
+	}
+
+	sort.Strings(out)
+
+	return out
 }
 
 func (s *templateScan) names() []string {
@@ -221,7 +283,7 @@ func (s *templateScan) text(path, text string) {
 
 	parts, bad := ParseTemplate(text)
 	if bad != "" {
-		s.errs = append(s.errs, fmt.Errorf("%w: %s has %q; the placeholders are {{%s}} and {{%s}}, "+
+		s.errs = append(s.errs, fmt.Errorf("%w: %s has %q; the placeholders are {{%s}}, {{%s}} and {{extract.<name>}}, "+
 			"written exactly (no spaces, no other case); there is no escape: a literal {{ goes out "+
 			"from a call without templates", ErrTemplatesUnknown, path, bad, PlaceholderUUID, PlaceholderSeq))
 
@@ -231,10 +293,16 @@ func (s *templateScan) text(path, text string) {
 	if s.found == nil {
 		s.found = map[string]bool{}
 	}
+	if s.reads == nil {
+		s.reads = map[string]bool{}
+	}
 
 	for _, p := range parts {
-		if p.Placeholder != "" {
+		switch {
+		case p.Placeholder != "":
 			s.found[p.Placeholder] = true
+		case p.Extract != "":
+			s.reads[p.Extract] = true
 		}
 	}
 }
