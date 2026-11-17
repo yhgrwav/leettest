@@ -2,7 +2,7 @@
 
 [← Back to docs](README.md)
 
-> Translated from [docs/ru/report.md](../ru/report.md) at 4cba437, 2026-11-10. If they differ, the
+> Translated from [docs/ru/report.md](../ru/report.md) at 46c2f53, 2026-11-17. If they differ, the
 > Russian one is right.
 
 This page gathers the sections that used to stand in the README: reading the report, limits, exit

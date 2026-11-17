@@ -2,7 +2,7 @@
 
 [← Back to docs](README.md)
 
-> Translated from [docs/ru/chaining.md](../ru/chaining.md) at feb2d1d, 2026-11-09, and updated
+> Translated from [docs/ru/chaining.md](../ru/chaining.md) at 46c2f53, 2026-11-17, and updated
 > with it. If they differ, the Russian one is right.
 
 > **Status: works since v0.9 (`scenario`, `steps` and `extract`, see the
