@@ -40,7 +40,9 @@ var referenceOnlyKeys = map[string]string{}
 
 // undocumentedExampleKeys are keys the examples set that no row of the reference tables names.
 // Each has a reason. A key that gets a row must leave this map.
-var undocumentedExampleKeys = map[string]string{}
+var undocumentedExampleKeys = map[string]string{
+	"app.metadata_refresh": "the reference row and the ${file:PATH} text come with the wiring of metadata refresh (unit U3)",
+}
 
 // openKeys take keys of the user's own naming below them: a label, a header, a field of the message,
 // the name of an extracted value.

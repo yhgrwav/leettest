@@ -186,12 +186,30 @@ func TestExamples_LanguagesParseEqual(t *testing.T) {
 		// The ru example reaches the shared files from its own directory, so how
 		// app.protoset is written differs; where it points (Protoset) must not.
 		got.App.RawProtoset = want.App.RawProtoset
+		// A ${file:PATH} is read from the config's directory, so where the ru example
+		// reads it from differs too; that state is private to the package, so the
+		// exported fields stand for the rest.
+		got.App, want.App = exportedOnly(got.App), exportedOnly(want.App)
 		// The files differ in their comments, so their hashes do.
 		got.SHA256 = want.SHA256
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("ru/%s loads to\n%+v\n%s loads to\n%+v", name, *got, name, *want)
 		}
 	}
+}
+
+// exportedOnly is app with every unexported field left at its zero value.
+func exportedOnly(app config.App) config.App {
+	var out config.App
+
+	dst, src := reflect.ValueOf(&out).Elem(), reflect.ValueOf(app)
+	for i := range src.NumField() {
+		if dst.Field(i).CanSet() {
+			dst.Field(i).Set(src.Field(i))
+		}
+	}
+
+	return out
 }
 
 // Each example, in each language, is a valid config.
@@ -348,8 +366,8 @@ func TestReadme_BlockIsItsFile(t *testing.T) {
 
 var (
 	secretKey = regexp.MustCompile(`(?i)auth|token|key|secret|password|cookie`)
-	// envOnly is a value built from ${NAME} alone, after a scheme word.
-	envOnly = regexp.MustCompile(`^((Bearer|Basic) )?(\$\{[A-Za-z_][A-Za-z0-9_]*\})+$`)
+	// envOnly is a value built from ${NAME} or ${file:PATH} alone, after a scheme word.
+	envOnly = regexp.MustCompile(`^((Bearer|Basic) )?(\$\{([A-Za-z_][A-Za-z0-9_]*|file:[^${}]+)\})+$`)
 )
 
 // No example carries a secret: credentials come from the environment, and no

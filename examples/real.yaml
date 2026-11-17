@@ -12,6 +12,11 @@ app:
     port: 50051
   tls: false
   mode: real
+  metadata:
+    # A token that expires: the file holds it, a deploy or a sidecar rewrites it. The path is
+    # read from this config's directory; the file's one trailing line break is cut.
+    authorization: Bearer ${file:real-token.txt}
+  metadata_refresh: 5m              # read the files again every 5m; 1s at least, only with a ${file:...} above
 
 load:
   ramp: 30s
