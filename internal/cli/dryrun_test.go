@@ -636,7 +636,7 @@ func TestDryRun_ScenarioBlocksNameTheStepAndListWhatWasNotReached(t *testing.T) 
 	p.NotReached("pay", 3, 3, "wallet.Wallet/Close")
 	p.Call(done("grpc.health.v1.Health/Watch", health, nil, ok, time.Millisecond))
 
-	want := "dry run: 2 calls, one request per call and one iteration per scenario, nothing measured\n" +
+	want := "dry run: 2 calls, one request per plain call and one iteration per scenario, nothing measured\n" +
 		"1/2 scenario pay, step 1 of 3, grpc.health.v1.Health/Check: success, OK, 1.20ms\n" +
 		"  request: {\"service\":\"wallet\"}\n" +
 		"  response: {\"status\":\"SERVING\"}\n" +
@@ -668,7 +668,7 @@ func TestDryRun_HeaderSaysIterationForAScenario(t *testing.T) {
 	}{
 		{"one scenario", 1, 1, "dry run: 1 call, one iteration, nothing measured\n"},
 		{"scenarios only", 3, 3, "dry run: 3 calls, one iteration each, nothing measured\n"},
-		{"mixed", 3, 1, "dry run: 3 calls, one request per call and one iteration per scenario, nothing measured\n"},
+		{"mixed", 3, 1, "dry run: 3 calls, one request per plain call and one iteration per scenario, nothing measured\n"},
 		{"plain one", 1, 0, "dry run: 1 call, one request, nothing measured\n"},
 		{"plain many", 3, 0, "dry run: 3 calls, one request each, nothing measured\n"},
 	} {

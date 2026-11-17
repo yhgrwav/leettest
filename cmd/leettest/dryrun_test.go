@@ -481,6 +481,67 @@ func TestRun_DryRunStopsOnCtrlC(t *testing.T) {
 	}
 }
 
+// Ctrl+C on the first step of a scenario: the step our cancel cut is not an
+// answer of the target, so the iteration prints nothing and counts as a call
+// that did not get done, the way a plain call does.
+// Ground: contract — reviewer round 1, fix 1: an interrupted scenario prints no
+// block, no "aborted", no "not reached", and the stop line says 0 of 1 calls.
+// Mutation: print the iteration's results after the cancel (an aborted block).
+func TestRun_DryRunStopsOnCtrlCInAScenario(t *testing.T) {
+	target := startSlowTarget(t, 5*time.Second)
+	cfg := dryConfig(t, target.addr, "  metadata:\n    x-tenant: acme\n", scenarioCalls("s", "100", "5s", stepUnary))
+
+	t.Setenv("APPDATA", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
+	stops := make(chan struct{})
+	var stdout, stderr bytes.Buffer
+	done := make(chan error, 1)
+	go func() {
+		done <- run(t.Context(), stops, nil, []string{"-c", cfg, "-dry-run"}, &stdout, &stderr)
+	}()
+
+	deadline := time.After(5 * time.Second)
+	for target.health.calls.Load() == 0 {
+		select {
+		case <-deadline:
+			t.Fatal("the first request never reached the target")
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+
+	var err error
+
+	select {
+	case stops <- struct{}{}:
+	case err = <-done:
+		t.Fatalf("run returned before Ctrl+C: %v", err)
+	case <-time.After(time.Second):
+		t.Fatal("Ctrl+C was not taken within a second")
+	}
+
+	select {
+	case err = <-done:
+	case <-time.After(time.Second):
+		t.Fatal("the dry run did not stop within a second of Ctrl+C")
+	}
+
+	if got := exitCode(err); got != 1 {
+		t.Errorf("exit code %d, want 1\nerr %v", got, err)
+	}
+	if err == nil || !strings.Contains(err.Error()+stderr.String(), "dry run: stopped after 0 of 1 calls") {
+		t.Errorf("no stop line:\nerr %v\nstderr:\n%s", err, stderr.String())
+	}
+	for _, not := range []string{"scenario s", "aborted", "not reached", "did not succeed", "metadata:"} {
+		if all := stdout.String() + stderr.String(); strings.Contains(all, not) {
+			t.Errorf("a stopped dry run printed %q:\n%s", not, all)
+		}
+	}
+	if n := len(target.recorder.allSimple()); n != 0 {
+		t.Errorf("step 2 reached the target %d times after Ctrl+C", n)
+	}
+}
+
 // scriptedSender answers each method with a canned outcome, keeps what it was
 // asked, and drops the reply unless the request asks for it, as the real sender
 // does.
@@ -827,7 +888,7 @@ func TestRun_DryRunOfCallsAndAScenarioKeepsTheConfigOrder(t *testing.T) {
 
 	last := -1
 	for _, want := range []string{
-		"dry run: 2 calls, one request per call and one iteration per scenario, nothing measured\n",
+		"dry run: 2 calls, one request per plain call and one iteration per scenario, nothing measured\n",
 		"1/2 scenario s, step 1 of 2, " + unaryCallMethod + ": success, OK, ",
 		"1/2 scenario s, step 2 of 2, grpc.channelz.v1.Channelz/GetSocket: success, OK, ",
 		"2/2 " + checkMethod + ": success, OK, ",
