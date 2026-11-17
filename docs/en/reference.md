@@ -355,7 +355,8 @@ the call needs `templates: true` too, because the counter lives on the call.
   stopped name the step with the narrowest field (`steps[k]`). In JSON `seq_overflow.method` is
   still the call's method.
 - **The body of a step is built in the worker** after the step before it ended; the time it takes
-  counts as the step's start lag. `-dry-run` prints the call's body and no steps yet.
+  counts as the step's start lag. `-dry-run` sends one iteration of a scenario: the call, then its
+  steps in order (see «Checking before the load»).
 
 ### Extract: a value from an earlier reply
 
@@ -521,9 +522,9 @@ against its own method: a typo in a step's method or field is a config error.
 The in-flight need is counted over the sum of the step timeouts (`rps` × Σ step timeouts); when it
 is above `-max-in-flight` the run does not start, and the only advice is `-max-in-flight <N>`.
 
-Not supported yet, and a run with them is refused: a scenario together with `pass`, together with a
-breaking-point search (`load.breakpoint`), and `-dry-run` with a scenario. The live screen and the
-Prometheus metrics do not show a scenario; it is seen in the report only.
+Not supported yet, and a run with them is refused: a scenario together with `pass` and together with
+a breaking-point search (`load.breakpoint`). The live screen and the Prometheus metrics do not show
+a scenario; it is seen in the report only.
 
 The text report has a scenario block after the method table: the iterations and their outcomes,
 the iteration's latency (from the schedule's tick to the end of the last step; no p99 while there
@@ -636,6 +637,13 @@ metadata: authorization: Bearer ${TOKEN}, x-tenant: acme
   length after the secrets are hidden. Control characters of a message are written as `\xNN`.
 - **Data.** A call with a `dataset` sends its first record in file order, whatever `dataset_order`,
   `dataset_seed` and `dataset_reuse` say, and the block says `record 1 of N`.
+- **A scenario** is one iteration: the call, then its steps in order, with the values the steps
+  take from earlier replies (`extract`). Each step has its own block: `1/2 scenario pay, step 2 of
+  3, wallet.Wallet/Check: success, OK, 1.20ms`; the number `k/N` is the number of the `load.calls`
+  entry, one for all its steps. The first step that is not `success` (or whose reply lacks the value
+  needed) stops the iteration, and the steps after it print as `… step 3 of 3, <method>: not
+  reached`. Data are taken as for a plain call: record 1 and `seq` 1. Ctrl+C during a scenario
+  prints none of its blocks, and it counts as a call not done.
 - **Metadata** is one line after the blocks: keys in lower case as they go out, sorted, values as the
   config wrote them, so `${ENV}` stays unexpanded. None — no line.
 - **Secrets.** The value of every `${NAME}` that the metadata substituted is replaced by `${NAME}`
