@@ -18,6 +18,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"runtime"
 	"strings"
 	"testing"
@@ -196,27 +198,98 @@ func TestRunStopsOnCancel(t *testing.T) {
 	}
 }
 
-// standsInSend reports whether some goroutine is blocked in a select (or a bare send) whose own
-// frame is Scheduler.runStage: the send to out, the one place Run waits on its reader (the
-// wait for the next tick is inside waitUntil, another frame). Run has no seam there, so the test
-// reads the stacks.
-func standsInSend() bool {
-	buf := make([]byte, 1<<20)
-	buf = buf[:runtime.Stack(buf, true)]
+// sendSelectLine is the line of the select in scheduler.go that holds the send to out: the one
+// place Run waits on its reader. A goroutine blocked there shows that line in its runStage frame.
+func sendSelectLine(t testing.TB) int {
+	t.Helper()
 
-	for _, g := range strings.Split(string(buf), "\n\n") {
-		lines := strings.SplitN(g, "\n", 3)
-		if len(lines) < 2 {
+	src, err := os.ReadFile("scheduler.go")
+	if err != nil {
+		t.Fatalf("read scheduler.go: %v", err)
+	}
+
+	lines := strings.Split(string(src), "\n")
+	for i, l := range lines {
+		if !strings.Contains(l, "case out <- ") {
+			continue
+		}
+		for j := i; j >= 0; j-- {
+			if strings.HasPrefix(strings.TrimSpace(lines[j]), "select {") {
+				return j + 1
+			}
+		}
+	}
+
+	t.Fatal("no `case out <- ` in scheduler.go")
+
+	return 0
+}
+
+// standsInSendAt reports whether some goroutine of the stack dump is blocked in a select (or a
+// bare send) whose own frame is Scheduler.runStage at scheduler.go:line. The line, not only the
+// function: a wait elsewhere in runStage or in a callee (the wait for the next tick is inside
+// waitUntil) is not the send.
+func standsInSendAt(dump string, line int) bool {
+	at := fmt.Sprintf("scheduler.go:%d ", line)
+
+	for _, g := range strings.Split(dump, "\n\n") {
+		lines := strings.SplitN(g, "\n", 4)
+		if len(lines) < 3 {
 			continue
 		}
 
 		blocked := strings.Contains(lines[0], "[select") || strings.Contains(lines[0], "[chan send")
-		if blocked && strings.Contains(lines[1], "(*Scheduler).runStage") {
+		if blocked && strings.Contains(lines[1], "(*Scheduler).runStage(") && strings.Contains(lines[2], at) {
 			return true
 		}
 	}
 
 	return false
+}
+
+// standsInSend reads the stacks of the running test: Run has no seam in the send.
+func standsInSend(line int) bool {
+	buf := make([]byte, 1<<20)
+	buf = buf[:runtime.Stack(buf, true)]
+
+	return standsInSendAt(string(buf), line)
+}
+
+// Ground: the helper above decides when TestRunStopsOnCancelWhileStandingInTheSend cancels. Only
+// the select with the send counts: a goroutine blocked in waitUntil (called from runStage), in
+// another line of runStage, or in the same line of another function does not.
+// Mutation: the blocking point moved into waitUntil (a select ahead of the send in waitUntil that
+// nothing wakes) leaves the dump with waitUntil in frame 1, and the helper says false.
+func TestStandsInSendCountsOnlyTheSendSelect(t *testing.T) {
+	const line = 138
+
+	frame := func(state, fn, file string) string {
+		return "goroutine 8 [" + state + "]:\n" +
+			"github.com/yhgrwav/leettest/pkg/engine." + fn + "(0x1, {0x2, 0x3})\n" +
+			"\tC:/x/pkg/engine/" + file + " +0x2df\n" +
+			"github.com/yhgrwav/leettest/pkg/engine.(*Scheduler).Run(0x1, 0x2)\n" +
+			"\tC:/x/pkg/engine/scheduler.go:87 +0x4d0\n"
+	}
+
+	for name, tc := range map[string]struct {
+		dump string
+		want bool
+	}{
+		"select at the send":       {frame("select", "(*Scheduler).runStage", "scheduler.go:138"), true},
+		"chan send at the send":    {frame("chan send", "(*Scheduler).runStage", "scheduler.go:138"), true},
+		"another line of runStage": {frame("select", "(*Scheduler).runStage", "scheduler.go:126"), false},
+		"inside waitUntil":         {frame("select", "waitUntil", "dispatcher.go:239"), false},
+		"waitUntil on that line":   {frame("select", "waitUntil", "scheduler.go:138"), false},
+		"sleeping at the send":     {frame("sleep", "(*Scheduler).runStage", "scheduler.go:138"), false},
+		"another file, same line":  {frame("select", "(*Scheduler).runStage", "dispatcher.go:138"), false},
+		"no goroutine":             {"", false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := standsInSendAt(tc.dump, line); got != tc.want {
+				t.Errorf("standsInSendAt = %v, want %v for\n%s", got, tc.want, tc.dump)
+			}
+		})
+	}
 }
 
 // Ground: contract — Run returns on cancel when nobody reads: it stands in the send to out, and
@@ -236,8 +309,9 @@ func TestRunStopsOnCancelWhileStandingInTheSend(t *testing.T) {
 
 	go func() { errc <- s.Run(ctx, out) }()
 
+	line := sendSelectLine(t)
 	limit := time.Now().Add(guard)
-	for !standsInSend() {
+	for !standsInSend(line) {
 		if time.Now().After(limit) {
 			t.Fatalf("Run did not reach the send to out within %s", guard)
 		}
