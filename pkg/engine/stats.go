@@ -142,15 +142,25 @@ type SeqOverflow struct {
 }
 
 type MethodReport struct {
+	// Method is the row's key (RowKeys): the call's gRPC method for a plain call
+	// and for a method that appears once in the run, otherwise the method with
+	// the scenario and step that tell the rows apart. Unique among the rows.
 	Method string
-	Sent   int
-	Failed int
-	RPS    float64
-	Min    metrics.Quantile
-	P50    metrics.Quantile
-	P90    metrics.Quantile
-	P95    metrics.Quantile
-	P99    metrics.Quantile
+	// Scenario is the scenario a row of a head or step belongs to; empty for a
+	// plain call. Step is its number in the scenario from 1, the head being 1;
+	// 0 for a plain call. GRPCMethod is the method the row called: Method, when
+	// the method is not repeated.
+	Scenario   string
+	Step       int
+	GRPCMethod string
+	Sent       int
+	Failed     int
+	RPS        float64
+	Min        metrics.Quantile
+	P50        metrics.Quantile
+	P90        metrics.Quantile
+	P95        metrics.Quantile
+	P99        metrics.Quantile
 	// P999 is Defined only when Latencies >= metrics.MinCount(0.999): with
 	// fewer observations p99.9 is the max.
 	P999 metrics.Quantile
