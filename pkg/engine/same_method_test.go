@@ -230,13 +230,118 @@ func TestRun_APlainCallAndAStepOfOneMethodAreTwoRows(t *testing.T) {
 	}
 
 	// The live view's target rate is the head's, by key, and the plain call's.
+	smWantTarget(t, eng, smGet, 10)
+	smWantTarget(t, eng, smOther, 20)
+}
+
+// smWantTarget requires the live view's row key to be there and to say want.
+func smWantTarget(t *testing.T, eng *Engine, key string, want int) {
+	t.Helper()
+
 	snapshot := eng.Snapshot()
 	for _, m := range snapshot.Methods {
-		if m.Method == smGet && m.TargetRPS != 10 {
-			t.Errorf("target of the plain row %d, want 10", m.TargetRPS)
+		if m.Method != key {
+			continue
 		}
-		if m.Method == smOther && m.TargetRPS != 20 {
-			t.Errorf("target of the head row %d, want 20", m.TargetRPS)
+		if m.TargetRPS != want {
+			t.Errorf("target of the row %q = %d, want %d", key, m.TargetRPS, want)
+		}
+
+		return
+	}
+
+	t.Errorf("no row %q in the live view", key)
+}
+
+// Ground: contract — verdict §5 (targetRates): the live view's target rate of a
+// row is its own call's plan. A plain Get at 10 rps and a scenario s1 headed by
+// Get at 20 rps are two rows; a lookup by the RPC method keeps one number for
+// both (the larger, 20) and gives the head's key none. Mutation: targetRates
+// by RPC method.
+func TestRun_TargetRateOfARepeatedHeadIsItsOwnAndThePlainCallsStaysItsOwn(t *testing.T) {
+	eng, _ := smRun(t, Options{
+		Calls: []Call{
+			{Method: smGet, Timeout: time.Second, Stages: []Stage{{StartRPS: 10, TargetRPS: 10, Duration: 300 * time.Millisecond}}},
+			{
+				Method: smGet, Scenario: "s1", Timeout: time.Second,
+				Next:   []Step{{Method: smUpdate, Timeout: time.Second}},
+				Stages: []Stage{{StartRPS: 20, TargetRPS: 20, Duration: 250 * time.Millisecond}},
+			},
+		},
+		Sender:      &scripted{},
+		MaxInFlight: 256,
+	})
+
+	smWantTarget(t, eng, smGet, 10)
+	smWantTarget(t, eng, smGet+" (s1, step 1)", 20)
+}
+
+// Ground: contract — verdict §5 (SeqOverflow.Method): the run that ends for a
+// seq the field cannot hold names the row of the call that hit it, by key. A
+// templated head Get with steps Update, Get and a limit of 3 ends at the fourth
+// iteration; the name is "Get (s1, step 1)", not the bare Get, which is the
+// name of a plain call's row if there is one. Mutation: SeqOverflow.Method
+// from the RPC method (only the dispatcher's DatasetExhausted moved to keys).
+func TestRun_SeqOverflowNamesTheRowKeyOfARepeatedTemplatedHead(t *testing.T) {
+	tpl := newCountingTemplate(3)
+
+	eng, err := New(Options{
+		Calls: []Call{{
+			Method: smGet, Scenario: "s1", Template: tpl.Template, Timeout: time.Second,
+			Next:   []Step{{Method: smUpdate, Timeout: time.Second}, {Method: smGet, Timeout: time.Second}},
+			Stages: []Stage{{StartRPS: 200, TargetRPS: 200, Duration: time.Second}},
+		}},
+		Sender:      &scripted{},
+		MaxInFlight: 256,
+	})
+	if err != nil {
+		t.Fatalf("new: %v (a method repeated in a run is allowed)", err)
+	}
+	_ = eng.Run(t.Context()) // the end for a seq is ErrSeqOverflow; the report is what is pinned
+
+	got := eng.Report().SeqOverflow
+	if got == nil {
+		t.Fatal("no SeqOverflow: the run did not end at seq 4")
+	}
+	if want := smGet + " (s1, step 1)"; got.Method != want || got.Limit != 3 {
+		t.Errorf("SeqOverflow = %q, limit %d; want %q and 3", got.Method, got.Limit, want)
+	}
+}
+
+// Ground: contract — verdict §5 (Templates): a templated plain Get and a
+// scenario headed by a templated Get keep a count each: the plain row's
+// LastSeq is its requests (10), the head's is its iterations (5). A count kept
+// by the RPC method is overwritten by the later call and both rows say one
+// number. Mutations: templatesReport by RPC method; the Template branch of
+// noteHanded by RPC method.
+func TestRun_TemplatesOfAPlainCallAndARepeatedHeadCountApart(t *testing.T) {
+	plain, head := newCountingTemplate(0), newCountingTemplate(0)
+
+	_, report := smRun(t, Options{
+		Calls: []Call{
+			{Method: smGet, Template: plain.Template, Timeout: time.Second, Stages: []Stage{{StartRPS: 10, TargetRPS: 10, Duration: time.Second}}},
+			{
+				Method: smGet, Scenario: "s1", Template: head.Template, Timeout: time.Second,
+				Next:   []Step{{Method: smUpdate, Timeout: time.Second}},
+				Stages: []Stage{{StartRPS: 20, TargetRPS: 20, Duration: 250 * time.Millisecond}},
+			},
+		},
+		Sender:      &scripted{},
+		MaxInFlight: 256,
+	})
+
+	for _, w := range []struct {
+		key  string
+		last uint64
+	}{{smGet, 10}, {smGet + " (s1, step 1)", 5}} {
+		m, ok := methodRow(report, w.key)
+		switch {
+		case !ok:
+			t.Errorf("no row %q", w.key)
+		case m.Templates == nil:
+			t.Errorf("%s: no Templates", w.key)
+		case m.Templates.LastSeq != w.last:
+			t.Errorf("%s: LastSeq %d, want %d", w.key, m.Templates.LastSeq, w.last)
 		}
 	}
 }

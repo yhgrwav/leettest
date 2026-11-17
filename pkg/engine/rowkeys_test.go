@@ -169,18 +169,31 @@ func TestCheckOptions_RepeatedMethods(t *testing.T) {
 }
 
 // Ground: contract — verdict §5: the in-flight budget names a call without a
-// deadline by its row key, so a repeated step is told apart from its twin.
+// deadline by its row key, the head and a step alike, so a repeated Get is told
+// apart from its twin. Mutations: the step named by its RPC method; the head
+// named by its RPC method.
 func TestCheckOptions_BudgetNamesTheRowKeyOfARepeatedStep(t *testing.T) {
-	calls := []Call{rkFlow("s1", "a/Get", "a/Update", "a/Get")}
-	calls[0].Next[1].Timeout = 0
+	for _, tc := range []struct {
+		name   string
+		unset  func(calls []Call)
+		wanted string
+	}{
+		{"a step", func(calls []Call) { calls[0].Next[1].Timeout = 0 }, "a/Get (s1, step 3)"},
+		{"the head", func(calls []Call) { calls[0].Timeout = 0 }, "a/Get (s1, step 1)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			calls := []Call{rkFlow("s1", "a/Get", "a/Update", "a/Get")}
+			tc.unset(calls)
 
-	err := CheckOptions(Options{Calls: calls, MaxInFlight: 100})
+			err := CheckOptions(Options{Calls: calls, MaxInFlight: 100})
 
-	var budget *InFlightBudgetError
-	if !errors.As(err, &budget) {
-		t.Fatalf("err = %v, want *InFlightBudgetError", err)
-	}
-	if want := []string{"a/Get (s1, step 3)"}; !slices.Equal(budget.Unbounded, want) {
-		t.Errorf("unbounded %q, want %q", budget.Unbounded, want)
+			var budget *InFlightBudgetError
+			if !errors.As(err, &budget) {
+				t.Fatalf("err = %v, want *InFlightBudgetError", err)
+			}
+			if want := []string{tc.wanted}; !slices.Equal(budget.Unbounded, want) {
+				t.Errorf("unbounded %q, want %q", budget.Unbounded, want)
+			}
+		})
 	}
 }
