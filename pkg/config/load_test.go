@@ -149,6 +149,56 @@ func TestLoadValidate(t *testing.T) {
 	}
 }
 
+// Two plain calls of one method stay a refusal when a method may stand more than
+// once elsewhere (A1): they would share one report row. The message names both
+// places, the second by its path and the first by its number, and says the two
+// ways out. Mutation 11 (allow them again) dies here and in TestLoadValidate.
+// Ground: contract — verdict spec §4; a row never silently merges two calls (П12/П13).
+func TestLoadValidate_TwoPlainCallsNameBothPlaces(t *testing.T) {
+	call := config.Call{Method: "wallet.v1.WalletService/GetBalance", RPS: 800, Duration: time.Minute}
+	other := withMethod(call, "wallet.v1.WalletService/Transfer")
+
+	for _, tc := range []struct {
+		name string
+		load config.Load
+		want []string
+	}{
+		{"calls 0 and 1", config.Load{Calls: []config.Call{call, call}}, []string{"load.calls[1]", "call 0", "wallet.v1.WalletService/GetBalance", "step of a scenario"}},
+		{"calls 0 and 2", config.Load{Calls: []config.Call{call, other, call}}, []string{"load.calls[2]", "call 0", "wallet.v1.WalletService/GetBalance", "step of a scenario"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.load.Validate()
+
+			if !errors.Is(err, config.ErrDuplicateMethod) {
+				t.Fatalf("error = %v, want %v", err, config.ErrDuplicateMethod)
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error = %q, want it to contain %q", err, want)
+				}
+			}
+		})
+	}
+}
+
+// The same refusal from a file, where the user reads it: the second call by its
+// path, the first by its number.
+// Ground: contract — verdict spec §4.
+func TestParse_TwoPlainCallsOfOneMethodAreRefused(t *testing.T) {
+	raw := scenarioCall("") + "    - method: " + getBalance + "\n      rps: 5\n      duration: 1s\n"
+
+	_, err := config.Parse([]byte(raw))
+
+	if !errors.Is(err, config.ErrDuplicateMethod) {
+		t.Fatalf("error = %v, want %v", err, config.ErrDuplicateMethod)
+	}
+	for _, want := range []string{"load.calls[1]", "call 0", "step of a scenario"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %q, want it to contain %q", err, want)
+		}
+	}
+}
+
 func withMethod(call config.Call, method string) config.Call {
 	call.Method = method
 	return call
