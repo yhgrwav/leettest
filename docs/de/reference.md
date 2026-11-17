@@ -3,7 +3,7 @@
 [Русский](../ru/reference.md) · [English](../en/reference.md) · [Deutsch](reference.md) · [简体中文](../zh-CN/reference.md)
 [← Startseite](README.md)
 
-> Übersetzt aus [docs/ru/reference.md](../ru/reference.md) bei 0d969a9, 2026-11-11. Bei
+> Übersetzt aus [docs/ru/reference.md](../ru/reference.md) bei 01f067b, 2026-11-17. Bei
 > Abweichungen gilt die russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/reference.md).
@@ -63,7 +63,16 @@ Die Konfiguration, ein Dataset, ein Bericht für `compare` und die Einstellungsd
 | `load.calls[].dataset_order` | `file` (weggelassen) oder `random`: die Reihenfolge der Anfragen aus der Datei. Braucht `dataset` |
 | `load.calls[].dataset_seed` | Eine ganze Zahl von 0 bis 9007199254740991, legt eine zufällige Reihenfolge fest. Braucht `dataset_order: random`. Weggelassen — wird selbst gewählt und im Bericht ausgegeben |
 | `load.calls[].dataset_reuse` | `true` (weggelassen) oder `false`: bei `false` geht kein Datensatz im ganzen Prozess zweimal raus. Braucht `dataset` |
-| `load.calls[].templates` | `true` oder `false` (weggelassen — `false`; ein Schlüssel ohne Wert ist ein Fehler): schaltet die Platzhalter `{{uuid}}` und `{{seq}}` in `data` ein, siehe [unten](#eine-anfrage-die-sich-ändert-templates). Braucht mindestens einen Platzhalter, nicht zusammen mit `dataset`. |
+| `load.calls[].templates` | `true` oder `false` (weggelassen — `false`; ein Schlüssel ohne Wert ist ein Fehler): schaltet die Platzhalter `{{uuid}}` und `{{seq}}` in `data` ein, siehe [unten](#eine-anfrage-die-sich-ändert-templates). Braucht mindestens einen Platzhalter — in ihrem `data` oder im `data` eines Schritts mit `templates: true`; nicht zusammen mit `dataset`. |
+| `load.calls[].scenario` | (nicht veröffentlicht) Der Name eines Szenarios: der Aufruf selbst wird Schritt 1, danach kommen die `steps`. Braucht `steps` und umgekehrt. Der Name ist nicht leer, der Bericht gibt ihn unverändert aus; er darf nicht mit einer Methode übereinstimmen. Siehe [unten](#szenario-schritte-nach-dem-aufruf) |
+| `load.calls[].steps` | (nicht veröffentlicht) Eine nicht leere Liste von Schritten nach dem Aufruf. Jeder Schlüssel eines Schritts außer den sieben unten wird noch nicht unterstützt — ein Fehler |
+| `load.calls[].steps[].method` | (nicht veröffentlicht) Die Methode des Schritts, voller Name; Pflicht. Wird vor der Last geprüft, wie die Methode des Aufrufs |
+| `load.calls[].steps[].timeout` | (nicht veröffentlicht) Wie lange auf die Antwort des Schritts gewartet wird, wie `load.calls[].timeout`; weggelassen — `2s`, nicht der Timeout des Aufrufs |
+| `load.calls[].steps[].data` | (nicht veröffentlicht) Der Anfrage-Body des Schritts, geschrieben wie `load.calls[].data` (siehe [unten](#anfrage-body)) und vor der Last gegen die eigene Methode des Schritts geprüft; ein falsches Feld ist ein Konfigurationsfehler, wie beim Aufruf. Weggelassen — eine leere Nachricht. `{{…}}` darin ist nur Text bei `templates: false` oder bei einem Aufruf ohne `templates: true`; siehe die nächste Zeile. Braucht Reflection oder `app.proto` / `app.protoset`, wie `data` des Aufrufs |
+| `load.calls[].steps[].templates` | (nicht veröffentlicht) `true` oder `false` (ein Schlüssel ohne Wert und alles außer `true`/`false` ist ein Fehler): `true` schaltet `{{uuid}}` und `{{seq}}` im `data` des Schritts ein, siehe [unten](#templates-im-schritt). Braucht `templates: true` am Aufruf und einen eigenen Platzhalter im `data` des Schritts. Weggelassen: der Body ist gewöhnlich, und Klammern im `data` eines Aufrufs mit `templates: true` sind ein Fehler: schreiben Sie `templates: true` am Schritt oder `templates: false`, damit die Klammern als Text rausgehen |
+| `load.calls[].steps[].dataset` | (nicht veröffentlicht) Eine Datei mit Anfrage-Bodies für den Schritt statt seines `data`, siehe [unten](#dataset-im-schritt). Wird gelesen und geprüft wie beim Aufruf, gegen die eigene Methode des Schritts. Zusammen mit `data` des Schritts und mit `templates: true` nicht erlaubt |
+| `load.calls[].steps[].dataset_order` | (nicht veröffentlicht) `file` (weggelassen) oder `random`: die Reihenfolge der Datensätze des Schritts. Braucht `dataset` des Schritts |
+| `load.calls[].steps[].dataset_seed` | (nicht veröffentlicht) Seed der zufälligen Reihenfolge, eine ganze Zahl von 0 bis 9007199254740991, wie `load.calls[].dataset_seed`. Braucht `dataset_order: random` am Schritt |
 | `load.calls[].pass` | Die Grenzen, die ein Lauf einhalten muss, um zu bestehen: `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, siehe [unten](#grenzen-pass). Weggelassen — keine Grenzen |
 | `load.breakpoint.from` | Die Rate der ersten Stufe der Bruchpunkt-Suche, Aufrufe pro Sekunde. Eine ganze Zahl ab 1; eine Dezimalzahl ist ein Konfigurationsfehler (`rps must be a whole number of requests: 100.5`). Pflicht: fehlend oder unter 1 — `invalid breakpoint: breakpoint.from: breaking-point plan: from 0, want at least 1 rps`, Exit 1. Die erste Stufe muss mindestens 100 Aufrufe messen, `from` × (`hold` − `settle`), sonst vor der Last der Fehler `invalid breakpoint: the first step measures 8 calls, a p99 needs 100: raise from, hold or lower settle`. Mit `app.mode: real` geht ein Anlauf von 0 auf `from` |
 | `load.breakpoint.to` | Über dieser Rate gibt es keine Stufen. Eine ganze Zahl, nicht unter `from` (gleich `from` — eine Stufe). Pflicht: fehlend oder unter `from` — `invalid breakpoint: breakpoint.to: breaking-point plan: to 50 is below from 100`, Exit 1. Erreicht die Suche die letzte Stufe und hält sie, lautet das Ergebnis `held_all` |
@@ -317,6 +326,79 @@ Unter der Methodenzeile schreibt der Bericht `data: templated, seq uuid (last se
 In JSON ist das `methods[].templates`, ein **Objekt** `{"placeholders": ["seq", "uuid"], "last_seq": 7}`
 und keine Liste; `null` — der Aufruf hat keine Templates.
 
+### Templates im Schritt
+
+*(Nicht veröffentlicht.)* Ein Szenario-Schritt schaltet die Platzhalter mit seinem eigenen
+`templates: true` ein; auch der Aufruf braucht `templates: true`, weil der Zähler am Aufruf hängt.
+
+```yaml
+    - method: orders.v1.OrderService/Create
+      rps: 100
+      duration: 1m
+      templates: true
+      data:
+        order_id: "{{seq}}"
+      scenario: create-and-pay
+      steps:
+        - method: orders.v1.OrderService/Pay
+          templates: true
+          data:
+            order_id: "{{seq}}"
+            payment_key: "{{uuid}}"
+```
+
+- **Ein `{{seq}}` für die ganze Iteration.** Der Aufruf und jeder Schritt einer Iteration tragen
+  dieselbe Zahl: „Bestellung 5 angelegt, Bestellung 5 bezahlt“. Der Zähler rückt einmal pro gesendeter
+  Iteration vor, nicht pro Schritt. `{{uuid}}` ist bei jedem Bau des Body neu, zwei Schritte teilen
+  sich also keinen.
+- **Dieselben Regeln wie beim Aufruf:** ein unbekanntes `{{…}}` oder Klammern in einem Schlüssel sind
+  ein Fehler mit dem Pfad `load.calls[i].steps[k].data…`; ein Feld, in das ein Platzhalter nicht passt,
+  ist ein Fehler vor dem Start mit der Methode des Schritts und seiner Stelle; `templates: true` an
+  einem Schritt ohne eigenen Platzhalter ist ein Fehler.
+- **Ein Aufruf kann um seiner Schritte willen ein Template-Aufruf sein:** `templates: true` am Aufruf
+  zählt die Platzhalter seiner Schritte, ein Aufruf ohne eigene ist dann zulässig.
+- **Klammern in einem Schritt ohne den Schlüssel `templates`** an einem Aufruf mit `templates: true`
+  sind ein Fehler: höchstwahrscheinlich waren sie als Template gedacht. `templates: false` sendet sie
+  als Text. Bei einem Aufruf ohne `templates: true` sind Klammern in einem Schritt Text.
+- **Ein 32-Bit-Feld in einem Schritt** bleibt genauso in seiner Grenze. Die Grenze des Aufrufs ist
+  die engste über sein `data` und seine Schritte; die Ablehnung vor dem Start und die Zeile über einen
+  von der Grenze gestoppten Lauf nennen den Schritt mit dem engsten Feld (`steps[k]`). Im JSON ist
+  `seq_overflow.method` weiterhin die Methode des Aufrufs.
+- **Der Body des Schritts wird im Worker gebaut**, nachdem der vorige Schritt zu Ende ist; die Bauzeit
+  geht in den Startverzug des Schritts. `-dry-run` gibt den Body des Aufrufs aus, bisher ohne Schritte.
+
+### Dataset im Schritt
+
+*(Nicht veröffentlicht.)* Ein Schritt nimmt seinen Body aus einer Datei, wie der Aufruf.
+
+```yaml
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 50
+      duration: 1m
+      scenario: pay-and-check
+      steps:
+        - method: wallet.v1.WalletService/Transfer
+          dataset: transfers.jsonl
+          dataset_order: random
+          dataset_seed: 42
+```
+
+- **Dieselben Dateiregeln wie beim Aufruf:** ein JSON je Zeile, ein relativer Pfad gilt ab dem
+  Verzeichnis der Konfigurationsdatei, jede Zeile wird vor der Last gegen die eigene Methode des
+  Schritts geprüft; ein Fehler nennt `load.calls[i].steps[k].dataset: transfers.jsonl:3` und gibt die
+  Zeile nicht aus.
+- **Der Schritt hat seine eigene Position in der Datei**, getrennt von der des Aufrufs. Sie rückt
+  einmal pro gesendeter Iteration vor, nicht pro erreichtem Schritt: Iteration 5 nimmt den fünften
+  Datensatz, auch wenn Iteration 4 vor dem Schritt scheiterte.
+- **Zusammen mit `data` des Schritts oder `templates: true` an ihm nicht erlaubt.** Die Datensätze
+  der Datei werden nicht ersetzt: Bei einem Aufruf mit `templates: true` ist ein Datensatz mit `{{`
+  ein Fehler mit der Zeilennummer; schreiben Sie `templates: false` am Schritt, damit die Klammern
+  als Text rausgehen.
+- **`dataset_reuse: false` im Schritt wird noch nicht unterstützt**, ebenso wenig wie `rps`,
+  `duration` und `pass`.
+- **Im Bericht** trägt die Methodenzeile des Schritts die Zeile zum dataset und `methods[].dataset`.
+  `used` zählt die Iterationen, die mit dem Schritt rausgingen, nicht die erreichten Schritte.
+
 ## Bei jedem Aufruf eine andere Anfrage: dataset
 
 ```yaml
@@ -360,6 +442,50 @@ abgelehnt, mit beiden Zahlen. Eine Suche, die einen Datensatz braucht, während 
 hat, hält an wie bei Ctrl+C (Exit-Code 3): Der laufende Lauf wird nicht beurteilt, der Bericht nennt
 die Datei und die Rate. Nur ein Prozess: Die Datensätze werden nicht zwischen Maschinen geteilt, und
 ein Anhalten lässt Datensätze ungesendet.
+
+## Szenario: Schritte nach dem Aufruf
+
+```yaml
+load:
+  calls:
+    - method: pay.v1.Wallet/Check
+      rps: 40
+      duration: 1m
+      scenario: pay
+      steps:
+        - method: pay.v1.Wallet/Transfer
+          timeout: 500ms
+          data: {from: wallet-1, to: wallet-2, amount: 100}
+        - method: pay.v1.Wallet/History
+```
+
+Die Einheit des Zeitplans ist die Iteration, nicht der Aufruf: `rps` sind Iterationen pro Sekunde.
+Eine Iteration sendet den Aufruf (Schritt 1), dann die Schritte der Reihe nach; ein Schritt beginnt,
+wenn der vorige zu Ende ist. Scheitert ein Schritt, geht nicht raus oder wird abgebrochen, gibt es in
+dieser Iteration keine weiteren Schritte. Die Nachricht eines Schritts ist sein `data`, in jeder
+Iteration dasselbe, und ohne `data` die leere Nachricht seiner Methode: Ein Ziel, das Felder braucht,
+antwortet mit `request_error`, und der Lauf wird nach der Regel zu `request_error` ungültig. Die
+Methoden der Schritte werden vor der Last geprüft, wie die Methoden der Aufrufe, und das `data` eines
+Schritts gegen seine eigene Methode: ein Tippfehler in der Methode oder im Feld eines Schritts ist ein
+Konfigurationsfehler.
+
+Die Erwartung für Anfragen im Flug rechnet mit der Summe der Timeouts der Schritte (`rps` × Σ der
+Timeouts der Schritte); liegt sie über `-max-in-flight`, startet der Lauf nicht, und es gibt einen
+einzigen Rat: `-max-in-flight <N>`.
+
+Noch nicht unterstützt, und der Lauf lehnt sie ab: ein Szenario zusammen mit `pass`, zusammen mit der
+Suche nach dem Bruchpunkt (`load.breakpoint`) und `-dry-run` mit einem Szenario. Der Live-Bildschirm
+und die Prometheus-Metriken zeigen das Szenario nicht, man sieht es nur im Bericht.
+
+Im Textbericht folgt auf die Methodentabelle der Szenarioblock: die Iterationen und ihre Ergebnisse,
+die Latenz der Iteration (vom Takt des Zeitplans bis zum Ende des letzten Schritts; das p99 wird
+nicht gedruckt, solange es weniger Beobachtungen als das Minimum gibt) und eine Zeile je Schritt: wie
+viele Iterationen den Schritt erreichten, wie viele daran scheiterten, abgebrochen wurden, nicht
+rausgingen und nicht ankamen. Die Latenz eines Schritts zählt ab dem Ende des vorigen Schritts. Die
+Methoden der Schritte bleiben gewöhnliche Zeilen der Methodentabelle, aber ohne eigenen Plan. In den
+Summen zählt `sent` die Aufrufe der Schritte und `scheduled` die Iterationen; „at N rps scheduled“ in
+der Warnung zum Rückstand ist ebenfalls die Rate der Iterationen, das Fenster dagegen zählt die
+Aufrufe der Schritte.
 
 ## Flags
 
@@ -648,7 +774,7 @@ unten den Typ „percentile?" hat.
 | `stop.in_flight` | int | Die Aufrufe im Flug in diesem Moment (begonnen, nicht beendet): bei einem hängenden Ziel das, was das Fenster nicht zeigt. |
 | `stop.planned_rps` | float? | Die Rate, die der Plan dieser Methode im Moment des Stopps vorsah, Aufrufe pro Sekunde, auf 3 Stellen gerundet; die Stopp-Zeile druckt sie auf ganze Aufrufe: `the plan offered 1700 rps at that moment`. `null`, wenn der Stopp am Ende des Plans der Methode oder danach kam; die Zeile sagt dann `the plan had ended`. Der Moment des Stopps ist der Moment des Urteils, nicht des Sendens: Die fehlgeschlagenen Aufrufe können früher hinausgegangen sein, um bis zu den Timeout des Aufrufs; die Rate, mit der sie hinausgingen, zeigt der Block `ramp by second`. |
 | `seq_overflow` | object? | Wo ein `{{seq}}` nicht in sein Feld passte und der Lauf anhielt; `null`, wenn das nicht geschah. `stop_reason` ist dann `seq_overflow`, und der Lauf endet sanft (Exit 3). |
-| `seq_overflow.method` | string | Die Methode, deren Feld überlief, geschrieben wie in `methods[].method`, mit führendem `/`. |
+| `seq_overflow.method` | string | Die Methode, deren Feld überlief, geschrieben wie in `methods[].method`, mit führendem `/`. Das ist auch dann die Methode des Aufrufs, wenn das enge Feld in einem seiner Schritte liegt: der Textbericht nennt den Schritt, das JSON nicht. |
 | `seq_overflow.limit` | int | Das größte `seq`, das das schmalste Feld der Methode fasst. |
 | `started_at` | string | Beginn des Plans, RFC 3339 UTC, Aufwärmen eingeschlossen. Jedes `_us` und `_s` zählt ab hier |
 | `duration_us` | int | Wie lange der Lauf ging, Aufwärmen eingeschlossen |
@@ -744,7 +870,7 @@ Die übrigen sind einfache Zähler.
 | `methods[].rps` | float? | `sent/s`: gesendete Aufrufe geteilt durch die Sendezeit dieser Methode; `null` — keine Aufrufe |
 | `methods[].timeout_us` | int | Das Timeout der Methode |
 | `methods[].planned_rps_low`, `methods[].planned_rps_high` | int | Niedrigste und höchste geplante Rate des gemessenen Teils des Plans, nach dem ausgeschlossenen Fenster: Ein Aufruf mit Anlauf gibt sein `rps` zweimal |
-| `methods[].planned_duration_us` | int | Wie lange die Methode gehen sollte, wie konfiguriert, der Anlauf eingeschlossen |
+| `methods[].planned_duration_us` | int | Wie lange die Methode gehen sollte, wie konfiguriert, der Anlauf eingeschlossen. `0` bei der Methode eines Szenario-Schritts (und `0` in `planned_rps_low`/`planned_rps_high`): sie hat keinen eigenen Plan, die Schritte stehen in `scenarios[].steps[].method` |
 | `methods[].request_bytes` | object? | Der Anfragekörper, Mittel über die gemessenen Aufrufe, die hinausgingen; `null` ohne Kompression |
 | `methods[].request_bytes.raw`, `methods[].request_bytes.wire` | float | Bytes vor der Kompression und auf der Leitung (ohne den 5-Byte-Rahmen) |
 | `methods[].response_bytes` | float? | Antwortkörper, Mittel über die gemessenen erfolgreichen Aufrufe, nach dem Entpacken; `0` bei leeren Antworten, `null`, wenn keiner erfolgreich war |
@@ -831,16 +957,16 @@ Gesamtwerten verglichen.
 
 ### Szenario: `scenarios[]`
 
-Ein Objekt je Szenario. Gezählt wird in Iterationen: der Aufruf und die Schritte danach, ausgelöst von einem Takt des Zeitplans. Die Methoden der Schritte stehen als gewöhnliche Methoden in `methods[]`.
+Ein Objekt je Szenario. Gezählt wird in Iterationen: der Aufruf und die Schritte danach, ausgelöst von einem Takt des Zeitplans ([Szenario](#szenario-schritte-nach-dem-aufruf)). Die Methoden der Schritte stehen als gewöhnliche Methoden in `methods[]`, deshalb vergleicht `leettest compare` sie genauso.
 
 | Feld | Typ | Bedeutung |
 |---|---|---|
 | `scenarios[].name` | string | (nicht veröffentlicht) Der Name aus `load.calls[].scenario`, wie geschrieben |
 | `scenarios[].iterations` | int | (nicht veröffentlicht) Wie viele Iterationen beendet wurden; nicht die Zahl der Aufrufe |
-| `scenarios[].categories` | object | (nicht veröffentlicht) Das Ergebnis jeder Iteration in einer der 11 Kategorien; alle Schlüssel sind immer da, die Summe ist `iterations` |
+| `scenarios[].categories` | object | (nicht veröffentlicht) Das Ergebnis jeder Iteration in einer der 11 Kategorien ([Kategorien](../en/report.md#reading-the-report), englisch); alle Schlüssel sind immer da, die Summe ist `iterations` |
 | `scenarios[].categories.success`, `scenarios[].categories.request_error`, `scenarios[].categories.overload`, `scenarios[].categories.failure`, `scenarios[].categories.timed_out`, `scenarios[].categories.cut_off`, `scenarios[].categories.unreachable`, `scenarios[].categories.client_error`, `scenarios[].categories.bad_response`, `scenarios[].categories.aborted`, `scenarios[].categories.unclassified` | int | (nicht veröffentlicht) Wie viele Iterationen mit diesem Ergebnis endeten |
 | `scenarios[].latency` | object | (nicht veröffentlicht) Latenz der Iteration: vom Takt des Zeitplans bis zum Ende des letzten Schritts |
-| `scenarios[].latency.p50`, `scenarios[].latency.p99` | percentile? | (nicht veröffentlicht) Perzentile über `observations`; `lower_bound` wie bei `methods[].latency`. `p99` ist `null` unter 100 Beobachtungen |
+| `scenarios[].latency.p50`, `scenarios[].latency.p99` | percentile? | (nicht veröffentlicht) Perzentile über `observations`; `lower_bound` wie bei `methods[].latency`: eine Iteration, die ein Timeout oder ein Stopp abbrach, dauerte mindestens so lange. `p99` ist `null` unter 100 Beobachtungen |
 | `scenarios[].observations` | int | (nicht veröffentlicht) Iterationen mit einer Latenz |
 | `scenarios[].censored` | int | (nicht veröffentlicht) Davon nur von unten bekannte |
 | `scenarios[].steps` | []object | (nicht veröffentlicht) Die Schritte der Reihe nach, der erste ist der Aufruf selbst |
@@ -849,7 +975,7 @@ Ein Objekt je Szenario. Gezählt wird in Iterationen: der Aufruf und die Schritt
 | `scenarios[].steps[].failed_here` | int | (nicht veröffentlicht) Davon die an diesem Schritt gescheiterten |
 | `scenarios[].steps[].aborted_here` | int | (nicht veröffentlicht) Davon die an diesem Schritt abgebrochenen |
 | `scenarios[].steps[].not_sent_here` | int | (nicht veröffentlicht) Davon die an diesem Schritt nicht gesendeten |
-| `scenarios[].steps[].not_reached` | int | (nicht veröffentlicht) Iterationen, die den Schritt nicht erreicht haben: `reached` + `not_reached` = `iterations` |
+| `scenarios[].steps[].not_reached` | int | (nicht veröffentlicht) Iterationen, die den Schritt nicht erreicht haben: `reached` + `not_reached` = `iterations`, und `reached` des nächsten Schritts = `reached` minus die drei vorigen Zähler |
 
 ### Suche nach dem Bruchpunkt: `mode: "breakpoint"`
 
@@ -893,6 +1019,8 @@ Die Exit-Codes sind für beide Formate dieselben: `0` — innerhalb der Grenze o
 ein Bericht ließ sich nicht lesen oder die Flags passen nicht zusammen, `2` — die Berichte sind nicht
 vergleichbar oder eine Grenze lässt sich nicht entscheiden, `4` — eine Grenze ist verletzt (auch wenn
 daneben eine Prüfung steht, die sich nicht entscheiden lässt).
+
+Den Block `scenarios` des Berichts liest `compare` nicht: Die Methoden der Schritte werden wie gewöhnliche Methoden verglichen.
 
 ## JSON des Vergleichs
 
