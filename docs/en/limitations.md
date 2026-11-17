@@ -72,8 +72,9 @@ or cannot. Here is which.
 ## What it does not do yet
 
 - **Unary calls only.** Streaming methods are rejected at load.
-- **Call chaining.** A field from one method's reply cannot go into another's request — planned,
-  see [call chaining](chaining.md) and the [roadmap](roadmap.md).
+- ~~**Call chaining.** A field from one method's reply cannot go into another's request.~~ It can,
+  inside a scenario, one iteration at a time (not released yet): see [call chaining](chaining.md).
+  A pool of values shared by calls at different rates is not there.
 - **Token refresh** during a long run — planned, see the [roadmap](roadmap.md).
 - **Every call of a method goes out with the same body** unless a `dataset` is set. With a
   `dataset` the requests differ, but that does not mean the target saw as many distinct requests:

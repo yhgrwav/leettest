@@ -470,7 +470,10 @@ func share(part, whole int) float64 {
 // invalidNote says why a method measured nothing about load and what to do,
 // or "" when it did. Every sent call failed the same way at any rate: the
 // request was wrong, the client could not send it, or the client refused the
-// replies. Bad responses are told apart by the code the client set.
+// replies. Bad responses are told apart by the code: the target's OK on all of
+// them is an extract that found nothing, the client's own oversized code on
+// all of them is a reply over the limit, no such code on any is an encoding;
+// a mix gets the general line.
 func invalidNote(m *engine.MethodReport, maxResponse string) string {
 	bad := m.BadResponse.Count
 	if m.Sent == 0 || m.Rejected.Count+m.ClientError+bad != m.Sent {
@@ -488,20 +491,30 @@ func invalidNote(m *engine.MethodReport, maxResponse string) string {
 			"encode, or the client's own stack refused it; see the codes set by the client.\n"+
 			"Nothing reached the target.", name)
 	case bad:
-		oversized := 0
+		oversized, missed := 0, 0
 		for _, c := range m.FailureCodes {
-			if !c.FromTarget && c.Code == "ResourceExhausted" {
+			switch {
+			case !c.FromTarget && c.Code == "ResourceExhausted":
 				oversized += c.Count
+			case c.FromTarget && c.Code == "OK":
+				// The target said OK and the client refused the content: the
+				// reply lacked what an extract reads.
+				missed += c.Count
 			}
 		}
 		switch {
+		case missed == bad:
+			return fmt.Sprintf("invalid run: every reply of %s lacked the value a later step extracts from it:\n"+
+				"the target answered OK and the path of an extract leads to nothing in the reply\n"+
+				"(a field the target left out or set to zero is not there). Nothing about the load\n"+
+				"was tested there; fix the extract path or the target and run again.", name)
 		case oversized == bad && maxResponse != "":
 			return fmt.Sprintf("invalid run: every response of %s was larger than max_response_size (%s):\n"+
 				"raise it.", name, maxResponse)
 		case oversized == bad:
 			return fmt.Sprintf("invalid run: every response of %s was larger than 4MiB, the gRPC default:\n"+
 				"set app.max_response_size above it.", name)
-		case oversized == 0:
+		case oversized == 0 && missed == 0:
 			return fmt.Sprintf("invalid run: responses of %s came compressed with an encoding the client does\n"+
 				"not accept. gRPC lets a server compress only with an encoding the client\n"+
 				"announced in grpc-accept-encoding: the target or a proxy in front of it breaks that.", name)

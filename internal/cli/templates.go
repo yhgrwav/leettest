@@ -87,6 +87,11 @@ func CheckTemplatesFit(calls []engine.Call) error {
 // says what the last seq counts: the requests handed to workers, which the
 // report's own counts leave out in the ramp and the warm-up.
 func templatesLine(t *engine.TemplatesReport) string {
+	if len(t.Placeholders) == 0 {
+		// Only {{extract.<name>}} stand in the data: no placeholder of the engine's.
+		return fmt.Sprintf("  data: templated (last seq %d, ramp and warm-up counted)", t.LastSeq)
+	}
+
 	return fmt.Sprintf("  data: templated, %s (last seq %d, ramp and warm-up counted)", strings.Join(t.Placeholders, " "), t.LastSeq)
 }
 
@@ -121,12 +126,12 @@ func seqOverflowNote(report engine.Report) []string {
 // the call's own, and AttachMethods narrows it with the steps'.
 func buildTemplate(method *descriptor.Method, call *config.Call) (*engine.Template, error) {
 	// The call's own data reads no extract: it goes out before any reply.
-	build, limit, err := compileTemplate(method, call.Method, call.Data, nil)
+	builder, limit, err := compileTemplate(method, call.Method, call.Data, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	return engine.NewTemplate(call.AllTemplatePlaceholders(), limit, build), nil
+	return engine.NewTemplate(call.AllTemplatePlaceholders(), limit, builder.build), nil
 }
 
 // compileTemplate makes the body builder of data, the data of a call or of a
@@ -135,15 +140,15 @@ func buildTemplate(method *descriptor.Method, call *config.Call) (*engine.Templa
 // look of the YAML. limit is the largest seq the narrowest number field holds,
 // 0 when there is none.
 //
-// extract is the field each {{extract.<name>}} of data reads, by name; a name
+// extract is where each {{extract.<name>}} of data reads, by name; a name
 // that is not in it was refused where it was declared, and is not refused twice.
 //
 // The body is made from a message built once from the data, with a few places
 // (slots) overwritten per request; the bytes are those of the plain path,
 // substitute the text and build the message anew (the reference test).
 func compileTemplate(
-	method *descriptor.Method, name string, data any, extract map[string]protoreflect.FieldDescriptor,
-) (build func(seq uint64) []byte, limit uint64, err error) {
+	method *descriptor.Method, name string, data any, extract map[string]extractPlace,
+) (builder *templateBuilder, limit uint64, err error) {
 	c := templateCompiler{method: name, extract: extract}
 	prepared := c.message(method.Input, data, "data", nil)
 
@@ -156,7 +161,7 @@ func compileTemplate(
 		return nil, 0, fmt.Errorf("%w: %s: %w", ErrRequestData, name, err)
 	}
 
-	builder := &templateBuilder{msg: msg.ProtoReflect()}
+	builder = &templateBuilder{msg: msg.ProtoReflect()}
 	for _, s := range c.slots {
 		bound, err := s.bind(msg.ProtoReflect())
 		if err != nil {
@@ -166,12 +171,18 @@ func compileTemplate(
 	}
 
 	// A trial: a body that cannot be written fails here, not as an empty request
-	// in the middle of a run.
-	if _, err := builder.write(1); err != nil {
+	// in the middle of a run. Every name holds 0, which any kind a name may
+	// go into takes; at least one place, for a name refused elsewhere.
+	trial := make([]string, max(len(extract), 1))
+	for i := range trial {
+		trial[i] = "0"
+	}
+
+	if _, err := builder.write(1, trial); err != nil {
 		return nil, 0, fmt.Errorf("%w: %s: %w", ErrRequestData, name, err)
 	}
 
-	return builder.build, c.limit, nil
+	return builder, c.limit, nil
 }
 
 // narrowestLimit is the smallest non-zero limit the templated steps of one call
@@ -214,18 +225,37 @@ type step struct {
 	key  protoreflect.MapKey
 }
 
+// partKind is what a part of a text slot is written as.
+type partKind uint8
+
+const (
+	partText  partKind = iota // the text as it is
+	partSeq                   // the seq of the request
+	partUUID                  // a uuid of its own
+	partValue                 // vals[index], what an earlier step extracted
+)
+
+type tplPart struct {
+	kind  partKind
+	text  string
+	index int
+}
+
 // slot is a place in the message a placeholder stands in: a string made of
-// parts, or, with parts nil, a number of kind that takes the whole seq.
+// parts; or, with parts nil, a number of kind that takes the whole seq, or, with
+// fromVal, the whole of vals[val].
 type slot struct {
-	path  []step
-	leaf  step
-	parts []config.TemplatePart
-	kind  protoreflect.Kind
+	path    []step
+	leaf    step
+	parts   []tplPart
+	kind    protoreflect.Kind
+	fromVal bool
+	val     int
 }
 
 type templateCompiler struct {
 	method  string
-	extract map[string]protoreflect.FieldDescriptor
+	extract map[string]extractPlace
 	slots   []slot
 	errs    []error
 	// limit is the largest seq the narrowest number field holds; 0 is none.
@@ -307,8 +337,8 @@ func (c *templateCompiler) value(kfd protoreflect.FieldDescriptor, v any, path s
 	case protoreflect.StringKind:
 		if text, ok := v.(string); ok {
 			// Any scalar the extract reads is written as text: no fit to check here.
-			if parts, _ := config.ParseTemplate(text); generates(parts) {
-				c.slots = append(c.slots, slot{path: steps, leaf: at, parts: parts})
+			if parts, _ := config.ParseTemplate(text); hasPlaceholder(parts) {
+				c.slots = append(c.slots, slot{path: steps, leaf: at, parts: c.compileParts(parts)})
 			}
 		}
 
@@ -357,13 +387,16 @@ func (c *templateCompiler) number(kfd protoreflect.FieldDescriptor, v any, path 
 			return v
 		}
 
-		if src := c.extract[name]; src != nil {
-			if why := extractFit(src.Kind(), kfd.Kind()); why != "" {
+		src, known := c.extract[name]
+		if known {
+			if why := extractFit(src.leaf.Kind(), kfd.Kind()); why != "" {
 				c.fail(path, "{{extract.%s}} is %s", name, why)
 			}
 		}
 
 		// The value is not known before the run: the place holds 0 while the body is built.
+		c.slots = append(c.slots, slot{path: steps, leaf: at, kind: kfd.Kind(), fromVal: true, val: src.index})
+
 		return 0
 	}
 
@@ -401,16 +434,26 @@ func hasPlaceholder(parts []config.TemplatePart) bool {
 	return false
 }
 
-// generates says parts hold a {{seq}} or a {{uuid}}: a value the builder makes
-// itself, as against one read from a reply.
-func generates(parts []config.TemplatePart) bool {
-	for _, p := range parts {
-		if p.Placeholder != "" {
-			return true
+// compileParts is parts as the builder writes them: each {{extract.<name>}} as
+// the place of its name in vals. A name that is not known was refused where it
+// was declared; its place is 0, and the body is never used.
+func (c *templateCompiler) compileParts(parts []config.TemplatePart) []tplPart {
+	out := make([]tplPart, len(parts))
+
+	for i, p := range parts {
+		switch {
+		case p.Extract != "":
+			out[i] = tplPart{kind: partValue, index: c.extract[p.Extract].index}
+		case p.Placeholder == config.PlaceholderSeq:
+			out[i] = tplPart{kind: partSeq}
+		case p.Placeholder == config.PlaceholderUUID:
+			out[i] = tplPart{kind: partUUID}
+		default:
+			out[i] = tplPart{kind: partText, text: p.Text}
 		}
 	}
 
-	return false
+	return out
 }
 
 // firstExtract is the name of the first {{extract.<name>}} in parts, "" if none.
@@ -480,9 +523,11 @@ func parseMapKey(kind protoreflect.Kind, key string) (protoreflect.MapKey, bool)
 // boundSlot is a slot tied to the one message every request is made in: set
 // writes its value into the place.
 type boundSlot struct {
-	parts []config.TemplatePart
-	kind  protoreflect.Kind
-	set   func(protoreflect.Value)
+	parts   []tplPart
+	kind    protoreflect.Kind
+	fromVal bool
+	val     int
+	set     func(protoreflect.Value)
 }
 
 // bind finds the place of the slot in msg once, so that a request does no walk.
@@ -497,7 +542,7 @@ func (s slot) bind(msg protoreflect.Message) (boundSlot, error) {
 		m = inner
 	}
 
-	bound := boundSlot{parts: s.parts, kind: s.kind}
+	bound := boundSlot{parts: s.parts, kind: s.kind, fromVal: s.fromVal, val: s.val}
 	leaf := s.leaf
 
 	switch leaf.mode {
@@ -551,10 +596,17 @@ type templateBuilder struct {
 	buf   []byte
 }
 
-// build is engine.Template.Build. A body that cannot be written was caught by
-// the trial of buildTemplate, so an error here is not expected.
+// build is engine.Template.Build: the body of a call, which reads no value
+// extracted. A body that cannot be written was caught by the trial of
+// compileTemplate, so an error here is not expected.
 func (b *templateBuilder) build(seq uint64) []byte {
-	body, err := b.write(seq)
+	return b.buildWith(seq, nil)
+}
+
+// buildWith is engine.Step.Build: the body of a step, with the values the
+// earlier steps of the iteration extracted.
+func (b *templateBuilder) buildWith(seq uint64, vals []string) []byte {
+	body, err := b.write(seq, vals)
 	if err != nil {
 		return nil
 	}
@@ -562,41 +614,77 @@ func (b *templateBuilder) build(seq uint64) []byte {
 	return body
 }
 
-func (b *templateBuilder) write(seq uint64) ([]byte, error) {
+func (b *templateBuilder) write(seq uint64, vals []string) ([]byte, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	for i := range b.slots {
 		s := &b.slots[i]
-		if s.parts != nil {
-			s.set(protoreflect.ValueOfString(b.text(s.parts, seq)))
 
-			continue
+		switch {
+		case s.parts != nil:
+			s.set(protoreflect.ValueOfString(b.text(s.parts, seq, vals)))
+		case s.fromVal:
+			// The value is the text of an integer that fits the field (extractFit),
+			// as the extract wrote it: a failure here is not expected.
+			v, err := numberFromText(s.kind, vals[s.val])
+			if err != nil {
+				return nil, err
+			}
+
+			s.set(v)
+		default:
+			s.set(numberOf(s.kind, seq))
 		}
-		s.set(numberOf(s.kind, seq))
 	}
 
 	return proto.MarshalOptions{Deterministic: true}.Marshal(b.msg.Interface())
 }
 
-// text is the parts written out: {{seq}} as the number, each {{uuid}} as a value of its own.
-func (b *templateBuilder) text(parts []config.TemplatePart, seq uint64) string {
+// text is the parts written out: {{seq}} as the number, each {{uuid}} as a
+// value of its own, each {{extract.<name>}} as the value of its name.
+func (b *templateBuilder) text(parts []tplPart, seq uint64, vals []string) string {
 	buf := b.buf[:0]
 
 	for _, p := range parts {
-		switch p.Placeholder {
-		case config.PlaceholderSeq:
+		switch p.kind {
+		case partSeq:
 			buf = strconv.AppendUint(buf, seq, 10)
-		case config.PlaceholderUUID:
+		case partUUID:
 			buf = appendUUID(buf)
+		case partValue:
+			buf = append(buf, vals[p.index]...)
 		default:
-			buf = append(buf, p.Text...)
+			buf = append(buf, p.text...)
 		}
 	}
 
 	b.buf = buf
 
 	return string(buf)
+}
+
+// numberFromText is the whole number in text, as a value of a number field of
+// kind: the integer an extract wrote, which the check at start let into this field.
+func numberFromText(kind protoreflect.Kind, text string) (protoreflect.Value, error) {
+	switch kind {
+	case protoreflect.Int32Kind, protoreflect.Sint32Kind, protoreflect.Sfixed32Kind:
+		n, err := strconv.ParseInt(text, 10, 32)
+
+		return protoreflect.ValueOfInt32(int32(n)), err
+	case protoreflect.Uint32Kind, protoreflect.Fixed32Kind:
+		n, err := strconv.ParseUint(text, 10, 32)
+
+		return protoreflect.ValueOfUint32(uint32(n)), err
+	case protoreflect.Uint64Kind, protoreflect.Fixed64Kind:
+		n, err := strconv.ParseUint(text, 10, 64)
+
+		return protoreflect.ValueOfUint64(n), err
+	default:
+		n, err := strconv.ParseInt(text, 10, 64)
+
+		return protoreflect.ValueOfInt64(n), err
+	}
 }
 
 // numberOf is seq as a value of a number field of kind. A 32-bit field never

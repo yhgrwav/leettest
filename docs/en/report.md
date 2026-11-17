@@ -61,7 +61,8 @@ without a live backend answers `UNAVAILABLE`, and the client cannot tell one fro
   the other end, `ABORTED` (a conflict between concurrent changes, not a lack of capacity).
 - `bad response`: a reply came and the client did not accept it: over `app.max_response_size`, or
   compressed with an encoding the client did not announce, or it breaks the one-reply shape: an OK
-  with no message, or an extra message.
+  with no message, or an extra message; or, in a scenario, the reply lacks the value a later step
+  reads (`extract`): its code stays the `OK` the target sent.
 - `client error`: the client itself refused to send: the request did not encode, or a codec or an
   interceptor failed.
 

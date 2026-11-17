@@ -164,7 +164,7 @@ func TestAttachMethods_StepTemplateBuildsSeqAndUuid(t *testing.T) {
 		t.Errorf("the step holds a ready body (%x) beside the Build", step.Payload)
 	}
 
-	first := decodeOrder(t, step.Build(7))
+	first := decodeOrder(t, step.Build(7, nil))
 	if got := fieldOf(first, "note").String(); got != "pay-7" {
 		t.Errorf("note = %q, want pay-7", got)
 	}
@@ -179,7 +179,7 @@ func TestAttachMethods_StepTemplateBuildsSeqAndUuid(t *testing.T) {
 		t.Errorf("id = %q, not a uuid v4", id)
 	}
 
-	if again := fieldOf(decodeOrder(t, step.Build(7)), "id").String(); again == id {
+	if again := fieldOf(decodeOrder(t, step.Build(7, nil)), "id").String(); again == id {
 		t.Errorf("two builds gave the same uuid %q: {{uuid}} is new at every build", id)
 	}
 }
@@ -397,7 +397,7 @@ func TestAttachMethods_StepTemplateBuildEqualsTheNaivePath(t *testing.T) {
 	}
 
 	for _, seq := range seqs {
-		got := build(seq)
+		got := build(seq, nil)
 
 		uuid := fieldOf(decodeOrder(t, got), "id").String()
 		if !uuidV4.MatchString(uuid) {
@@ -535,7 +535,7 @@ func TestAttachMethods_StepTemplateBuildIsSafeInParallel(t *testing.T) {
 		wg.Go(func() {
 			for i := range perWorker {
 				seq := uint64(w*perWorker + i + 1)
-				results <- built{seq: seq, body: build(seq)}
+				results <- built{seq: seq, body: build(seq, nil)}
 			}
 		})
 	}
@@ -582,7 +582,7 @@ func BenchmarkStepTemplateBuild_Parallel(b *testing.B) {
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			_ = build(seq.Add(1))
+			_ = build(seq.Add(1), nil)
 		}
 	})
 }

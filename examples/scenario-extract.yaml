@@ -1,8 +1,7 @@
 # A scenario whose step uses what an earlier reply held: extract names a field of the
-# reply, and a later step reads it as {{extract.<name>}}. Not runnable yet: until the run
-# side of extract lands, leettest checks this file and then refuses it with
-# "extract: not supported yet". GetTransfer is not on the reference stand, so this one
-# is for a service of your own:
+# reply, and a later step reads it as {{extract.<name>}}. If a reply lacks the field,
+# that step is counted as bad_response and the iteration stops there. Runs against the
+# reference stand (`make stand`):
 #   leettest -c examples/scenario-extract.yaml
 
 app:
@@ -38,7 +37,9 @@ load:
             from: "{{extract.wallet}}"
             to: "{{uuid}}"
             amount: "{{extract.funds}}"
-        - method: wallet.v1.WalletService/GetTransfer
+        # The stand has no method to read a transfer back, so the last step asks the
+        # health service about the transfer id: a string field takes it as any text.
+        - method: grpc.health.v1.Health/Check
           templates: true
           data:
-            id: "{{extract.tx}}"
+            service: "{{extract.tx}}"

@@ -354,6 +354,13 @@ func (p *WorkerPool) iterate(r *poolRun, first Request, out chan<- Result) {
 	results := make([]Result, 0, len(sc.Next)+2)
 	req := first
 
+	// What the steps extracted, of this iteration alone: no slice when the
+	// scenario extracts nothing.
+	var vals []string
+	if sc.Values > 0 {
+		vals = make([]string, sc.Values)
+	}
+
 	var end Result
 
 	for k := 0; ; k++ {
@@ -364,6 +371,15 @@ func (p *WorkerPool) iterate(r *poolRun, first Request, out chan<- Result) {
 			return
 		}
 		step.IterationTick = first.ScheduledAt
+
+		if extract := sc.extractOf(k); extract != nil && step.Category == CategorySuccess {
+			if err := extract(step.Response, vals); err != nil {
+				// The target answered and the client could not use the answer.
+				step.Category, step.Err = CategoryBadResponse, err
+			}
+		}
+		// No reply body goes on to the collector: the next body is the only place it went.
+		step.Response = nil
 		results = append(results, step)
 
 		if step.Category != CategorySuccess || k == len(sc.Next) {
@@ -403,8 +419,9 @@ func (p *WorkerPool) iterate(r *poolRun, first Request, out chan<- Result) {
 		if next.Build != nil {
 			// The body is built here, in the worker, with the seq of the iteration:
 			// its cost is step start lag, and the seq is the one of step 1.
-			req.Payload = next.Build(first.Seq)
+			req.Payload = next.Build(first.Seq, vals)
 		}
+		req.KeepResponse = next.Extract != nil
 		if next.Timeout > 0 {
 			req.Deadline = req.ScheduledAt.Add(next.Timeout)
 		}

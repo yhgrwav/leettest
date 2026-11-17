@@ -38,15 +38,15 @@ const stepTimeout = 100 * time.Millisecond
 
 // tagged is the Build of a step: the tag and the seq it was asked for, as text,
 // so a test reads both from the body the sender got.
-func tagged(tag string) func(uint64) []byte {
-	return func(seq uint64) []byte { return []byte(tag + strconv.FormatUint(seq, 10)) }
+func tagged(tag string) func(uint64, []string) []byte {
+	return func(seq uint64, _ []string) []byte { return []byte(tag + strconv.FormatUint(seq, 10)) }
 }
 
 // taggedTop is tagged that also keeps the largest seq it was asked for.
-func taggedTop(tag string, top *atomic.Uint64) func(uint64) []byte {
+func taggedTop(tag string, top *atomic.Uint64) func(uint64, []string) []byte {
 	build := tagged(tag)
 
-	return func(seq uint64) []byte {
+	return func(seq uint64, vals []string) []byte {
 		for {
 			old := top.Load()
 			if seq <= old || top.CompareAndSwap(old, seq) {
@@ -54,7 +54,7 @@ func taggedTop(tag string, top *atomic.Uint64) func(uint64) []byte {
 			}
 		}
 
-		return build(seq)
+		return build(seq, vals)
 	}
 }
 
@@ -300,7 +300,7 @@ func TestEngine_ScenarioTemplatedStepUnsentIterationSpendsNoSeq(t *testing.T) {
 
 		return seqBody(seq)
 	})
-	call := templatedScenario(tpl, []Step{{Method: "a/Two", Timeout: stepTimeout, Build: func(seq uint64) []byte {
+	call := templatedScenario(tpl, []Step{{Method: "a/Two", Timeout: stepTimeout, Build: func(seq uint64, _ []string) []byte {
 		stepBuilds.Add(1)
 
 		return seqBody(seq)

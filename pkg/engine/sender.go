@@ -59,7 +59,9 @@ const (
 	// target, and the same call will fail again.
 	CategoryClientError
 	// CategoryBadResponse means a reply reached the client and the client did
-	// not accept it: over its size limit, or a body it could not decompress.
+	// not accept it: over its size limit, a body it could not decompress, or, in
+	// a scenario, a reply that lacks the value a later step reads (Call.Extract;
+	// its code stays the target's OK).
 	// The target answered, so the latency is real; the call is not a success.
 	CategoryBadResponse
 )

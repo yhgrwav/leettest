@@ -2,53 +2,68 @@
 
 [← Back to docs](README.md)
 
-> Translated from [docs/ru/chaining.md](../ru/chaining.md) at feb2d1d, 2026-11-09. If they
-> differ, the Russian one is right.
+> Translated from [docs/ru/chaining.md](../ru/chaining.md) at feb2d1d, 2026-11-09, and updated
+> with it. If they differ, the Russian one is right.
 
-> **Status: steps after a call work since v0.9 (`scenario` and `steps`, see the
-> [reference](reference.md#scenario-steps-after-a-call)); passing reply fields to the next step is
-> planned and will replace the pools described below.** The example below is a draft of the format,
-> not a working config.
+> **Status: works since v0.9 (`scenario`, `steps` and `extract`, see the
+> [reference](reference.md#scenario-steps-after-a-call)).** The pools this page used to describe
+> are replaced by it: steps after a call, and a field of a reply passed into the next step.
 
 Half the methods of a real service cannot be called with static data. To load money transfers
 you need existing wallets: `Transfer` needs `from` and `to`, and those only come from
 `CreateWallet` replies.
 
 The usual way out is to prepare test data in advance. Where data can be prepared, that is the
-right path, and substitution from a file — a CSV or JSON dataset, one row per request — will
-arrive before chaining. But not everything can be prepared: one-time tokens, sessions, load on the
-creation itself. And a thousand transfers between the same two wallets are not load on transfers,
-they are load on one database row and its lock.
+right path, and substitution from a file is there for it: a CSV or JSON
+[dataset](reference.md#a-different-request-each-call-a-dataset), one row per request. But not
+everything can be prepared: one-time tokens, sessions, load on the creation itself. And a thousand
+transfers between the same two wallets are not load on transfers, they are load on one database row
+and its lock.
 
 The second way out is a script that creates a wallet and transfers from it right away. Then you
 measure the sequence "create plus transfer", not a single transfer; the share of each step cannot
 be taken from the combined latency unless the script times the steps separately.
 
-We solve it with pools. One call is declared a producer: a field is taken from its replies and
-collected into a named pool. Another call is a consumer: it puts values from the pool into its
-requests. Each runs at its own RPS and stays a separate line in the report.
+We solve it with a scenario. A call and the steps after it are one iteration: it goes in order, and
+each step stays a separate line in the report with its own percentiles. The call or a step names
+fields of its reply (`extract`), and the next step puts them into its request as
+`{{extract.<name>}}`. The values live in one iteration: each iteration has its own wallet.
 
 ```yaml
-calls:
-  - method: wallet.v1.WalletService/CreateWallet
-    rps: 5
-    extract:
-      wallets: wallet_id
-
-  - method: wallet.v1.WalletService/Transfer
-    rps: 50
-    data:
-      from: ${pool.wallets}
-      to: ${pool.wallets}
-      amount: 100
+load:
+  calls:
+    - method: wallet.v1.WalletService/CreateWallet
+      rps: 5
+      duration: 1m
+      templates: true
+      scenario: create-and-pay
+      extract:
+        wallet: wallet_id
+      steps:
+        - method: wallet.v1.WalletService/Transfer
+          templates: true
+          data:
+            from: "{{extract.wallet}}"
+            to: "{{uuid}}"
+            amount: 100
 ```
 
-You don't touch someone else's `.proto`: the link is described on our side, and the methods and
-fields are checked at start against reflection data — a missing field is a clear error before the
-run, not garbage replies in the middle of the load.
+You don't touch someone else's `.proto`: the path to the field is checked at start against
+reflection data (or `app.proto` / `app.protoset`) — a missing field is a clear error naming the
+path before the run, not garbage replies in the middle of the load. The same schema decides whether
+the value fits the field of the next step: an `int64` into an `int32` is refused, and nothing is cut
+silently.
 
-An open question, settled with the implementation, is what to do when the consumer is faster than
-the producer and the pool runs dry: wait, reduce load or fail. Silently reusing the last value is
-rejected as an option: the run would stop matching the stated plan without it being visible.
+What happens when the reply lacks the value. Sending an empty one quietly is the worst option: the
+run would stop matching the stated plan without it being visible. So such a reply is a
+`bad response`: the reply came and the client cannot use it. The iteration ends there, the step is
+"failed here", the later steps are not reached, and the code stays the `OK` the target sent. If
+every call of a method does this, the run is invalid, and the report says the replies lack the
+value.
 
-Its place in the plan — after ramp-up and datasets.
+This is not a pool of values shared between different calls: values do not pass from one iteration
+to another and do not pile up. For shared data prepared in advance there is the dataset.
+
+The details — field types, the text of a value, the rules of substitution — are in the
+[reference](reference.md#extract-a-value-from-an-earlier-reply). A runnable example for the
+reference stand is [`examples/scenario-extract.yaml`](../../examples/scenario-extract.yaml).

@@ -63,7 +63,8 @@ The config, a dataset, a report for `compare` and the settings file are UTF-8; a
 | `load.calls[].dataset_reuse` | `true` (left out) or `false`: with `false` no record goes out twice, in the whole process. Needs `dataset` |
 | `load.calls[].templates` | `true` or `false` (left out — `false`; a key with no value is an error): turns on the `{{uuid}}` and `{{seq}}` placeholders in `data`, see [below](#a-request-that-changes-templates). Needs at least one placeholder, in its `data` or in the `data` of a step with `templates: true`; not together with `dataset`. |
 | `load.calls[].scenario` | (not released yet) The scenario's name: the call itself becomes step 1, the `steps` follow it. Needs `steps`, and the other way round. Not empty, printed in the report as written; it must not equal a method. See [below](#scenario-steps-after-a-call) |
-| `load.calls[].steps` | (not released yet) A non-empty list of the steps after the call. Any key of a step other than the seven below is not supported yet and is an error |
+| `load.calls[].steps` | (not released yet) A non-empty list of the steps after the call. Any key of a step other than the eight below is not supported yet and is an error |
+| `load.calls[].extract` | (not released yet) A map `name: path`: values of this call's reply that the steps after it read as `{{extract.<name>}}`, see [below](#extract-a-value-from-an-earlier-reply). Only on a call with `steps`; a name is `[A-Za-z_][A-Za-z0-9_]*`, unique in the scenario and read by some later step. Not null, not empty |
 | `load.calls[].steps[].method` | (not released yet) The step's method, the full name; required. It is checked before the load, like a call's method |
 | `load.calls[].steps[].timeout` | (not released yet) How long to wait for the step's reply, as `load.calls[].timeout`; left out — `2s`, not the call's timeout |
 | `load.calls[].steps[].data` | (not released yet) The step's request body, written as `load.calls[].data` (see [below](#request-body)) and checked before the load against the step's own method; a wrong field is a config error, as for a call. Left out — an empty message. `{{…}}` in it is text only with `templates: false` or in a call without `templates: true`; see the next row. Needs reflection, or `app.proto` / `app.protoset`, as a call's `data` does |
@@ -71,6 +72,7 @@ The config, a dataset, a report for `compare` and the settings file are UTF-8; a
 | `load.calls[].steps[].dataset` | (not released yet) A file of request bodies for the step instead of its `data`, see [below](#dataset-in-a-step). Read and checked like a call's, against the step's own method. Not together with the step's `data` or `templates: true` |
 | `load.calls[].steps[].dataset_order` | (not released yet) `file` (left out) or `random`: the order of the step's records. Needs the step's `dataset` |
 | `load.calls[].steps[].dataset_seed` | (not released yet) The seed of a random order, a whole number from 0 to 9007199254740991, as `load.calls[].dataset_seed`. Needs `dataset_order: random` on the step |
+| `load.calls[].steps[].extract` | (not released yet) As `load.calls[].extract`, for the step's own reply: a later step reads the names as `{{extract.<name>}}`, see [below](#extract-a-value-from-an-earlier-reply). A name is taken once in a scenario, by the call or by one step |
 | `load.calls[].pass` | The limits a run must meet to pass: `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, see [below](#pass-limits). Left out — no limits |
 | `load.breakpoint.from` | The first step's rate of a breaking-point search, calls a second. A whole number from 1; a fractional one is a config error (`rps must be a whole number of requests: 100.5`). Required: left out or below 1 — `invalid breakpoint: breakpoint.from: breaking-point plan: from 0, want at least 1 rps`, exit 1. The first step must measure at least 100 calls, `from` × (`hold` − `settle`), otherwise it is refused before any load with `invalid breakpoint: the first step measures 8 calls, a p99 needs 100: raise from, hold or lower settle`. With `app.mode: real` the ramp runs from 0 to `from` |
 | `load.breakpoint.to` | No step goes above this rate. A whole number, at least `from` (equal to `from` — one step). Required: left out or below `from` — `invalid breakpoint: breakpoint.to: breaking-point plan: to 50 is below from 100`, exit 1. If the search reaches the last step and it holds, the outcome is `held_all` |
@@ -354,6 +356,72 @@ the call needs `templates: true` too, because the counter lives on the call.
   still the call's method.
 - **The body of a step is built in the worker** after the step before it ended; the time it takes
   counts as the step's start lag. `-dry-run` prints the call's body and no steps yet.
+
+### Extract: a value from an earlier reply
+
+*(Not released yet.)* A step can send what an earlier reply of its own iteration held: "create a
+wallet, then transfer from it". The call or a step names the fields of its reply with `extract`;
+a later step writes them into `data` as `{{extract.<name>}}`.
+
+```yaml
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 50
+      duration: 1m
+      templates: true
+      data:
+        wallet_id: "wallet-{{seq}}"
+      extract:
+        wallet: wallet_id
+        funds: amount
+      scenario: pay
+      steps:
+        - method: wallet.v1.WalletService/Transfer
+          templates: true
+          data:
+            from: "{{extract.wallet}}"
+            amount: "{{extract.funds}}"
+```
+
+A runnable one is [`examples/scenario-extract.yaml`](../../examples/scenario-extract.yaml) against
+the reference stand.
+
+- **The path** is field names joined by dots over the reply of the method (`balance.amount` is a
+  field of a message), each name by its JSON name and then by its proto name, as `data` keys are
+  looked up. It is checked before the load against the method's schema, so a typo is a config error
+  naming the path, not a bad reply in the middle of the load. Needs reflection, or `app.proto` /
+  `app.protoset`.
+- **What a path may lead to:** a string, a bool, any integer, a `float`, a `double` or an enum.
+  Refused: a repeated field, a map, a message (name one of its fields) and `bytes`, and a path that
+  goes through a repeated or a map field. A path may go through a message.
+- **The value is text:** a string as it is, an integer in decimal, a bool as `true`/`false`, an enum
+  by the name of its value (a number the schema does not have, in decimal), a `float` or a `double`
+  with the fewest digits that read back as the same number.
+- **Where it goes.** A string field takes `{{extract.<name>}}` among other text and placeholders. A
+  number field takes only a whole `"{{extract.<name>}}"`, and only from an integer that always fits
+  it: the same sign and no wider (`uint32` into `int64` fits; `int64` into `int32`, `uint64` into
+  `int64`, a signed into an unsigned and any float do not). So no value is ever cut or wrapped, and
+  a combination that could be is refused before the load. A bool, enum, float or bytes field takes
+  no placeholder, as before.
+- **The step needs `templates: true`** (and so does the call), as for `{{seq}}`; an
+  `{{extract.<name>}}` in a step without it is text, and the name read by nobody is an error, which
+  catches the mistake. A step reads only names an earlier step (or the call) extracts: its own name,
+  a later one or an unknown one is an error.
+- **Values live in one iteration.** They are not shared between iterations, and the iteration that
+  sent the reply is the one that uses it. A call without `steps` has nothing to read its extract.
+- **A reply without the value.** If a field of the path is not in the reply, or the reply does not
+  decode, the step is a `bad response`: the reply came and the client cannot use it. The iteration
+  stops there, so the step is "failed here" in the scenario block, and the later steps are not
+  reached. The code stays the `OK` the target sent (under "sent by the target" in the codes line;
+  `from_target: true` in JSON), the text of the error is `extract <name>: <path> not in the
+  response`. The proto3 rule applies: a field that holds zero is not on the wire and counts as
+  missing, except a `proto3 optional` field that was set (`0` is a value then). If the same field
+  comes twice, the last one is taken. When every call of a method misses, the run is invalid and
+  the report says the extract found nothing.
+- **Cost.** A step that extracts keeps its reply and decodes it in the worker; a call without
+  `extract` pays nothing. The decode and the build of the next body count as that step's start lag,
+  as with any template.
+- `methods[].templates.placeholders` stays `seq` and `uuid`: extract names are not listed, and a
+  call templated only for them shows an empty list.
 
 ### Dataset in a step
 

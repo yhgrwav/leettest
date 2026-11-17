@@ -175,7 +175,7 @@ func AttachMethods(
 		// What each extract name reads, by name, from the replies met so far. The
 		// call's own extract comes first: its method is resolved before the steps,
 		// for once, so that a step that reads it finds it.
-		sources := map[string]protoreflect.FieldDescriptor{}
+		sources := map[string]extractPlace{}
 
 		var (
 			method     *descriptor.Method
@@ -188,7 +188,12 @@ func AttachMethods(
 			resolved = true
 
 			if resolveErr == nil {
-				errs = append(errs, extractSources(method, fmt.Sprintf("load.calls[%d]", i), call.Extract, sources)...)
+				extract, extractErrs := extractSources(method, fmt.Sprintf("load.calls[%d]", i), call.Extract, sources)
+				errs = append(errs, extractErrs...)
+
+				// The call's reply is kept for the extract, and for nothing else.
+				calls[i].Extract = extract
+				calls[i].KeepResponse = extract != nil
 			}
 		}
 
@@ -206,7 +211,9 @@ func AttachMethods(
 				continue
 			}
 			if len(step.Extract) > 0 {
-				errs = append(errs, extractSources(stepMethod, fmt.Sprintf("load.calls[%d].steps[%d]", i, k), step.Extract, sources)...)
+				extract, extractErrs := extractSources(stepMethod, fmt.Sprintf("load.calls[%d].steps[%d]", i, k), step.Extract, sources)
+				errs = append(errs, extractErrs...)
+				calls[i].Next[k].Extract = extract
 			}
 			if step.Dataset != "" {
 				// The step's own method checks its own file: all or none, as the call's.
@@ -231,14 +238,14 @@ func AttachMethods(
 				// holds no ready body. The narrow field is remembered by its step.
 				at := fmt.Sprintf("load.calls[%d].steps[%d] (%s)", i, k, step.Method)
 
-				build, limit, tplErr := compileTemplate(stepMethod, at, step.Data, sources)
+				builder, limit, tplErr := compileTemplate(stepMethod, at, step.Data, sources)
 				if tplErr != nil {
 					errs = append(errs, tplErr)
 
 					continue
 				}
 
-				calls[i].Next[k].Build = build
+				calls[i].Next[k].Build = builder.buildWith
 				narrowest[i].add(limit, fmt.Sprintf("%s (steps[%d])", calls[i].Next[k].Method, k))
 
 				continue
@@ -254,6 +261,9 @@ func AttachMethods(
 
 			calls[i].Next[k].Payload = body
 		}
+
+		// One place of the iteration's vals for each name of the scenario.
+		calls[i].Values = len(sources)
 
 		if !resolved {
 			method, resolveErr = resolver.Resolve(ctx, call.Method)
@@ -361,30 +371,7 @@ func AttachMethods(
 		narrowest[i].narrow(calls[i].Template)
 	}
 
-	if len(errs) == 0 && extractIn(cfg) {
-		// Every check passed; the run side of extract is not there yet.
-		return unchecked, methods, ErrExtractNotYet
-	}
-
 	return unchecked, methods, errors.Join(errs...)
-}
-
-// extractIn says some call or step of cfg has an extract.
-func extractIn(cfg *config.MasterConfig) bool {
-	for i := range cfg.Load.Calls {
-		call := &cfg.Load.Calls[i]
-		if len(call.Extract) > 0 {
-			return true
-		}
-
-		for _, step := range call.Steps {
-			if len(step.Extract) > 0 {
-				return true
-			}
-		}
-	}
-
-	return false
 }
 
 // checkStepMethod asks the target about step k (counting from 0, after the
