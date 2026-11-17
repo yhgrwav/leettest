@@ -83,23 +83,32 @@ type DryRunPrinter struct {
 
 // Header prints the first line.
 func (p *DryRunPrinter) Header() {
-	if p.Total == 1 {
+	switch {
+	case p.Scenarios > 0 && p.Scenarios == p.Total && p.Total == 1:
+		fmt.Fprintln(p.W, "dry run: 1 call, one iteration, nothing measured")
+	case p.Scenarios > 0 && p.Scenarios == p.Total:
+		fmt.Fprintf(p.W, "dry run: %d calls, one iteration each, nothing measured\n", p.Total)
+	case p.Scenarios > 0:
+		fmt.Fprintf(p.W, "dry run: %d calls, one request per plain call and one iteration per scenario, nothing measured\n", p.Total)
+	case p.Total == 1:
 		fmt.Fprintln(p.W, "dry run: 1 call, one request, nothing measured")
-
-		return
+	default:
+		fmt.Fprintf(p.W, "dry run: %d calls, one request each, nothing measured\n", p.Total)
 	}
-
-	fmt.Fprintf(p.W, "dry run: %d calls, one request each, nothing measured\n", p.Total)
 }
 
-// Call prints the next call's block.
+// Call prints the next block: a plain call, or one step of a scenario. The
+// steps of a scenario are one call of the config and share its number.
 func (p *DryRunPrinter) Call(call DryRunCall) {
-	p.printed++
+	if call.Scenario == "" || call.Step <= 1 {
+		p.printed++
+	}
+
 	out := call.Outcome
 
 	var b strings.Builder
 
-	fmt.Fprintf(&b, "%d/%d %s: %s, %s", p.printed, p.Total, call.Method, out.Category.Name(), out.Code)
+	b.WriteString(p.heading(call.Scenario, call.Step, call.Steps, call.Method) + ": " + out.Category.Name() + ", " + out.Code)
 
 	if out.Category != engine.CategorySuccess {
 		// The report's words (notes.go): a code the client set is not the target's answer.
@@ -159,7 +168,19 @@ func (p *DryRunPrinter) Call(call DryRunCall) {
 
 // NotReached prints the block of a step the iteration never got to, because an
 // earlier step did not succeed.
-func (p *DryRunPrinter) NotReached(_ string, _, _ int, _ string) {}
+func (p *DryRunPrinter) NotReached(scenario string, step, steps int, method string) {
+	fmt.Fprintf(p.W, "%s: not reached\n", p.heading(scenario, step, steps, method))
+}
+
+// heading is the start of a block's first line: the number of the call of the
+// total, then for a step of a scenario its name and place, and the method.
+func (p *DryRunPrinter) heading(scenario string, step, steps int, method string) string {
+	if scenario == "" {
+		return fmt.Sprintf("%d/%d %s", p.printed, p.Total, method)
+	}
+
+	return fmt.Sprintf("%d/%d scenario %s, step %d of %d, %s", p.printed, p.Total, scenario, step, steps, method)
+}
 
 // Metadata prints the metadata line, from the values as the config wrote them.
 func (p *DryRunPrinter) Metadata(raw map[string]string) {
