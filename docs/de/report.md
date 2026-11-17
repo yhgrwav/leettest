@@ -2,7 +2,7 @@
 
 [← Zur Dokumentation](README.md)
 
-> Übersetzt aus [docs/ru/report.md](../ru/report.md) bei 4cba437, 2026-11-10. Bei Abweichungen gilt die
+> Übersetzt aus [docs/ru/report.md](../ru/report.md) bei 46c2f53, 2026-11-17. Bei Abweichungen gilt die
 > russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/report.md).
@@ -66,7 +66,9 @@ lebendes Backend antwortet `UNAVAILABLE`, und der Client unterscheidet das eine 
   an Kapazität).
 - `bad response` — die Antwort kam, aber der Client nahm sie nicht an: größer als
   `app.max_response_size` oder mit einer Kodierung komprimiert, die der Client nicht angekündigt
-  hatte, oder sie verletzt die Unarität: OK ohne Nachricht oder eine überzählige Nachricht.
+  hatte, oder sie verletzt die Unarität: OK ohne Nachricht oder eine überzählige Nachricht; oder, in
+  einem Szenario, die Antwort enthält den Wert nicht, den der nächste Schritt liest (`extract`): der
+  Code bleibt dabei `OK`, wie ihn das Ziel geschickt hat.
 - `client error` — der Client weigerte sich selbst zu senden: Die Anfrage ließ sich nicht kodieren,
   der Codec oder ein Interceptor fiel aus.
 

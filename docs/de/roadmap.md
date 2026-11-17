@@ -2,7 +2,7 @@
 
 [← Zur Übersicht](README.md)
 
-> Übersetzt aus [docs/ru/roadmap.md](../ru/roadmap.md) bei 0e32d00, 2026-11-10. Bei Abweichungen gilt die
+> Übersetzt aus [docs/ru/roadmap.md](../ru/roadmap.md) bei 46c2f53, 2026-11-17. Bei Abweichungen gilt die
 > russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/roadmap.md).
@@ -16,8 +16,8 @@ Das sind Pläne, keine zugesagten Termine. Was heute funktioniert, steht in der 
 
 ## Später
 
-- **[Verkettung von Aufrufen](chaining.md)**: ein Feld aus der Antwort einer Methode in die Anfrage
-  einer anderen.
+- ~~**[Verkettung von Aufrufen](chaining.md)**: ein Feld aus der Antwort einer Methode in die Anfrage
+  einer anderen.~~ Fertig (nicht veröffentlicht): `extract` in einem Szenario, siehe [Verkettung von Aufrufen](chaining.md).
 - **Token-Erneuerung** während eines langen Laufs.
 - ~~**Metrik-Export** nach Prometheus.~~ Fertig in v0.6: [Prometheus-Metriken](reference.md#prometheus-metriken).
 

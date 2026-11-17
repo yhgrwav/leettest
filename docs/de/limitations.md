@@ -2,7 +2,7 @@
 
 [← Zur Dokumentation](README.md)
 
-> Übersetzt aus [docs/ru/limitations.md](../ru/limitations.md) bei 3a9dbba, 2026-11-10. Bei Abweichungen gilt die
+> Übersetzt aus [docs/ru/limitations.md](../ru/limitations.md) bei 46c2f53, 2026-11-17. Bei Abweichungen gilt die
 > russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/limitations.md).
@@ -79,9 +79,10 @@ selbst oder kann es nicht. Hier steht, was genau.
 ## Was es noch nicht kann
 
 - **Nur Unary-Aufrufe.** Methoden mit Streaming werden beim Laden abgelehnt.
-- **Verkettung von Aufrufen.** Ein Feld aus der Antwort einer Methode lässt sich nicht in die
-  Anfrage einer anderen einsetzen — geplant, siehe [Verkettung von Aufrufen](chaining.md) und
-  [Plan](roadmap.md).
+- ~~**Verkettung von Aufrufen.** Ein Feld aus der Antwort einer Methode lässt sich nicht in die
+  Anfrage einer anderen einsetzen.~~ Das geht, innerhalb eines Szenarios und einer Iteration (nicht
+  veröffentlicht): siehe [Verkettung von Aufrufen](chaining.md). Einen gemeinsamen Pool von Werten
+  für Aufrufe mit verschiedenem Tempo gibt es nicht.
 - **Token-Erneuerung** in einem langen Lauf — geplant, siehe [Plan](roadmap.md).
 - **Jeder Aufruf einer Methode geht mit demselben Body raus,** solange kein `dataset` gesetzt ist.
   Mit `dataset` sind die Anfragen verschieden, doch das heißt nicht, dass das Ziel ebenso viele
