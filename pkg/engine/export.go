@@ -174,6 +174,8 @@ func (s *Stats) ExportInto(dst *ExportView, buf *metrics.Buffer, bounds []time.D
 		dst.Methods = dst.Methods[:len(methods)]
 	}
 
+	keys := scenarioKeys(calls)
+
 	for i := range methods {
 		src := &methods[i]
 		m := &dst.Methods[i]
@@ -181,7 +183,7 @@ func (s *Stats) ExportInto(dst *ExportView, buf *metrics.Buffer, bounds []time.D
 		m.Name = src.name
 		m.PlannedRPS = 0
 		if !ended && (!sendingEnded || elapsed < sendingEnd) {
-			if call := callOf(calls, src.name); call != nil {
+			if call := callOf(calls, keys, src.name); call != nil {
 				m.PlannedRPS = PlannedRate(call.Stages, elapsed)
 			}
 		}
@@ -216,11 +218,29 @@ func (s *Stats) ExportInto(dst *ExportView, buf *metrics.Buffer, bounds []time.D
 	}
 }
 
-// callOf is the call of the plan for method, or nil when the plan has none.
-func callOf(calls []Call, method string) *Call {
+// callOf is the call of the plan whose row is key, or nil when the plan has
+// none. keys are the rows of RowKeys(calls), nil for a plan with no scenario,
+// whose rows are the methods.
+func callOf(calls []Call, keys [][]string, key string) *Call {
 	for i := range calls {
-		if calls[i].Method == method {
+		row := calls[i].Method
+		if len(keys) > 0 {
+			row = keys[i][0]
+		}
+		if row == key {
 			return &calls[i]
+		}
+	}
+
+	return nil
+}
+
+// scenarioKeys is RowKeys(calls) when some call is a scenario, nil otherwise:
+// a plain plan allocates nothing per scrape.
+func scenarioKeys(calls []Call) [][]string {
+	for i := range calls {
+		if calls[i].Scenario != "" {
+			return RowKeys(calls)
 		}
 	}
 

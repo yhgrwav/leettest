@@ -97,7 +97,7 @@ func TestRun_ARepeatedMethodInAScenarioHasARowPerStep(t *testing.T) {
 			Stages: []Stage{{StartRPS: 100, TargetRPS: 100, Duration: 100 * time.Millisecond}},
 		}},
 		Sender:      sender,
-		MaxInFlight: 256,
+		MaxInFlight: 1024, // 100 rps × (1 + 2 + 3) s of timeouts
 	})
 
 	headKey, tailKey := smGet+" (s1, step 1)", smGet+" (s1, step 3)"
@@ -215,8 +215,11 @@ func TestRun_APlainCallAndAStepOfOneMethodAreTwoRows(t *testing.T) {
 	if plain.Sent != 10 || step.Sent != 5 {
 		t.Errorf("sent: plain %d, step %d; want 10 and 5", plain.Sent, step.Sent)
 	}
-	if math.Abs(plain.RPS-10) > 0.5 || math.Abs(step.RPS-20) > 0.5 {
-		t.Errorf("sent/s: plain %.2f over its 1 s, step %.2f over its head's 0.25 s; want 10 and 20", plain.RPS, step.RPS)
+	// The plain call's window is the sending window, which ends at its last send
+	// (0.9 s of its 1 s plan): 10/0.9 = 11.1 at most. The step's is its head's
+	// plan, 0.25 s: 5 over 0.25 s is 20, over the plain call's 1 s it is 5.
+	if math.Abs(plain.RPS-10) > 1.5 || math.Abs(step.RPS-20) > 0.5 {
+		t.Errorf("sent/s: plain %.2f over its plan, step %.2f over its head's 0.25 s; want 10 and 20", plain.RPS, step.RPS)
 	}
 
 	if plain.Dataset == nil || step.Dataset == nil {
@@ -292,7 +295,7 @@ func TestRun_SeqOverflowNamesTheRowKeyOfARepeatedTemplatedHead(t *testing.T) {
 			Stages: []Stage{{StartRPS: 200, TargetRPS: 200, Duration: time.Second}},
 		}},
 		Sender:      &scripted{},
-		MaxInFlight: 256,
+		MaxInFlight: 1024, // 200 rps × 3 s of timeouts
 	})
 	if err != nil {
 		t.Fatalf("new: %v (a method repeated in a run is allowed)", err)
@@ -360,7 +363,7 @@ func TestRun_DatasetExhaustedNamesTheRowKeyOfARepeatedHead(t *testing.T) {
 			Stages: []Stage{{StartRPS: 100, TargetRPS: 100, Duration: 100 * time.Millisecond}},
 		}},
 		Sender:      &scripted{},
-		MaxInFlight: 256,
+		MaxInFlight: 1024, // 100 rps × 3 s of timeouts
 	})
 
 	if report.DatasetExhausted == nil {

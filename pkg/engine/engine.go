@@ -70,6 +70,10 @@ type Call struct {
 	// Values is how many names the scenario extracts in all: the length of the
 	// slice an iteration makes. Zero: no slice is made.
 	Values int
+
+	// key is the key of the call's report row (RowKeys), stored by New; empty
+	// means Method, as for a call built by hand.
+	key string
 }
 
 // extractOf is the function that takes the values out of the reply of step k of
@@ -100,6 +104,9 @@ type Step struct {
 	// Payloads: Payload.
 	Payloads [][]byte
 	Dataset  *DatasetRef
+
+	// key is as Call.key, for the step's row.
+	key string
 }
 
 // payload is the body of the call's next request: the record at S mod n, where
@@ -190,7 +197,7 @@ func (c *Call) seqOverflow() error {
 		return nil
 	}
 
-	return &SeqOverflowError{Method: c.Method, Limit: c.Template.Max, LimitAt: c.Template.MaxAt}
+	return &SeqOverflowError{Method: c.rowKey(), Limit: c.Template.Max, LimitAt: c.Template.MaxAt}
 }
 
 // SeqOverflowError is what the dispatcher and the scheduler return when the
@@ -412,16 +419,19 @@ func CheckOptions(opts Options) error {
 	if opts.MaxInFlight < 1 {
 		return fmt.Errorf("%w: %d", ErrInvalidInFlightCap, opts.MaxInFlight)
 	}
-	// Scenario names, methods and steps' methods are one namespace: all of them
-	// are keys of the report.
-	first := make(map[string]int, len(opts.Calls))
-	claim := func(i int, name string) error {
-		if j, ok := first[name]; ok {
-			return fmt.Errorf("call %d: %w: %s, as call %d", i, ErrDuplicateMethod, name, j)
-		}
-		first[name] = i
-
-		return nil
+	// The names of scenarios, the keys of the rows (RowKeys) and the methods of
+	// all calls and steps are one namespace, in which a method may repeat (each
+	// repeat has a row of its own) and nothing else may: two plain calls of one
+	// method have one key, a scenario named as another scenario, a method or a
+	// key would be read as that row.
+	var (
+		keys      = RowKeys(opts.Calls)
+		scenarios = make(map[string]int, len(opts.Calls))
+		rows      = make(map[string]int, len(opts.Calls))
+		methods   = make(map[string]int, len(opts.Calls))
+	)
+	clash := func(i, j int, name string) error {
+		return fmt.Errorf("call %d: %w: %s, as call %d", i, ErrDuplicateMethod, name, j)
 	}
 	for i := range opts.Calls {
 		call := &opts.Calls[i]
@@ -432,16 +442,30 @@ func CheckOptions(opts Options) error {
 			return fmt.Errorf("call %d: %w: %s", i, ErrScenario, call.Scenario)
 		}
 		if call.Scenario != "" {
-			if err := claim(i, call.Scenario); err != nil {
-				return err
+			for _, taken := range []map[string]int{scenarios, methods, rows} {
+				if j, ok := taken[call.Scenario]; ok {
+					return clash(i, j, call.Scenario)
+				}
 			}
+			scenarios[call.Scenario] = i
 		}
-		if err := claim(i, call.Method); err != nil {
-			return err
-		}
-		for k := range call.Next {
-			if err := claim(i, call.Next[k].Method); err != nil {
-				return err
+		for k := range keys[i] {
+			method := call.Method
+			if k > 0 {
+				method = call.Next[k-1].Method
+			}
+			if j, ok := rows[keys[i][k]]; ok {
+				return clash(i, j, keys[i][k])
+			}
+			if j, ok := scenarios[keys[i][k]]; ok {
+				return clash(i, j, keys[i][k])
+			}
+			if j, ok := scenarios[method]; ok {
+				return clash(i, j, method)
+			}
+			rows[keys[i][k]] = i
+			if _, ok := methods[method]; !ok {
+				methods[method] = i
 			}
 		}
 		if err := call.checkStepDatasets(); err != nil {
@@ -459,7 +483,7 @@ func New(opts Options) (*Engine, error) {
 	if err := CheckOptions(opts); err != nil {
 		return nil, err
 	}
-	opts.Calls = countedCalls(opts.Calls)
+	opts.Calls = countedCalls(keyedCalls(opts.Calls))
 
 	e := &Engine{
 		opts:    opts,
@@ -516,8 +540,8 @@ func (e *Engine) targetRates() map[string]int {
 
 	for _, call := range e.opts.Calls {
 		for _, stage := range call.Stages {
-			if stage.TargetRPS > rates[call.Method] {
-				rates[call.Method] = stage.TargetRPS
+			if stage.TargetRPS > rates[call.rowKey()] {
+				rates[call.rowKey()] = stage.TargetRPS
 			}
 		}
 	}
@@ -596,26 +620,32 @@ func (e *Engine) Report() Report {
 
 	for i := range report.Methods {
 		m := &report.Methods[i]
+		m.GRPCMethod = m.Method
 		for _, call := range e.opts.Calls {
-			for _, step := range call.Next {
-				if step.Method == m.Method {
+			for k, step := range call.Next {
+				if step.rowKey() == m.Method {
+					m.Scenario, m.Step, m.GRPCMethod = call.Scenario, k+2, step.Method
 					m.Timeout = step.Timeout
 					if step.Dataset != nil {
-						m.Dataset = e.datasetReport(step.Method, step.Dataset, len(step.Payloads))
+						m.Dataset = e.datasetReport(step.rowKey(), step.Dataset, len(step.Payloads))
 					}
 				}
 			}
-			if call.Method != m.Method {
+			if call.rowKey() != m.Method {
 				continue
 			}
 
+			m.GRPCMethod = call.Method
+			if call.Scenario != "" {
+				m.Scenario, m.Step = call.Scenario, 1
+			}
 			m.Timeout = call.Timeout
 			m.PlannedDuration = 0
 			for _, stage := range call.Stages {
 				m.PlannedDuration += stage.Duration
 			}
 			if call.Dataset != nil {
-				m.Dataset = e.datasetReport(call.Method, call.Dataset, len(call.Payloads))
+				m.Dataset = e.datasetReport(call.rowKey(), call.Dataset, len(call.Payloads))
 			}
 			if call.Template != nil {
 				m.Templates = e.templatesReport(call)
@@ -630,14 +660,14 @@ func (e *Engine) Report() Report {
 	return report
 }
 
-// datasetReport is how the call or step of method used its file of n records,
+// datasetReport is how the call or step of row key used its file of n records,
 // from S at the end of this run: the requests (for a step, iterations) handed
 // out in the process to that moment, warm-up included. While the run is on, S
 // is the counter's now.
-func (e *Engine) datasetReport(method string, ref *DatasetRef, n int) *DatasetReport {
+func (e *Engine) datasetReport(key string, ref *DatasetRef, n int) *DatasetReport {
 	s := ref.Counter.Handed()
 	if ended := e.handed.Load(); ended != nil {
-		s = (*ended)[method]
+		s = (*ended)[key]
 	}
 
 	report := &DatasetReport{File: ref.File, SHA256: ref.SHA256, Records: n, Used: min(s, n)}
@@ -657,7 +687,7 @@ func (e *Engine) datasetReport(method string, ref *DatasetRef, n int) *DatasetRe
 func (e *Engine) templatesReport(call Call) *TemplatesReport {
 	n := call.Template.Counter.Handed()
 	if ended := e.handed.Load(); ended != nil {
-		n = (*ended)[call.Method]
+		n = (*ended)[call.rowKey()]
 	}
 
 	return &TemplatesReport{Placeholders: call.Template.Placeholders, LastSeq: uint64(n)} //nolint:gosec // n is Handed(), or a copy of it at the end: a count from zero, never negative
@@ -670,14 +700,14 @@ func (e *Engine) noteHanded() {
 	for _, call := range e.opts.Calls {
 		switch {
 		case call.Dataset != nil:
-			ended[call.Method] = call.Dataset.Counter.Handed()
+			ended[call.rowKey()] = call.Dataset.Counter.Handed()
 		case call.Template != nil:
-			ended[call.Method] = call.Template.Counter.Handed()
+			ended[call.rowKey()] = call.Template.Counter.Handed()
 		}
 
 		for k := range call.Next {
 			if ref := call.Next[k].Dataset; ref != nil {
-				ended[call.Next[k].Method] = ref.Counter.Handed()
+				ended[call.Next[k].rowKey()] = ref.Counter.Handed()
 			}
 		}
 	}
@@ -810,14 +840,14 @@ func (e *Engine) Run(ctx context.Context) error {
 	methods := make([]string, 0, len(e.opts.Calls))
 	for i := range e.opts.Calls {
 		call := &e.opts.Calls[i]
-		methods = append(methods, call.Method)
-		e.stats.setMethodStages(call.Method, call.Stages)
+		methods = append(methods, call.rowKey())
+		e.stats.setMethodStages(call.rowKey(), call.Stages)
 
 		if call.Scenario != "" {
 			steps := make([]string, 0, len(call.Next)+1)
-			steps = append(steps, call.Method)
+			steps = append(steps, call.rowKey())
 			for k := range call.Next {
-				steps = append(steps, call.Next[k].Method)
+				steps = append(steps, call.Next[k].rowKey())
 			}
 			methods = append(methods, steps[1:]...)
 			e.stats.setScenario(call.Scenario, steps)
@@ -830,7 +860,7 @@ func (e *Engine) Run(ctx context.Context) error {
 			for _, stage := range call.Stages {
 				planned += stage.Duration
 			}
-			e.stats.setMethodPlan(call.Method, max(0, planned-e.opts.Warmup))
+			e.stats.setMethodPlan(call.rowKey(), max(0, planned-e.opts.Warmup))
 		}
 	}
 	e.stats.Reserve(e.timelineSpan(), methods...)

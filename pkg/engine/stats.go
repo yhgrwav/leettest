@@ -123,7 +123,8 @@ type DatasetReport struct {
 
 // DatasetExhausted says which call's file ran out and so ended the run.
 type DatasetExhausted struct {
-	// Method is the call's gRPC path as in Call.Method.
+	// Method is the row key of the call or step (RowKeys): its gRPC path, with
+	// the scenario and step when the method repeats in the run.
 	Method string
 	// File is the dataset path as the config wrote it.
 	File string
@@ -132,7 +133,8 @@ type DatasetExhausted struct {
 // SeqOverflow says which call's seq reached the limit of its field and so
 // ended the run.
 type SeqOverflow struct {
-	// Method is the call's gRPC path as in Call.Method.
+	// Method is the row key of the call (RowKeys): its gRPC path, with the
+	// scenario and step when the method repeats in the run.
 	Method string
 	// Limit is the largest seq the field can hold.
 	Limit uint64

@@ -112,16 +112,18 @@ func checkInFlightBudget(calls []Call, maxInFlight int) error {
 		unbounded                                []string
 	)
 
-	for _, call := range calls {
+	keys := RowKeys(calls)
+
+	for i, call := range calls {
 		rps := peakRPS(call)
 		if rps == 0 {
 			continue
 		}
 
 		// Zero means no deadline, as with Request.Deadline; a negative timeout
-		// sets none either.
+		// sets none either. A call is named by its row key.
 		if call.Timeout <= 0 {
-			unbounded = append(unbounded, call.Method)
+			unbounded = append(unbounded, keys[i][0])
 
 			continue
 		}
@@ -130,9 +132,9 @@ func checkInFlightBudget(calls []Call, maxInFlight int) error {
 		// give the slot back late: the wait is Σ step timeouts, the margin one
 		// per step.
 		hold, margin, stepless := call.Timeout, ReleaseMargin, true
-		for _, step := range call.Next {
+		for k, step := range call.Next {
 			if step.Timeout <= 0 {
-				unbounded = append(unbounded, step.Method)
+				unbounded = append(unbounded, keys[i][k+1])
 				stepless = false
 
 				continue

@@ -21,8 +21,10 @@ import (
 	"github.com/yhgrwav/leettest/pkg/errstop"
 )
 
-// stopPlannedRate is the rate the plan of the tripped method offered at the
-// moment of the trip; nil when there is no trip, the method is not among
+// stopPlannedRate is the rate the plan of the tripped row offered at the
+// moment of the trip (t.Method is a row key, engine.RowKeys: a repeated head
+// is told apart from a plain call of the same method); nil when there is no
+// trip, the row is not among
 // calls, or the plan had ended by then (At is at or past the sum of its
 // stages: the timeouts of the tail come exactly there). A method that is not
 // among calls or has no stages is the same nil, "the plan had ended": a stop
@@ -33,8 +35,10 @@ func stopPlannedRate(calls []engine.Call, t *errstop.Trip) *float64 {
 		return nil
 	}
 
-	for _, call := range calls {
-		if call.Method != t.Method {
+	keys := engine.RowKeys(calls)
+
+	for i, call := range calls {
+		if keys[i][0] != t.Method {
 			continue
 		}
 

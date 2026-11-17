@@ -103,7 +103,7 @@ func (d *Dispatcher) Run(ctx context.Context, out chan<- Request) error {
 		}
 
 		if c.call.spent() {
-			return &DatasetExhaustedError{Method: c.call.Method, File: c.call.Dataset.File}
+			return &DatasetExhaustedError{Method: c.call.rowKey(), File: c.call.Dataset.File}
 		}
 
 		if c.call.Template != nil {

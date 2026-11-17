@@ -127,7 +127,7 @@ func runPool(ctx context.Context, sender Sender, maxInFlight int, feed func(in c
 // scenarioReq is the request of an iteration ticking at tick: first is step 1,
 // next the steps after it.
 func scenarioReq(tick time.Time, scenario string, first Step, next ...Step) Request {
-	req := Request{Method: first.Method, scenario: &Call{Scenario: scenario, Next: next}, ScheduledAt: tick}
+	req := Request{Method: first.Method, scenario: &Call{Method: first.Method, Scenario: scenario, Next: next}, ScheduledAt: tick}
 	if first.Timeout > 0 {
 		req.Deadline = tick.Add(first.Timeout)
 	}
