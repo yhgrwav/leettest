@@ -3,7 +3,7 @@
 [Русский](../ru/reference.md) · [English](../en/reference.md) · [Deutsch](reference.md) · [简体中文](../zh-CN/reference.md)
 [← Startseite](README.md)
 
-> Übersetzt aus [docs/ru/reference.md](../ru/reference.md) bei 01f067b, 2026-11-17. Bei
+> Übersetzt aus [docs/ru/reference.md](../ru/reference.md) bei 46c2f53, 2026-11-17. Bei
 > Abweichungen gilt die russische Fassung.
 > **Kann hinterherhinken:** Die deutsche Fassung wird vor jedem Release nachgezogen. Aktuell ist
 > die [englische](../en/reference.md).
@@ -65,7 +65,8 @@ Die Konfiguration, ein Dataset, ein Bericht für `compare` und die Einstellungsd
 | `load.calls[].dataset_reuse` | `true` (weggelassen) oder `false`: bei `false` geht kein Datensatz im ganzen Prozess zweimal raus. Braucht `dataset` |
 | `load.calls[].templates` | `true` oder `false` (weggelassen — `false`; ein Schlüssel ohne Wert ist ein Fehler): schaltet die Platzhalter `{{uuid}}` und `{{seq}}` in `data` ein, siehe [unten](#eine-anfrage-die-sich-ändert-templates). Braucht mindestens einen Platzhalter — in ihrem `data` oder im `data` eines Schritts mit `templates: true`; nicht zusammen mit `dataset`. |
 | `load.calls[].scenario` | (nicht veröffentlicht) Der Name eines Szenarios: der Aufruf selbst wird Schritt 1, danach kommen die `steps`. Braucht `steps` und umgekehrt. Der Name ist nicht leer, der Bericht gibt ihn unverändert aus; er darf nicht mit einer Methode übereinstimmen. Siehe [unten](#szenario-schritte-nach-dem-aufruf) |
-| `load.calls[].steps` | (nicht veröffentlicht) Eine nicht leere Liste von Schritten nach dem Aufruf. Jeder Schlüssel eines Schritts außer den sieben unten wird noch nicht unterstützt — ein Fehler |
+| `load.calls[].steps` | (nicht veröffentlicht) Eine nicht leere Liste von Schritten nach dem Aufruf. Jeder Schlüssel eines Schritts außer den acht unten wird noch nicht unterstützt — ein Fehler |
+| `load.calls[].extract` | (nicht veröffentlicht) Ein Wörterbuch `name: pfad`: Werte aus der Antwort dieses Aufrufs, die die Schritte danach als `{{extract.<name>}}` lesen, siehe [unten](#extract-ein-wert-aus-einer-früheren-antwort). Nur bei einem Aufruf mit `steps`; der Name ist `[A-Za-z_][A-Za-z0-9_]*`, im Szenario eindeutig und von irgendeinem folgenden Schritt gelesen. Nicht null und nicht leer |
 | `load.calls[].steps[].method` | (nicht veröffentlicht) Die Methode des Schritts, voller Name; Pflicht. Wird vor der Last geprüft, wie die Methode des Aufrufs |
 | `load.calls[].steps[].timeout` | (nicht veröffentlicht) Wie lange auf die Antwort des Schritts gewartet wird, wie `load.calls[].timeout`; weggelassen — `2s`, nicht der Timeout des Aufrufs |
 | `load.calls[].steps[].data` | (nicht veröffentlicht) Der Anfrage-Body des Schritts, geschrieben wie `load.calls[].data` (siehe [unten](#anfrage-body)) und vor der Last gegen die eigene Methode des Schritts geprüft; ein falsches Feld ist ein Konfigurationsfehler, wie beim Aufruf. Weggelassen — eine leere Nachricht. `{{…}}` darin ist nur Text bei `templates: false` oder bei einem Aufruf ohne `templates: true`; siehe die nächste Zeile. Braucht Reflection oder `app.proto` / `app.protoset`, wie `data` des Aufrufs |
@@ -73,6 +74,7 @@ Die Konfiguration, ein Dataset, ein Bericht für `compare` und die Einstellungsd
 | `load.calls[].steps[].dataset` | (nicht veröffentlicht) Eine Datei mit Anfrage-Bodies für den Schritt statt seines `data`, siehe [unten](#dataset-im-schritt). Wird gelesen und geprüft wie beim Aufruf, gegen die eigene Methode des Schritts. Zusammen mit `data` des Schritts und mit `templates: true` nicht erlaubt |
 | `load.calls[].steps[].dataset_order` | (nicht veröffentlicht) `file` (weggelassen) oder `random`: die Reihenfolge der Datensätze des Schritts. Braucht `dataset` des Schritts |
 | `load.calls[].steps[].dataset_seed` | (nicht veröffentlicht) Seed der zufälligen Reihenfolge, eine ganze Zahl von 0 bis 9007199254740991, wie `load.calls[].dataset_seed`. Braucht `dataset_order: random` am Schritt |
+| `load.calls[].steps[].extract` | (nicht veröffentlicht) Wie `load.calls[].extract`, für die Antwort des Schritts selbst: Der nächste Schritt liest die Namen als `{{extract.<name>}}`, siehe [unten](#extract-ein-wert-aus-einer-früheren-antwort). Ein Name wird im Szenario einmal vergeben: vom Aufruf oder von einem Schritt |
 | `load.calls[].pass` | Die Grenzen, die ein Lauf einhalten muss, um zu bestehen: `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, siehe [unten](#grenzen-pass). Weggelassen — keine Grenzen |
 | `load.breakpoint.from` | Die Rate der ersten Stufe der Bruchpunkt-Suche, Aufrufe pro Sekunde. Eine ganze Zahl ab 1; eine Dezimalzahl ist ein Konfigurationsfehler (`rps must be a whole number of requests: 100.5`). Pflicht: fehlend oder unter 1 — `invalid breakpoint: breakpoint.from: breaking-point plan: from 0, want at least 1 rps`, Exit 1. Die erste Stufe muss mindestens 100 Aufrufe messen, `from` × (`hold` − `settle`), sonst vor der Last der Fehler `invalid breakpoint: the first step measures 8 calls, a p99 needs 100: raise from, hold or lower settle`. Mit `app.mode: real` geht ein Anlauf von 0 auf `from` |
 | `load.breakpoint.to` | Über dieser Rate gibt es keine Stufen. Eine ganze Zahl, nicht unter `from` (gleich `from` — eine Stufe). Pflicht: fehlend oder unter `from` — `invalid breakpoint: breakpoint.to: breaking-point plan: to 50 is below from 100`, Exit 1. Erreicht die Suche die letzte Stufe und hält sie, lautet das Ergebnis `held_all` |
@@ -366,6 +368,76 @@ und keine Liste; `null` — der Aufruf hat keine Templates.
   `seq_overflow.method` weiterhin die Methode des Aufrufs.
 - **Der Body des Schritts wird im Worker gebaut**, nachdem der vorige Schritt zu Ende ist; die Bauzeit
   geht in den Startverzug des Schritts. `-dry-run` gibt den Body des Aufrufs aus, bisher ohne Schritte.
+
+### Extract: ein Wert aus einer früheren Antwort
+
+*(Nicht veröffentlicht.)* Ein Schritt kann senden, was eine frühere Antwort seiner eigenen Iteration
+enthielt: „ein Wallet anlegen, dann davon überweisen“. Ein Aufruf oder Schritt benennt Felder seiner
+Antwort mit dem Schlüssel `extract`, und der nächste Schritt schreibt sie in `data` als
+`{{extract.<name>}}`.
+
+```yaml
+    - method: wallet.v1.WalletService/GetBalance
+      rps: 50
+      duration: 1m
+      templates: true
+      data:
+        wallet_id: "wallet-{{seq}}"
+      extract:
+        wallet: wallet_id
+        funds: amount
+      scenario: pay
+      steps:
+        - method: wallet.v1.WalletService/Transfer
+          templates: true
+          data:
+            from: "{{extract.wallet}}"
+            amount: "{{extract.funds}}"
+```
+
+Ein lauffähiges Beispiel am Referenz-Stand ist
+[`examples/ru/scenario-extract.yaml`](../../examples/ru/scenario-extract.yaml) (die Kommentare sind
+russisch; die englische Fassung ist [`examples/scenario-extract.yaml`](../../examples/scenario-extract.yaml)).
+
+- **Der Pfad** — Feldnamen, durch Punkte getrennt, entlang der Antwort der Methode (`balance.amount` —
+  ein Feld einer Nachricht), jeder Name zuerst nach dem JSON-Namen, dann nach dem proto-Namen, so wie
+  die Schlüssel von `data` gesucht werden. Er wird vor der Last gegen das Schema der Methode geprüft,
+  ein Tippfehler ist also ein Konfigurationsfehler mit dem Pfad und keine schlechte Antwort mitten in
+  der Last. Braucht Reflection oder `app.proto` / `app.protoset`.
+- **Wohin der Pfad führen darf:** ein String, bool, jede Ganzzahl, `float`, `double` oder enum. Nicht
+  erlaubt: ein wiederholtes Feld, map, eine Nachricht (nennen Sie eines ihrer Felder) und `bytes`,
+  ebenso ein Pfad durch ein wiederholtes Feld oder eine map. Durch eine Nachricht darf der Pfad gehen.
+- **Der Wert ist Text:** ein String unverändert, eine Ganzzahl dezimal, bool als `true`/`false`, enum
+  nach dem Namen des Werts (eine Zahl, die es im Schema nicht gibt, dezimal), `float` und `double` mit
+  der kleinsten Stellenzahl, die sich wieder zur selben Zahl lesen lässt.
+- **Wohin er eingesetzt wird.** Ein String-Feld nimmt `{{extract.<name>}}` zwischen anderem Text und
+  Platzhaltern. Ein Zahlenfeld nimmt nur das ganze `"{{extract.<name>}}"`, und nur aus einer
+  Ganzzahl, die immer hineinpasst: dasselbe Vorzeichen und nicht breiter (`uint32` passt in `int64`;
+  `int64` in `int32`, `uint64` in `int64`, vorzeichenbehaftet in vorzeichenlos und jedes float nicht).
+  So wird ein Wert nie abgeschnitten oder umgebrochen, und eine Kombination, bei der das möglich ist,
+  wird vor der Last abgelehnt. Ein Feld bool, enum, float oder bytes nimmt wie bisher keinen
+  Platzhalter.
+- **Der Schritt braucht `templates: true`** (und der Aufruf auch), wie für `{{seq}}`;
+  `{{extract.<name>}}` in einem Schritt ohne ihn ist Text, und ein Name, den niemand liest, ist ein
+  Fehler, was genau diesen Fehler abfängt. Ein Schritt liest nur Namen, die ein früherer Schritt (oder
+  der Aufruf) extrahiert hat: der eigene Name, ein späterer und ein unbekannter sind ein Fehler.
+- **Die Werte leben in einer Iteration.** Zwischen Iterationen werden sie nicht geteilt, und die
+  Antwort nutzt die Iteration, die sie bekam. Bei einem Aufruf ohne `steps` gibt es niemanden, der sein
+  extract liest.
+- **Eine Antwort ohne den Wert.** Fehlt das Feld des Pfads in der Antwort oder lässt sich die Antwort
+  nicht parsen, ist der Schritt `bad response`: Die Antwort kam, aber der Client kann sie nicht
+  verwenden. Die Iteration endet damit: Der Schritt „scheiterte hier“ im Szenarioblock, die folgenden
+  Schritte sind nicht erreicht. Der Code bleibt das `OK`, das das Ziel geschickt hat (in der Zeile der
+  Codes — „sent by the target“, im JSON — `from_target: true`), der Fehlertext ist
+  `extract <name>: <path> not in the response`. Es gilt die proto3-Regel: Ein Feld, das null hält,
+  geht nicht über die Leitung und gilt als fehlend, außer einem gesetzten Feld `proto3 optional`
+  (dann ist `0` ein Wert). Kommt ein Feld zweimal an, gilt das letzte. Hat jeder Aufruf einer Methode
+  so geantwortet, ist der Lauf ungültig, und der Bericht sagt, dass extract nichts gefunden hat.
+- **Kosten.** Ein Schritt mit extract hält seine Antwort und parst sie im Worker; ein Aufruf ohne
+  `extract` zahlt nichts. Das Parsen und der Bau des nächsten Body gehen in den Startverzug dieses
+  Schritts, wie bei jedem Template.
+- `methods[].templates.placeholders` bleibt `seq` und `uuid`: Die Namen von extract werden nicht
+  aufgezählt, und ein Aufruf, der nur ihretwegen ein Template-Aufruf ist, zeigt eine leere Liste.
 
 ### Dataset im Schritt
 

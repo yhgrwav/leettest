@@ -2,7 +2,7 @@
 
 [← 返回文档](README.md)
 
-> 译自 [docs/ru/roadmap.md](../ru/roadmap.md)，对应 0e32d00，2026-11-10。如有出入，以俄文版为准。
+> 译自 [docs/ru/roadmap.md](../ru/roadmap.md)，对应 46c2f53，2026-11-17。如有出入，以俄文版为准。
 > **可能滞后：** 中文版在每次发布前同步，最新内容请看[英文版](../en/roadmap.md)。
 
 > **缺少某项功能？[提交 issue](https://github.com/yhgrwav/leettest/issues/new/choose)**——
@@ -13,7 +13,7 @@
 
 ## 之后
 
-- **[调用串联](chaining.md)**：把一个方法响应中的字段填进另一个方法的请求。
+- ~~**[调用串联](chaining.md)**：把一个方法响应中的字段填进另一个方法的请求。~~ 已完成（未发布）：场景中的 `extract`，见[调用串联](chaining.md)。
 - **长时间运行中刷新 token。**
 - ~~**导出指标**到 Prometheus。~~ 已在 v0.6 完成：[Prometheus 指标](reference.md#prometheus-指标)。
 
