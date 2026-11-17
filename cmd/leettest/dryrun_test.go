@@ -756,6 +756,9 @@ func TestDryScenario_TakesRecordOneAndSeqOne(t *testing.T) {
 		if len(sender.sent) != 2 || string(sender.sent[0].Payload) != "one-1" || string(sender.sent[1].Payload) != "two-1" {
 			t.Errorf("sent %v, want the bodies of seq 1: one-1, two-1", sender.sent)
 		}
+		if handed := call.Template.Counter.Handed(); handed != 0 {
+			t.Errorf("the caller's template counted %d requests handed out, want 0: the dry run counts on its own", handed)
+		}
 	})
 }
 
