@@ -161,8 +161,10 @@ type App struct {
 	ServerName string `yaml:"server_name"`
 	// RawMetadata is the field as written. Metadata is what every call
 	// carries: keys lowercased, ${NAME} replaced from the environment; nil
-	// when there is none.
+	// when there is none. A header with a ${file:PATH} is not in it: its value
+	// is known only when the file is read, by ReadMetadata.
 	RawMetadata map[string]string `yaml:"metadata"`
+	fileHeaders []fileHeader
 	// RawMetadataRefresh is app.metadata_refresh as written, nil when it was
 	// left out. MetadataRefresh is how often every ${file:PATH} of app.metadata
 	// is read again during the run, at least 1s; 0 reads each file once at the

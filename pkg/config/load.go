@@ -122,6 +122,9 @@ func (m *MasterConfig) resolve() error {
 	if err := m.App.resolveMetadata(); err != nil {
 		return err
 	}
+	if err := m.App.resolveMetadataRefresh(); err != nil {
+		return err
+	}
 	if err := m.App.resolveMaxResponseSize(); err != nil {
 		return err
 	}

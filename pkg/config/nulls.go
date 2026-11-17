@@ -142,6 +142,16 @@ func (v *nullDatasetVisitor) Visit(node ast.Node) ast.Visitor {
 
 		return v
 	}
+	if path == "$.app.metadata_refresh" {
+		if value, resolved := v.unwrap(pair.Value); resolved {
+			if _, null := value.(*ast.NullNode); null {
+				v.errs = append(v.errs, fmt.Errorf("line %d: %w: has no value: write a duration such as 5m, or leave the key out",
+					pair.Key.GetToken().Position.Line, ErrInvalidMetadataRefresh))
+			}
+		}
+
+		return v
+	}
 	if match == nil && !errorsLimit {
 		return v
 	}

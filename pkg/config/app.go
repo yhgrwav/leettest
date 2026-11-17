@@ -21,9 +21,15 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
+
+// minMetadataRefresh is the shortest app.metadata_refresh: the files are not
+// read oftener than that, and a token lives for minutes.
+const minMetadataRefresh = time.Second
 
 // metadataKey is what HTTP/2 carries as a header name once lowercased.
 var metadataKey = regexp.MustCompile(`^[0-9a-z_.-]+$`)
@@ -77,8 +83,12 @@ func (a *App) resolveMetadata() error {
 	}
 
 	out := make(map[string]string, len(a.RawMetadata))
+	seen := make(map[string]bool, len(a.RawMetadata))
 
-	var errs []error
+	var (
+		errs  []error
+		files []fileHeader
+	)
 
 	for raw, value := range a.RawMetadata {
 		key := strings.ToLower(raw)
@@ -101,26 +111,52 @@ func (a *App) resolveMetadata() error {
 			continue
 		}
 
-		if _, dup := out[key]; dup {
+		if seen[key] {
 			errs = append(errs, fmt.Errorf("%w: key %q twice: keys are case-insensitive", ErrInvalidMetadata, key))
 			continue
 		}
 
-		var problems []error
+		seen[key] = true
 
-		resolved := expandEnvRefs(value, func(name string) string {
-			v, ok := os.LookupEnv(name)
-			switch {
-			case !ok:
-				problems = append(problems, fmt.Errorf("%w: key %q uses ${%s}, which is not set; %s", ErrInvalidMetadata, key, name, envHint(name)))
-			case v == "":
-				problems = append(problems, fmt.Errorf("%w: key %q uses ${%s}, which is set but empty; %s", ErrInvalidMetadata, key, name, envHint(name)))
+		// References to files are cut out before ${NAME} is filled: a path is
+		// taken as written.
+		parts, problem := splitFileRefs(value)
+		if problem != "" {
+			errs = append(errs, fmt.Errorf("%w: key %q: %s", ErrInvalidMetadata, key, problem))
+			continue
+		}
+
+		readsFile := slices.ContainsFunc(parts, func(p valuePart) bool { return p.path != "" })
+		if readsFile && key == "user-agent" {
+			errs = append(errs, fmt.Errorf("%w: key %q: cannot come from a file: it is set when the connection is made", ErrInvalidMetadata, key))
+			continue
+		}
+
+		var (
+			problems []error
+			literal  strings.Builder
+		)
+
+		for i := range parts {
+			if parts[i].path != "" {
+				continue
 			}
 
-			return v
-		})
+			parts[i].text = expandEnvRefs(parts[i].text, func(name string) string {
+				v, ok := os.LookupEnv(name)
+				switch {
+				case !ok:
+					problems = append(problems, fmt.Errorf("%w: key %q uses ${%s}, which is not set; %s", ErrInvalidMetadata, key, name, envHint(name)))
+				case v == "":
+					problems = append(problems, fmt.Errorf("%w: key %q uses ${%s}, which is set but empty; %s", ErrInvalidMetadata, key, name, envHint(name)))
+				}
 
-		if len(problems) == 0 && !printableASCII(resolved) {
+				return v
+			})
+			literal.WriteString(parts[i].text)
+		}
+
+		if len(problems) == 0 && !printableASCII(literal.String()) {
 			// Where the value came from is named, not what it holds.
 			problems = append(problems, fmt.Errorf("%w: key %q: the value must be printable ASCII (%%x20-%%x7E)", ErrInvalidMetadata, key))
 		}
@@ -130,14 +166,44 @@ func (a *App) resolveMetadata() error {
 			continue
 		}
 
-		out[key] = resolved
+		if readsFile {
+			files = append(files, fileHeader{key: key, parts: parts})
+			continue
+		}
+
+		out[key] = literal.String()
 	}
 
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
 
-	a.Metadata = out
+	if len(out) > 0 {
+		a.Metadata = out
+	}
+
+	slices.SortFunc(files, func(x, y fileHeader) int { return strings.Compare(x.key, y.key) })
+	a.fileHeaders = files
+
+	return nil
+}
+
+// resolveMetadataRefresh reads app.metadata_refresh. A duration to read the
+// files again with no file to read is refused, not ignored.
+func (a *App) resolveMetadataRefresh() error {
+	if a.RawMetadataRefresh == nil {
+		return nil
+	}
+
+	if d := *a.RawMetadataRefresh; d < minMetadataRefresh {
+		return fmt.Errorf("%w: %s is below the minimum of %s", ErrInvalidMetadataRefresh, d, minMetadataRefresh)
+	}
+
+	if len(a.fileHeaders) == 0 {
+		return fmt.Errorf("%w: no value in app.metadata reads a file; leave the key out", ErrInvalidMetadataRefresh)
+	}
+
+	a.MetadataRefresh = *a.RawMetadataRefresh
 
 	return nil
 }
@@ -245,11 +311,21 @@ func (a *App) validateTLSFiles() error {
 	return nil
 }
 
-// relativeTo makes the certificate paths relative to dir.
+// relativeTo makes the certificate paths and the paths of ${file:PATH}
+// relative to dir. A file path keeps the text as written for messages: only
+// where it is read from moves.
 func (a *App) relativeTo(dir string) {
 	for _, p := range []*string{&a.CA, &a.Cert, &a.Key} {
 		if *p != "" && !filepath.IsAbs(*p) {
 			*p = filepath.Join(dir, *p)
+		}
+	}
+
+	for _, h := range a.fileHeaders {
+		for i := range h.parts {
+			if p := &h.parts[i]; p.path != "" && !filepath.IsAbs(p.path) {
+				p.from = filepath.Join(dir, p.path)
+			}
 		}
 	}
 }
