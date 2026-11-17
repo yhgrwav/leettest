@@ -2,7 +2,7 @@
 
 [← Back to docs](README.md)
 
-> Translated from [docs/ru/limitations.md](../ru/limitations.md) at 3a9dbba, 2026-11-09. If they
+> Translated from [docs/ru/limitations.md](../ru/limitations.md) at 46c2f53, 2026-11-17. If they
 > differ, the Russian one is right.
 
 LeetTest sees only the client side: the machine and process that send the load (the generator,
