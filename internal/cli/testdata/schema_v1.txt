@@ -107,6 +107,9 @@ traffic.sent_bits_per_second float
 traffic.received_bits_per_second float
 methods []object
 methods[].method string
+methods[].scenario string?
+methods[].step int?
+methods[].grpc_method string
 methods[].invalid_reason string?
 methods[].sent int
 methods[].failed int
