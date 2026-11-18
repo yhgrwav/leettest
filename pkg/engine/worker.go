@@ -90,6 +90,12 @@ func (r Result) CensorThreshold() time.Duration {
 	return threshold
 }
 
+// answeredEarly reports whether a timeout is the target's own answer, given
+// well before our deadline, rather than a call we stopped watching.
+func (r Result) answeredEarly() bool {
+	return false
+}
+
 func (r Result) Latency() time.Duration {
 	return r.DoneAt.Sub(r.ScheduledAt)
 }

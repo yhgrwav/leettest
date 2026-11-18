@@ -305,3 +305,225 @@ func TestStatsLiveRateDividesByTheTimeSoFarNotThePlan(t *testing.T) {
 		t.Errorf("live rps = %.2f after 100 calls in a second, want about 100", got)
 	}
 }
+
+// timeoutAfter is a call with a 1 s deadline that ended as a timeout took
+// after its schedule, the status from the target or set by the client.
+func timeoutAfter(start time.Time, took time.Duration, fromTarget bool) Result {
+	return Result{
+		Method:      "a",
+		ScheduledAt: start,
+		BegunAt:     start,
+		Deadline:    start.Add(time.Second),
+		Outcome: Outcome{
+			SentAt: start, DoneAt: start.Add(took),
+			Category: CategoryTimeout, Code: "DeadlineExceeded", CodeFromTarget: fromTarget,
+		},
+	}
+}
+
+// auditRun is the audit's run (F1): 97 successes at 10 ms and 3 timeouts that
+// ended took after their schedule against a 1 s budget.
+func auditRun(took time.Duration, fromTarget bool) MethodReport {
+	stats := NewStats()
+	start := time.Now()
+	stats.Start(start, 0)
+
+	for range 97 {
+		stats.Record(Result{
+			Method:      "a",
+			ScheduledAt: start,
+			BegunAt:     start,
+			Outcome:     Outcome{SentAt: start, DoneAt: start.Add(10 * time.Millisecond), Category: CategorySuccess},
+		})
+	}
+	for range 3 {
+		stats.Record(timeoutAfter(start, took, fromTarget))
+	}
+
+	return stats.Report().Methods[0]
+}
+
+// Ground: contract — a DEADLINE_EXCEEDED the target itself sent well before our deadline is an
+// answer with a latency we saw, not a call nobody listened to; censoring it at the whole deadline
+// printed "p99 >= 1s" for 3 calls that answered in 50 ms (audit F1).
+func TestRecord_AnEarlyDeadlineAnswerKeepsItsLatency(t *testing.T) {
+	m := auditRun(50*time.Millisecond, true)
+
+	if m.Censored != 0 || m.Latencies != 100 {
+		t.Errorf("censored %d, latencies %d; want 0 and 100: the answers were seen", m.Censored, m.Latencies)
+	}
+	if !m.P99.Defined || !m.P99.Exact || m.P99.Floor() > 50*time.Millisecond || !nearly(m.P99.Value, 50*time.Millisecond) {
+		t.Errorf("p99 = %+v, want exact at 50ms, not a bound at the 1s deadline", m.P99)
+	}
+	if !m.Max.Exact || !nearly(m.Max.Value, 50*time.Millisecond) {
+		t.Errorf("max = %+v, want exact at 50ms", m.Max)
+	}
+	if !m.P99WithoutClientWaits.Exact || !nearly(m.P99WithoutClientWaits.Value, 50*time.Millisecond) {
+		t.Errorf("p99 without waits = %+v, want exact at 50ms: no client waits to take out", m.P99WithoutClientWaits)
+	}
+	if m.Failed != 3 || m.Sent != 100 {
+		t.Errorf("failed %d of %d sent, want 3 of 100: the answer is still a failure", m.Failed, m.Sent)
+	}
+}
+
+// Ground: contract — the early answer is an ordinary observation everywhere a call is: the
+// window it was scheduled in, the connection, the served time (latency without the client's waits)
+// and the waited-calls histogram of the cause that held it back.
+func TestRecord_AnEarlyDeadlineAnswerIsExactInEveryHistogram(t *testing.T) {
+	start := time.Now()
+	stats := windowed(start, 0, 120*time.Second)
+
+	r := timeoutAfter(start, 80*time.Millisecond, true)
+	r.StreamWait = 60 * time.Millisecond
+	stats.Record(r)
+
+	method := stats.byMethod["a"]
+
+	if got := method.latency.Snapshot(); got.Count() != 1 || got.CensoredCount() != 0 {
+		t.Errorf("method latency: %d observations, %d censored; want 1 and 0", got.Count(), got.CensoredCount())
+	}
+	if got := method.served.Snapshot(); got.Count() != 1 || got.CensoredCount() != 0 || !nearly(got.Percentile(1).Value, 20*time.Millisecond) {
+		t.Errorf("served: %d observations, %d censored, max %s; want 1, 0 and 20ms (80ms less the 60ms stream wait)",
+			got.Count(), got.CensoredCount(), got.Percentile(1).Value)
+	}
+	if w := method.waited[2]; w == nil {
+		t.Errorf("no waited-for-a-stream histogram: the call waited 60ms for a stream")
+	} else if got := w.Snapshot(); got.Count() != 1 || got.CensoredCount() != 0 || !nearly(got.Percentile(1).Value, 80*time.Millisecond) {
+		t.Errorf("waited for a stream: %d observations, %d censored, max %s; want 1, 0 and 80ms",
+			got.Count(), got.CensoredCount(), got.Percentile(1).Value)
+	}
+
+	win := windowsOf(t, stats)[0]
+	if win.Latency.Count() != 1 || win.Latency.CensoredCount() != 0 || !win.P99.Exact || !nearly(win.P99.Value, 80*time.Millisecond) {
+		t.Errorf("window 0: %d observations, %d censored, p99 %+v; want 1, 0 and exact 80ms",
+			win.Latency.Count(), win.Latency.CensoredCount(), win.P99)
+	}
+}
+
+// Ground: contract — same rule on a connection's own p99.
+func TestRecord_AnEarlyDeadlineAnswerIsExactOnItsConnection(t *testing.T) {
+	eng, start := linkedEngine(t, linkedSender{addrs: addrs3()[:2]})
+
+	for range 100 {
+		eng.stats.Record(onLink(0, start, Outcome{
+			Category: CategoryTimeout, Code: "DeadlineExceeded", CodeFromTarget: true,
+			DoneAt: start.Add(2*time.Second + 50*time.Millisecond),
+		}))
+	}
+
+	got := eachOf(t, finish(eng, start))[0].P99
+	if !got.Defined || !got.Exact || !nearly(got.Value, 50*time.Millisecond) {
+		t.Errorf("connection p99 = %+v, want exact at 50ms", got)
+	}
+}
+
+// Ground: boundary — guard. 95% of the budget is the target's copy of our own deadline, which
+// shows nothing of the target: it stays a lower bound at the deadline.
+func TestRecord_ADeadlineCopyStaysCensored(t *testing.T) {
+	m := auditRun(950*time.Millisecond, true)
+
+	if m.Censored != 3 {
+		t.Errorf("censored = %d, want 3: a copy of our deadline is not an observation", m.Censored)
+	}
+	if !m.P99.Defined || m.P99.Exact || m.P99.Floor() < time.Second {
+		t.Errorf("p99 = %+v, want a lower bound of at least the 1s deadline", m.P99)
+	}
+}
+
+// Ground: boundary — guard. With no status from the target the timeout is ours, however early it
+// was noticed.
+func TestRecord_ATimeoutWithNoStatusStaysCensored(t *testing.T) {
+	m := auditRun(50*time.Millisecond, false)
+
+	if m.Censored != 3 {
+		t.Errorf("censored = %d, want 3: no status came back from the target", m.Censored)
+	}
+	if !m.P99.Defined || m.P99.Exact || m.P99.Floor() < time.Second {
+		t.Errorf("p99 = %+v, want a lower bound of at least the 1s deadline", m.P99)
+	}
+}
+
+// Ground: boundary — guard. An aborted call was watched until the abort, and is a lower bound of
+// that moment, early or not.
+func TestRecord_AnAbortedCallStaysAtItsAbort(t *testing.T) {
+	stats := NewStats()
+	start := time.Now()
+	stats.Start(start, 0)
+
+	r := timeoutAfter(start, 50*time.Millisecond, true)
+	r.Category = CategoryAborted
+	stats.Record(r)
+
+	m := stats.Report().Methods[0]
+	if m.Censored != 1 {
+		t.Errorf("censored = %d, want 1", m.Censored)
+	}
+	if !m.Max.Defined || m.Max.Exact || m.Max.Floor() < 49*time.Millisecond || m.Max.Floor() > 51*time.Millisecond {
+		t.Errorf("max = %+v, want a lower bound at the abort, 50ms: min(budget, latency)", m.Max)
+	}
+}
+
+// Ground: boundary — one rule with the sender's expiredCopy (pkg/grpcsender): 90% of the budget
+// the call went out with, counted from SentAt, is the first moment of a copy; the number is
+// written here on purpose. Same boundary values as its table; a timeout with no deadline, no
+// SentAt, no status from the target or another category is never an early answer.
+func TestAnsweredEarly_IsTheSendersRuleInverted(t *testing.T) {
+	sent := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
+	const budget = time.Second
+
+	for _, tc := range []struct {
+		name string
+		edit func(*Result)
+		want bool
+	}{
+		{"one nanosecond before 90%", func(r *Result) { r.DoneAt = sent.Add(900*time.Millisecond - 1) }, true},
+		{"exactly 90%", func(r *Result) { r.DoneAt = sent.Add(900 * time.Millisecond) }, false},
+		{"one nanosecond after 90%", func(r *Result) { r.DoneAt = sent.Add(900*time.Millisecond + 1) }, false},
+		{"95%", func(r *Result) { r.DoneAt = sent.Add(950 * time.Millisecond) }, false},
+		{"at the deadline", func(r *Result) { r.DoneAt = sent.Add(budget) }, false},
+		{"half of the budget", func(r *Result) { r.DoneAt = sent.Add(500 * time.Millisecond) }, true},
+		{"no deadline", func(r *Result) { r.Deadline = time.Time{} }, false},
+		{"no SentAt", func(r *Result) { r.SentAt = time.Time{} }, false},
+		{"no status from the target", func(r *Result) { r.CodeFromTarget = false }, false},
+		{"an abort", func(r *Result) { r.Category = CategoryAborted }, false},
+		{"a success", func(r *Result) { r.Category = CategorySuccess }, false},
+	} {
+		r := Result{
+			ScheduledAt: sent,
+			Deadline:    sent.Add(budget),
+			Outcome: Outcome{
+				SentAt: sent, DoneAt: sent.Add(50 * time.Millisecond),
+				Category: CategoryTimeout, CodeFromTarget: true,
+			},
+		}
+		tc.edit(&r)
+
+		if got := r.answeredEarly(); got != tc.want {
+			t.Errorf("%s: answeredEarly = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
+// Ground: boundary — the budget is counted from SentAt, as the sender counts it, not from the
+// schedule: a call that waited 600 ms to go out has 400 ms of budget left, and its answer at
+// 950 ms after the schedule is 87.5% of that budget, an early one.
+func TestAnsweredEarly_CountsTheBudgetFromSentAt(t *testing.T) {
+	sent := time.Date(2026, 11, 18, 12, 0, 0, 0, time.UTC)
+	r := Result{
+		ScheduledAt: sent,
+		Deadline:    sent.Add(time.Second),
+		Outcome: Outcome{
+			SentAt: sent.Add(600 * time.Millisecond), DoneAt: sent.Add(950 * time.Millisecond),
+			Category: CategoryTimeout, CodeFromTarget: true,
+		},
+	}
+
+	if !r.answeredEarly() {
+		t.Errorf("answeredEarly = false at 350 ms of a 400 ms budget (87.5%%), want true")
+	}
+
+	r.DoneAt = sent.Add(960 * time.Millisecond)
+	if r.answeredEarly() {
+		t.Errorf("answeredEarly = true at 360 ms of a 400 ms budget (90%%), want false")
+	}
+}
