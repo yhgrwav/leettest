@@ -27,7 +27,7 @@ selbst oder kann es nicht. Hier steht, was genau.
   p99 das Maximum, der Lauf bleibt gültig, mit Hinweis. Eine p99-Verschiebung unter 10 % ist kein
   Urteil, sondern ein Hinweis mit der Zahl. Die Suche nach dem Bruchpunkt bekommt dieses Urteil
   nicht: ihre Stufen haben die eigene Ursache `generator`. Der Laufpass zeigt CPU-Anzahl,
-  `GOMAXPROCS` und die Quota. Noch nicht veröffentlicht: Der Bericht nennt die Grenze, an die der
+  `GOMAXPROCS` und die Quota. Der Bericht nennt die Grenze, an die der
   Generator gestoßen ist (`GOMAXPROCS`, CPU-Quota, die CPU selbst oder der Zeitplan), oder sagt, dass
   er keine nennen kann; außerdem ist der Lauf ungültig, wenn der Generator 1 % oder mehr der Aufrufe
   einer Methode nicht gesendet hat.
@@ -80,8 +80,7 @@ selbst oder kann es nicht. Hier steht, was genau.
 
 - **Nur Unary-Aufrufe.** Methoden mit Streaming werden beim Laden abgelehnt.
 - ~~**Verkettung von Aufrufen.** Ein Feld aus der Antwort einer Methode lässt sich nicht in die
-  Anfrage einer anderen einsetzen.~~ Das geht, innerhalb eines Szenarios und einer Iteration (nicht
-  veröffentlicht): siehe [Verkettung von Aufrufen](chaining.md). Einen gemeinsamen Pool von Werten
+  Anfrage einer anderen einsetzen.~~ Das geht, innerhalb eines Szenarios und einer Iteration: siehe [Verkettung von Aufrufen](chaining.md). Einen gemeinsamen Pool von Werten
   für Aufrufe mit verschiedenem Tempo gibt es nicht.
 - **Token-Erneuerung** in einem langen Lauf — geplant, siehe [Plan](roadmap.md).
 - **Jeder Aufruf einer Methode geht mit demselben Body raus,** solange kein `dataset` gesetzt ist.

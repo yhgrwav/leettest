@@ -62,17 +62,17 @@ The config, a dataset, a report for `compare` and the settings file are UTF-8; a
 | `load.calls[].dataset_seed` | A whole number from 0 to 9007199254740991 that fixes a random order. Needs `dataset_order: random`. Left out — one is drawn and the report prints it |
 | `load.calls[].dataset_reuse` | `true` (left out) or `false`: with `false` no record goes out twice, in the whole process. Needs `dataset` |
 | `load.calls[].templates` | `true` or `false` (left out — `false`; a key with no value is an error): turns on the `{{uuid}}` and `{{seq}}` placeholders in `data`, see [below](#a-request-that-changes-templates). Needs at least one placeholder, in its `data` or in the `data` of a step with `templates: true`; not together with `dataset`. |
-| `load.calls[].scenario` | (not released yet) The scenario's name: the call itself becomes step 1, the `steps` follow it. Needs `steps`, and the other way round. Not empty, printed in the report as written; it must not equal a method. See [below](#scenario-steps-after-a-call) |
-| `load.calls[].steps` | (not released yet) A non-empty list of the steps after the call. Any key of a step other than the eight below is not supported yet and is an error |
-| `load.calls[].extract` | (not released yet) A map `name: path`: values of this call's reply that the steps after it read as `{{extract.<name>}}`, see [below](#extract-a-value-from-an-earlier-reply). Only on a call with `steps`; a name is `[A-Za-z_][A-Za-z0-9_]*`, unique in the scenario and read by some later step. Not null, not empty |
-| `load.calls[].steps[].method` | (not released yet) The step's method, the full name; required. It is checked before the load, like a call's method |
-| `load.calls[].steps[].timeout` | (not released yet) How long to wait for the step's reply, as `load.calls[].timeout`; left out — `2s`, not the call's timeout |
-| `load.calls[].steps[].data` | (not released yet) The step's request body, written as `load.calls[].data` (see [below](#request-body)) and checked before the load against the step's own method; a wrong field is a config error, as for a call. Left out — an empty message. `{{…}}` in it is text only with `templates: false` or in a call without `templates: true`; see the next row. Needs reflection, or `app.proto` / `app.protoset`, as a call's `data` does |
-| `load.calls[].steps[].templates` | (not released yet) `true` or `false` (a key with no value, or anything but `true`/`false`, is an error): `true` turns on `{{uuid}}` and `{{seq}}` in the step's `data`, see [below](#templates-in-a-step). Needs `templates: true` on the call and a placeholder of its own in the step's `data`. Left out: the body is plain, and braces in `data` under a call with `templates: true` are an error — write `templates: true` on the step, or `templates: false` to send the braces as text |
-| `load.calls[].steps[].dataset` | (not released yet) A file of request bodies for the step instead of its `data`, see [below](#dataset-in-a-step). Read and checked like a call's, against the step's own method. Not together with the step's `data` or `templates: true` |
-| `load.calls[].steps[].dataset_order` | (not released yet) `file` (left out) or `random`: the order of the step's records. Needs the step's `dataset` |
-| `load.calls[].steps[].dataset_seed` | (not released yet) The seed of a random order, a whole number from 0 to 9007199254740991, as `load.calls[].dataset_seed`. Needs `dataset_order: random` on the step |
-| `load.calls[].steps[].extract` | (not released yet) As `load.calls[].extract`, for the step's own reply: a later step reads the names as `{{extract.<name>}}`, see [below](#extract-a-value-from-an-earlier-reply). A name is taken once in a scenario, by the call or by one step |
+| `load.calls[].scenario` | The scenario's name: the call itself becomes step 1, the `steps` follow it. Needs `steps`, and the other way round. Not empty, printed in the report as written; it must not equal a method. See [below](#scenario-steps-after-a-call) |
+| `load.calls[].steps` | A non-empty list of the steps after the call. Any key of a step other than the eight below is not supported yet and is an error |
+| `load.calls[].extract` | A map `name: path`: values of this call's reply that the steps after it read as `{{extract.<name>}}`, see [below](#extract-a-value-from-an-earlier-reply). Only on a call with `steps`; a name is `[A-Za-z_][A-Za-z0-9_]*`, unique in the scenario and read by some later step. Not null, not empty |
+| `load.calls[].steps[].method` | The step's method, the full name; required. It is checked before the load, like a call's method |
+| `load.calls[].steps[].timeout` | How long to wait for the step's reply, as `load.calls[].timeout`; left out — `2s`, not the call's timeout |
+| `load.calls[].steps[].data` | The step's request body, written as `load.calls[].data` (see [below](#request-body)) and checked before the load against the step's own method; a wrong field is a config error, as for a call. Left out — an empty message. `{{…}}` in it is text only with `templates: false` or in a call without `templates: true`; see the next row. Needs reflection, or `app.proto` / `app.protoset`, as a call's `data` does |
+| `load.calls[].steps[].templates` | `true` or `false` (a key with no value, or anything but `true`/`false`, is an error): `true` turns on `{{uuid}}` and `{{seq}}` in the step's `data`, see [below](#templates-in-a-step). Needs `templates: true` on the call and a placeholder of its own in the step's `data`. Left out: the body is plain, and braces in `data` under a call with `templates: true` are an error — write `templates: true` on the step, or `templates: false` to send the braces as text |
+| `load.calls[].steps[].dataset` | A file of request bodies for the step instead of its `data`, see [below](#dataset-in-a-step). Read and checked like a call's, against the step's own method. Not together with the step's `data` or `templates: true` |
+| `load.calls[].steps[].dataset_order` | `file` (left out) or `random`: the order of the step's records. Needs the step's `dataset` |
+| `load.calls[].steps[].dataset_seed` | The seed of a random order, a whole number from 0 to 9007199254740991, as `load.calls[].dataset_seed`. Needs `dataset_order: random` on the step |
+| `load.calls[].steps[].extract` | As `load.calls[].extract`, for the step's own reply: a later step reads the names as `{{extract.<name>}}`, see [below](#extract-a-value-from-an-earlier-reply). A name is taken once in a scenario, by the call or by one step |
 | `load.calls[].pass` | The limits a run must meet to pass: `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, see [below](#pass-limits). Left out — no limits |
 | `load.breakpoint.from` | The first step's rate of a breaking-point search, calls a second. A whole number from 1; a fractional one is a config error (`rps must be a whole number of requests: 100.5`). Required: left out or below 1 — `invalid breakpoint: breakpoint.from: breaking-point plan: from 0, want at least 1 rps`, exit 1. The first step must measure at least 100 calls, `from` × (`hold` − `settle`), otherwise it is refused before any load with `invalid breakpoint: the first step measures 8 calls, a p99 needs 100: raise from, hold or lower settle`. With `app.mode: real` the ramp runs from 0 to `from` |
 | `load.breakpoint.to` | No step goes above this rate. A whole number, at least `from` (equal to `from` — one step). Required: left out or below `from` — `invalid breakpoint: breakpoint.to: breaking-point plan: to 50 is below from 100`, exit 1. If the search reaches the last step and it holds, the outcome is `held_all` |
@@ -319,7 +319,7 @@ and not a list; `null` — the call has no templates.
 
 ### Templates in a step
 
-*(Not released yet.)* A step of a scenario takes the placeholders with its own `templates: true`;
+A step of a scenario takes the placeholders with its own `templates: true`;
 the call needs `templates: true` too, because the counter lives on the call.
 
 ```yaml
@@ -359,7 +359,7 @@ the call needs `templates: true` too, because the counter lives on the call.
 
 ### Extract: a value from an earlier reply
 
-*(Not released yet.)* A step can send what an earlier reply of its own iteration held: "create a
+A step can send what an earlier reply of its own iteration held: "create a
 wallet, then transfer from it". The call or a step names the fields of its reply with `extract`;
 a later step writes them into `data` as `{{extract.<name>}}`.
 
@@ -425,7 +425,7 @@ the reference stand.
 
 ### Dataset in a step
 
-*(Not released yet.)* A step takes its body from a file, as a call does.
+A step takes its body from a file, as a call does.
 
 ```yaml
     - method: wallet.v1.WalletService/GetBalance
@@ -868,7 +868,7 @@ measured calls only. The first column is the field's full path.
 | `traffic` | object? | Message bodies per second of the measured sending window; `null` without a window |
 | `traffic.sent_bits_per_second`, `traffic.received_bits_per_second` | float | Bits per second, unscaled: request bodies of the measured calls that went out by wire size, replies of successful calls by size before decompression. Without HTTP/2 frames, headers and TLS |
 | `methods` | []object | Methods, see below |
-| `scenarios` | []object | (not released yet) The run's scenarios, see below; an empty array `[]`, not `null`, in a run without scenarios |
+| `scenarios` | []object | The run's scenarios, see below; an empty array `[]`, not `null`, in a run without scenarios |
 | `unchecked` | []object | Methods that could not be checked through reflection |
 | `unchecked[].method` | string | The method |
 | `unchecked[].reason` | string | `reflection_off` or `reflection_failed` |
@@ -991,21 +991,21 @@ in `methods[]` as ordinary methods, so `leettest compare` compares them the same
 
 | Field | Type | Meaning |
 |---|---|---|
-| `scenarios[].name` | string | (not released yet) The name from `load.calls[].scenario`, as written |
-| `scenarios[].iterations` | int | (not released yet) How many iterations ended; not the number of calls |
-| `scenarios[].categories` | object | (not released yet) The outcome of each iteration in one of the 11 categories ([categories](report.md#reading-the-report)); every key is always there, the sum is `iterations` |
-| `scenarios[].categories.success`, `scenarios[].categories.request_error`, `scenarios[].categories.overload`, `scenarios[].categories.failure`, `scenarios[].categories.timed_out`, `scenarios[].categories.cut_off`, `scenarios[].categories.unreachable`, `scenarios[].categories.client_error`, `scenarios[].categories.bad_response`, `scenarios[].categories.aborted`, `scenarios[].categories.unclassified` | int | (not released yet) How many iterations ended with this outcome |
-| `scenarios[].latency` | object | (not released yet) The iteration's latency: from the schedule's tick to the end of the last step |
-| `scenarios[].latency.p50`, `scenarios[].latency.p99` | percentile? | (not released yet) Percentiles over `observations`; `lower_bound` as in `methods[].latency`: an iteration cut by a timeout or a stop lasted at least that long. `p99` is `null` under 100 observations |
-| `scenarios[].observations` | int | (not released yet) Iterations that have a latency |
-| `scenarios[].censored` | int | (not released yet) Of them, known from below only |
-| `scenarios[].steps` | []object | (not released yet) The steps in order, the first is the call itself |
-| `scenarios[].steps[].method` | string | (not released yet) The step's method, spelled as `methods[].method` |
-| `scenarios[].steps[].reached` | int | (not released yet) Iterations that reached the step |
-| `scenarios[].steps[].failed_here` | int | (not released yet) Of them, those that failed on this step |
-| `scenarios[].steps[].aborted_here` | int | (not released yet) Of them, those aborted on this step |
-| `scenarios[].steps[].not_sent_here` | int | (not released yet) Of them, those not sent on this step |
-| `scenarios[].steps[].not_reached` | int | (not released yet) Iterations that did not reach the step: `reached` + `not_reached` = `iterations`, and the next step's `reached` = `reached` minus the three counters before it |
+| `scenarios[].name` | string | The name from `load.calls[].scenario`, as written |
+| `scenarios[].iterations` | int | How many iterations ended; not the number of calls |
+| `scenarios[].categories` | object | The outcome of each iteration in one of the 11 categories ([categories](report.md#reading-the-report)); every key is always there, the sum is `iterations` |
+| `scenarios[].categories.success`, `scenarios[].categories.request_error`, `scenarios[].categories.overload`, `scenarios[].categories.failure`, `scenarios[].categories.timed_out`, `scenarios[].categories.cut_off`, `scenarios[].categories.unreachable`, `scenarios[].categories.client_error`, `scenarios[].categories.bad_response`, `scenarios[].categories.aborted`, `scenarios[].categories.unclassified` | int | How many iterations ended with this outcome |
+| `scenarios[].latency` | object | The iteration's latency: from the schedule's tick to the end of the last step |
+| `scenarios[].latency.p50`, `scenarios[].latency.p99` | percentile? | Percentiles over `observations`; `lower_bound` as in `methods[].latency`: an iteration cut by a timeout or a stop lasted at least that long. `p99` is `null` under 100 observations |
+| `scenarios[].observations` | int | Iterations that have a latency |
+| `scenarios[].censored` | int | Of them, known from below only |
+| `scenarios[].steps` | []object | The steps in order, the first is the call itself |
+| `scenarios[].steps[].method` | string | The step's method, spelled as `methods[].method` |
+| `scenarios[].steps[].reached` | int | Iterations that reached the step |
+| `scenarios[].steps[].failed_here` | int | Of them, those that failed on this step |
+| `scenarios[].steps[].aborted_here` | int | Of them, those aborted on this step |
+| `scenarios[].steps[].not_sent_here` | int | Of them, those not sent on this step |
+| `scenarios[].steps[].not_reached` | int | Iterations that did not reach the step: `reached` + `not_reached` = `iterations`, and the next step's `reached` = `reached` minus the three counters before it |
 
 ### Breaking-point search: `mode: "breakpoint"`
 

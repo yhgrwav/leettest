@@ -62,17 +62,17 @@ load:
 | `load.calls[].dataset_seed` | 0 到 9007199254740991 的整数，固定随机顺序。需要 `dataset_order: random`。省略时自行选取并在报告中输出 |
 | `load.calls[].dataset_reuse` | `true`（省略时）或 `false`：为 `false` 时，整个进程中没有任何一条记录会发出两次。需要 `dataset` |
 | `load.calls[].templates` | `true` 或 `false`（省略时为 `false`；写了键却没有值是错误）：在 `data` 中启用占位符 `{{uuid}}` 和 `{{seq}}`，见[下文](#会变化的请求模板)。至少需要一个占位符——在它自己的 `data` 中，或在带 `templates: true` 的步骤的 `data` 中；不能与 `dataset` 同用。 |
-| `load.calls[].scenario` | （未发布）场景名称：调用本身成为第 1 步，后面跟着 `steps`。需要 `steps`，反之亦然。名称不能为空，报告中原样打印；不能与某个方法同名。见[下文](#场景调用之后的步骤) |
-| `load.calls[].steps` | （未发布）调用之后的非空步骤列表。步骤的任何键，除下面八个外，暂不支持——是错误 |
-| `load.calls[].extract` | （未发布）字典 `名称: 路径`：取自这个调用应答的值，其后的步骤把它们读作 `{{extract.<name>}}`，见[下文](#extract较早应答中的值)。只用于带 `steps` 的调用；名称为 `[A-Za-z_][A-Za-z0-9_]*`，在场景内唯一，并被后面的某个步骤读取。不能是 null，也不能为空 |
-| `load.calls[].steps[].method` | （未发布）步骤的方法，完整名称；必填。在压测前检查，与调用的方法一样 |
-| `load.calls[].steps[].timeout` | （未发布）等待步骤应答的时长，同 `load.calls[].timeout`；省略时为 `2s`，而不是调用的超时 |
-| `load.calls[].steps[].data` | （未发布）步骤的请求体，写法同 `load.calls[].data`（见[下文](#请求体)），并在压测前按步骤自己的方法检查；字段有误是配置错误，与调用相同。省略时为空消息。其中的 `{{…}}` 仅在 `templates: false` 或调用没有 `templates: true` 时是文本；见下一行。需要 reflection，或 `app.proto` / `app.protoset`，与调用的 `data` 相同 |
-| `load.calls[].steps[].templates` | （未发布）`true` 或 `false`（键没有值，以及除 `true`/`false` 之外的任何值，都是错误）：`true` 在步骤的 `data` 中启用 `{{uuid}}` 和 `{{seq}}`，见[下文](#步骤中的模板)。需要调用有 `templates: true`，且步骤的 `data` 中有自己的占位符。省略时：请求体是普通的，而带 `templates: true` 的调用的 `data` 中的花括号是错误：在步骤上写 `templates: true`，或写 `templates: false` 让花括号按文本发出 |
-| `load.calls[].steps[].dataset` | （未发布）用请求体文件代替步骤的 `data`，见[下文](#步骤中的-dataset)。读取和检查方式与调用相同，按步骤自己的方法。不能与步骤的 `data` 以及 `templates: true` 同用 |
-| `load.calls[].steps[].dataset_order` | （未发布）`file`（省略时）或 `random`：步骤中记录的顺序。需要步骤的 `dataset` |
-| `load.calls[].steps[].dataset_seed` | （未发布）随机顺序的 seed，0 到 9007199254740991 的整数，同 `load.calls[].dataset_seed`。需要步骤上有 `dataset_order: random` |
-| `load.calls[].steps[].extract` | （未发布）同 `load.calls[].extract`，针对步骤自己的应答：下一个步骤把这些名称读作 `{{extract.<name>}}`，见[下文](#extract较早应答中的值)。一个名称在场景内只取一次：由调用或某一个步骤取 |
+| `load.calls[].scenario` | 场景名称：调用本身成为第 1 步，后面跟着 `steps`。需要 `steps`，反之亦然。名称不能为空，报告中原样打印；不能与某个方法同名。见[下文](#场景调用之后的步骤) |
+| `load.calls[].steps` | 调用之后的非空步骤列表。步骤的任何键，除下面八个外，暂不支持——是错误 |
+| `load.calls[].extract` | 字典 `名称: 路径`：取自这个调用应答的值，其后的步骤把它们读作 `{{extract.<name>}}`，见[下文](#extract较早应答中的值)。只用于带 `steps` 的调用；名称为 `[A-Za-z_][A-Za-z0-9_]*`，在场景内唯一，并被后面的某个步骤读取。不能是 null，也不能为空 |
+| `load.calls[].steps[].method` | 步骤的方法，完整名称；必填。在压测前检查，与调用的方法一样 |
+| `load.calls[].steps[].timeout` | 等待步骤应答的时长，同 `load.calls[].timeout`；省略时为 `2s`，而不是调用的超时 |
+| `load.calls[].steps[].data` | 步骤的请求体，写法同 `load.calls[].data`（见[下文](#请求体)），并在压测前按步骤自己的方法检查；字段有误是配置错误，与调用相同。省略时为空消息。其中的 `{{…}}` 仅在 `templates: false` 或调用没有 `templates: true` 时是文本；见下一行。需要 reflection，或 `app.proto` / `app.protoset`，与调用的 `data` 相同 |
+| `load.calls[].steps[].templates` | `true` 或 `false`（键没有值，以及除 `true`/`false` 之外的任何值，都是错误）：`true` 在步骤的 `data` 中启用 `{{uuid}}` 和 `{{seq}}`，见[下文](#步骤中的模板)。需要调用有 `templates: true`，且步骤的 `data` 中有自己的占位符。省略时：请求体是普通的，而带 `templates: true` 的调用的 `data` 中的花括号是错误：在步骤上写 `templates: true`，或写 `templates: false` 让花括号按文本发出 |
+| `load.calls[].steps[].dataset` | 用请求体文件代替步骤的 `data`，见[下文](#步骤中的-dataset)。读取和检查方式与调用相同，按步骤自己的方法。不能与步骤的 `data` 以及 `templates: true` 同用 |
+| `load.calls[].steps[].dataset_order` | `file`（省略时）或 `random`：步骤中记录的顺序。需要步骤的 `dataset` |
+| `load.calls[].steps[].dataset_seed` | 随机顺序的 seed，0 到 9007199254740991 的整数，同 `load.calls[].dataset_seed`。需要步骤上有 `dataset_order: random` |
+| `load.calls[].steps[].extract` | 同 `load.calls[].extract`，针对步骤自己的应答：下一个步骤把这些名称读作 `{{extract.<name>}}`，见[下文](#extract较早应答中的值)。一个名称在场景内只取一次：由调用或某一个步骤取 |
 | `load.calls[].pass` | 运行要通过必须满足的限值：`p50`、`p90`、`p95`、`p99`、`p999`、`errors`，见[下文](#pass-限值)。省略时没有限值 |
 | `load.breakpoint.from` | 崩溃点搜索第一级的速率，每秒调用数。从 1 起的整数；小数是配置错误（`rps must be a whole number of requests: 100.5`）。必填：缺少或小于 1 时报 `invalid breakpoint: breakpoint.from: breaking-point plan: from 0, want at least 1 rps`，退出码 1。第一级必须测得至少 100 个调用，即 `from` × (`hold` − `settle`)，否则在加压前报 `invalid breakpoint: the first step measures 8 calls, a p99 needs 100: raise from, hold or lower settle`。配合 `app.mode: real`，爬升从 0 到 `from` |
 | `load.breakpoint.to` | 速率高于它就不再有级。整数，不小于 `from`（等于 `from` 即只有一级）。必填：缺少或低于 `from` 时报 `invalid breakpoint: breakpoint.to: breaking-point plan: to 50 is below from 100`，退出码 1。搜索走到最后一级且它撑住了，结果为 `held_all` |
@@ -283,7 +283,7 @@ reflection 已关闭、拒绝了请求，或根本没有应答。
 
 ### 步骤中的模板
 
-*（未发布。）* 场景步骤用它自己的 `templates: true` 启用占位符；调用也需要 `templates: true`，
+场景步骤用它自己的 `templates: true` 启用占位符；调用也需要 `templates: true`，
 因为计数器在调用上。
 
 ```yaml
@@ -320,7 +320,7 @@ reflection 已关闭、拒绝了请求，或根本没有应答。
 
 ### Extract：较早应答中的值
 
-*（未发布。）* 步骤可以发送同一次迭代中较早的应答里带的内容：“创建钱包，然后从它转账”。调用或步骤
+步骤可以发送同一次迭代中较早的应答里带的内容：“创建钱包，然后从它转账”。调用或步骤
 用键 `extract` 给它应答中的字段命名，下一个步骤在 `data` 中把它们写成 `{{extract.<name>}}`。
 
 ```yaml
@@ -376,7 +376,7 @@ reflection 已关闭、拒绝了请求，或根本没有应答。
 
 ### 步骤中的 dataset
 
-*（未发布。）* 步骤像调用一样从文件取请求体。
+步骤像调用一样从文件取请求体。
 
 ```yaml
     - method: wallet.v1.WalletService/GetBalance
@@ -750,7 +750,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `traffic` | object? | 发送窗口内每秒的消息体流量；无窗口时为 `null` |
 | `traffic.sent_bits_per_second`, `traffic.received_bits_per_second` | float | 每秒比特数，未换算单位：请求体按线上大小，成功调用的响应体按解压前大小。不含 HTTP/2 帧、头部和 TLS |
 | `methods` | []object | 方法，见下文 |
-| `scenarios` | []object | （未发布）本次运行的场景，见下文；没有场景时是空数组 `[]`，不是 `null` |
+| `scenarios` | []object | 本次运行的场景，见下文；没有场景时是空数组 `[]`，不是 `null` |
 | `unchecked` | []object | 无法通过 reflection 检查的方法 |
 | `unchecked[].method` | string | 方法 |
 | `unchecked[].reason` | string | `reflection_off` 或 `reflection_failed` |
@@ -868,21 +868,21 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 
 | 字段 | 类型 | 含义 |
 |---|---|---|
-| `scenarios[].name` | string | （未发布）`load.calls[].scenario` 中的名称，原样 |
-| `scenarios[].iterations` | int | （未发布）有多少次迭代结束；不是调用数 |
-| `scenarios[].categories` | object | （未发布）每次迭代在 11 个类别之一中的结果（[类别](../en/report.md#reading-the-report)，英文）；所有键始终存在，总和等于 `iterations` |
-| `scenarios[].categories.success`、`scenarios[].categories.request_error`、`scenarios[].categories.overload`、`scenarios[].categories.failure`、`scenarios[].categories.timed_out`、`scenarios[].categories.cut_off`、`scenarios[].categories.unreachable`、`scenarios[].categories.client_error`、`scenarios[].categories.bad_response`、`scenarios[].categories.aborted`、`scenarios[].categories.unclassified` | int | （未发布）以该结果结束的迭代数 |
-| `scenarios[].latency` | object | （未发布）迭代的延迟：从计划的节拍到最后一步结束 |
-| `scenarios[].latency.p50`、`scenarios[].latency.p99` | percentile? | （未发布）基于 `observations` 的百分位；`lower_bound` 同 `methods[].latency`：被超时或停止中断的迭代，至少持续了这么久。观测少于 100 时 `p99` 为 `null` |
-| `scenarios[].observations` | int | （未发布）有延迟的迭代数 |
-| `scenarios[].censored` | int | （未发布）其中只知道下界的 |
-| `scenarios[].steps` | []object | （未发布）按顺序的步骤，第一个是调用本身 |
-| `scenarios[].steps[].method` | string | （未发布）步骤的方法，写法同 `methods[].method` |
-| `scenarios[].steps[].reached` | int | （未发布）到达该步骤的迭代数 |
-| `scenarios[].steps[].failed_here` | int | （未发布）其中在该步骤失败的 |
-| `scenarios[].steps[].aborted_here` | int | （未发布）其中在该步骤被中止的 |
-| `scenarios[].steps[].not_sent_here` | int | （未发布）其中在该步骤未发出的 |
-| `scenarios[].steps[].not_reached` | int | （未发布）未到达该步骤的迭代数：`reached` + `not_reached` = `iterations`，下一步骤的 `reached` = `reached` 减去前面三个计数 |
+| `scenarios[].name` | string | `load.calls[].scenario` 中的名称，原样 |
+| `scenarios[].iterations` | int | 有多少次迭代结束；不是调用数 |
+| `scenarios[].categories` | object | 每次迭代在 11 个类别之一中的结果（[类别](../en/report.md#reading-the-report)，英文）；所有键始终存在，总和等于 `iterations` |
+| `scenarios[].categories.success`、`scenarios[].categories.request_error`、`scenarios[].categories.overload`、`scenarios[].categories.failure`、`scenarios[].categories.timed_out`、`scenarios[].categories.cut_off`、`scenarios[].categories.unreachable`、`scenarios[].categories.client_error`、`scenarios[].categories.bad_response`、`scenarios[].categories.aborted`、`scenarios[].categories.unclassified` | int | 以该结果结束的迭代数 |
+| `scenarios[].latency` | object | 迭代的延迟：从计划的节拍到最后一步结束 |
+| `scenarios[].latency.p50`、`scenarios[].latency.p99` | percentile? | 基于 `observations` 的百分位；`lower_bound` 同 `methods[].latency`：被超时或停止中断的迭代，至少持续了这么久。观测少于 100 时 `p99` 为 `null` |
+| `scenarios[].observations` | int | 有延迟的迭代数 |
+| `scenarios[].censored` | int | 其中只知道下界的 |
+| `scenarios[].steps` | []object | 按顺序的步骤，第一个是调用本身 |
+| `scenarios[].steps[].method` | string | 步骤的方法，写法同 `methods[].method` |
+| `scenarios[].steps[].reached` | int | 到达该步骤的迭代数 |
+| `scenarios[].steps[].failed_here` | int | 其中在该步骤失败的 |
+| `scenarios[].steps[].aborted_here` | int | 其中在该步骤被中止的 |
+| `scenarios[].steps[].not_sent_here` | int | 其中在该步骤未发出的 |
+| `scenarios[].steps[].not_reached` | int | 未到达该步骤的迭代数：`reached` + `not_reached` = `iterations`，下一步骤的 `reached` = `reached` 减去前面三个计数 |
 
 ### 崩溃点搜索：`mode: "breakpoint"`
 

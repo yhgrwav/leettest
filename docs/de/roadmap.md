@@ -17,7 +17,7 @@ Das sind Pläne, keine zugesagten Termine. Was heute funktioniert, steht in der 
 ## Später
 
 - ~~**[Verkettung von Aufrufen](chaining.md)**: ein Feld aus der Antwort einer Methode in die Anfrage
-  einer anderen.~~ Fertig (nicht veröffentlicht): `extract` in einem Szenario, siehe [Verkettung von Aufrufen](chaining.md).
+  einer anderen.~~ Fertig: `extract` in einem Szenario, siehe [Verkettung von Aufrufen](chaining.md).
 - **Token-Erneuerung** während eines langen Laufs.
 - ~~**Metrik-Export** nach Prometheus.~~ Fertig in v0.6: [Prometheus-Metriken](reference.md#prometheus-metriken).
 
