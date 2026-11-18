@@ -25,7 +25,7 @@ import (
 
 // Ground: contract — app.compression reaches the sender as it was written.
 func TestCompression_TheConfigReachesTheSender(t *testing.T) {
-	opts, err := senderOptions(&config.App{Compression: "gzip"})
+	opts, _, err := senderOptions(&config.App{Compression: "gzip"}, false)
 	if err != nil {
 		t.Fatalf("senderOptions: %v", err)
 	}

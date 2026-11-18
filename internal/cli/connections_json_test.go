@@ -36,10 +36,12 @@ func connectionsJSON(t *testing.T, conns *engine.Connections) map[string]any {
 	return obj
 }
 
-// connectionKeys are the keys of the object: the five of schema v1 and the three added with
-// connections: N. The same at N = 1 and at N = 3; what differs is which are null.
+// connectionKeys are the keys of the object: the five of schema v1, the three added with
+// connections: N and the four of the closes (idle_timeout). The same at N = 1 and at N = 3; what
+// differs is which are null.
 var connectionKeys = []string{
 	"in_flight_limit", "limit_changes", "open", "per_connection", "reconnects", "resolved", "first_limit", "last_limit",
+	"closed_idle_ours", "closed_idle_peer", "closed_busy", "peer_idle_min_us",
 }
 
 func hasExactlyTheConnectionKeys(t *testing.T, name string, obj map[string]any) {

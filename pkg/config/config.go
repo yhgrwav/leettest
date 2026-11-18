@@ -39,7 +39,7 @@ var (
 	ErrInvalidWarmup       = errors.New("warmup must not be negative")
 	ErrInvalidRamp         = errors.New("ramp must not be negative")
 	ErrEmptyName           = errors.New("name must not be empty: leave it out to use the service or file name")
-	ErrDuplicateMethod     = errors.New("method appears in more than one call: the report is per method, keep one call for it")
+	ErrDuplicateMethod     = errors.New("a report name is used twice")
 	ErrFractionalRPS       = errors.New("rps must be a whole number of requests")
 	ErrWarmupCoversTheCall = errors.New("warmup must be shorter than the call: otherwise nothing of it is measured")
 	ErrInvalidMetadata     = errors.New("invalid metadata")
@@ -85,6 +85,9 @@ var (
 	ErrInvalidMode = errors.New("app.mode must be local or real, or left out")
 	// ErrRealNeedsRamp is app.mode: real without load.ramp.
 	ErrRealNeedsRamp = errors.New("app.mode: real needs load.ramp (a ramp from 0 to rps), e.g. load.ramp: 30s")
+	// ErrInvalidMetadataRefresh is an app.metadata_refresh below 1s, with no
+	// value, or with no ${file:PATH} in app.metadata to read again.
+	ErrInvalidMetadataRefresh = errors.New("invalid app.metadata_refresh")
 	// ErrInvalidStopOnErrors is a load.stop_on_errors that is not a percent
 	// above 0 and up to 100, or has no value.
 	ErrInvalidStopOnErrors = errors.New("invalid load.stop_on_errors")
@@ -158,8 +161,21 @@ type App struct {
 	ServerName string `yaml:"server_name"`
 	// RawMetadata is the field as written. Metadata is what every call
 	// carries: keys lowercased, ${NAME} replaced from the environment; nil
-	// when there is none.
+	// when there is none. A header with a ${file:PATH} is not in it: its value
+	// is known only when the file is read, by ReadMetadata.
 	RawMetadata map[string]string `yaml:"metadata"`
+	fileHeaders []fileHeader
+	// RawMetadataRefresh is app.metadata_refresh as written, nil when it was
+	// left out. MetadataRefresh is how often every ${file:PATH} of app.metadata
+	// is read again during the run, at least 1s; 0 reads each file once at the
+	// start.
+	RawMetadataRefresh *time.Duration `yaml:"metadata_refresh"`
+	MetadataRefresh    time.Duration  `yaml:"-"`
+	// RawIdleTimeout is app.idle_timeout as written, nil when it was left out.
+	// IdleTimeout is how long a connection may have no call on it before the
+	// client closes it, at least 1s; 0 is grpc-go's own 30 minutes.
+	RawIdleTimeout *time.Duration `yaml:"idle_timeout"`
+	IdleTimeout    time.Duration  `yaml:"-"`
 	// RawMaxResponseSize is the field as written, such as 16MiB; the unit is
 	// required. MaxResponseBytes is it in bytes, 0 when left out: the
 	// transport's own limit of 4 MiB.
@@ -346,9 +362,6 @@ func (l Load) validateSearch() []error {
 	}
 	for i := range l.Calls {
 		call := &l.Calls[i]
-		if call.isScenario() {
-			errs = append(errs, fmt.Errorf("%w: load.calls[%d]: a scenario can't be searched yet: the search measures one call", ErrBreakpoint, i))
-		}
 		if call.RPS != 0 {
 			errs = append(errs, fmt.Errorf("%w: %s: rps with load.breakpoint: the search sets it", ErrBreakpoint, call.where(i)))
 		}
@@ -359,8 +372,22 @@ func (l Load) validateSearch() []error {
 	if err := l.Breakpoint.validate(); err != nil {
 		errs = append(errs, err)
 	}
+	if l.Breakpoint.P99Limit != 0 && l.searchesScenario() {
+		errs = append(errs, fmt.Errorf("%w: load.breakpoint.p99_limit with a scenario: a step's p99 is judged by the knee, "+
+			"a limit for every step or for the iteration is not decided yet; leave p99_limit out", ErrBreakpoint))
+	}
 
 	return errs
+}
+
+func (l Load) searchesScenario() bool {
+	for i := range l.Calls {
+		if l.Calls[i].isScenario() {
+			return true
+		}
+	}
+
+	return false
 }
 
 // Rate is a whole number of requests per second. A fractional one is refused
@@ -465,6 +492,10 @@ type Step struct {
 	DatasetSHA256 string          `yaml:"-"`
 	DatasetOrder  *string         `yaml:"dataset_order"`
 	DatasetSeed   *int64          `yaml:"dataset_seed"`
+	// RawPass and Pass are the step's pass, as the call's: the limits of the
+	// step's own row, checked against the step's timeout.
+	RawPass *Pass            `yaml:"pass"`
+	Pass    threshold.Limits `yaml:"-"`
 }
 
 // Pass is a call's pass: section as written, key to value, so that a wrong key
@@ -546,9 +577,6 @@ func (c Call) validateScenario(i int) []error {
 	case len(*c.RawSteps) == 0:
 		fail("%s.steps must not be empty", at)
 	}
-	if c.RawPass != nil {
-		errs = append(errs, passErr("%s: pass for a scenario isn't supported yet", at))
-	}
 
 	if c.RawSteps == nil {
 		return errs
@@ -611,8 +639,7 @@ func (l Load) Validate() error {
 	if l.Breakpoint != nil {
 		errs = append(errs, l.validateSearch()...)
 	}
-	first := make(map[string]int, len(l.Calls))
-	names := map[string]string{}
+	names := newReportNames(len(l.Calls))
 	for i := range l.Calls {
 		call := &l.Calls[i]
 		checked := *call
@@ -627,45 +654,87 @@ func (l Load) Validate() error {
 			errs = append(errs, fmt.Errorf("%s: %w: warmup %s, duration %s",
 				call.where(i), ErrWarmupCoversTheCall, l.Warmup, call.Duration))
 		}
-		if j, ok := first[call.Method]; ok && call.Method != "" {
-			errs = append(errs, fmt.Errorf("%s: %w: %q, as call %d", call.where(i), ErrDuplicateMethod, call.Method, j))
-			continue
-		}
-		first[call.Method] = i
-
 		errs = append(errs, call.validateScenario(i)...)
-		errs = append(errs, claimNames(names, call, i)...)
+		errs = append(errs, names.claim(call, i)...)
 	}
+	errs = append(errs, names.refuseScenarioNamesOfMethods()...)
 
 	return errors.Join(errs...)
 }
 
-// claimNames records the names call i takes in the report's namespace (its
-// method, the scenario's name, the step methods) and refuses one already taken:
-// the scenario name stands where a method does in the report and in the JSON.
-func claimNames(names map[string]string, call *Call, i int) []error {
-	var errs []error
+// reportNames is the report's namespace: a method may stand in the run many
+// times (calls, heads, steps), but two plain calls of one method share a row,
+// and a scenario's name stands where a method does in the report and the JSON,
+// so it may be neither another scenario's name nor any method of the run.
+type reportNames struct {
+	plain     map[string]int    // method of a plain call -> the call's index
+	methods   map[string]string // every method of the run -> its first place
+	scenarios map[string]string // scenario name -> its place
+	named     []scenarioName    // scenario names in file order
+}
 
-	claim := func(name, at, owner string) {
-		if name == "" {
-			return
-		}
-		if prev, taken := names[name]; taken {
-			errs = append(errs, fmt.Errorf("%s: %w: %q is already %s", at, ErrDuplicateMethod, name, prev))
+type scenarioName struct{ name, at string }
 
-			return
-		}
-		names[name] = owner
+func newReportNames(calls int) *reportNames {
+	return &reportNames{
+		plain:     make(map[string]int, calls),
+		methods:   make(map[string]string, calls),
+		scenarios: map[string]string{},
 	}
+}
 
+// claim records the names call i takes and refuses the two plain calls of one
+// method and a scenario name already taken by another scenario. A scenario name
+// against the methods is judged after every call is seen (refuseScenarioNamesOfMethods):
+// it must not depend on which stands first in the file.
+func (n *reportNames) claim(call *Call, i int) []error {
+	var errs []error
 	at := fmt.Sprintf("load.calls[%d]", i)
-	claim(call.Method, at+".method", fmt.Sprintf("the method of call %d", i))
-	if call.RawScenario != nil {
-		claim(*call.RawScenario, at+".scenario", fmt.Sprintf("the scenario of call %d", i))
+
+	if call.Method != "" {
+		if !call.isScenario() {
+			if j, ok := n.plain[call.Method]; ok {
+				errs = append(errs, fmt.Errorf(
+					"%s.method: %w: %q is also the method of call %d: two plain calls share one report row, keep one plain call per method or repeat the method as a step of a scenario",
+					at, ErrDuplicateMethod, call.Method, j))
+			} else {
+				n.plain[call.Method] = i
+			}
+		}
+		n.noteMethod(call.Method, fmt.Sprintf("the method of call %d", i))
 	}
 	if call.RawSteps != nil {
 		for k, s := range *call.RawSteps {
-			claim(s.Method, fmt.Sprintf("%s.steps[%d]", at, k), fmt.Sprintf("step %d of call %d", k+2, i))
+			if s.Method != "" {
+				n.noteMethod(s.Method, fmt.Sprintf("step %d of call %d", k+2, i))
+			}
+		}
+	}
+	if call.RawScenario != nil && *call.RawScenario != "" {
+		name := *call.RawScenario
+		place := at + ".scenario"
+		if prev, taken := n.scenarios[name]; taken {
+			errs = append(errs, fmt.Errorf("%s: %w: %q is already %s", place, ErrDuplicateMethod, name, prev))
+		} else {
+			n.scenarios[name] = fmt.Sprintf("the scenario of call %d", i)
+			n.named = append(n.named, scenarioName{name, place})
+		}
+	}
+
+	return errs
+}
+
+func (n *reportNames) noteMethod(method, owner string) {
+	if _, seen := n.methods[method]; !seen {
+		n.methods[method] = owner
+	}
+}
+
+func (n *reportNames) refuseScenarioNamesOfMethods() []error {
+	var errs []error
+	for _, s := range n.named {
+		if owner, ok := n.methods[s.name]; ok {
+			errs = append(errs, fmt.Errorf("%s: %w: %q is already %s", s.at, ErrDuplicateMethod, s.name, owner))
 		}
 	}
 

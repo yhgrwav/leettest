@@ -29,10 +29,12 @@ import (
 
 var ErrPlan = errors.New("breaking-point plan")
 
-// ErrScenario is the search refusing a run whose report holds a scenario:
-// Sent counts step calls and Scheduled iterations, so the search's judgements
-// would compare unlike things.
-var ErrScenario = errors.New("the breaking-point search does not run scenarios")
+// Row names a row of a scenario: its step from 1, the head being step 1, and
+// the key of its report row.
+type Row struct {
+	Step   int
+	Method string
+}
 
 // Plan is a rising profile: rates from From up to To, each step Factor times
 // the last (or Step more, when Step is set), each held for Hold, of which the
@@ -46,16 +48,20 @@ type Plan struct {
 	Settle time.Duration
 	Hold   time.Duration
 	// Timeout is the calls' deadline. A broken step is repeated after a
-	// cooldown of max(Timeout, Settle) without load, so the target's queue
-	// left from the first try does not confirm the break.
+	// cooldown of max(IterationTimeout, Settle) without load, so the target's
+	// queue left from the first try does not confirm the break.
 	Timeout time.Duration
+	// StepTimeouts are the deadlines of the steps after the head of a scenario,
+	// in order; empty for a plain call.
+	StepTimeouts []time.Duration
 	// MaxInFlight is the in-flight cap. Zero: each step gets the smallest it
 	// can run with (engine.InFlightNeed). Set and too low for a step: the
 	// search stops there with RunLimit, keeping what held below.
 	MaxInFlight int
 	// P99Limit, when set, breaks a step whose p99 is above it. Without it a
 	// step breaks on the knee: p99 over KneeRatio times the baseline, the
-	// lowest p99 of the steps that held before it.
+	// lowest p99 of the steps that held before it. A scenario has no p99 limit
+	// (the config refuses one); the search of a scenario judges the knee only.
 	P99Limit time.Duration
 	// ErrorsLimit is the share of failed calls a step may have and still
 	// hold. Empty Text: share.Default.
@@ -196,6 +202,9 @@ type Step struct {
 	Why    string
 	Cause  Cause
 	Kind   Kind
+	// BrokeStep, for a scenario, is the first row to break, in the order of the
+	// steps; nil for a plain call and for a step that broke on no row.
+	BrokeStep *Row
 	// Recovered, for a Probe, says its p99 came within Recovered times the
 	// baseline: a probe that did not break may still not have recovered.
 	Recovered bool
@@ -211,7 +220,9 @@ func (p Plan) Worst() (time.Duration, error) {
 	n := time.Duration(len(rates))
 	runs := 2*n + (n-1)*MaxProbes
 
-	return 2*n*(p.Hold+p.Timeout) + (n-1)*MaxProbes*(ProbeHold(rates[0])+p.Timeout) + n*p.Cooldown() + runs*RunSlack, nil
+	life := p.IterationTimeout()
+
+	return 2*n*(p.Hold+life) + (n-1)*MaxProbes*(ProbeHold(rates[0])+life) + n*p.Cooldown() + runs*RunSlack, nil
 }
 
 // RunSlack is what a run takes beyond its hold and timeout in Worst: building
@@ -248,15 +259,29 @@ type Result struct {
 	Held, Broke int
 	// Cause is the reason of the run that ended the search.
 	Cause Cause
-	Steps []Step
+	// BrokeStep is the first row to break in the run that ended the search, for
+	// a scenario that broke; nil otherwise.
+	BrokeStep *Row
+	Steps     []Step
 	// Notes say what the outcome does not: a step that broke once and held
 	// on its repeat, a knee with no baseline below it.
 	Notes []string
 }
 
+// IterationTimeout is the longest an iteration can live: the call's Timeout,
+// and for a scenario the sum with its steps' (engine's longestTimeout).
+func (p Plan) IterationTimeout() time.Duration {
+	life := p.Timeout
+	for _, d := range p.StepTimeouts {
+		life += d
+	}
+
+	return life
+}
+
 // Cooldown is the pause without load before a broken step is repeated.
 func (p Plan) Cooldown() time.Duration {
-	return max(p.Timeout, p.Settle)
+	return max(p.IterationTimeout(), p.Settle)
 }
 
 // ProbeHold is how long a recovery probe at rps runs: max(1s, ProbeCalls/rps).
@@ -323,6 +348,11 @@ type search struct {
 	run      RunStep
 	first    int
 	baseline time.Duration
+	// rowBase is a scenario's baseline of each row, by step: the row's lowest
+	// defined p99 of the steps that held. scenario says the runs are a
+	// scenario's; baseline is then unused.
+	rowBase  map[int]time.Duration
+	scenario bool
 	res      Result
 
 	obs Observer
@@ -375,8 +405,8 @@ func (s *search) loop(ctx context.Context, rates []int) (Result, error) {
 				return s.res, err
 			}
 			if !recovered {
-				s.res.Notes = append(s.res.Notes, fmt.Sprintf("%d: broke and did not recover within %d probes of %v at %d rps",
-					rps, MaxProbes, ProbeHold(s.first), s.first))
+				s.res.Notes = append(s.res.Notes, fmt.Sprintf("%d: broke and did not recover within %d probes of %v at %s",
+					rps, MaxProbes, ProbeHold(s.first), s.rate(s.first)))
 
 				s.broke(step, BrokeBetween)
 				s.res.Cause = CauseNoRecovery
@@ -412,14 +442,21 @@ func (s *search) loop(ctx context.Context, rates []int) (Result, error) {
 
 // step runs rps for hold and judges it, or names the cap that cannot run it.
 func (s *search) step(ctx context.Context, rps int, hold time.Duration, kind Kind) (Step, error) {
-	need := engine.InFlightNeed([]engine.Call{{
+	call := engine.Call{
 		Timeout: s.plan.Timeout,
 		Stages:  []engine.Stage{{StartRPS: rps, TargetRPS: rps, Duration: hold}},
-	}})
+	}
+	for _, d := range s.plan.StepTimeouts {
+		call.Next = append(call.Next, engine.Step{Timeout: d})
+	}
+	need := engine.InFlightNeed([]engine.Call{call})
 	step := Step{RPS: rps, Kind: kind}
 	if s.plan.MaxInFlight > 0 && need > s.plan.MaxInFlight {
 		step.Cause = CauseInFlightCap
-		step.Why = fmt.Sprintf("in-flight cap %d is too low for %d rps with timeout %v", s.plan.MaxInFlight, rps, s.plan.Timeout)
+		step.Why = fmt.Sprintf("in-flight cap %d is too low for %s with timeout %v", s.plan.MaxInFlight, s.rate(rps), s.plan.Timeout)
+		if len(call.Next) > 0 {
+			step.Why = fmt.Sprintf("in-flight cap %d is too low for %s with the steps' timeouts totalling %v", s.plan.MaxInFlight, s.rate(rps), s.plan.IterationTimeout())
+		}
 		s.record(step)
 
 		return step, nil
@@ -447,19 +484,24 @@ func (s *search) step(ctx context.Context, rps int, hold time.Duration, kind Kin
 		return step, ctx.Err()
 	case err != nil:
 		return step, err
-	case len(report.Scenarios) > 0:
-		return step, ErrScenario
 	}
+	s.scenario = scenarioRun(report)
 	step.Broken, step.Cause, step.Why = s.waits(rps, report)
-	if step.Why == "" {
+	if step.Why == "" && s.scenario {
+		step.Cause, step.Why = undersentRows(rps, report)
+	}
+	if step.Why == "" && !s.scenario {
 		step.Cause, step.Why = undersent(rps, report)
 	}
-	if step.Why == "" {
+	if step.Why == "" && s.scenario {
+		step.Broken, step.Cause, step.Why, step.BrokeStep = s.brokenRows(report, kind)
+	}
+	if step.Why == "" && !s.scenario {
 		step.Broken, step.Cause, step.Why = s.broken(report, kind)
 	}
 	if kind == Probe && !step.Broken && step.Why == "" {
 		// No baseline: nothing to be far from, the knee is not checked either.
-		step.Recovered = s.baseline == 0 || float64(p99(report)) <= Recovered*float64(s.baseline)
+		step.Recovered = s.recovered(report)
 	}
 	s.record(step)
 
@@ -492,6 +534,11 @@ func (s *search) limited(step Step) bool {
 // a step too short for a p99 says nothing, and zero would be the lowest.
 func (s *search) hold(step Step) {
 	s.res.Held = step.RPS
+	if scenarioRun(step.Report) {
+		s.holdRows(step.Report)
+
+		return
+	}
 	got, ok := definedP99(step.Report)
 	if ok && (s.baseline == 0 || got < s.baseline) {
 		s.baseline = got
@@ -499,7 +546,7 @@ func (s *search) hold(step Step) {
 }
 
 func (s *search) broke(step Step, outcome Outcome) Result {
-	s.res.Outcome, s.res.Broke, s.res.Cause = outcome, step.RPS, step.Cause
+	s.res.Outcome, s.res.Broke, s.res.Cause, s.res.BrokeStep = outcome, step.RPS, step.Cause, step.BrokeStep
 
 	return s.res
 }
@@ -508,27 +555,28 @@ func (s *search) broke(step Step, outcome Outcome) Result {
 // the run's side gave out — why without broken — or the target's side broke.
 // Nothing to say: "".
 func (s *search) waits(rps int, r engine.Report) (broken bool, cause Cause, why string) {
+	at := rate(rps, scenarioRun(r))
 	if r.CapHit != nil {
-		return false, CauseInFlightCap, fmt.Sprintf("in-flight cap reached at %d rps; the target above that is untested", rps)
+		return false, CauseInFlightCap, fmt.Sprintf("in-flight cap reached at %s; the target above that is untested", at)
 	}
 	wait, side, ok := r.WaitVerdict()
 	switch {
 	case !ok:
 		return false, NoCause, ""
 	case side == engine.SideTarget:
-		return true, CauseConnection, fmt.Sprintf("the connection to the target was not ready for %d calls at %d rps", r.ConnectionCauseCalls, rps)
+		return true, CauseConnection, fmt.Sprintf("the connection to the target was not ready for %d calls at %s", r.ConnectionCauseCalls, at)
 	case wait == engine.WaitStream && r.Connections != nil && r.Connections.InFlightAnnounced && r.Connections.Open > 1:
 		// The limit of the run is what the connections allow together; one
 		// that announced none leaves it unknown, and the wait stays a wait.
-		return false, CauseStreamLimit, fmt.Sprintf("stream limits of %d connections (%d in flight) reached at %d rps; the target above that is untested",
-			r.Connections.Open, r.Connections.InFlightLimit, rps)
+		return false, CauseStreamLimit, fmt.Sprintf("stream limits of %d connections (%d in flight) reached at %s; the target above that is untested",
+			r.Connections.Open, r.Connections.InFlightLimit, at)
 	case wait == engine.WaitStream && r.Connections != nil && r.Connections.InFlightAnnounced:
-		return false, CauseStreamLimit, fmt.Sprintf("stream limit %d of a single connection reached at %d rps; the target above that is untested",
-			r.Connections.InFlightLimit, rps)
+		return false, CauseStreamLimit, fmt.Sprintf("stream limit %d of a single connection reached at %s; the target above that is untested",
+			r.Connections.InFlightLimit, at)
 	case wait == engine.WaitStream:
-		return false, CauseStreamWait, fmt.Sprintf("calls waited for a stream at %d rps; the target above that is untested", rps)
+		return false, CauseStreamWait, fmt.Sprintf("calls waited for a stream at %s; the target above that is untested", at)
 	default:
-		return false, CauseGenerator, fmt.Sprintf("the generator fell behind at %d rps; the target above that is untested", rps)
+		return false, CauseGenerator, fmt.Sprintf("the generator fell behind at %s; the target above that is untested", at)
 	}
 }
 
@@ -582,12 +630,19 @@ func failures(r engine.Report) (bad, client, total int) {
 // by, and, when there are any, the parts that are not the target's.
 func failedText(r engine.Report, limit share.Percent, v share.Verdict) string {
 	bad, client, total := failures(r)
+
+	return failedCounts(bad, client, r.NotSentConnection, total, limit, v)
+}
+
+// failedCounts is failedText over counts: bad of total, client of them the
+// client's, noConn of them calls lost to the connection.
+func failedCounts(bad, client, noConn, total int, limit share.Percent, v share.Verdict) string {
 	text := fmt.Sprintf("failed %d of %d calls (%s", bad, total, share.Format(bad, total, limit, v))
 
-	if client > 0 || r.NotSentConnection > 0 {
-		parts := []string{fmt.Sprintf("%d failed", bad-r.NotSentConnection)}
-		if r.NotSentConnection > 0 {
-			parts = append(parts, fmt.Sprintf("%d no connection", r.NotSentConnection))
+	if client > 0 || noConn > 0 {
+		parts := []string{fmt.Sprintf("%d failed", bad-noConn)}
+		if noConn > 0 {
+			parts = append(parts, fmt.Sprintf("%d no connection", noConn))
 		}
 		if client > 0 {
 			parts = append(parts, fmt.Sprintf("%d client side", client))
@@ -605,7 +660,7 @@ const noBaselineText = "no baseline: the first step measured too few calls for a
 // probe runs up to MaxProbes probes at the first step's rate until one comes
 // within Recovered of the baseline; with no baseline the first one has recovered.
 func (s *search) probe(ctx context.Context) (bool, error) {
-	if s.baseline == 0 && !slices.Contains(s.res.Notes, noBaselineText) {
+	if s.noBaseline() && !slices.Contains(s.res.Notes, noBaselineText) {
 		s.res.Notes = append(s.res.Notes, noBaselineText)
 	}
 	for k := range MaxProbes {

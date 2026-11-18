@@ -29,9 +29,9 @@ var callDatasetPath = regexp.MustCompile(`^\$\.load\.calls\[\d+\]\.(dataset|data
 // callExtractPath matches the extract of a call.
 var callExtractPath = regexp.MustCompile(`^\$\.load\.calls\[\d+\]\.extract$`)
 
-// passPath matches a pass section of a call or of the search and, when the
-// match has a key, a limit inside it.
-var passPath = regexp.MustCompile(`^\$\.(load\.calls\[\d+\]|load\.breakpoint)\.pass(\.[A-Za-z0-9_]+)?$`)
+// passPath matches a pass section of a call, of a step or of the search and,
+// when the match has a key, a limit inside it.
+var passPath = regexp.MustCompile(`^\$\.(load\.calls\[\d+\](\.steps\[\d+\])?|load\.breakpoint)\.pass(\.[A-Za-z0-9_]+)?$`)
 
 // scenarioKeyPath matches scenario and steps of a call, stepKeyPath a key of
 // one step.
@@ -43,7 +43,7 @@ var (
 // stepKeysLater are the keys of a call that a step will take, and does not yet:
 // refused by name, so the user does not read them as typos.
 var stepKeysLater = map[string]bool{
-	"dataset_reuse": true, "rps": true, "duration": true, "pass": true,
+	"dataset_reuse": true, "rps": true, "duration": true,
 }
 
 // stepDatasetKeys are the dataset keys a step takes, as a call does.
@@ -106,11 +106,6 @@ func (v *nullDatasetVisitor) Visit(node ast.Node) ast.Visitor {
 
 		return v
 	}
-	if scenarioKeyPath.MatchString(path) || stepKeyPath.MatchString(path) {
-		v.visitScenarioKey(pair, path)
-
-		return v
-	}
 	if passPath.MatchString(path) {
 		if value, resolved := v.unwrap(pair.Value); resolved {
 			if _, null := value.(*ast.NullNode); null {
@@ -118,6 +113,11 @@ func (v *nullDatasetVisitor) Visit(node ast.Node) ast.Visitor {
 					passErr("%s has no value: write the limit or leave it out", strings.TrimPrefix(path, "$."))))
 			}
 		}
+
+		return v
+	}
+	if scenarioKeyPath.MatchString(path) || stepKeyPath.MatchString(path) {
+		v.visitScenarioKey(pair, path)
 
 		return v
 	}
@@ -137,6 +137,16 @@ func (v *nullDatasetVisitor) Visit(node ast.Node) ast.Visitor {
 			if _, null := value.(*ast.NullNode); null {
 				v.errs = append(v.errs, fmt.Errorf("line %d: %w: has no value: write a percent such as 5%%, or leave the key out",
 					pair.Key.GetToken().Position.Line, ErrInvalidStopOnErrors))
+			}
+		}
+
+		return v
+	}
+	if path == "$.app.metadata_refresh" {
+		if value, resolved := v.unwrap(pair.Value); resolved {
+			if _, null := value.(*ast.NullNode); null {
+				v.errs = append(v.errs, fmt.Errorf("line %d: %w: has no value: write a duration such as 5m, or leave the key out",
+					pair.Key.GetToken().Position.Line, ErrInvalidMetadataRefresh))
 			}
 		}
 
@@ -177,13 +187,14 @@ func (v *nullDatasetVisitor) visitScenarioKey(pair *ast.MappingValueNode, path s
 	name := strings.TrimPrefix(path, "$.")
 
 	m := stepKeyPath.FindStringSubmatch(path)
+	// pass is read by checkTree before this runs (passPath).
 	if len(m) > 3 && m[3] != "method" && m[3] != "timeout" && m[3] != "data" && m[3] != "templates" && m[3] != "extract" &&
 		!stepDatasetKeys[m[3]] {
 		if stepKeysLater[m[3]] {
 			v.errs = append(v.errs, fmt.Errorf("line %d: %w: %s is not supported in a step yet", line, ErrScenario, name))
 		} else {
 			v.errs = append(v.errs, fmt.Errorf("line %d: %w: %s is not a step key: a step has method, timeout, data, templates, "+
-				"extract, dataset, dataset_order and dataset_seed", line, ErrScenario, name))
+				"extract, dataset, dataset_order, dataset_seed and pass", line, ErrScenario, name))
 		}
 
 		return

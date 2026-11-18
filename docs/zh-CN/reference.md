@@ -63,7 +63,7 @@ load:
 | `load.calls[].dataset_reuse` | `true`（省略时）或 `false`：为 `false` 时，整个进程中没有任何一条记录会发出两次。需要 `dataset` |
 | `load.calls[].templates` | `true` 或 `false`（省略时为 `false`；写了键却没有值是错误）：在 `data` 中启用占位符 `{{uuid}}` 和 `{{seq}}`，见[下文](#会变化的请求模板)。至少需要一个占位符——在它自己的 `data` 中，或在带 `templates: true` 的步骤的 `data` 中；不能与 `dataset` 同用。 |
 | `load.calls[].scenario` | （未发布）场景名称：调用本身成为第 1 步，后面跟着 `steps`。需要 `steps`，反之亦然。名称不能为空，报告中原样打印；不能与某个方法同名。见[下文](#场景调用之后的步骤) |
-| `load.calls[].steps` | （未发布）调用之后的非空步骤列表。步骤的任何键，除下面八个外，暂不支持——是错误 |
+| `load.calls[].steps` | （未发布）调用之后的非空步骤列表。步骤的任何键，除下面九个外，暂不支持——是错误 |
 | `load.calls[].extract` | （未发布）字典 `名称: 路径`：取自这个调用应答的值，其后的步骤把它们读作 `{{extract.<name>}}`，见[下文](#extract较早应答中的值)。只用于带 `steps` 的调用；名称为 `[A-Za-z_][A-Za-z0-9_]*`，在场景内唯一，并被后面的某个步骤读取。不能是 null，也不能为空 |
 | `load.calls[].steps[].method` | （未发布）步骤的方法，完整名称；必填。在压测前检查，与调用的方法一样 |
 | `load.calls[].steps[].timeout` | （未发布）等待步骤应答的时长，同 `load.calls[].timeout`；省略时为 `2s`，而不是调用的超时 |
@@ -73,6 +73,7 @@ load:
 | `load.calls[].steps[].dataset_order` | （未发布）`file`（省略时）或 `random`：步骤中记录的顺序。需要步骤的 `dataset` |
 | `load.calls[].steps[].dataset_seed` | （未发布）随机顺序的 seed，0 到 9007199254740991 的整数，同 `load.calls[].dataset_seed`。需要步骤上有 `dataset_order: random` |
 | `load.calls[].steps[].extract` | （未发布）同 `load.calls[].extract`，针对步骤自己的应答：下一个步骤把这些名称读作 `{{extract.<name>}}`，见[下文](#extract较早应答中的值)。一个名称在场景内只取一次：由调用或某一个步骤取 |
+| `load.calls[].steps[].pass` | （未发布）步骤自己那一行的限值，键同 `load.calls[].pass`（见[下文](#pass-限值)）；调用自己的 `pass` 评判第一个步骤，不会传给其他步骤。延迟限值须低于该步骤的超时，`p999` 取调用的 `rps` 和 `duration` |
 | `load.calls[].pass` | 运行要通过必须满足的限值：`p50`、`p90`、`p95`、`p99`、`p999`、`errors`，见[下文](#pass-限值)。省略时没有限值 |
 | `load.breakpoint.from` | 崩溃点搜索第一级的速率，每秒调用数。从 1 起的整数；小数是配置错误（`rps must be a whole number of requests: 100.5`）。必填：缺少或小于 1 时报 `invalid breakpoint: breakpoint.from: breaking-point plan: from 0, want at least 1 rps`，退出码 1。第一级必须测得至少 100 个调用，即 `from` × (`hold` − `settle`)，否则在加压前报 `invalid breakpoint: the first step measures 8 calls, a p99 needs 100: raise from, hold or lower settle`。配合 `app.mode: real`，爬升从 0 到 `from` |
 | `load.breakpoint.to` | 速率高于它就不再有级。整数，不小于 `from`（等于 `from` 即只有一级）。必填：缺少或低于 `from` 时报 `invalid breakpoint: breakpoint.to: breaking-point plan: to 50 is below from 100`，退出码 1。搜索走到最后一级且它撑住了，结果为 `held_all` |
@@ -699,6 +700,19 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `settings.ramp_us` | int | 按配置的 `load.ramp`，单位为整微秒；没有爬升时为 0。搜索：第一级之前的爬升；在 `breakpoint.runs[0].report.settings.ramp_us` 中相同，其余运行为 0 |
 | `settings.stop_on_errors` | string? | 按配置书写的 `load.stop_on_errors`：`"5%"`，`"100%"` 保持 `"100%"`；`null` 表示省略。 |
 | `settings.compression` | string? | 按配置的 `app.compression`：`"gzip"`，`null` 表示省略 |
+| `settings.idle_timeout_us` | int? | （未发布）`app.idle_timeout`，以整微秒计；`null` 表示省略，即 grpc-go 的 30 分钟 |
+| `metadata_refresh` | object? | （未发布）重新读取 `${file:PATH}` 文件的情况，从连接起计；没有 `app.metadata_refresh` 时为 `null`。搜索只在顶层有一个，`breakpoint.runs` 中的各次运行为 `null` |
+| `metadata_refresh.interval_us` | int | （未发布）`app.metadata_refresh`，以整微秒计 |
+| `metadata_refresh.reads` | int | （未发布）启动之后的读取次数；加载时的第一次不计 |
+| `metadata_refresh.changed` | int | （未发布）得到不同值的成功读取次数 |
+| `metadata_refresh.failures` | int | （未发布）失败的读取次数；最后一个有效值继续使用 |
+| `metadata_refresh.failing_at_end` | bool | （未发布）最后一次读取失败时为 `true` |
+| `metadata_refresh.last_error` | string? | （未发布）最后一次失败读取的文本：请求头、文件和原因，绝不含值。在出现失败前为 `null`，恢复后保留 |
+| `closes` | object? | （未发布）搜索中的连接是如何关闭的：整个搜索只有一份计数。没有发送器（`-fake`）时为 `null`。运行的同样数字在 `connections` 中；`breakpoint.runs` 中的各次运行不带 |
+| `closes.closed_idle_ours` | int? | （未发布）上面没有调用、被我们的 `app.idle_timeout` 关闭的连接；`null` 表示发送器不计数 |
+| `closes.closed_idle_peer` | int? | （未发布）上面没有调用、被对端或网络关闭的连接；`null` 表示发送器不计数 |
+| `closes.closed_busy` | int? | （未发布）上面还有调用时被关闭的连接；`null` 表示发送器不计数 |
+| `closes.peer_idle_min_us` | int? | （未发布）对端关闭连接前，连接上没有调用的最短空闲时间，以整微秒计；在出现这样的关闭前为 `null` |
 | `passport` | object? | 这次运行所用的机器和配置，用于区分不同的运行。搜索只在顶层有一个，`breakpoint.runs` 中的各次运行没有 |
 | `passport.config_sha256` | string | 配置文件读入时字节的 SHA-256，64 位十六进制 |
 | `passport.os`、`passport.arch` | string | 生成器的 `GOOS` 和 `GOARCH`，如 `linux` 和 `amd64` |
@@ -738,6 +752,10 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `connections.per_connection[].p99` | percentile? | 该连接调用的 p99；没有带延迟的调用时为 `null` |
 | `connections.per_connection[].first_limit`、`connections.per_connection[].last_limit` | int? | 该连接第一次和最后一次握手时的流上限；`null`——未声明 |
 | `connections.per_connection[].limit_changes` | int | 该连接声明的上限与上一次不同的握手次数 |
+| `connections.closed_idle_ours` | int? | （未发布）上面没有调用、被我们的 `app.idle_timeout` 关闭的连接；`null` 表示发送器不计数 |
+| `connections.closed_idle_peer` | int? | （未发布）上面没有调用、被对端或网络关闭的连接；`null` 表示发送器不计数 |
+| `connections.closed_busy` | int? | （未发布）上面还有调用时被关闭的连接；`null` 表示发送器不计数 |
+| `connections.peer_idle_min_us` | int? | （未发布）对端关闭连接前，连接上没有调用的最短空闲时间，以整微秒计；在出现这样的关闭前为 `null` |
 | `client_waits` | object | 在客户端侧等待超过阈值的调用，按原因（[阅读报告](../en/report.md#reading-the-report)） |
 | `client_waits.generator_calls`、`client_waits.stream_calls`、`client_waits.connection_calls` | int | 所有此类调用，无论是否发出。一个已发出的调用可能同时计入多个原因 |
 | `client_waits.generator_tail_calls`、`client_waits.stream_tail_calls`、`client_waits.connection_tail_calls` | int | 只统计 p99 尾部和未发出的调用：由它们决定 `tail_wait_cause` |
@@ -774,7 +792,10 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 
 | 字段 | 类型 | 含义 |
 |---|---|---|
-| `methods[].method` | string | 方法全名 |
+| `methods[].method` | string | 行的键：方法全名；重复出现的方法写作 `<方法> (<场景>, 步骤 <n>)` |
+| `methods[].grpc_method` | string | （未发布）该行调用的 gRPC 方法全名 |
+| `methods[].scenario` | string? | （未发布）该行所属的场景；普通调用为 `null` |
+| `methods[].step` | int? | （未发布）场景中的步骤号，从 1 起；普通调用为 `null` |
 | `methods[].invalid_reason` | string? | 该方法没有测到任何与负载相关的内容：`request_error`、`client_error`、`bad_response`、`mixed`；`null`——测到了 |
 | `methods[].sent`、`methods[].failed`、`methods[].aborted`、`methods[].not_sent`、`methods[].not_sent_generator`、`methods[].not_sent_stream`、`methods[].not_sent_connection`、`methods[].warmup_sent`、`methods[].warmup_failed`、`methods[].warmup_not_sent` | int | 该方法在运行同名字段中所占的部分 |
 | `methods[].rps` | float? | `sent/s`：已发送调用数除以该方法的发送时间；`null`——没有调用 |
@@ -899,6 +920,11 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `breakpoint.errors_limit` | string | 搜索使用的错误上限，百分数：默认 `"1%"`。某一级超过它即崩溃；`100%` — 错误不会使某一级崩溃 |
 | `breakpoint.why` | string? | 结束搜索的那次运行的原因，来自封闭列表：`errors`、`p99_limit`、`p99_vs_base`、`connection`、`no_recovery`、`generator`、`in_flight_cap`、`stream_limit`、`stream_wait`、`client_errors`、`clock_step`、`request_errors`；`null` — 没有原因。`client_errors`：上限只被客户端一侧的错误突破，目标自己的错误在上限之内；结果为 `run_limit` |
 | `breakpoint.stop_reason` | string? | 谁结束了搜索：`dataset_exhausted`（`dataset_reuse: false` 的文件用完了）、`seq_overflow`（`{{seq}}` 放不进字段；仅在比最近一次发布更新的构建中）、`requested`（用户停止）；`null`——搜索自行结束 |
+| `breakpoint.scenario` | string? | （未发布）被搜索的场景名称；`null` — 搜索针对单个调用 |
+| `breakpoint.rate_unit` | string | （未发布）搜索的速率所计的单位：`iterations` — 场景每秒迭代数，`calls` — 每秒调用数 |
+| `breakpoint.broke_step` | object? | （未发布）结束搜索的那次运行中最先崩溃的步骤；`null` — 调用，或未指明步骤 |
+| `breakpoint.broke_step.step` | int | （未发布）步骤在场景中的位置，从 1 起：头部为 1 |
+| `breakpoint.broke_step.method` | string | （未发布）该步骤所在行的方法，与该次运行报告的 `methods[].method` 一致 |
 | `breakpoint.notes` | []string | 搜索的说明，面向人的 ASCII 文本；不要解析 |
 | `breakpoint.runs` | []object | 按顺序列出所有运行 |
 | `breakpoint.runs[].kind` | string | `step`、`repeat` 或 `probe` |
@@ -907,6 +933,9 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `breakpoint.runs[].broken` | bool | `true` — 该次运行使目标崩溃 |
 | `breakpoint.runs[].recovered` | bool? | 对 `probe`：目标回到基线 p99 的 1.5 倍以内；`step` 和 `repeat` 为 `null` |
 | `breakpoint.runs[].why` | string? | 该次运行的原因，与 `breakpoint.why` 相同的封闭列表；`null` — 没有原因 |
+| `breakpoint.runs[].broke_step` | object? | （未发布）该次运行中最先崩溃的步骤；`null` — 调用，或未指明步骤 |
+| `breakpoint.runs[].broke_step.step` | int | （未发布）步骤在场景中的位置，从 1 起：头部为 1 |
+| `breakpoint.runs[].broke_step.method` | string | （未发布）该步骤所在行的方法 |
 | `breakpoint.runs[].report` | object | 这次运行的完整报告，与普通运行的 JSON 是同一种对象（字段见上） |
 
 ## 比较报告：`leettest compare`

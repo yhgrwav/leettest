@@ -127,7 +127,7 @@ func runPool(ctx context.Context, sender Sender, maxInFlight int, feed func(in c
 // scenarioReq is the request of an iteration ticking at tick: first is step 1,
 // next the steps after it.
 func scenarioReq(tick time.Time, scenario string, first Step, next ...Step) Request {
-	req := Request{Method: first.Method, scenario: &Call{Scenario: scenario, Next: next}, ScheduledAt: tick}
+	req := Request{Method: first.Method, scenario: &Call{Method: first.Method, Scenario: scenario, Next: next}, ScheduledAt: tick}
 	if first.Timeout > 0 {
 		req.Deadline = tick.Add(first.Timeout)
 	}
@@ -885,9 +885,10 @@ func TestScenario_TheTimelineReservesTheLongestIteration(t *testing.T) {
 	}
 }
 
-// Ground: contract — scenario names and methods are one namespace in the report: a repeat is a
-// config error naming both places (a scenario row and a method row share a key space), and
-// a call with steps needs a name.
+// Ground: contract — scenario names and methods are one namespace in the report: a scenario named
+// as another scenario or as a method is a config error naming both places, and a call with steps
+// needs a name. A method repeated in a run is no error (rows are keyed by call and step, see
+// rowkeys_test.go).
 func TestNew_ScenarioNamesAndMethodsShareOneNamespace(t *testing.T) {
 	stages := []Stage{{StartRPS: 1, TargetRPS: 1, Duration: time.Second}}
 	plain := func(method string) Call {
@@ -916,10 +917,10 @@ func TestNew_ScenarioNamesAndMethodsShareOneNamespace(t *testing.T) {
 		{"name is a step's method", []Call{flow("s1", "a/One", "a/Two"), flow("a/Two", "a/Three", "a/Four")}, ErrDuplicateMethod, []string{"a/Two", "call 0", "call 1"}},
 		{"name is its own first method", []Call{flow("a/One", "a/One", "a/Two")}, ErrDuplicateMethod, []string{"a/One"}},
 		{"two scenarios, one name", []Call{flow("s1", "a/One", "a/Two"), flow("s1", "a/Three", "a/Four")}, ErrDuplicateMethod, []string{"s1", "call 0", "call 1"}},
-		{"method in two scenarios", []Call{flow("s1", "a/One", "a/Two"), flow("s2", "a/Three", "a/Two")}, ErrDuplicateMethod, []string{"a/Two", "call 0", "call 1"}},
-		{"method as a call and as a step", []Call{plain("a/Two"), flow("s1", "a/One", "a/Two")}, ErrDuplicateMethod, []string{"a/Two", "call 0", "call 1"}},
-		{"method twice in one scenario", []Call{flow("s1", "a/One", "a/Two", "a/One")}, ErrDuplicateMethod, []string{"a/One", "call 0"}},
-		{"first method repeated as a step", []Call{flow("s1", "a/One", "a/One")}, ErrDuplicateMethod, []string{"a/One", "call 0"}},
+		{"method in two scenarios", []Call{flow("s1", "a/One", "a/Two"), flow("s2", "a/Three", "a/Two")}, nil, nil},
+		{"method as a call and as a step", []Call{plain("a/Two"), flow("s1", "a/One", "a/Two")}, nil, nil},
+		{"method twice in one scenario", []Call{flow("s1", "a/One", "a/Two", "a/One")}, nil, nil},
+		{"first method repeated as a step", []Call{flow("s1", "a/One", "a/One")}, nil, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := CheckOptions(Options{Calls: tc.calls, MaxInFlight: 100})

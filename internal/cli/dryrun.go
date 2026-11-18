@@ -59,6 +59,10 @@ type DryRunCall struct {
 	// the latency runs from Started to Outcome.DoneAt, or to Returned when the
 	// sender left DoneAt zero.
 	Started, Returned time.Time
+	// Scenario names the scenario this block is a step of, and Step and Steps
+	// say which: step 1 of 3. Empty and zero for a plain call.
+	Scenario    string
+	Step, Steps int
 }
 
 // DryRunPrinter writes a dry run's screen call by call, so that a stop in the
@@ -67,6 +71,9 @@ type DryRunPrinter struct {
 	W io.Writer
 	// Total is the number of calls the run plans.
 	Total int
+	// Scenarios is how many of the Total calls are scenarios, each run as one
+	// iteration of its steps.
+	Scenarios int
 	// Redact is applied to the target's message and to the reply's JSON before
 	// the cut; nil leaves them as they came.
 	Redact func(string) string
@@ -76,23 +83,32 @@ type DryRunPrinter struct {
 
 // Header prints the first line.
 func (p *DryRunPrinter) Header() {
-	if p.Total == 1 {
+	switch {
+	case p.Scenarios > 0 && p.Scenarios == p.Total && p.Total == 1:
+		fmt.Fprintln(p.W, "dry run: 1 call, one iteration, nothing measured")
+	case p.Scenarios > 0 && p.Scenarios == p.Total:
+		fmt.Fprintf(p.W, "dry run: %d calls, one iteration each, nothing measured\n", p.Total)
+	case p.Scenarios > 0:
+		fmt.Fprintf(p.W, "dry run: %d calls, one request per plain call and one iteration per scenario, nothing measured\n", p.Total)
+	case p.Total == 1:
 		fmt.Fprintln(p.W, "dry run: 1 call, one request, nothing measured")
-
-		return
+	default:
+		fmt.Fprintf(p.W, "dry run: %d calls, one request each, nothing measured\n", p.Total)
 	}
-
-	fmt.Fprintf(p.W, "dry run: %d calls, one request each, nothing measured\n", p.Total)
 }
 
-// Call prints the next call's block.
+// Call prints the next block: a plain call, or one step of a scenario. The
+// steps of a scenario are one call of the config and share its number.
 func (p *DryRunPrinter) Call(call DryRunCall) {
-	p.printed++
+	if call.Scenario == "" || call.Step <= 1 {
+		p.printed++
+	}
+
 	out := call.Outcome
 
 	var b strings.Builder
 
-	fmt.Fprintf(&b, "%d/%d %s: %s, %s", p.printed, p.Total, call.Method, out.Category.Name(), out.Code)
+	b.WriteString(p.heading(call.Scenario, call.Step, call.Steps, call.Method) + ": " + out.Category.Name() + ", " + out.Code)
 
 	if out.Category != engine.CategorySuccess {
 		// The report's words (notes.go): a code the client set is not the target's answer.
@@ -148,6 +164,22 @@ func (p *DryRunPrinter) Call(call DryRunCall) {
 	}
 
 	_, _ = io.WriteString(p.W, b.String())
+}
+
+// NotReached prints the block of a step the iteration never got to, because an
+// earlier step did not succeed.
+func (p *DryRunPrinter) NotReached(scenario string, step, steps int, method string) {
+	fmt.Fprintf(p.W, "%s: not reached\n", p.heading(scenario, step, steps, method))
+}
+
+// heading is the start of a block's first line: the number of the call of the
+// total, then for a step of a scenario its name and place, and the method.
+func (p *DryRunPrinter) heading(scenario string, step, steps int, method string) string {
+	if scenario == "" {
+		return fmt.Sprintf("%d/%d %s", p.printed, p.Total, method)
+	}
+
+	return fmt.Sprintf("%d/%d scenario %s, step %d of %d, %s", p.printed, p.Total, scenario, step, steps, method)
 }
 
 // Metadata prints the metadata line, from the values as the config wrote them.
@@ -251,14 +283,16 @@ func dryRunJSON(m *descriptor.Method, desc protoreflect.MessageDescriptor, body 
 // occurrence of the value of each ${NAME} the metadata substituted with
 // ${NAME}, in the raw form of the value and in the form it has inside a JSON
 // string. raw is the metadata as the config wrote it; lookup is the
-// environment.
+// environment. The value a ${file:PATH} read is replaced the same way by
+// ${file:PATH}: files is what the config read, the value only, so the text
+// around it in a header (Bearer ) stays.
 //
 // The text is read once. Where occurrences overlap — one value inside another,
 // or two that share a few characters — the stretch they cover is one piece and
 // takes the placeholder of the longest value in it, so that neither the order
 // of the variables nor a short value can leave part of a secret. Nothing that
 // was put in is searched again.
-func DryRunRedactor(raw map[string]string, lookup func(string) (string, bool)) func(string) string {
+func DryRunRedactor(raw map[string]string, lookup func(string) (string, bool), files []config.FileValue) func(string) string {
 	seen := map[string]bool{}
 
 	var names []string
@@ -277,18 +311,26 @@ func DryRunRedactor(raw map[string]string, lookup func(string) (string, bool)) f
 
 	var forms []secretForm
 
-	for _, name := range names {
-		value, ok := lookup(name)
-		if !ok || value == "" {
-			continue
+	add := func(value, placeholder string) {
+		if value == "" {
+			return
 		}
 
-		placeholder := "${" + name + "}"
 		forms = append(forms, secretForm{value, placeholder})
 
 		if escaped := jsonEscaped(value); escaped != value {
 			forms = append(forms, secretForm{escaped, placeholder})
 		}
+	}
+
+	for _, name := range names {
+		if value, ok := lookup(name); ok {
+			add(value, "${"+name+"}")
+		}
+	}
+
+	for _, f := range files {
+		add(f.Value, "${file:"+f.Path+"}")
 	}
 
 	if len(forms) == 0 {

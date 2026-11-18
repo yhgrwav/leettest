@@ -256,7 +256,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		return err
 	}
 
-	sender, grpcSender, target, err := buildSender(cfg, flags.fake, flags.fakeDelay, flags.fakeJitter, flags.fakeFail)
+	sender, grpcSender, target, files, err := buildSender(cfg, flags)
 	if err != nil {
 		return err
 	}
@@ -267,7 +267,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 	}
 
 	if flags.dryRun {
-		return runDryRun(ctx, stdout, stderr, cfg, sender, grpcSender, flags)
+		return runDryRun(ctx, stdout, stderr, cfg, sender, grpcSender, files, flags)
 	}
 
 	// Measure, run, measure: the floor of "waited" is set by the step before
@@ -327,12 +327,22 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		return fitErr
 	}
 
+	var refresh refreshSource
+	if grpcSender != nil {
+		refresh = grpcSender.MetadataRefresh
+	}
+
+	var closes closesSource
+	if grpcSender != nil {
+		closes = grpcSender.Closes
+	}
+
 	if search {
 		return runBreakpointSearch(ctx, abort, &stopper, flags.flagSet, flags.fake, flags.connectTimeout, searchSetup{
 			cfg: cfg, configPath: flags.configPath, target: target, sender: sender, calls: calls,
 			unchecked: unchecked, maxInFlight: flags.maxInFlight, json: flags.output == "json",
 			jsonFile: flags.jsonFile, interactive: flags.interactive, stepBefore: stepBefore,
-			source: source, passport: passport,
+			source: source, passport: passport, refresh: refresh, closes: closes,
 		}, stdout, stderr)
 	}
 
@@ -417,15 +427,25 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		}
 	}
 
+	// A failed read of the metadata files: one line, at the first failure; held
+	// while a live view is up and printed after it.
+	refreshNote := &refreshNotice{stderr: stderr, live: flags.interactive}
+
 	var stepAfter atomic.Int64
 	start := func() error {
 		stopMeter := meter.Start()
 		stopWatch := startWatch(ctx, watch)
 		stopLag := startLagWatch(ctx, lagSource(eng), lagTickEvery, notice.deliver)
+		stopRefresh := func() {}
+		if refresh != nil {
+			stopRefresh = startRefreshWatch(ctx, refresh, time.Second, refreshNote.deliver)
+		}
 		err := eng.Run(ctx)
 		if exp != nil {
 			exp.finish()
 		}
+		// Stopped before start returns: nothing may write to stderr after it.
+		stopRefresh()
 		stopLag()
 		stopWatch()
 		stopMeter()
@@ -438,7 +458,8 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		return buildReport(reportParts{
 			eng: eng, stepBefore: stepBefore, stepAfter: &stepAfter, meter: meter, cores: cores,
 			cfg: cfg, configPath: flags.configPath, passport: passport, maxInFlight: flags.maxInFlight,
-			unchecked: unchecked, source: source, tripped: &tripped, calls: calls,
+			unchecked: unchecked, source: source, tripped: &tripped, calls: calls, refresh: refresh,
+			closes: closes,
 		})
 	}
 
@@ -450,6 +471,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		view.Store(program)
 		runErr = cli.RunLive(program, s, start, abort)
 		notice.afterView()
+		refreshNote.afterView()
 	} else if runErr = cli.RunPlain(stderr, target, eng, start); runErr != nil && !endsWithReport(runErr) {
 		return runErr
 	}
@@ -589,25 +611,32 @@ func loadConfig(path string, flagLabels map[string]string) (*config.MasterConfig
 }
 
 // buildSender makes the sender a run sends with, fake or real, and the target
-// the report names.
-func buildSender(cfg *config.MasterConfig, fake bool, fakeDelay, fakeJitter time.Duration,
-	fakeFail float64,
-) (sender engine.Sender, grpcSender *grpcsender.Sender, target string, err error) {
+// the report names. files are the values read from app.metadata's files at the
+// start, for the dry run's redactor.
+func buildSender(cfg *config.MasterConfig, flags runFlags,
+) (sender engine.Sender, grpcSender *grpcsender.Sender, target string, files []config.FileValue, err error) {
 	target = string(cfg.App.Address)
 
-	if fake {
+	if flags.fake {
 		target = cli.FakeTarget
-		sender = engine.FakeSender{Delay: fakeDelay, Jitter: fakeJitter, FailRatio: fakeFail}
+		sender = engine.FakeSender{Delay: flags.fakeDelay, Jitter: flags.fakeJitter, FailRatio: flags.fakeFail}
 	} else {
+		// A config error, as the key's own minimum is: no connection is made.
+		if idle := cfg.App.IdleTimeout; idle > 0 && idle < flags.connectTimeout {
+			return nil, nil, "", nil, fmt.Errorf("app.idle_timeout %s is shorter than -connect-timeout %s: "+
+				"the idle timer would cut the first connection; raise app.idle_timeout or lower -connect-timeout",
+				idle, flags.connectTimeout)
+		}
+
 		var senderOpts grpcsender.Options
-		if senderOpts, err = senderOptions(&cfg.App); err != nil {
-			return nil, nil, "", err
+		if senderOpts, files, err = senderOptions(&cfg.App, flags.dryRun); err != nil {
+			return nil, nil, "", nil, err
 		}
 		grpcSender = grpcsender.New(senderOpts)
 		sender = grpcSender
 	}
 
-	return sender, grpcSender, target, nil
+	return sender, grpcSender, target, files, nil
 }
 
 // engineOptions builds the engine's options and checks them before the network.
@@ -763,6 +792,48 @@ type reportParts struct {
 	// calls are the run's methods with their stages: a stop names the rate
 	// the plan of its method offered at the moment of the stop.
 	calls []engine.Call
+	// refresh is the sender's counters of the metadata refresh; nil without a
+	// sender (-fake).
+	refresh refreshSource
+	// closes is the sender's count of how its connections were closed; nil
+	// without a sender (-fake).
+	closes closesSource
+}
+
+// metadataRefreshOf is the report's part about the refresh of app.metadata:
+// nil when the sender does not refresh.
+func metadataRefreshOf(src refreshSource, every time.Duration) *cli.MetadataRefresh {
+	if src == nil {
+		return nil
+	}
+
+	st, ok := src()
+	if !ok {
+		return nil
+	}
+
+	return &cli.MetadataRefresh{
+		Every: every, Reads: st.Reads, Changed: st.Changed, Failures: st.Failures,
+		FailingAtEnd: st.FailingAtEnd, LastError: st.LastError,
+	}
+}
+
+// closesSource is the sender's count of how its connections were closed.
+type closesSource func() grpcsender.CloseStats
+
+// closesOf is the report's part about how the connections were closed: nil
+// when the sender does not count. idle is app.idle_timeout as configured.
+func closesOf(src closesSource, idle time.Duration) *cli.CloseStats {
+	if src == nil {
+		return nil
+	}
+
+	st := src()
+
+	return &cli.CloseStats{
+		IdleOurs: st.IdleOurs, IdlePeer: st.IdlePeer, Busy: st.Busy,
+		PeerIdleMin: st.PeerIdleMin, IdleTimeout: idle,
+	}
 }
 
 // startWatch runs the watch beside the engine, none when there is none, and
@@ -804,8 +875,10 @@ func buildReport(p reportParts) cli.RunReport {
 		Settings: &cli.RunSettings{
 			MaxInFlight: p.maxInFlight, Connections: p.cfg.App.Connections, Warmup: p.cfg.Load.Warmup,
 			Ramp: p.cfg.Load.Ramp, Compression: p.cfg.App.Compression, Mode: p.cfg.App.Mode,
-			StopOnErrors: p.cfg.Load.StopOnErrors.Text,
+			StopOnErrors: p.cfg.Load.StopOnErrors.Text, IdleTimeout: p.cfg.App.IdleTimeout,
 		},
+		MetadataRefresh: metadataRefreshOf(p.refresh, p.cfg.App.MetadataRefresh),
+		Closes:          closesOf(p.closes, p.cfg.App.IdleTimeout),
 	}
 	if p.tripped != nil {
 		run.Stop = p.tripped.Of(report)
@@ -813,7 +886,7 @@ func buildReport(p reportParts) cli.RunReport {
 	}
 	// The limits are checked against the run as it ended, the clock step
 	// included: it can make the run invalid.
-	if limits := methodLimits(p.cfg); len(limits) > 0 {
+	if limits := methodLimits(p.cfg, p.calls); len(limits) > 0 {
 		run.Thresholds = threshold.Evaluate(report, runState(run), limits)
 	}
 
@@ -941,43 +1014,69 @@ func withBudgetAdvice(err error, opts engine.Options) error {
 }
 
 // senderOptions reads the certificate files the config names, before any
-// connection: a wrong path is a config error, not a failed handshake.
-func senderOptions(app *config.App) (grpcsender.Options, error) {
+// connection: a wrong path is a config error, not a failed handshake. files
+// are the values the ${file:PATH} of app.metadata held; dryRun turns the
+// refresh of the metadata off.
+func senderOptions(app *config.App, dryRun bool) (grpcsender.Options, []config.FileValue, error) {
+	// The error of this first read keeps config.ErrInvalidMetadata: exit 1,
+	// before any connection.
+	metadata, files, err := app.ReadMetadata()
+	if err != nil {
+		return grpcsender.Options{}, nil, err
+	}
+
 	opts := grpcsender.Options{
 		Target:           string(app.Address),
 		TLS:              app.UseTLS,
-		Metadata:         app.Metadata,
+		Metadata:         metadata,
 		ServerName:       app.ServerName,
 		MaxResponseBytes: app.MaxResponseBytes,
 		Connections:      app.Connections,
 		Compression:      app.Compression,
+		IdleTimeout:      app.IdleTimeout,
+	}
+
+	if app.MetadataRefresh > 0 && !dryRun {
+		opts.MetadataRefresh = &grpcsender.MetadataRefresh{
+			Every: app.MetadataRefresh,
+			Read: func() (map[string]string, error) {
+				got, _, err := app.ReadMetadata()
+				if err != nil {
+					// The error text is the key, the file and the reason; the
+					// sender and the report show it as it is.
+					return nil, errors.New(strings.TrimPrefix(err.Error(), config.ErrInvalidMetadata.Error()+": "))
+				}
+
+				return got, nil
+			},
+		}
 	}
 
 	if app.CA != "" {
 		raw, err := os.ReadFile(app.CA)
 		if err != nil {
-			return opts, fmt.Errorf("app.ca: %w", err)
+			return opts, nil, fmt.Errorf("app.ca: %w", err)
 		}
 
 		opts.RootCAs = x509.NewCertPool()
 		if !opts.RootCAs.AppendCertsFromPEM(raw) {
-			return opts, fmt.Errorf("app.ca: %s holds no PEM certificate", app.CA)
+			return opts, nil, fmt.Errorf("app.ca: %s holds no PEM certificate", app.CA)
 		}
 	}
 
 	if app.Cert != "" {
 		if err := refuseEncryptedKey(app.Key); err != nil {
-			return opts, err
+			return opts, nil, err
 		}
 
 		cert, err := tls.LoadX509KeyPair(app.Cert, app.Key)
 		if err != nil {
-			return opts, fmt.Errorf("app.cert %s, app.key %s: %w", app.Cert, app.Key, err)
+			return opts, nil, fmt.Errorf("app.cert %s, app.key %s: %w", app.Cert, app.Key, err)
 		}
 		opts.Certificates = []tls.Certificate{cert}
 	}
 
-	return opts, nil
+	return opts, files, nil
 }
 
 // refuseEncryptedKey names a password-protected key for what it is; the
@@ -1107,14 +1206,25 @@ func limitsResult(results []threshold.Result) error {
 	return nil
 }
 
-// methodLimits are the limits the config set, by the method as the report
-// names it.
-func methodLimits(cfg *config.MasterConfig) []threshold.MethodLimits {
+// methodLimits are the limits the config set, by the key of the row the report
+// names (engine.RowKeys of calls, which are the config's calls built): per
+// call its own, the head's of a scenario, then each step's, in the config's
+// order.
+func methodLimits(cfg *config.MasterConfig, calls []engine.Call) []threshold.MethodLimits {
 	var limits []threshold.MethodLimits
 
+	keys := engine.RowKeys(calls)
+
 	for i := range cfg.Load.Calls {
-		if call := &cfg.Load.Calls[i]; call.RawPass != nil {
-			limits = append(limits, threshold.MethodLimits{Name: "/" + call.Method, Limits: call.Pass})
+		call := &cfg.Load.Calls[i]
+		if call.RawPass != nil {
+			limits = append(limits, threshold.MethodLimits{Name: keys[i][0], Limits: call.Pass})
+		}
+
+		for k := range call.Steps {
+			if call.Steps[k].RawPass != nil {
+				limits = append(limits, threshold.MethodLimits{Name: keys[i][k+1], Limits: call.Steps[k].Pass})
+			}
 		}
 	}
 

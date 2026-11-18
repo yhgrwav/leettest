@@ -416,6 +416,7 @@ func runNotes(run RunReport) []string {
 	notes := reportNotesAfter(run.Report, run.MaxResponse, run.ramp(), run.searchStep, limitLine)
 	notes = append(notes, stopNotes(run)...)
 	notes = append(notes, connectionNotes(run.Target, run.Connections)...)
+	notes = append(notes, closesNotes(run.Closes)...)
 
 	if line := cpuNote(run.GeneratorCPU); line != "" {
 		notes = append(notes, line)

@@ -83,6 +83,10 @@ type Options struct {
 	// and the connection-specific ones HTTP/2 forbids are not checked here:
 	// pkg/config refuses them.
 	Metadata map[string]string
+	// MetadataRefresh reads the metadata again every Every during the run, for a
+	// token in a file that is rewritten. nil keeps Metadata as it is, with
+	// nothing added to a call or to the process.
+	MetadataRefresh *MetadataRefresh
 	// MaxResponseBytes raises or lowers the largest reply a call accepts;
 	// 0 keeps grpc-go's default of 4 MiB, above math.MaxInt32 fails Connect.
 	// A larger reply fails the call as a bad response with
@@ -163,6 +167,13 @@ type Sender struct {
 	// check it: both set by Connect.
 	limit int
 	call  []grpc.CallOption
+	// meta is the metadata of every call when Options.MetadataRefresh asks for
+	// it to be replaced, set by Connect and only then; nil means static.
+	meta *dynamicMetadata
+	// refresh is the goroutine that replaces it, started once the connections
+	// are published; counters are its numbers, under a lock of their own.
+	refresh  *refresher
+	counters refreshCounters
 }
 
 // checkIdle refuses an idle timeout shorter than the time ctx leaves Connect:
@@ -239,6 +250,32 @@ func (s *Sender) Connect(ctx context.Context) error {
 		return err
 	}
 
+	refresh, err := s.newRefresher()
+	if err != nil {
+		return err
+	}
+
+	if refresh != nil {
+		s.meta = refresh.meta
+	}
+
+	if err = s.connect(ctx, creds, limit); err != nil {
+		s.meta = nil
+
+		return err
+	}
+
+	// Only now: a Connect that fails leaves no goroutine behind.
+	if refresh != nil {
+		s.refresh = refresh
+		refresh.begin()
+	}
+
+	return nil
+}
+
+// connect dials and publishes the connections.
+func (s *Sender) connect(ctx context.Context, creds credentials.TransportCredentials, limit int) error {
 	if s.opts.Connections > 1 {
 		return s.connectMany(ctx, creds, limit)
 	}
@@ -248,6 +285,10 @@ func (s *Sender) Connect(ctx context.Context) error {
 		return fmt.Errorf("connect to %s: %w", s.opts.Target, err)
 	}
 	s.setLimit(limit)
+
+	// Before conn.Connect, which starts grpc-go's idle timer: our idle count must
+	// not start later than its timer (order, not tolerance).
+	s.streams.idleFrom(time.Now())
 
 	if err := waitReady(ctx, conn); err != nil {
 		_ = conn.Close()
@@ -287,7 +328,10 @@ func (s *Sender) setLimit(limit int) {
 // name TLS verifies, placed before the caller's DialOptions so theirs win.
 func (s *Sender) dialOptions(l *link, creds credentials.TransportCredentials, authority string) []grpc.DialOption {
 	dialOpts := []grpc.DialOption{
-		grpc.WithTransportCredentials(trackingCreds{TransportCredentials: creds, tracker: l.tracker, serverName: s.opts.ServerName}),
+		grpc.WithTransportCredentials(trackingCreds{
+			TransportCredentials: creds, tracker: l.tracker, serverName: s.opts.ServerName,
+			watch: l.closes, idle: s.opts.IdleTimeout,
+		}),
 		grpc.WithStatsHandler(handler{streams: l.streams}),
 		// A retry by a service config policy may follow an attempt the target
 		// served, and would count one call for several. Transparent retries
@@ -305,7 +349,11 @@ func (s *Sender) dialOptions(l *link, creds credentials.TransportCredentials, au
 		// grpc-go's own name after it.
 		dialOpts = append(dialOpts, grpc.WithUserAgent(userAgent))
 	}
-	if len(perCall) > 0 {
+	switch {
+	case s.meta != nil:
+		// One object for every connection: a replacement reaches them all.
+		dialOpts = append(dialOpts, grpc.WithPerRPCCredentials(s.meta))
+	case len(perCall) > 0:
 		// Per-RPC credentials rather than a context per call: gRPC attaches
 		// them itself, and a run without metadata has nothing in the send path.
 		dialOpts = append(dialOpts, grpc.WithPerRPCCredentials(staticMetadata(perCall)))
@@ -384,6 +432,9 @@ func (s *Sender) connectMany(ctx context.Context, creds credentials.TransportCre
 
 	for i, conn := range conns {
 		wg.Go(func() {
+			// Before conn.Connect: see connect.
+			links[i].streams.idleFrom(time.Now())
+
 			if err := waitReady(ctx, conn); err != nil {
 				once.Do(func() { failed = s.connectionError(links[i], i, n, err) })
 			}
@@ -522,6 +573,11 @@ func (s *Sender) Close() error {
 
 	var err error
 
+	// Before any transport closes: the run's own end is not a close to count.
+	for _, l := range links {
+		l.closes.ending.Store(true)
+	}
+
 	for _, l := range links {
 		// The first error as it is, so that one connection reports what it
 		// always did.
@@ -533,6 +589,13 @@ func (s *Sender) Close() error {
 
 		l.stopWatch()
 		<-l.watched
+	}
+
+	// After the connections, so a Read stuck on a hung file system delays only
+	// this return, by refreshCloseWait at most.
+	if s.refresh != nil {
+		s.refresh.stop()
+		s.refresh = nil
 	}
 
 	return err

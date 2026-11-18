@@ -15,6 +15,8 @@
 package cli
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -303,6 +305,10 @@ func quotaText(q *float64) string {
 // when it used none. The report names the method without a leading slash on
 // top and with one in each run's report.
 func datasetHash(r BreakpointReport) string {
+	if r.Breakpoint.Scenario != nil {
+		return scenarioDatasetHash(r)
+	}
+
 	if len(r.Breakpoint.Runs) > 0 {
 		methods := r.Breakpoint.Runs[0].Report.Methods
 		for i := range methods {
@@ -313,6 +319,45 @@ func datasetHash(r BreakpointReport) string {
 	}
 
 	return "none"
+}
+
+// scenarioDatasetHash is one hash over the datasets of every row of a
+// scenario's search, in step order, so that a changed file of any step is a
+// difference; "none" when no row used a dataset. It is a sha256 of the lines
+// "<step> <row> <dataset sha>", not a file's own sha.
+func scenarioDatasetHash(r BreakpointReport) string {
+	if len(r.Breakpoint.Runs) == 0 {
+		return "none"
+	}
+
+	rows := slices.Clone(r.Breakpoint.Runs[0].Report.Methods)
+	slices.SortFunc(rows, func(a, b jsonMethod) int {
+		return stepOf(a) - stepOf(b)
+	})
+
+	var lines strings.Builder
+
+	for i := range rows {
+		if rows[i].Dataset != nil {
+			fmt.Fprintf(&lines, "%d %s %s\n", stepOf(rows[i]), rows[i].Method, rows[i].Dataset.SHA256)
+		}
+	}
+
+	if lines.Len() == 0 {
+		return "none"
+	}
+
+	sum := sha256.Sum256([]byte(lines.String()))
+
+	return hex.EncodeToString(sum[:])
+}
+
+func stepOf(m jsonMethod) int {
+	if m.Step == nil {
+		return 0
+	}
+
+	return *m.Step
 }
 
 // reportCapacity is the capacity a search found, from its outcome.

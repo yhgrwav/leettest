@@ -19,12 +19,14 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/yhgrwav/leettest/pkg/breakpoint"
+	"github.com/yhgrwav/leettest/pkg/engine"
 	"github.com/yhgrwav/leettest/pkg/threshold"
 )
 
@@ -43,9 +45,11 @@ const (
 // BreakpointRun is what the breaking-point report needs: the search's plan
 // and result, and the run's header.
 type BreakpointRun struct {
-	Target    string
-	Version   string
-	Method    string
+	Target  string
+	Version string
+	Method  string
+	// Scenario is the name of the scenario the search steps, empty for a call.
+	Scenario  string
 	Name      string
 	StartedAt time.Time
 	Plan      breakpoint.Plan
@@ -68,6 +72,12 @@ type BreakpointRun struct {
 	// Ramp is load.ramp as configured: the rise from 0 to Plan.From before the
 	// first step. 0 prints no ramp.
 	Ramp time.Duration
+	// MetadataRefresh is what the refresh of app.metadata did over the whole
+	// search; nil when there is none.
+	MetadataRefresh *MetadataRefresh
+	// Closes is how the connections were closed over the whole search (one
+	// sender serves every step); nil when the sender does not count.
+	Closes *CloseStats
 	// Passport is the config and the machine of the search; nil prints no
 	// machine line and leaves the passport out of the JSON.
 	Passport *Passport
@@ -145,14 +155,48 @@ func window(p breakpoint.Plan, step *breakpoint.Step) time.Duration {
 }
 
 // sentRPS is the rate the generator sent in the measured window, rounded
-// down: a short run never prints as full.
+// down: a short run never prints as full. For a scenario it is the rate of
+// the head row, the iterations started: Report.Sent counts the calls of every
+// row.
 func sentRPS(p breakpoint.Plan, step *breakpoint.Step) int {
 	w := window(p, step)
 	if w <= 0 {
 		return 0
 	}
 
-	return int(time.Duration(step.Report.Sent) * time.Second / w)
+	return int(time.Duration(headSent(step.Report)) * time.Second / w)
+}
+
+// headSent is what the search's rate is measured against: Report.Sent for a
+// call, the head row's Sent for a scenario. A report of a scenario with no head
+// row counts nothing; a sum of the other rows' calls would overstate it.
+func headSent(r engine.Report) int {
+	if len(r.Scenarios) == 0 {
+		return r.Sent
+	}
+
+	for i := range r.Methods {
+		if m := &r.Methods[i]; m.Scenario != "" && m.Step == 1 {
+			return m.Sent
+		}
+	}
+
+	return 0
+}
+
+// rateText is a rate as the report words it: requests per second of a call,
+// iterations per second of a scenario.
+func rateText(n int, scenario bool) string {
+	return fmt.Sprintf("%d %s", n, rateUnit(scenario))
+}
+
+// rateUnit is the unit of a search's rate in the text.
+func rateUnit(scenario bool) string {
+	if scenario {
+		return "iterations/s"
+	}
+
+	return "rps"
 }
 
 // lastWhy is the why of the last run, the one that ended the search.
@@ -166,47 +210,49 @@ func lastWhy(res breakpoint.Result) (breakpoint.Step, bool) {
 
 // headline is the search's answer in one line, and a second line with the
 // criterion where the outcome has one.
-func headline(res breakpoint.Result) (head, criterion string) {
+func headline(res breakpoint.Result, scenario bool) (head, criterion string) {
 	last, _ := lastWhy(res)
+	at := func(n int) string { return rateText(n, scenario) }
+
 	switch res.Outcome {
 	case breakpoint.BrokeBetween:
-		return fmt.Sprintf("held %d rps, broke at %d rps", res.Held, res.Broke), brokeLine(res)
+		return fmt.Sprintf("held %s, broke at %s", at(res.Held), at(res.Broke)), brokeLine(res, scenario)
 	case breakpoint.BrokeAtFirst:
-		return fmt.Sprintf("broke at the first step, %d rps: the limit is at or below it", res.Broke), brokeLine(res)
+		return fmt.Sprintf("broke at the first step, %s: the limit is at or below it", at(res.Broke)), brokeLine(res, scenario)
 	case breakpoint.HeldThroughout:
-		return fmt.Sprintf("held every step up to %d rps: the limit is above it", res.Held), ""
+		return fmt.Sprintf("held every step up to %s: the limit is above it", at(res.Held)), ""
 	case breakpoint.RunLimit:
 		if res.Held == 0 {
-			return fmt.Sprintf("the run gave out at the first step (%d rps); nothing was learned about the target", res.Broke), last.Why
+			return fmt.Sprintf("the run gave out at the first step (%s); nothing was learned about the target", at(res.Broke)), last.Why
 		}
 
-		return fmt.Sprintf("the run gave out at %d rps, not the target: %s; the target held %d rps", res.Broke, last.Why, res.Held), ""
+		return fmt.Sprintf("the run gave out at %s, not the target: %s; the target held %s", at(res.Broke), last.Why, at(res.Held)), ""
 	case breakpoint.Stopped:
 		switch {
 		case len(res.Steps) <= 1:
 			return "stopped at the first step; nothing was learned about the target", ""
 		case res.Held == 0:
-			return fmt.Sprintf("stopped at %d rps (%v); nothing held so far", last.RPS, last.Kind), ""
+			return fmt.Sprintf("stopped at %s (%v); nothing held so far", at(last.RPS), last.Kind), ""
 		}
 
-		return fmt.Sprintf("stopped at %d rps (%v); held %d rps so far", last.RPS, last.Kind, res.Held), ""
+		return fmt.Sprintf("stopped at %s (%v); held %s so far", at(last.RPS), last.Kind, at(res.Held)), ""
 	case breakpoint.Invalid:
 		reason := "every call a request error"
 		if res.Cause == breakpoint.CauseClockStep {
 			reason = "clock step"
 		}
 
-		return fmt.Sprintf("invalid search: %s at %d rps; no breaking point is reported", reason, last.RPS), last.Why
+		return fmt.Sprintf("invalid search: %s at %s; no breaking point is reported", reason, at(last.RPS)), last.Why
 	}
 
 	return "no outcome", ""
 }
 
 // brokeLine names the criterion of the run that confirmed the break.
-func brokeLine(res breakpoint.Result) string {
+func brokeLine(res breakpoint.Result, scenario bool) string {
 	for i := len(res.Steps) - 1; i >= 0; i-- {
 		if s := &res.Steps[i]; s.Broken && s.RPS == res.Broke {
-			line := fmt.Sprintf("%d rps: %s", s.RPS, s.Why)
+			line := fmt.Sprintf("%s: %s", rateText(s.RPS, scenario), s.Why)
 			if res.Cause == breakpoint.CauseNoRecovery {
 				line += fmt.Sprintf("; the target did not recover within %d probes", breakpoint.MaxProbes)
 			}
@@ -246,22 +292,87 @@ func stepVerdict(s *breakpoint.Step) string {
 }
 
 // runsTable is the runs as rows under a heading, each line led by indent:
-// the text report and the search's screen print the same rows.
+// the text report and the search's screen print the same rows. For a scenario
+// the p99 is the iteration's, under its own heading.
 func runsTable(plan breakpoint.Plan, steps []breakpoint.Step, verdicts []string, indent string) string {
+	return runsTableOf(plan, steps, verdicts, indent, false)
+}
+
+func runsTableOf(plan breakpoint.Plan, steps []breakpoint.Step, verdicts []string, indent string, scenario bool) string {
+	heading := "p99"
+	if scenario {
+		heading = "iteration p99"
+	}
+
 	var b strings.Builder
 	tw := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, indent+"kind\tplanned\tsent\tfailed\tp99\tverdict")
+	fmt.Fprintln(tw, indent+"kind\tplanned\tsent\tfailed\t"+heading+"\tverdict")
 	for i := range steps {
 		s := &steps[i]
-		p99 := "-"
-		if len(s.Report.Methods) > 0 && s.Report.Methods[0].P99.Defined {
-			p99 = formatQuantile(s.Report.Methods[0].P99)
-		}
-		fmt.Fprintf(tw, "%s%v\t%d\t%d\t%d\t%s\t%s\n", indent, s.Kind, s.RPS, sentRPS(plan, s), s.Report.Failed, p99, verdicts[i])
+		fmt.Fprintf(tw, "%s%v\t%d\t%d\t%d\t%s\t%s\n", indent, s.Kind, s.RPS, sentRPS(plan, s), s.Report.Failed, runP99(s.Report, scenario), verdicts[i])
 	}
 	_ = tw.Flush()
 
 	return b.String()
+}
+
+// runP99 is the p99 a row of the runs table shows: the first method's of a
+// call (the only one), the iteration's of a scenario.
+func runP99(r engine.Report, scenario bool) string {
+	if scenario {
+		if len(r.Scenarios) > 0 {
+			return formatQuantile(r.Scenarios[0].P99)
+		}
+
+		return "-"
+	}
+
+	if len(r.Methods) > 0 && r.Methods[0].P99.Defined {
+		return formatQuantile(r.Methods[0].P99)
+	}
+
+	return "-"
+}
+
+// confirmingRun is the run the scenario block is about: the last that is not a
+// probe, the repeat of the broken step when there is one. The probe runs
+// below the break; its iterations say nothing of the step that broke.
+func confirmingRun(run BreakpointRun) (RunReport, bool) {
+	steps := run.Result.Steps
+	for i := len(steps) - 1; i >= 0; i-- {
+		if steps[i].Kind == breakpoint.Probe {
+			continue
+		}
+		if len(run.Runs) == len(steps) {
+			return run.Runs[i], true
+		}
+
+		return RunReport{Report: steps[i].Report}, true
+	}
+
+	return RunReport{}, false
+}
+
+// printRowData says what the datasets and the templates of a scenario's rows
+// did, one line per row in the order of the steps, each naming its row: the
+// rows are in the report by name, the head is not the first.
+func printRowData(w io.Writer, report engine.Report) {
+	rows := make([]*engine.MethodReport, 0, len(report.Methods))
+	for i := range report.Methods {
+		if m := &report.Methods[i]; m.Scenario != "" {
+			rows = append(rows, m)
+		}
+	}
+	slices.SortFunc(rows, func(a, b *engine.MethodReport) int { return a.Step - b.Step })
+
+	for _, m := range rows {
+		if m.Dataset != nil {
+			fmt.Fprintf(w, "  step %d, %s: %s\n", m.Step, displayMethod(m.Method), strings.TrimPrefix(datasetLine(m.Dataset), "  "))
+		}
+		if m.Templates != nil {
+			fmt.Fprintf(w, "  step %d, %s: %s\n", m.Step, displayMethod(m.Method), strings.TrimPrefix(templatesLine(m.Templates), "  "))
+		}
+	}
 }
 
 // PrintBreakpoint writes the search's text report: the answer, every run a
@@ -270,11 +381,16 @@ func PrintBreakpoint(w io.Writer, run BreakpointRun) {
 	w = asciiWriter{w: w}
 	res := run.Result
 
-	fmt.Fprintf(w, "breaking point: %s\n", run.Method)
+	scenario := run.Scenario != ""
+	if scenario {
+		fmt.Fprintf(w, "breaking point: scenario %s, %d steps; rates are iterations per second\n", run.Scenario, len(run.Plan.StepTimeouts)+1)
+	} else {
+		fmt.Fprintf(w, "breaking point: %s\n", run.Method)
+	}
 	if run.MethodsSource != nil {
 		fmt.Fprintln(w, run.MethodsSource.Line())
 	}
-	head, why := headline(res)
+	head, why := headline(res, scenario)
 	if line := exhaustedLine(run); line != "" {
 		why = line
 	}
@@ -286,7 +402,9 @@ func PrintBreakpoint(w io.Writer, run BreakpointRun) {
 		fmt.Fprintf(w, "  %s\n", why)
 	}
 	// S is cumulative, so the last run's report holds the count of the search.
-	if len(res.Steps) > 0 {
+	if len(res.Steps) > 0 && scenario {
+		printRowData(w, res.Steps[len(res.Steps)-1].Report)
+	} else if len(res.Steps) > 0 {
 		if last := res.Steps[len(res.Steps)-1].Report; len(last.Methods) > 0 {
 			if last.Methods[0].Dataset != nil {
 				fmt.Fprintln(w, datasetLine(last.Methods[0].Dataset))
@@ -310,19 +428,26 @@ func PrintBreakpoint(w io.Writer, run BreakpointRun) {
 	if run.Ramp > 0 {
 		ramp = fmt.Sprintf("first step after a %s ramp, ", run.Ramp)
 	}
-	fmt.Fprintf(w, "settings: settle %s, hold %s, %smax in flight %s, connections %d%s\n\n",
+	fmt.Fprintf(w, "settings: settle %s, hold %s, %smax in flight %s, connections %d%s\n",
 		run.Plan.Settle, run.Plan.Hold, ramp, searchCap(run.Plan), run.Connections, compressionSuffix(run.Compression))
+	printMetadataRefresh(w, run.MetadataRefresh)
+	fmt.Fprintln(w)
 
 	verdicts := make([]string, len(res.Steps))
 	for i := range res.Steps {
 		verdicts[i] = verdict(&res, i)
 	}
-	fmt.Fprint(w, runsTable(run.Plan, res.Steps, verdicts, "  "))
+	fmt.Fprint(w, runsTableOf(run.Plan, res.Steps, verdicts, "  ", scenario))
+	if scenario {
+		if last, ok := confirmingRun(run); ok {
+			printScenarioBlocks(w, last)
+		}
+	}
 	for i := range run.Runs {
-		printRampBlocks(w, run.Runs[i])
+		printRampBlocksIn(w, run.Runs[i], rateUnit(scenario))
 	}
 
-	if notes := searchNotes(res); len(notes) > 0 {
+	if notes := searchNotes(res, run.Closes); len(notes) > 0 {
 		fmt.Fprintln(w, "\nnotes:")
 		for _, n := range notes {
 			fmt.Fprintf(w, "  - %s\n", n)
@@ -340,6 +465,16 @@ func compressionSuffix(name string) string {
 	}
 
 	return ", compression " + name
+}
+
+// idleSuffix ends the settings line after the compression: ", idle_timeout
+// 50s", nothing when app.idle_timeout was left out.
+func idleSuffix(d time.Duration) string {
+	if d <= 0 {
+		return ""
+	}
+
+	return ", idle_timeout " + d.String()
 }
 
 // searchCap is the cap the search was told: the flag's, else each step's own.
@@ -362,7 +497,7 @@ func exhaustedLine(run BreakpointRun) string {
 
 	ex := last.Report.DatasetExhausted
 
-	return fmt.Sprintf("dataset %s (call %s) ran out at %d rps", path.Base(strings.ReplaceAll(ex.File, `\`, "/")), displayMethod(ex.Method), last.RPS)
+	return fmt.Sprintf("dataset %s (call %s) ran out at %s", path.Base(strings.ReplaceAll(ex.File, `\`, "/")), displayMethod(ex.Method), rateText(last.RPS, run.Scenario != ""))
 }
 
 // overflowLine says which call ended the search by a {{seq}} its field could
@@ -375,7 +510,7 @@ func overflowLine(run BreakpointRun) string {
 
 	o := last.Report.SeqOverflow
 
-	return fmt.Sprintf("{{seq}} of %s outgrew its field (limit %d) at %d rps", displayMethod(o.Method), o.Limit, last.RPS)
+	return fmt.Sprintf("{{seq}} of %s outgrew its field (limit %d) at %s", displayMethod(o.Method), o.Limit, rateText(last.RPS, run.Scenario != ""))
 }
 
 // searchNotes are the search's notes, the same in the text and in JSON, and,
@@ -383,7 +518,7 @@ func overflowLine(run BreakpointRun) string {
 // one backend's behind an L4 balancer. A search that found no break or did not
 // finish is about something else; a sender that said nothing of its
 // connections gives no ground for it.
-func searchNotes(res breakpoint.Result) []string {
+func searchNotes(res breakpoint.Result, closes *CloseStats) []string {
 	notes := append([]string{}, res.Notes...)
 
 	if (res.Outcome == breakpoint.BrokeBetween || res.Outcome == breakpoint.BrokeAtFirst) && len(res.Steps) > 0 {
@@ -392,7 +527,7 @@ func searchNotes(res breakpoint.Result) []string {
 		}
 	}
 
-	return notes
+	return append(notes, closesNotes(closes)...)
 }
 
 // BreakpointReport is the search as --output json writes it: mode
@@ -407,6 +542,12 @@ type BreakpointReport struct {
 	Method          string     `json:"method"`
 	StartedAt       string     `json:"started_at"`
 	Settings        jsonSearch `json:"settings"`
+	// MetadataRefresh is what the refresh of app.metadata did over the search;
+	// null without one.
+	MetadataRefresh *jsonMetadataRefresh `json:"metadata_refresh"`
+	// Closes is how the connections of the whole search were closed: one sender
+	// serves every step. Null when the sender does not count.
+	Closes *jsonCloses `json:"closes"`
 	// Passport is the config and the machine of the search; the steps in
 	// breakpoint.runs carry none.
 	Passport   *jsonPassport  `json:"passport,omitempty"`
@@ -443,9 +584,31 @@ type jsonBreakpoint struct {
 	Why *string `json:"why"`
 	// StopReason is who ended the search: "dataset_exhausted", "requested", or
 	// null when it ended itself.
-	StopReason *string     `json:"stop_reason"`
-	Notes      []string    `json:"notes"`
-	Runs       []jsonRunBP `json:"runs"`
+	StopReason *string `json:"stop_reason"`
+	// Scenario is the name of the searched scenario, null for a call.
+	Scenario *string `json:"scenario"`
+	// RateUnit is what the rates count: "iterations" of a scenario, "calls".
+	RateUnit string `json:"rate_unit"`
+	// BrokeStep is the step that broke first in the run that ended the search;
+	// null for a call and where no step is named.
+	BrokeStep *jsonBrokeStep `json:"broke_step"`
+	Notes     []string       `json:"notes"`
+	Runs      []jsonRunBP    `json:"runs"`
+}
+
+// jsonBrokeStep is a scenario step: its 1-based place (the head is 1) and the
+// method of its row.
+type jsonBrokeStep struct {
+	Step   int    `json:"step"`
+	Method string `json:"method"`
+}
+
+func brokeStepJSON(r *breakpoint.Row) *jsonBrokeStep {
+	if r == nil {
+		return nil
+	}
+
+	return &jsonBrokeStep{Step: r.Step, Method: r.Method}
 }
 
 type jsonRunBP struct {
@@ -455,9 +618,11 @@ type jsonRunBP struct {
 	Broken     bool   `json:"broken"`
 	// Recovered is a probe's verdict: back within 1.5× the baseline; null
 	// for a step or a repeat.
-	Recovered *bool      `json:"recovered"`
-	Why       *string    `json:"why"`
-	Report    JSONReport `json:"report"`
+	Recovered *bool   `json:"recovered"`
+	Why       *string `json:"why"`
+	// BrokeStep is the step that broke first in this run; null for a call.
+	BrokeStep *jsonBrokeStep `json:"broke_step"`
+	Report    JSONReport     `json:"report"`
 }
 
 // rate is a found rate for JSON: 0, no rate found, is null.
@@ -476,8 +641,15 @@ func NewBreakpointReport(run BreakpointRun) BreakpointReport {
 		Outcome:     outcomeNames[res.Outcome],
 		ErrorsLimit: run.Plan.EffectiveErrorsLimit().Text,
 		Why:         causeName(res.Cause),
-		Notes:       searchNotes(res),
+		Notes:       searchNotes(res, run.Closes),
+		RateUnit:    "calls",
 		Runs:        make([]jsonRunBP, 0, len(res.Steps)),
+	}
+	scenario := run.Scenario != ""
+	if scenario {
+		bp.Scenario = &run.Scenario
+		bp.RateUnit = "iterations"
+		bp.BrokeStep = brokeStepJSON(res.BrokeStep)
 	}
 	if run.StopReason != "" && res.Outcome == breakpoint.Stopped {
 		bp.StopReason = &run.StopReason
@@ -490,7 +662,7 @@ func NewBreakpointReport(run BreakpointRun) BreakpointReport {
 	case breakpoint.HeldThroughout, breakpoint.Stopped:
 		bp.HeldRPS = rate(res.Held)
 	}
-	if line := brokeLine(res); line != "" && res.Outcome != breakpoint.Invalid {
+	if line := brokeLine(res, scenario); line != "" && res.Outcome != breakpoint.Invalid {
 		bp.Notes = append([]string{line}, bp.Notes...)
 	}
 
@@ -515,7 +687,7 @@ func NewBreakpointReport(run BreakpointRun) BreakpointReport {
 		}
 		bp.Runs = append(bp.Runs, jsonRunBP{
 			Kind: s.Kind.String(), PlannedRPS: s.RPS, SentRPS: sentRPS(run.Plan, s),
-			Broken: s.Broken, Recovered: rec, Why: causeName(s.Cause),
+			Broken: s.Broken, Recovered: rec, Why: causeName(s.Cause), BrokeStep: brokeStepJSON(s.BrokeStep),
 			Report: NewJSONReport(JSONRun{Target: run.Target, Name: run.Name, Version: run.Version, Outcome: outcome, StartedAt: s.Report.StartedAt, Run: r}),
 		})
 	}
@@ -526,9 +698,11 @@ func NewBreakpointReport(run BreakpointRun) BreakpointReport {
 	}
 
 	return BreakpointReport{
-		Settings:      settings,
-		Passport:      passportJSON(run.Passport),
-		SchemaVersion: JSONSchemaVersion, Mode: ModeBreakpoint,
+		Settings:        settings,
+		MetadataRefresh: metadataRefreshJSON(run.MetadataRefresh),
+		Closes:          closesJSONOf(run.Closes),
+		Passport:        passportJSON(run.Passport),
+		SchemaVersion:   JSONSchemaVersion, Mode: ModeBreakpoint,
 		LeetTestVersion: run.Version, Target: run.Target, Name: run.Name, Method: run.Method,
 		MethodsSource: run.MethodsSource.kind(),
 		StartedAt:     run.StartedAt.UTC().Format(time.RFC3339Nano),

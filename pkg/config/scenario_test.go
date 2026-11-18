@@ -227,18 +227,36 @@ func TestScenario_Refusals(t *testing.T) {
 		{"two scenarios with one name", scenarioCall("      scenario: s\n      steps:\n"+oneStep) +
 			"    - method: " + getHistory + "\n      rps: 5\n      duration: 1s\n      scenario: s\n      steps:\n        - method: wallet.v1.WalletService/Close\n",
 			config.ErrDuplicateMethod, nil},
-		{"step method equal to the call method", scenarioCall("      scenario: s\n      steps:\n        - method: " + getBalance + "\n"), config.ErrDuplicateMethod, nil},
-		{"one method twice in a scenario", step("        - method: " + transfer + "\n"), config.ErrDuplicateMethod, nil},
-		{"step method equal to another call method", scenarioCall("      scenario: s\n      steps:\n"+oneStep) +
-			"    - method: " + transfer + "\n      rps: 5\n      duration: 1s\n", config.ErrDuplicateMethod, nil},
+		// A method repeated is not a name taken twice (A1): the three refusals that stood
+		// here are accepted in TestScenario_RepeatedMethodsAreAccepted. What stays a
+		// refusal is a scenario's name standing where a method of the run stands,
+		// whichever comes first and however often the method is repeated.
+		{"scenario named as the method of an earlier plain call", scenarioCall("") +
+			"    - method: " + getHistory + "\n      rps: 5\n      duration: 1s\n      scenario: " + getBalance + "\n      steps:\n" + oneStep,
+			config.ErrDuplicateMethod, nil},
+		{"scenario named as a step method of another scenario", scenarioCall("      scenario: s\n      steps:\n"+oneStep) +
+			"    - method: " + getHistory + "\n      rps: 5\n      duration: 1s\n      scenario: " + transfer + "\n      steps:\n" +
+			"        - method: wallet.v1.WalletService/Close\n", config.ErrDuplicateMethod, nil},
+		// The name comes first in file order, the method after it (reviewer N1): a check
+		// of the name against the methods seen so far would miss it.
+		{"scenario named as a step method of a later scenario", scenarioCall("      scenario: "+getHistory+"\n      steps:\n"+oneStep) +
+			"    - method: " + transfer + "\n      rps: 5\n      duration: 1s\n      scenario: s2\n      steps:\n" +
+			"        - method: " + getHistory + "\n", config.ErrDuplicateMethod, nil},
+		{"scenario named as a repeated method", scenarioCall("      scenario: " + transfer + "\n      steps:\n" + oneStep + oneStep),
+			config.ErrDuplicateMethod, nil},
+		{"two scenarios with one name, both repeating a method", scenarioCall("      scenario: s\n      steps:\n"+oneStep+oneStep) +
+			"    - method: " + getHistory + "\n      rps: 5\n      duration: 1s\n      scenario: s\n      steps:\n" + oneStep + oneStep,
+			config.ErrDuplicateMethod, nil},
+		// GUARD (green at once): a repeated step is checked like any step, the repeat
+		// does not hide a bad key.
+		{"repeated step with a bad timeout", step("        - method: " + transfer + "\n          timeout: 0s\n"), config.ErrInvalidTimeout,
+			[]string{"load.calls[0].steps[1].timeout"}},
 
 		// Search and pass: refused at load, before any run.
 		{"scenario with a breakpoint search",
 			scenarioHead + "  calls:\n    - method: " + getBalance + "\n      scenario: s\n      steps:\n" + oneStep +
 				"  breakpoint:\n    from: 100\n    to: 2000\n    settle: 5s\n    hold: 30s\n    p99_limit: 200ms\n", nil,
-			[]string{"a scenario can't be searched yet"}},
-		{"pass on a scenario call", scenarioCall("      scenario: s\n      steps:\n" + oneStep + "      pass:\n        errors: 1%\n"), nil,
-			[]string{"pass for a scenario isn't supported yet"}},
+			[]string{"load.breakpoint.p99_limit with a scenario"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := config.Parse([]byte(tc.cfg))
@@ -256,6 +274,85 @@ func TestScenario_Refusals(t *testing.T) {
 			}
 			if tc.is == nil && len(tc.want) == 0 {
 				t.Fatal("a case needs a sentinel or text to check")
+			}
+		})
+	}
+}
+
+// A method may stand more than once in a run (A1): in one scenario, as the head
+// and as a step, in two scenarios, and as a plain call beside a scenario. Each
+// of these was ErrDuplicateMethod. Parse keeps every step as written, in order:
+// nothing is merged or dropped. Mutation 11 (two plain calls allowed again) is
+// the refusal test in load_test.go, not here.
+// Ground: contract — verdict spec §1 and §4, read-after-write (Get, Update, Get).
+func TestScenario_RepeatedMethodsAreAccepted(t *testing.T) {
+	stepsOf := func(methods ...string) string {
+		var b strings.Builder
+		for _, m := range methods {
+			b.WriteString("        - method: " + m + "\n")
+		}
+
+		return b.String()
+	}
+	scenarioAfter := func(head, name string, methods ...string) string {
+		return "    - method: " + head + "\n      rps: 5\n      duration: 1s\n      scenario: " + name + "\n      steps:\n" + stepsOf(methods...)
+	}
+	plainAfter := func(method string) string {
+		return "    - method: " + method + "\n      rps: 5\n      duration: 1s\n"
+	}
+	type shape struct {
+		method, scenario string
+		steps            []string
+	}
+
+	for _, tc := range []struct {
+		name string
+		cfg  string
+		want []shape
+	}{
+		{"the head's method as a step", scenarioCall("      scenario: s\n      steps:\n" + stepsOf(getBalance)),
+			[]shape{{getBalance, "s", []string{getBalance}}}},
+		{"one method twice among the steps", scenarioCall("      scenario: s\n      steps:\n" + stepsOf(transfer, transfer)),
+			[]shape{{getBalance, "s", []string{transfer, transfer}}}},
+		{"read after write: Get, Update, Get", scenarioCall("      scenario: s\n      steps:\n" + stepsOf(transfer, getBalance)),
+			[]shape{{getBalance, "s", []string{transfer, getBalance}}}},
+		{"the same method in the head and every step", scenarioCall("      scenario: s\n      steps:\n" + stepsOf(getBalance, getBalance)),
+			[]shape{{getBalance, "s", []string{getBalance, getBalance}}}},
+		{"one method in two scenarios",
+			scenarioCall("      scenario: s1\n      steps:\n"+stepsOf(transfer)) + scenarioAfter(getHistory, "s2", transfer),
+			[]shape{{getBalance, "s1", []string{transfer}}, {getHistory, "s2", []string{transfer}}}},
+		{"the same head in two scenarios",
+			scenarioCall("      scenario: s1\n      steps:\n"+stepsOf(transfer)) + scenarioAfter(getBalance, "s2", getHistory),
+			[]shape{{getBalance, "s1", []string{transfer}}, {getBalance, "s2", []string{getHistory}}}},
+		{"a plain call and a step of a scenario",
+			scenarioCall("      scenario: s\n      steps:\n"+stepsOf(transfer)) + plainAfter(transfer),
+			[]shape{{getBalance, "s", []string{transfer}}, {transfer, "", nil}}},
+		{"a plain call and the head of a scenario",
+			scenarioCall("") + scenarioAfter(getBalance, "s", transfer),
+			[]shape{{getBalance, "", nil}, {getBalance, "s", []string{transfer}}}},
+		{"a scenario's head and a plain call after it",
+			scenarioCall("      scenario: s\n      steps:\n"+stepsOf(transfer)) + plainAfter(getBalance),
+			[]shape{{getBalance, "s", []string{transfer}}, {getBalance, "", nil}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := config.Parse([]byte(tc.cfg))
+			if err != nil {
+				t.Fatalf("Parse() = %v, want a valid config: a method may stand more than once", err)
+			}
+
+			calls := cfg.Load.Calls
+			if len(calls) != len(tc.want) {
+				t.Fatalf("len(Calls) = %d, want %d", len(calls), len(tc.want))
+			}
+			for i, w := range tc.want {
+				var steps []string
+				for _, s := range calls[i].Steps {
+					steps = append(steps, s.Method)
+				}
+				if calls[i].Method != w.method || calls[i].Scenario != w.scenario || !reflect.DeepEqual(steps, w.steps) {
+					t.Errorf("call %d = %q scenario %q steps %q, want %q scenario %q steps %q",
+						i, calls[i].Method, calls[i].Scenario, steps, w.method, w.scenario, w.steps)
+				}
 			}
 		})
 	}
@@ -383,14 +480,13 @@ func TestScenario_StepDataBracesAreTextAsInACallWithTemplatesOff(t *testing.T) {
 // is coming and not a typo: the generic unknown-key error would read as a
 // mistake of the user. `data` left this list when a step took it (unit 3a),
 // `templates` when it took that (unit 3b), `dataset`, `dataset_order` and
-// `dataset_seed` when it took those (unit 3c).
+// `dataset_seed` when it took those (unit 3c), `pass` when it took that (A2).
 // Ground: contract — П13 and П29: no silent partial scenario.
 func TestScenario_StepKeysStillRefused(t *testing.T) {
 	for key, value := range map[string]string{
 		"dataset_reuse": "false",
 		"rps":           "5",
 		"duration":      "1s",
-		"pass":          "{errors: 1%}",
 	} {
 		t.Run(key, func(t *testing.T) {
 			raw := twoStepScenario("        - method: " + transfer + "\n          " + key + ": " + value + "\n")

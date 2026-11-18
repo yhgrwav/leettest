@@ -123,7 +123,8 @@ type DatasetReport struct {
 
 // DatasetExhausted says which call's file ran out and so ended the run.
 type DatasetExhausted struct {
-	// Method is the call's gRPC path as in Call.Method.
+	// Method is the row key of the call or step (RowKeys): its gRPC path, with
+	// the scenario and step when the method repeats in the run.
 	Method string
 	// File is the dataset path as the config wrote it.
 	File string
@@ -132,7 +133,8 @@ type DatasetExhausted struct {
 // SeqOverflow says which call's seq reached the limit of its field and so
 // ended the run.
 type SeqOverflow struct {
-	// Method is the call's gRPC path as in Call.Method.
+	// Method is the row key of the call (RowKeys): its gRPC path, with the
+	// scenario and step when the method repeats in the run.
 	Method string
 	// Limit is the largest seq the field can hold.
 	Limit uint64
@@ -142,15 +144,25 @@ type SeqOverflow struct {
 }
 
 type MethodReport struct {
+	// Method is the row's key (RowKeys): the call's gRPC method for a plain call
+	// and for a method that appears once in the run, otherwise the method with
+	// the scenario and step that tell the rows apart. Unique among the rows.
 	Method string
-	Sent   int
-	Failed int
-	RPS    float64
-	Min    metrics.Quantile
-	P50    metrics.Quantile
-	P90    metrics.Quantile
-	P95    metrics.Quantile
-	P99    metrics.Quantile
+	// Scenario is the scenario a row of a head or step belongs to; empty for a
+	// plain call. Step is its number in the scenario from 1, the head being 1;
+	// 0 for a plain call. GRPCMethod is the method the row called: Method, when
+	// the method is not repeated.
+	Scenario   string
+	Step       int
+	GRPCMethod string
+	Sent       int
+	Failed     int
+	RPS        float64
+	Min        metrics.Quantile
+	P50        metrics.Quantile
+	P90        metrics.Quantile
+	P95        metrics.Quantile
+	P99        metrics.Quantile
 	// P999 is Defined only when Latencies >= metrics.MinCount(0.999): with
 	// fewer observations p99.9 is the max.
 	P999 metrics.Quantile

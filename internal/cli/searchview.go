@@ -231,7 +231,7 @@ func (m *searchModel) body(inner int) string {
 	switch {
 	case !m.coolUntil.IsZero():
 		left := max(0, m.coolUntil.Sub(m.now())).Round(time.Second)
-		top.WriteString(b.styles.value.Render(fmt.Sprintf("cooldown %s before the repeat of %d rps", formatDuration(left), m.coolRPS)))
+		top.WriteString(b.styles.value.Render(fmt.Sprintf("cooldown %s before the repeat of %s", formatDuration(left), rateText(m.coolRPS, m.scenario()))))
 	case b.showHelp, b.active == b.settingsTab():
 		top.WriteString(b.content(inner))
 	case b.engine == nil:
@@ -332,16 +332,23 @@ func (m *searchModel) header(width int) string {
 // place says where the search is without promising what may not come.
 func (m *searchModel) place() string {
 	r := m.run
+	rate := rateText(r.RPS, m.scenario())
 	switch {
 	case m.result != nil || r.RPS == 0:
 		return "breaking-point search"
 	case r.Kind == breakpoint.Repeat:
-		return fmt.Sprintf("repeat of step %d, %d rps", r.Step, r.RPS)
+		return fmt.Sprintf("repeat of step %d, %s", r.Step, rate)
 	case r.Kind == breakpoint.Probe:
-		return fmt.Sprintf("probe %d of at most %d, %d rps", r.Probe, breakpoint.MaxProbes, r.RPS)
+		return fmt.Sprintf("probe %d of at most %d, %s", r.Probe, breakpoint.MaxProbes, rate)
 	}
 
-	return fmt.Sprintf("step %d of at most %d, %d rps", r.Step, r.Steps, r.RPS)
+	return fmt.Sprintf("step %d of at most %d, %s", r.Step, r.Steps, rate)
+}
+
+// scenario is whether the search steps a scenario: its plan carries the
+// deadlines of the steps after the head, and a scenario has at least one.
+func (m *searchModel) scenario() bool {
+	return len(m.plan.StepTimeouts) > 0
 }
 
 // table is the runs so far in at most room lines below the heading (no
@@ -360,7 +367,7 @@ func (m *searchModel) table(room int) string {
 		verdicts[i] = stepVerdict(&rows[i])
 	}
 
-	table := strings.TrimRight(runsTable(m.plan, rows, verdicts, ""), "\n")
+	table := strings.TrimRight(runsTableOf(m.plan, rows, verdicts, "", m.scenario()), "\n")
 	if hidden == 0 {
 		return table
 	}

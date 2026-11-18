@@ -59,33 +59,40 @@ func TestRun_ScenarioStepTypoIsRefusedBeforeTheFirstRequest(t *testing.T) {
 	}
 }
 
-// A dry run sends one request per call; a scenario has no such meaning yet, and
-// half of one would be a silent partial check.
-// Ground: contract — spec 5, refused with the scenario named.
-func TestRun_DryRunRefusesAScenario(t *testing.T) {
+// A dry run no longer refuses a scenario: it sends one iteration, the call and
+// then each step once, and names the scenario on the screen.
+// Ground: contract — spec 1; the refusal of v0.9 ("isn't supported yet") is gone.
+// Mutation: bring the refusal back (the run fails and the target gets nothing).
+func TestRun_DryRunAcceptsAScenarioAndSendsItsStepsOnce(t *testing.T) {
 	target := startReflectingTarget(t)
 	cfg := dryConfig(t, target.addr, "", scenarioCalls("pay-and-check", "50", "300ms", stepUnary))
 
 	res := runCLI(t.Context(), t, 5*time.Second, "-c", cfg, "-dry-run")
 
-	if got := exitCode(res.err); got != 1 {
-		t.Fatalf("exit code %d, want 1\nerr %v", got, res.err)
+	if res.err != nil {
+		t.Fatalf("run: %v\nstdout:\n%s\nstderr:\n%s", res.err, res.stdout, res.stderr)
 	}
-	for _, want := range []string{"dry run", "pay-and-check"} {
-		if !strings.Contains(res.err.Error(), want) {
-			t.Errorf("error %q lacks %q", res.err, want)
+	if all := res.stdout + res.stderr; strings.Contains(all, "isn't supported yet") {
+		t.Errorf("the old refusal is still there:\n%s", all)
+	}
+	if got := target.health.calls.Load(); got != 1 {
+		t.Errorf("Health/Check got %d requests, want 1", got)
+	}
+	if got := len(target.recorder.allSimple()); got != 1 {
+		t.Errorf("UnaryCall got %d requests, want 1", got)
+	}
+	for _, want := range []string{
+		"1/1 scenario pay-and-check, step 1 of 2, " + checkMethod + ": success",
+		"1/1 scenario pay-and-check, step 2 of 2, " + unaryCallMethod + ": success",
+	} {
+		if !strings.Contains(res.stdout, want) {
+			t.Errorf("stdout lacks %q:\n%s", want, res.stdout)
 		}
-	}
-	if got := target.health.calls.Load() + int64(len(target.recorder.allSimple())); got != 0 {
-		t.Errorf("the target got %d requests, want none from a refused dry run", got)
-	}
-	if res.stdout != "" {
-		t.Errorf("stdout = %q, want nothing", res.stdout)
 	}
 }
 
-// Ground: contract — spec 4, a search cannot take a scenario; refused at load,
-// before any connection. Mutation 3 (allow it) dies here.
+// Ground: contract — a search takes a scenario (reviews/scenario-breakpoint.md),
+// but not yet a p99_limit with it; refused at load, before any connection.
 func TestRun_ScenarioWithABreakpointSearchIsRefusedAtLoad(t *testing.T) {
 	cfg := dryConfig(t, closedPort(t), "", "    - method: "+checkMethod+"\n      scenario: s\n      steps:\n"+stepUnary+
 		"  breakpoint:\n    from: 100\n    to: 800\n    settle: 1s\n    hold: 5s\n    p99_limit: 200ms\n")
@@ -93,9 +100,9 @@ func TestRun_ScenarioWithABreakpointSearchIsRefusedAtLoad(t *testing.T) {
 	res := runCLI(t.Context(), t, 3*time.Second, "-c", cfg)
 
 	if res.err == nil {
-		t.Fatal("run succeeded, want a scenario with a search refused")
+		t.Fatal("run succeeded, want p99_limit with a scenario refused")
 	}
-	if want := "a scenario can't be searched yet"; !strings.Contains(res.err.Error(), want) {
+	if want := "load.breakpoint.p99_limit with a scenario"; !strings.Contains(res.err.Error(), want) {
 		t.Errorf("error %q lacks %q", res.err, want)
 	}
 }

@@ -65,7 +65,7 @@ Die Konfiguration, ein Dataset, ein Bericht für `compare` und die Einstellungsd
 | `load.calls[].dataset_reuse` | `true` (weggelassen) oder `false`: bei `false` geht kein Datensatz im ganzen Prozess zweimal raus. Braucht `dataset` |
 | `load.calls[].templates` | `true` oder `false` (weggelassen — `false`; ein Schlüssel ohne Wert ist ein Fehler): schaltet die Platzhalter `{{uuid}}` und `{{seq}}` in `data` ein, siehe [unten](#eine-anfrage-die-sich-ändert-templates). Braucht mindestens einen Platzhalter — in ihrem `data` oder im `data` eines Schritts mit `templates: true`; nicht zusammen mit `dataset`. |
 | `load.calls[].scenario` | (nicht veröffentlicht) Der Name eines Szenarios: der Aufruf selbst wird Schritt 1, danach kommen die `steps`. Braucht `steps` und umgekehrt. Der Name ist nicht leer, der Bericht gibt ihn unverändert aus; er darf nicht mit einer Methode übereinstimmen. Siehe [unten](#szenario-schritte-nach-dem-aufruf) |
-| `load.calls[].steps` | (nicht veröffentlicht) Eine nicht leere Liste von Schritten nach dem Aufruf. Jeder Schlüssel eines Schritts außer den acht unten wird noch nicht unterstützt — ein Fehler |
+| `load.calls[].steps` | (nicht veröffentlicht) Eine nicht leere Liste von Schritten nach dem Aufruf. Jeder Schlüssel eines Schritts außer den neun unten wird noch nicht unterstützt — ein Fehler |
 | `load.calls[].extract` | (nicht veröffentlicht) Ein Wörterbuch `name: pfad`: Werte aus der Antwort dieses Aufrufs, die die Schritte danach als `{{extract.<name>}}` lesen, siehe [unten](#extract-ein-wert-aus-einer-früheren-antwort). Nur bei einem Aufruf mit `steps`; der Name ist `[A-Za-z_][A-Za-z0-9_]*`, im Szenario eindeutig und von irgendeinem folgenden Schritt gelesen. Nicht null und nicht leer |
 | `load.calls[].steps[].method` | (nicht veröffentlicht) Die Methode des Schritts, voller Name; Pflicht. Wird vor der Last geprüft, wie die Methode des Aufrufs |
 | `load.calls[].steps[].timeout` | (nicht veröffentlicht) Wie lange auf die Antwort des Schritts gewartet wird, wie `load.calls[].timeout`; weggelassen — `2s`, nicht der Timeout des Aufrufs |
@@ -75,6 +75,7 @@ Die Konfiguration, ein Dataset, ein Bericht für `compare` und die Einstellungsd
 | `load.calls[].steps[].dataset_order` | (nicht veröffentlicht) `file` (weggelassen) oder `random`: die Reihenfolge der Datensätze des Schritts. Braucht `dataset` des Schritts |
 | `load.calls[].steps[].dataset_seed` | (nicht veröffentlicht) Seed der zufälligen Reihenfolge, eine ganze Zahl von 0 bis 9007199254740991, wie `load.calls[].dataset_seed`. Braucht `dataset_order: random` am Schritt |
 | `load.calls[].steps[].extract` | (nicht veröffentlicht) Wie `load.calls[].extract`, für die Antwort des Schritts selbst: Der nächste Schritt liest die Namen als `{{extract.<name>}}`, siehe [unten](#extract-ein-wert-aus-einer-früheren-antwort). Ein Name wird im Szenario einmal vergeben: vom Aufruf oder von einem Schritt |
+| `load.calls[].steps[].pass` | (nicht veröffentlicht) Die Grenzen der eigenen Zeile des Schritts, mit den Schlüsseln von `load.calls[].pass` (siehe [unten](#grenzen-pass)); das `pass` des Aufrufs selbst beurteilt den ersten Schritt und wird nicht vererbt. Eine Latenzgrenze liegt unter dem Timeout des Schritts, `p999` nimmt `rps` und `duration` des Aufrufs |
 | `load.calls[].pass` | Die Grenzen, die ein Lauf einhalten muss, um zu bestehen: `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, siehe [unten](#grenzen-pass). Weggelassen — keine Grenzen |
 | `load.breakpoint.from` | Die Rate der ersten Stufe der Bruchpunkt-Suche, Aufrufe pro Sekunde. Eine ganze Zahl ab 1; eine Dezimalzahl ist ein Konfigurationsfehler (`rps must be a whole number of requests: 100.5`). Pflicht: fehlend oder unter 1 — `invalid breakpoint: breakpoint.from: breaking-point plan: from 0, want at least 1 rps`, Exit 1. Die erste Stufe muss mindestens 100 Aufrufe messen, `from` × (`hold` − `settle`), sonst vor der Last der Fehler `invalid breakpoint: the first step measures 8 calls, a p99 needs 100: raise from, hold or lower settle`. Mit `app.mode: real` geht ein Anlauf von 0 auf `from` |
 | `load.breakpoint.to` | Über dieser Rate gibt es keine Stufen. Eine ganze Zahl, nicht unter `from` (gleich `from` — eine Stufe). Pflicht: fehlend oder unter `from` — `invalid breakpoint: breakpoint.to: breaking-point plan: to 50 is below from 100`, Exit 1. Erreicht die Suche die letzte Stufe und hält sie, lautet das Ergebnis `held_all` |
@@ -860,6 +861,19 @@ unten den Typ „percentile?" hat.
 | `settings.ramp_us` | int | `load.ramp` wie konfiguriert, in ganzen Mikrosekunden; 0 ohne Anlauf. Suche: der Anlauf vor der ersten Stufe; in `breakpoint.runs[0].report.settings.ramp_us` derselbe, bei den übrigen Läufen 0 |
 | `settings.stop_on_errors` | string? | `load.stop_on_errors` wie geschrieben: `"5%"`, `"100%"` bleibt `"100%"`; `null` — weggelassen. |
 | `settings.compression` | string? | `app.compression` wie konfiguriert: `"gzip"`, `null` — weggelassen |
+| `settings.idle_timeout_us` | int? | (nicht veröffentlicht) `app.idle_timeout` in ganzen Mikrosekunden; `null` — weggelassen, also die 30 Minuten von grpc-go |
+| `metadata_refresh` | object? | (nicht veröffentlicht) Was das erneute Lesen der `${file:PATH}`-Dateien getan hat, gezählt ab der Verbindung; `null` ohne `app.metadata_refresh`. Eine Suche hat es einmal auf oberster Ebene, ihre Läufe in `breakpoint.runs` `null` |
+| `metadata_refresh.interval_us` | int | (nicht veröffentlicht) `app.metadata_refresh` in ganzen Mikrosekunden |
+| `metadata_refresh.reads` | int | (nicht veröffentlicht) Lesevorgänge nach dem Start; der erste beim Laden zählt nicht |
+| `metadata_refresh.changed` | int | (nicht veröffentlicht) Erfolgreiche Lesevorgänge mit einem anderen Wert |
+| `metadata_refresh.failures` | int | (nicht veröffentlicht) Fehlgeschlagene Lesevorgänge; der letzte gute Wert blieb in Gebrauch |
+| `metadata_refresh.failing_at_end` | bool | (nicht veröffentlicht) `true`, wenn der letzte Lesevorgang fehlschlug |
+| `metadata_refresh.last_error` | string? | (nicht veröffentlicht) Der Text des letzten fehlgeschlagenen Lesevorgangs: Header, Datei und Grund, nie der Wert. `null`, bis einer fehlschlug; bleibt nach der Erholung |
+| `closes` | object? | (nicht veröffentlicht) Wie die Verbindungen einer Suche geschlossen wurden: eine Zählung für die ganze Suche. `null` ohne Sender (`-fake`). Ein Lauf hat dieselben Zahlen in `connections`; die Läufe in `breakpoint.runs` tragen keine |
+| `closes.closed_idle_ours` | int? | (nicht veröffentlicht) Verbindungen ohne Aufruf darauf, von unserem `app.idle_timeout` geschlossen; `null` — der Sender zählt nicht |
+| `closes.closed_idle_peer` | int? | (nicht veröffentlicht) Verbindungen ohne Aufruf darauf, von der Gegenseite oder dem Netz geschlossen; `null` — der Sender zählt nicht |
+| `closes.closed_busy` | int? | (nicht veröffentlicht) Verbindungen, die mit Aufrufen darauf geschlossen wurden; `null` — der Sender zählt nicht |
+| `closes.peer_idle_min_us` | int? | (nicht veröffentlicht) Die kürzeste Leerlaufzeit ohne Aufrufe, nach der die Gegenseite eine Verbindung schloss, in ganzen Mikrosekunden; `null`, bis es so ein Schließen gab |
 | `passport` | object? | Die Maschine und die Konfiguration, mit denen der Lauf gemacht wurde, um Läufe zu unterscheiden. Eine Suche hat ihn einmal auf oberster Ebene, ihre Läufe in `breakpoint.runs` nicht |
 | `passport.config_sha256` | string | SHA-256 der Bytes der Konfigurationsdatei, wie gelesen, 64 Hexziffern |
 | `passport.os`, `passport.arch` | string | `GOOS` und `GOARCH` des Generators, etwa `linux` und `amd64` |
@@ -899,6 +913,10 @@ unten den Typ „percentile?" hat.
 | `connections.per_connection[].p99` | percentile? | p99 der Aufrufe der Verbindung; `null` ohne einen Aufruf mit Latenz |
 | `connections.per_connection[].first_limit`, `connections.per_connection[].last_limit` | int? | Das Stream-Limit der Verbindung beim ersten und letzten Handshake; `null` — nicht angekündigt |
 | `connections.per_connection[].limit_changes` | int | Handshakes der Verbindung, die ein anderes Limit als das vorige ankündigten |
+| `connections.closed_idle_ours` | int? | (nicht veröffentlicht) Verbindungen ohne Aufruf darauf, von unserem `app.idle_timeout` geschlossen; `null` — der Sender zählt nicht |
+| `connections.closed_idle_peer` | int? | (nicht veröffentlicht) Verbindungen ohne Aufruf darauf, von der Gegenseite oder dem Netz geschlossen; `null` — der Sender zählt nicht |
+| `connections.closed_busy` | int? | (nicht veröffentlicht) Verbindungen, die mit Aufrufen darauf geschlossen wurden; `null` — der Sender zählt nicht |
+| `connections.peer_idle_min_us` | int? | (nicht veröffentlicht) Die kürzeste Leerlaufzeit ohne Aufrufe, nach der die Gegenseite eine Verbindung schloss, in ganzen Mikrosekunden; `null`, bis es so ein Schließen gab |
 | `client_waits` | object | Aufrufe, die auf Client-Seite über der Schwelle warteten, nach Ursache ([den Bericht lesen](../en/report.md#reading-the-report)) |
 | `client_waits.generator_calls`, `client_waits.stream_calls`, `client_waits.connection_calls` | int | Alle solchen Aufrufe, gesendet oder nicht. Ein gesendeter Aufruf kann für mehrere Ursachen zählen |
 | `client_waits.generator_tail_calls`, `client_waits.stream_tail_calls`, `client_waits.connection_tail_calls` | int | Nur im p99-Ende und unter den ungesendeten: Diese bestimmen `tail_wait_cause` |
@@ -936,7 +954,10 @@ Die übrigen sind einfache Zähler.
 
 | Feld | Typ | Bedeutung |
 |---|---|---|
-| `methods[].method` | string | Der volle Methodenname |
+| `methods[].method` | string | Der Schlüssel der Zeile: der volle Methodenname, bei einer wiederholten Methode `<Methode> (<Szenario>, Schritt <n>)` |
+| `methods[].grpc_method` | string | (nicht veröffentlicht) Der volle Name der gRPC-Methode, die die Zeile aufgerufen hat |
+| `methods[].scenario` | string? | (nicht veröffentlicht) Das Szenario der Zeile; `null` bei einem einfachen Aufruf |
+| `methods[].step` | int? | (nicht veröffentlicht) Die Nummer des Schritts im Szenario, ab 1; `null` bei einem einfachen Aufruf |
 | `methods[].invalid_reason` | string? | Die Methode hat nichts über Last gemessen: `request_error`, `client_error`, `bad_response`, `mixed`; `null` — sie hat |
 | `methods[].sent`, `methods[].failed`, `methods[].aborted`, `methods[].not_sent`, `methods[].not_sent_generator`, `methods[].not_sent_stream`, `methods[].not_sent_connection`, `methods[].warmup_sent`, `methods[].warmup_failed`, `methods[].warmup_not_sent` | int | Der Anteil der Methode an den gleichnamigen Feldern des Laufs |
 | `methods[].rps` | float? | `sent/s`: gesendete Aufrufe geteilt durch die Sendezeit dieser Methode; `null` — keine Aufrufe |
@@ -1065,6 +1086,11 @@ obersten Ebene. Jeder Lauf liegt mit seinem vollständigen Bericht in `breakpoin
 | `breakpoint.errors_limit` | string | Die Fehlergrenze der Suche als Prozent: standardmäßig `"1%"`. Eine Stufe brach darüber; `100%` — Fehler brechen keine Stufe |
 | `breakpoint.why` | string? | Ursache des Laufs, der die Suche beendet hat, aus einer geschlossenen Liste: `errors`, `p99_limit`, `p99_vs_base`, `connection`, `no_recovery`, `generator`, `in_flight_cap`, `stream_limit`, `stream_wait`, `client_errors`, `clock_step`, `request_errors`; `null` — keine Ursache. `client_errors`: die Grenze wurde nur durch Fehler auf der Seite des Clients überschritten, die eigenen Fehler des Ziels liegen innerhalb davon; das Ergebnis ist `run_limit` |
 | `breakpoint.stop_reason` | string? | Wer die Suche beendet hat: `dataset_exhausted` (eine Datei mit `dataset_reuse: false` war aufgebraucht), `seq_overflow` (ein `{{seq}}` passte nicht in sein Feld; nur in Builds, die neuer sind als das letzte Release), `requested` (vom Nutzer gestoppt); `null` — die Suche endete von selbst |
+| `breakpoint.scenario` | string? | (nicht veröffentlicht) Name des gesuchten Szenarios; `null` — die Suche läuft über einen Aufruf |
+| `breakpoint.rate_unit` | string | (nicht veröffentlicht) Was die Raten der Suche zählen: `iterations` — Iterationen eines Szenarios pro Sekunde, `calls` — Aufrufe pro Sekunde |
+| `breakpoint.broke_step` | object? | (nicht veröffentlicht) Der Schritt, der im Lauf, der die Suche beendet hat, als erster brach; `null` — ein Aufruf oder kein Schritt benannt |
+| `breakpoint.broke_step.step` | int | (nicht veröffentlicht) Platz des Schritts im Szenario, ab 1: der Kopf ist 1 |
+| `breakpoint.broke_step.method` | string | (nicht veröffentlicht) Methode der Zeile des Schritts, wie in `methods[].method` des Berichts des Laufs |
 | `breakpoint.notes` | []string | Hinweise der Suche, Text für Menschen in ASCII; nicht auswerten |
 | `breakpoint.runs` | []object | Alle Läufe der Reihe nach |
 | `breakpoint.runs[].kind` | string | `step`, `repeat` oder `probe` |
@@ -1073,6 +1099,9 @@ obersten Ebene. Jeder Lauf liegt mit seinem vollständigen Bericht in `breakpoin
 | `breakpoint.runs[].broken` | bool | `true` — der Lauf hat das Ziel gebrochen |
 | `breakpoint.runs[].recovered` | bool? | Bei einem `probe`: das Ziel ist innerhalb des 1,5-Fachen des p99 der Basis zurück; bei `step` und `repeat` `null` |
 | `breakpoint.runs[].why` | string? | Ursache des Laufs, dieselbe geschlossene Liste wie bei `breakpoint.why`; `null` — keine Ursache |
+| `breakpoint.runs[].broke_step` | object? | (nicht veröffentlicht) Der Schritt, der in diesem Lauf als erster brach; `null` — ein Aufruf oder kein Schritt benannt |
+| `breakpoint.runs[].broke_step.step` | int | (nicht veröffentlicht) Platz des Schritts im Szenario, ab 1: der Kopf ist 1 |
+| `breakpoint.runs[].broke_step.method` | string | (nicht veröffentlicht) Methode der Zeile des Schritts |
 | `breakpoint.runs[].report` | object | Vollständiger Bericht dieses Laufs, dasselbe Objekt wie das JSON eines gewöhnlichen Laufs (Felder oben) |
 
 ## Berichte vergleichen: `leettest compare`

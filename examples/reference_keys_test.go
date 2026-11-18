@@ -43,10 +43,10 @@ var referenceOnlyKeys = map[string]string{}
 var undocumentedExampleKeys = map[string]string{}
 
 // openKeys take keys of the user's own naming below them: a label, a header, a field of the message,
-// the name of an extracted value.
+// the name of an extracted value; and a step's pass, whose keys are the call's, described by its one row.
 var openKeys = []string{
 	"labels", "app.metadata", "load.calls[].data", "load.calls[].steps[].data",
-	"load.calls[].extract", "load.calls[].steps[].extract",
+	"load.calls[].extract", "load.calls[].steps[].extract", "load.calls[].steps[].pass",
 }
 
 var backtickSpan = regexp.MustCompile("`([^`]+)`")

@@ -109,3 +109,42 @@ func TestStopPlannedRate_IsNilWithoutATripOrAPlan(t *testing.T) {
 		}
 	}
 }
+
+// Ground: contract — reviews/scenario-same-method.md §5, §9: the watch names a
+// row, so Trip.Method of a repeated head is its row key, and the rate is the
+// plan of that call; the bare method is the plain call of the same method and
+// has its own plan. Matching by the RPC method (mutation M9) finds the wrong
+// call or none.
+func TestStopPlannedRate_TakesTheRowKeyOfARepeatedHead(t *testing.T) {
+	const get = "/svc/Get"
+
+	calls := []engine.Call{
+		{
+			Method: get, Scenario: "s1",
+			Next:   []engine.Step{{Method: "/svc/Update"}, {Method: get}},
+			Stages: []engine.Stage{{StartRPS: 200, TargetRPS: 200, Duration: 10 * time.Second}},
+		},
+		{Method: get, Stages: []engine.Stage{{StartRPS: 50, TargetRPS: 50, Duration: 10 * time.Second}}},
+	}
+
+	for _, c := range []struct {
+		name   string
+		method string
+		want   float64
+	}{
+		{"the repeated head by its key", get + " (s1, step 1)", 200},
+		{"the plain call by the bare method", get, 50},
+	} {
+		trip := errstop.Trip{Method: c.method, At: 4 * time.Second}
+
+		got := stopPlannedRate(calls, &trip)
+		if got == nil {
+			t.Errorf("%s: nil, want %v", c.name, c.want)
+
+			continue
+		}
+		if math.Abs(*got-c.want) > 1e-9 {
+			t.Errorf("%s: %v, want %v", c.name, *got, c.want)
+		}
+	}
+}

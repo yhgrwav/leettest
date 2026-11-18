@@ -501,7 +501,7 @@ func TestSenderOptions_OwnCAReplacesTheSystemRoots(t *testing.T) {
 	dir := t.TempDir()
 	server := writePair(t, dir, "server", localCert())
 
-	opts, err := senderOptions(&config.App{UseTLS: true, CA: filepath.Join(dir, "server.pem")})
+	opts, _, err := senderOptions(&config.App{UseTLS: true, CA: filepath.Join(dir, "server.pem")}, false)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -370,6 +370,8 @@ func (p *WorkerPool) iterate(r *poolRun, first Request, out chan<- Result) {
 
 			return
 		}
+		// The sender saw the RPC method; the report row is the call's or step's key.
+		step.Method = sc.keyAt(k)
 		step.IterationTick = first.ScheduledAt
 
 		if extract := sc.extractOf(k); extract != nil && step.Category == CategorySuccess {

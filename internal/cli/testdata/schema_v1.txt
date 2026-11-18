@@ -33,6 +33,14 @@ settings.warmup_us int
 settings.ramp_us int
 settings.compression string?
 settings.stop_on_errors string?
+settings.idle_timeout_us int?
+metadata_refresh object?
+metadata_refresh.interval_us int
+metadata_refresh.reads int
+metadata_refresh.changed int
+metadata_refresh.failures int
+metadata_refresh.failing_at_end bool
+metadata_refresh.last_error string?
 passport object?
 passport.config_sha256 string
 passport.os string
@@ -89,6 +97,10 @@ connections.per_connection[].p99.lower_bound bool
 connections.per_connection[].first_limit int?
 connections.per_connection[].last_limit int?
 connections.per_connection[].limit_changes int
+connections.closed_idle_ours int?
+connections.closed_idle_peer int?
+connections.closed_busy int?
+connections.peer_idle_min_us int?
 client_waits object
 client_waits.generator_calls int
 client_waits.stream_calls int
@@ -107,6 +119,9 @@ traffic.sent_bits_per_second float
 traffic.received_bits_per_second float
 methods []object
 methods[].method string
+methods[].scenario string?
+methods[].step int?
+methods[].grpc_method string
 methods[].invalid_reason string?
 methods[].sent int
 methods[].failed int

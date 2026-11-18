@@ -57,6 +57,12 @@ type RunReport struct {
 	Name string
 	// Settings are what the run was started with; nil prints no settings line.
 	Settings *RunSettings
+	// MetadataRefresh is what the refresh of app.metadata did; nil when there
+	// is none, which prints no line and writes null.
+	MetadataRefresh *MetadataRefresh
+	// Closes is how the run's connections were closed; nil when the sender
+	// does not count, which prints no line and writes null.
+	Closes *CloseStats
 	// Passport is the config and the machine of the run; nil prints no machine
 	// line and leaves the passport out of the JSON.
 	Passport *Passport
@@ -92,6 +98,9 @@ type RunSettings struct {
 	Ramp time.Duration
 	// Compression is app.compression: "gzip", or empty for none.
 	Compression string
+	// IdleTimeout is app.idle_timeout as configured; 0 when it was left out,
+	// which prints nothing and is null in JSON.
+	IdleTimeout time.Duration
 	// Mode is app.mode: "local" or "real". Empty prints nothing.
 	Mode string
 	// StopOnErrors is load.stop_on_errors as written; empty when left out,
@@ -152,7 +161,8 @@ func printRunHeader(w io.Writer, target string, run RunReport) {
 		if s.Ramp > 0 {
 			ramp = fmt.Sprintf(", ramp %s", s.Ramp)
 		}
-		fmt.Fprintf(w, "settings: warm-up %s%s, max in flight %d, connections %d%s\n", s.Warmup, ramp, s.MaxInFlight, s.Connections, compressionSuffix(s.Compression))
+		fmt.Fprintf(w, "settings: warm-up %s%s, max in flight %d, connections %d%s%s\n", s.Warmup, ramp, s.MaxInFlight, s.Connections, compressionSuffix(s.Compression), idleSuffix(s.IdleTimeout))
+		printMetadataRefresh(w, run.MetadataRefresh)
 		if line := stopLimitLine(s.StopOnErrors); line != "" {
 			fmt.Fprintln(w, line)
 		}

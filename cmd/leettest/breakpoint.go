@@ -56,6 +56,11 @@ type searchSetup struct {
 	source *cli.MethodsSource
 	// passport is the config and the machine of the search.
 	passport *cli.Passport
+	// refresh is the sender's counters of the metadata refresh; nil under -fake.
+	refresh refreshSource
+	// closes is the sender's count of how its connections were closed; nil
+	// under -fake.
+	closes closesSource
 }
 
 // searchScreen says whether a search draws its full screen: only in a
@@ -90,6 +95,21 @@ func searchResult(outcome breakpoint.Outcome, limits []threshold.Result) error {
 	return limitsResult(limits)
 }
 
+// searchPlan is the plan of the search over the one call and the name of the
+// call's row in the report. A scenario's plan carries the deadlines of the
+// steps after the head, and the name is the head's row key as the report's
+// rows are keyed.
+func searchPlan(s searchSetup, maxInFlight int) (plan breakpoint.Plan, method string) {
+	call := s.calls[0]
+	plan = s.cfg.Load.Breakpoint.Plan(call.Timeout, maxInFlight)
+
+	for i := range call.Next {
+		plan.StepTimeouts = append(plan.StepTimeouts, call.Next[i].Timeout)
+	}
+
+	return plan, strings.TrimPrefix(engine.RowKeys(s.calls)[0][0], "/")
+}
+
 // runSearch runs the breaking-point search over the one call, a step at a
 // time on the one connection, and prints its report. The first Ctrl+C ends
 // the current run gently and stops the search; the second cuts the run's
@@ -97,18 +117,16 @@ func searchResult(outcome breakpoint.Outcome, limits []threshold.Result) error {
 func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Pointer[cli.Stopper], s searchSetup,
 	stdout, stderr io.Writer,
 ) error {
-	call := s.calls[0]
 	maxInFlight := 0
 	if s.capSet {
 		maxInFlight = s.maxInFlight
 	}
-	plan := s.cfg.Load.Breakpoint.Plan(call.Timeout, maxInFlight)
+	plan, method := searchPlan(s, maxInFlight)
 
 	searchCtx, stopSearch := context.WithCancel(ctx)
 	defer stopSearch()
 
 	screen := searchScreen(s.interactive, s.json)
-	method := strings.TrimPrefix(call.Method, "/")
 
 	// Who ended the search first: a key pressed, or a dataset that ran out.
 	var stopWhy stopReason
@@ -334,10 +352,13 @@ func newBreakpointRun(s searchSetup, method string, started time.Time, plan brea
 	report := cli.BreakpointRun{
 		StopReason: reason,
 		Target:     s.target, Name: cli.ServiceLabel(s.cfg, s.configPath), Version: versionString(version, info), Method: method,
+		Scenario:  s.calls[0].Scenario,
 		StartedAt: started, Plan: plan, Result: res, Runs: aligned(res.Steps, runs,
 			searchSettings(s, s.maxInFlight, plan.Settle, s.cfg.Load.Ramp), searchSettings(s, s.maxInFlight, plan.Settle, 0)),
 		MethodsSource: s.source, Connections: s.cfg.App.Connections, Mode: s.cfg.App.Mode, Ramp: s.cfg.Load.Ramp,
 		Compression: s.cfg.App.Compression, Passport: s.passport,
+		MetadataRefresh: metadataRefreshOf(s.refresh, s.cfg.App.MetadataRefresh),
+		Closes:          closesOf(s.closes, s.cfg.App.IdleTimeout),
 	}
 	if b := s.cfg.Load.Breakpoint; b != nil && b.RawPass != nil {
 		report.Thresholds = []threshold.Result{threshold.EvaluateSearch(res, b.Pass)}
@@ -382,7 +403,7 @@ func stepStages(rps int, hold, ramp time.Duration) []engine.Stage {
 func searchSettings(s searchSetup, maxInFlight int, settle, ramp time.Duration) *cli.RunSettings {
 	return &cli.RunSettings{
 		MaxInFlight: maxInFlight, Connections: s.cfg.App.Connections, Warmup: settle, Ramp: ramp,
-		Compression: s.cfg.App.Compression, Mode: s.cfg.App.Mode,
+		Compression: s.cfg.App.Compression, Mode: s.cfg.App.Mode, IdleTimeout: s.cfg.App.IdleTimeout,
 	}
 }
 

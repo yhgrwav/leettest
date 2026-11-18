@@ -41,10 +41,12 @@ The config, a dataset, a report for `compare` and the settings file are UTF-8; a
 | `app.ca` | A PEM file of certificates to verify the service with instead of the system ones. Needs TLS |
 | `app.cert`, `app.key` | A client certificate and its key in PEM, for a service with mTLS. Only together, needs TLS |
 | `app.server_name` | The name to check the service's certificate against when it does not name the address in `target`. Needs TLS |
-| `app.metadata` | Headers of every call: `authorization`, `x-api-key` and so on. `${NAME}` is taken from an environment variable |
+| `app.metadata` | Headers of every call: `authorization`, `x-api-key` and so on. `${NAME}` is taken from an environment variable, `${file:PATH}` from a file |
+| `app.metadata_refresh` | (not released yet) How often to read the files named by `${file:PATH}` again during the run: `5m`, `30s`, at least `1s`. Left out — every file is read once, at the start. Needs a header that reads a file. The report prints a `metadata refresh:` line under `settings:` |
 | `app.max_response_size` | The largest reply a call accepts: `16MiB`, `512KB`. The unit is required (`MB` = 10⁶ bytes, `MiB` = 2²⁰), below 2 GiB. Left out — 4 MiB, as in gRPC. A larger reply is a `bad response`. A call in flight may buffer up to twice the limit: by default up to 8 MiB each |
 | `app.connections` | How many connections to open to the target, a whole number from 1 to 256. Left out — 1. Calls take the connections in turn, and the report prints a `Connections:` block, a row per connection |
 | `app.compression` | Compress request bodies: `gzip`. Left out — none. The report prints `bytes: <raw> -> <wire> per call` under the method |
+| `app.idle_timeout` | (not released yet) How long a connection may have no call on it before the client closes it: `50s`, `1m30s`, at least `1s` and at least `-connect-timeout`. Left out — 30 minutes, grpc-go's default. The next call opens the connection again. Set it below the idle limit of the proxy or balancer in front of the target. The value is printed in the `settings:` line. More under "Connection idle" below |
 | `app.mode` | `local` or `real`, written exactly so (`Real` is an error, so is a key with no value). Left out — `local`. `real` marks a run against a system that serves users and needs `load.ramp` (a ramp from 0 to `rps`) before it sends a call, otherwise exit 1; with `load.breakpoint` it asks for the ramp the same way: it runs from 0 to `breakpoint.from` before the search's first step, and without it the search does not start (exit 1). The report prints the mode under `name`, for `local` too. There is no flag for it, but a `real` run asks before the first call (see `-yes`). It also needs `load.stop_on_errors`, except for a search. |
 | `app.proto.files` | The `.proto` files whose services to load, for a service without reflection. Paths are relative to the config file's directory. Each file must lie under one of `import_paths` |
 | `app.proto.import_paths` | Where to look for the files and their imports, as `protoc -I`. Paths are relative to the config file's directory. Left out — that directory. The well-known types (`google/protobuf/…`) need no path |
@@ -63,7 +65,7 @@ The config, a dataset, a report for `compare` and the settings file are UTF-8; a
 | `load.calls[].dataset_reuse` | `true` (left out) or `false`: with `false` no record goes out twice, in the whole process. Needs `dataset` |
 | `load.calls[].templates` | `true` or `false` (left out — `false`; a key with no value is an error): turns on the `{{uuid}}` and `{{seq}}` placeholders in `data`, see [below](#a-request-that-changes-templates). Needs at least one placeholder, in its `data` or in the `data` of a step with `templates: true`; not together with `dataset`. |
 | `load.calls[].scenario` | (not released yet) The scenario's name: the call itself becomes step 1, the `steps` follow it. Needs `steps`, and the other way round. Not empty, printed in the report as written; it must not equal a method. See [below](#scenario-steps-after-a-call) |
-| `load.calls[].steps` | (not released yet) A non-empty list of the steps after the call. Any key of a step other than the eight below is not supported yet and is an error |
+| `load.calls[].steps` | (not released yet) A non-empty list of the steps after the call. Any key of a step other than the nine below is not supported yet and is an error |
 | `load.calls[].extract` | (not released yet) A map `name: path`: values of this call's reply that the steps after it read as `{{extract.<name>}}`, see [below](#extract-a-value-from-an-earlier-reply). Only on a call with `steps`; a name is `[A-Za-z_][A-Za-z0-9_]*`, unique in the scenario and read by some later step. Not null, not empty |
 | `load.calls[].steps[].method` | (not released yet) The step's method, the full name; required. It is checked before the load, like a call's method |
 | `load.calls[].steps[].timeout` | (not released yet) How long to wait for the step's reply, as `load.calls[].timeout`; left out — `2s`, not the call's timeout |
@@ -73,6 +75,7 @@ The config, a dataset, a report for `compare` and the settings file are UTF-8; a
 | `load.calls[].steps[].dataset_order` | (not released yet) `file` (left out) or `random`: the order of the step's records. Needs the step's `dataset` |
 | `load.calls[].steps[].dataset_seed` | (not released yet) The seed of a random order, a whole number from 0 to 9007199254740991, as `load.calls[].dataset_seed`. Needs `dataset_order: random` on the step |
 | `load.calls[].steps[].extract` | (not released yet) As `load.calls[].extract`, for the step's own reply: a later step reads the names as `{{extract.<name>}}`, see [below](#extract-a-value-from-an-earlier-reply). A name is taken once in a scenario, by the call or by one step |
+| `load.calls[].steps[].pass` | (not released yet) The limits of the step's own row, with the keys of `load.calls[].pass` (see [below](#pass-limits)); the call's own `pass` judges the first step and is not inherited. A latency limit is below the step's timeout, `p999` needs the call's `rps` and `duration` |
 | `load.calls[].pass` | The limits a run must meet to pass: `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, see [below](#pass-limits). Left out — no limits |
 | `load.breakpoint.from` | The first step's rate of a breaking-point search, calls a second. A whole number from 1; a fractional one is a config error (`rps must be a whole number of requests: 100.5`). Required: left out or below 1 — `invalid breakpoint: breakpoint.from: breaking-point plan: from 0, want at least 1 rps`, exit 1. The first step must measure at least 100 calls, `from` × (`hold` − `settle`), otherwise it is refused before any load with `invalid breakpoint: the first step measures 8 calls, a p99 needs 100: raise from, hold or lower settle`. With `app.mode: real` the ramp runs from 0 to `from` |
 | `load.breakpoint.to` | No step goes above this rate. A whole number, at least `from` (equal to `from` — one step). Required: left out or below `from` — `invalid breakpoint: breakpoint.to: breaking-point plan: to 50 is below from 100`, exit 1. If the search reaches the last step and it holds, the outcome is `held_all` |
@@ -126,6 +129,9 @@ Every key is in [`examples/pass.yaml`](../../examples/pass.yaml), a search's lim
 
 A config with a wrong `pass` is an error before the start (exit code 1), not a run without the
 check. An empty `pass: {}` is an error too.
+
+In a scenario (not released yet) `pass` also stands under a step, and the call's own judges the
+head: the rules are in [Scenario](#scenario-steps-after-a-call) (`pass` in a scenario).
 
 **Each limit gets a verdict**: `pass`, `fail` or `unknown`. The report prints a `Thresholds:` block
 with the worst of them and a row per limit; the JSON has the `thresholds` field.
@@ -191,6 +197,27 @@ goes out as written. There is no flag for headers, so the token never lands in `
 shell history. The tool prints header values nowhere: not in the report, not during the run, not
 in errors.
 
+**A token from a file.** `${file:PATH}` is replaced by the content of a file, inside a value too:
+`Bearer ${file:token.txt}`. PATH is everything up to the first `}`, as written, with no `${NAME}`
+and no `~`; a relative path is taken from the config file's directory. Exactly one line break at
+the end of the file is cut, spaces are kept. An empty file, a line break inside, a byte outside
+printable ASCII, a file over 64 KiB, a directory and a file that cannot be read are errors; the
+message names the header and the file, never the value. `user-agent` cannot come from a file. The
+file's permissions are not checked. `-fake` reads no files, and a dry run prints
+`${file:PATH}` where the value was.
+
+With `app.metadata_refresh` the files are read again at that interval during the run, and a
+new value goes out with the calls made after the read; a call in flight and a stream opened before it keep the
+old one. A read that fails is not applied: the last good
+value stays in use, the run goes on, and the exit code does not change. The stderr gets one
+line at the first failed read; the report counts them all: `metadata refresh: every 5m0s, 12
+reads, 3 changed, 0 failed`, and with failures `…; the last good value stayed in use; last error:
+…`. The counters run from the connection, reflection included. A token that went stale shows
+itself as `Unauthenticated` from the target: for a long run set `load.stop_on_errors`. Write the
+token atomically (rename), as Kubernetes and gcloud do: a file rewritten in place can be read half
+written, half a token is still printable ASCII, and the target answers `Unauthenticated`, which the
+report shows.
+
 **Headers.** Names are lowercased, as HTTP/2 carries them anyway. A config error before the
 start: a key starting with `grpc-` (reserved by gRPC), pseudo-headers such as `:path`, a key
 ending in `-bin` (binary headers are not supported yet), `content-type` and `te` (the transport
@@ -219,6 +246,31 @@ the error: use its IP. The report's block shows each connection's address, calls
 p99, so a dead or slow backend behind a name is not averaged away. Calls are not retried.
 The service's service config is ignored: retries and the balancing policy from it are not
 applied. A production client that applies them will see other categories and p99.
+
+**Connection idle.** (not released yet) `app.idle_timeout` is how long a connection may have no
+call on it before the client closes it; the next call opens the connection again and waits for it.
+Left out — 30 minutes, grpc-go's default. The key is a duration (`50s`, `1m30s`), at least `1s`:
+`0s` and a negative one are errors (there is no off, leave the key out), and a bare number is an
+error too. It cannot be shorter than `-connect-timeout` (10s by default): the idle timer would cut
+the first connection; that is an error before the start, in `-dry-run` too. With `-fake` the key is
+accepted and does nothing. Set it below the idle limit of the proxy or balancer in front of the
+target: ALB, nginx and envoy each have their own, check the setting. Otherwise the proxy closes the
+connection silently and the client learns of it only at the next call. With `connections: N` each
+connection has its own timer and the calls go round, so a connection gets 1/N of the calls and its
+pauses are N times longer. With `connections: 1` and a name from DNS, leaving the idle state
+resolves the name again and may land on another address. The value is printed in the `settings:`
+line (`idle_timeout 50s`) and is in the JSON as `settings.idle_timeout_us`.
+
+The report says how the connections were closed in two lines of `notes`: `closed with no call on
+it:` for those closed with no call on them, split into those closed by our `app.idle_timeout` and
+those closed by the other side or the network, and `closed while calls were on it:` for those
+closed with calls on them. A part with a zero is not printed, and when nothing was closed there is
+no line. For the closes by the other side the line names the shortest idle time after which it
+happened and, if that is not under `1s` and our own `app.idle_timeout` is not already below it,
+advises a value below it: `set app.idle_timeout below 59s`. The number is rounded down, so the
+advice never overstates the limit. The same counters are in the JSON: `connections.closed_*` for a
+run, the top-level `closes` for a search (one count for the whole search, none in its
+`breakpoint.runs`).
 
 **Errors before the start.** Everything that can be known before the run means exit code 1 and not
 a single call to the target: a file not found or not PEM, a certificate that does not match its
@@ -355,7 +407,8 @@ the call needs `templates: true` too, because the counter lives on the call.
   stopped name the step with the narrowest field (`steps[k]`). In JSON `seq_overflow.method` is
   still the call's method.
 - **The body of a step is built in the worker** after the step before it ended; the time it takes
-  counts as the step's start lag. `-dry-run` prints the call's body and no steps yet.
+  counts as the step's start lag. `-dry-run` sends one iteration of a scenario: the call, then its
+  steps in order (see «Checking before the load»).
 
 ### Extract: a value from an earlier reply
 
@@ -448,8 +501,7 @@ the reference stand.
 - **Not together with the step's `data` or with `templates: true`** on it. The records of a file are
   not templated: under a call with `templates: true`, a record with `{{` is an error naming the
   line; write `templates: false` on the step to send the braces as text.
-- **`dataset_reuse: false` is not supported in a step yet**, and neither are `rps`, `duration` and
-  `pass`.
+- **`dataset_reuse: false` is not supported in a step yet**, and neither are `rps` and `duration`.
 - **In the report** the step's method row carries the dataset line and `methods[].dataset`.
   `used` counts the iterations handed out with the step, not the steps that were reached.
 
@@ -521,9 +573,27 @@ against its own method: a typo in a step's method or field is a config error.
 The in-flight need is counted over the sum of the step timeouts (`rps` × Σ step timeouts); when it
 is above `-max-in-flight` the run does not start, and the only advice is `-max-in-flight <N>`.
 
-Not supported yet, and a run with them is refused: a scenario together with `pass`, together with a
-breaking-point search (`load.breakpoint`), and `-dry-run` with a scenario. The live screen and the
-Prometheus metrics do not show a scenario; it is seen in the report only.
+**`pass` in a scenario** (not released yet) is a limit per row, not per iteration. The call's `pass`
+judges the head, step 1, and the steps do not inherit it; `steps[].pass` judges the row of its
+step. The keys and checks are the call's (see [Pass limits](#pass-limits)), with two substitutions
+for a step: a latency limit is below the step's own `timeout`, and `p999` takes the call's `rps` and
+`duration`. The limits are checked in the config's order: the head, its steps, the next call; the
+`method` of a limit in the report and in JSON is the key of the row it judged (see below). A step's
+`errors` share is counted over the calls that reached the step: iterations that failed earlier are
+in the scenario block, not in the step's share. A step no call reached has nothing to judge:
+`unknown`, `nothing_sent`, exit code `2`. A limit on the whole iteration is not supported yet.
+
+A breaking-point search can take a scenario (`load.breakpoint` with the scenario's call, see
+[the search](report.md#breaking-point-search)); then `breakpoint.p99_limit` and `pass` under the
+call or its steps are refused, the limit of a search is `breakpoint.pass.held_rps`. The live screen
+and the Prometheus metrics do not show a scenario; it is seen in the report only.
+
+A method that appears more than once in the run (in several steps, or in a step and in a plain
+call) gets rows with the key `<method> (<scenario>, step <n>)`, `n` from 1, the head is step 1; a
+plain call stays the bare method. The key is in the method table, in the scenario block, in
+`methods[].method`, `scenarios[].steps[].method`, `stop.method` and in the `method` label of the
+Prometheus metrics; the gRPC method's path is in `methods[].grpc_method`. Known limit: a long key
+shifts the table's columns; the column width does not change for it.
 
 The text report has a scenario block after the method table: the iterations and their outcomes,
 the iteration's latency (from the schedule's tick to the end of the last step; no p99 while there
@@ -636,6 +706,13 @@ metadata: authorization: Bearer ${TOKEN}, x-tenant: acme
   length after the secrets are hidden. Control characters of a message are written as `\xNN`.
 - **Data.** A call with a `dataset` sends its first record in file order, whatever `dataset_order`,
   `dataset_seed` and `dataset_reuse` say, and the block says `record 1 of N`.
+- **A scenario** is one iteration: the call, then its steps in order, with the values the steps
+  take from earlier replies (`extract`). Each step has its own block: `1/2 scenario pay, step 2 of
+  3, wallet.Wallet/Check: success, OK, 1.20ms`; the number `k/N` is the number of the `load.calls`
+  entry, one for all its steps. The first step that is not `success` (or whose reply lacks the value
+  needed) stops the iteration, and the steps after it print as `… step 3 of 3, <method>: not
+  reached`. Data are taken as for a plain call: record 1 and `seq` 1. Ctrl+C during a scenario
+  prints none of its blocks, and it counts as a call not done.
 - **Metadata** is one line after the blocks: keys in lower case as they go out, sorted, values as the
   config wrote them, so `${ENV}` stays unexpanded. None — no line.
 - **Secrets.** The value of every `${NAME}` that the metadata substituted is replaced by `${NAME}`
@@ -817,6 +894,19 @@ measured calls only. The first column is the field's full path.
 | `settings.ramp_us` | int | `load.ramp` as configured, in whole microseconds; 0 without one. A search: the ramp before the first step; `breakpoint.runs[0].report.settings.ramp_us` is the same, the other runs have 0 |
 | `settings.stop_on_errors` | string? | `load.stop_on_errors` as written: `"5%"`, `"100%"` stays `"100%"`; `null` — left out. |
 | `settings.compression` | string? | `app.compression` as configured: `"gzip"`, `null` — left out |
+| `settings.idle_timeout_us` | int? | (not released yet) `app.idle_timeout` in whole microseconds; `null` — left out, which is grpc-go's 30 minutes |
+| `metadata_refresh` | object? | (not released yet) What the re-reading of the `${file:PATH}` files did, counted from the connection; `null` without `app.metadata_refresh`. A search has it once at the top level, its runs in `breakpoint.runs` carry `null` |
+| `metadata_refresh.interval_us` | int | (not released yet) `app.metadata_refresh` in whole microseconds |
+| `metadata_refresh.reads` | int | (not released yet) Reads after the start; the first one, at the load, is not counted |
+| `metadata_refresh.changed` | int | (not released yet) Successful reads that gave a different value |
+| `metadata_refresh.failures` | int | (not released yet) Reads that failed; the last good value stayed in use |
+| `metadata_refresh.failing_at_end` | bool | (not released yet) `true` when the last read failed |
+| `metadata_refresh.last_error` | string? | (not released yet) The text of the last failed read: the header, the file and the reason, never the value. `null` until a read failed; stays after a recovery |
+| `closes` | object? | (not released yet) How the connections of a search were closed: one count for the whole search. `null` without a sender (`-fake`). A run has the same numbers in `connections`; the runs in `breakpoint.runs` carry none |
+| `closes.closed_idle_ours` | int? | (not released yet) Connections with no call on them closed by our `app.idle_timeout`; `null` — the sender does not count |
+| `closes.closed_idle_peer` | int? | (not released yet) Connections with no call on them closed by the other side or the network; `null` — the sender does not count |
+| `closes.closed_busy` | int? | (not released yet) Connections closed with calls on them; `null` — the sender does not count |
+| `closes.peer_idle_min_us` | int? | (not released yet) The shortest idle time without calls after which the other side closed a connection, in whole microseconds; `null` until there was such a close |
 | `passport` | object? | The machine and the config the run was made with, for telling runs apart. A search has it once at the top level, its runs in `breakpoint.runs` do not |
 | `passport.config_sha256` | string | SHA-256 of the config file's bytes as read, 64 hex digits |
 | `passport.os`, `passport.arch` | string | `GOOS` and `GOARCH` of the generator, such as `linux` and `amd64` |
@@ -856,6 +946,10 @@ measured calls only. The first column is the field's full path.
 | `connections.per_connection[].p99` | percentile? | p99 of the connection's calls; `null` without a call that has a latency |
 | `connections.per_connection[].first_limit`, `connections.per_connection[].last_limit` | int? | The connection's stream limit at its first and last handshake; `null` — not announced |
 | `connections.per_connection[].limit_changes` | int | Handshakes of the connection that announced a limit different from the one before |
+| `connections.closed_idle_ours` | int? | (not released yet) Connections with no call on them closed by our `app.idle_timeout`; `null` — the sender does not count |
+| `connections.closed_idle_peer` | int? | (not released yet) Connections with no call on them closed by the other side or the network; `null` — the sender does not count |
+| `connections.closed_busy` | int? | (not released yet) Connections closed with calls on them; `null` — the sender does not count |
+| `connections.peer_idle_min_us` | int? | (not released yet) The shortest idle time without calls after which the other side closed a connection, in whole microseconds; `null` until there was such a close |
 | `client_waits` | object | Calls that waited on the client side over the floor, by cause ([reading the report](report.md#reading-the-report)) |
 | `client_waits.generator_calls`, `client_waits.stream_calls`, `client_waits.connection_calls` | int | All such calls, sent or not. A sent call can count for several causes |
 | `client_waits.generator_tail_calls`, `client_waits.stream_tail_calls`, `client_waits.connection_tail_calls` | int | Only among the p99 tail and the unsent: these pick `tail_wait_cause` |
@@ -874,7 +968,7 @@ measured calls only. The first column is the field's full path.
 | `unchecked[].reason` | string | `reflection_off` or `reflection_failed` |
 | `unchecked[].error` | string | Text for people, changes with grpc-go |
 | `thresholds` | []object? | Verdicts on the `pass` limits, an object per limit, all with the same keys; the ones that do not belong to a limit are `null`. `null` — no limits set (not an empty list, which would read as "all passed"). A search writes it at the top level |
-| `thresholds[].method` | string? | The method with its leading slash, as the report names it; `null` — a search's limit |
+| `thresholds[].method` | string? | The key of the row the limit judged, with its leading slash, the same as `methods[].method` of that row (`/pkg.Svc/Get (checkout, step 2)` for a repeated method of a scenario); `null` — a search's limit |
 | `thresholds[].key` | string | `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, `held_rps` |
 | `thresholds[].verdict` | string | `pass`, `fail`, `unknown` |
 | `thresholds[].reason` | string? | Why `unknown`, from the list: `incomplete`, `invalid`, `few_observations`, `run_limit`, `generator`, `stream`, `client_errors`, `nothing_sent`, `censored`; `null` for `pass` and `fail` |
@@ -893,7 +987,10 @@ The rest are plain counters.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `methods[].method` | string | The full method name |
+| `methods[].method` | string | The row's key. A method that appears once in the run is the full method name; a method repeated in the run is `<method> (<scenario>, step <n>)`, `n` counted from 1. A plain call is always written as the bare method |
+| `methods[].grpc_method` | string | (not released yet) The full name of the gRPC method the row called. Equals `methods[].method` while the method is not repeated |
+| `methods[].scenario` | string? | (not released yet) The scenario the row belongs to; `null` for a plain call |
+| `methods[].step` | int? | (not released yet) The step's number in the scenario, from 1; `null` for a plain call |
 | `methods[].invalid_reason` | string? | The method measured nothing about load: `request_error`, `client_error`, `bad_response`, `mixed`; `null` — it did |
 | `methods[].sent`, `methods[].failed`, `methods[].aborted`, `methods[].not_sent`, `methods[].not_sent_generator`, `methods[].not_sent_stream`, `methods[].not_sent_connection`, `methods[].warmup_sent`, `methods[].warmup_failed`, `methods[].warmup_not_sent` | int | The method's share of the run's fields of the same name |
 | `methods[].rps` | float? | `sent/s`: calls sent divided by the sending time of this method; `null` — no calls |
@@ -1023,6 +1120,11 @@ as in the run above, a plain run's other fields are not at the top level. Every 
 | `breakpoint.errors_limit` | string | The error limit the search used, as a percent: `"1%"` by default. A step broke over it; `100%` means errors do not break a step |
 | `breakpoint.why` | string? | The cause of the run that ended the search, from a closed list: `errors`, `p99_limit`, `p99_vs_base`, `connection`, `no_recovery`, `generator`, `in_flight_cap`, `stream_limit`, `stream_wait`, `client_errors`, `clock_step`, `request_errors`; `null` — no cause. `client_errors`: the limit is crossed only with failures on the client's side, the target's own are within it; the outcome is `run_limit` |
 | `breakpoint.stop_reason` | string? | Who ended the search: `dataset_exhausted` (a `dataset_reuse: false` file ran out), `seq_overflow` (a `{{seq}}` did not fit its field; only in builds newer than the last release), `requested` (stopped by the user); `null` — the search ended itself |
+| `breakpoint.scenario` | string? | (not released yet) The name of the searched scenario; `null` — the search is over one call |
+| `breakpoint.rate_unit` | string | (not released yet) What the rates of the search count: `iterations` — iterations of a scenario per second, `calls` — calls per second |
+| `breakpoint.broke_step` | object? | (not released yet) The step that broke first in the run that ended the search; `null` — a call, or no step is named. `why` names the cause of the whole search and `broke_step` the step that first hit its own knee or errors, so they can name different steps: with `why: "errors"` and `broke_step.step: 1`, step 1 may have broken at the knee (its p99 3.4× up, no errors) while step 3 is the one with 7% errors |
+| `breakpoint.broke_step.step` | int | (not released yet) The step's place in the scenario, from 1: the head is 1 |
+| `breakpoint.broke_step.method` | string | (not released yet) The method of the step's row, as in `methods[].method` of the run's report |
 | `breakpoint.notes` | []string | The search's notes, text for people in ASCII; do not parse |
 | `breakpoint.runs` | []object | Every run in order |
 | `breakpoint.runs[].kind` | string | `step`, `repeat` or `probe` |
@@ -1031,6 +1133,9 @@ as in the run above, a plain run's other fields are not at the top level. Every 
 | `breakpoint.runs[].broken` | bool | `true` — the run broke the target |
 | `breakpoint.runs[].recovered` | bool? | For a `probe`: the target is back within 1.5× of the baseline p99; `null` for a `step` and a `repeat` |
 | `breakpoint.runs[].why` | string? | The run's cause, the same closed list as `breakpoint.why`; `null` — no cause |
+| `breakpoint.runs[].broke_step` | object? | (not released yet) The step that broke first in this run; `null` — a call, or no step is named |
+| `breakpoint.runs[].broke_step.step` | int | (not released yet) The step's place in the scenario, from 1: the head is 1 |
+| `breakpoint.runs[].broke_step.method` | string | (not released yet) The method of the step's row |
 | `breakpoint.runs[].report` | object | This run's full report, the same object as a plain run's JSON (fields above) |
 
 ## Comparing reports: `leettest compare`
