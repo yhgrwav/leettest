@@ -851,7 +851,7 @@ func buildReport(p reportParts) cli.RunReport {
 	}
 	// The limits are checked against the run as it ended, the clock step
 	// included: it can make the run invalid.
-	if limits := methodLimits(p.cfg); len(limits) > 0 {
+	if limits := methodLimits(p.cfg, p.calls); len(limits) > 0 {
 		run.Thresholds = threshold.Evaluate(report, runState(run), limits)
 	}
 
@@ -1172,7 +1172,7 @@ func limitsResult(results []threshold.Result) error {
 
 // methodLimits are the limits the config set, by the method as the report
 // names it.
-func methodLimits(cfg *config.MasterConfig) []threshold.MethodLimits {
+func methodLimits(cfg *config.MasterConfig, _ []engine.Call) []threshold.MethodLimits {
 	var limits []threshold.MethodLimits
 
 	for i := range cfg.Load.Calls {
