@@ -37,26 +37,15 @@ type RunFile struct {
 // is looked for in and the words that name them.
 var sides = [2]string{"base", "new"}
 
-// CompareRuns prints the comparison of two plain-run reports: both headers,
-// the differences and, per method on both sides in the base report's order,
-// the p99 and the share of failed calls of each side, with the verdict of the
-// limit given for each check. A nil limit is a check not asked for.
-func CompareRuns(w io.Writer, base, nw RunFile, p99Limit, errorsLimit *shr.Percent) Comparison {
-	c, _ := CompareRunsReport(w, base, nw, p99Limit, errorsLimit)
-
-	return c
-}
-
-// CompareRunsReport is CompareRuns with the report it printed, for
-// NewCompareReport.
+// CompareRunsReport prints the comparison of two plain-run reports: both
+// headers, the differences and, per method on both sides in the base report's
+// order, the p99 and the share of failed calls of each side, with the verdict
+// of the limit given for each check. A nil limit is a check not asked for. The
+// report it returns is what it printed, for NewCompareReport.
 func CompareRunsReport(w io.Writer, base, nw RunFile, p99Limit, errorsLimit *shr.Percent) (Comparison, CompareReport) {
-	rep := CompareReport{
-		ComparedMode: ModeRun,
-		Base:         compareSide(base.Path, base.Report.Name, base.Report.StartedAt, base.Report.LeetTestVersion, base.Report.Passport),
-		New:          compareSide(nw.Path, nw.Report.Name, nw.Report.StartedAt, nw.Report.LeetTestVersion, nw.Report.Passport),
-	}
-	printHeader(w, "base:", rep.Base)
-	printHeader(w, "new: ", rep.New)
+	rep := openComparison(w, ModeRun,
+		sideInput{base.Path, base.Report.Name, base.Report.StartedAt, base.Report.LeetTestVersion, base.Report.Passport},
+		sideInput{nw.Path, nw.Report.Name, nw.Report.StartedAt, nw.Report.LeetTestVersion, nw.Report.Passport})
 
 	rep.Differences = runDifferences(base, nw)
 	printDifferences(w, rep.Differences)

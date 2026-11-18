@@ -147,17 +147,12 @@ func verdictCause(report engine.Report) (cause, engine.Side, bool) {
 	return cause{tail: unsent, n: unsent, what: name}, side, true
 }
 
-// streamVerdict is the verdict on a run held back by itself or its
-// connection, or "" when nothing moved. It is about the run: the numbers of
-// single methods go to streamNotes.
-func streamVerdict(report engine.Report) string {
-	return verdictText(report, false, cpuNotMeasuredLine)
-}
-
-// verdictText is streamVerdict; for a step of a breaking-point search the
+// verdictText is the verdict on a run held back by itself or its connection,
+// or "" when nothing moved. It is about the run: the numbers of single methods
+// go to streamNotes. For a step of a breaking-point search (searchStep) the
 // generator's lag is the run's limit, not an invalid run (the search ends on
 // it with its own cause). limitLine is the last line of the late generator's
-// verdict (generatorLimitLine).
+// verdict (generatorLimitLine; cpuNotMeasuredLine outside a search).
 func verdictText(report engine.Report, searchStep bool, limitLine string) string {
 	top, side, ok := verdictCause(report)
 
@@ -256,7 +251,7 @@ func streamHeading(report engine.Report) string {
 	return b.String()
 }
 
-// shortStreamVerdict is streamVerdict in one ASCII phrase.
+// shortStreamVerdict is verdictText in one ASCII phrase.
 func shortStreamVerdict(report engine.Report) string {
 	if report.GeneratorDecidedTail() {
 		return "invalid run: the generator fell behind"

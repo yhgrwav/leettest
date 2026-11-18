@@ -272,6 +272,15 @@ func TestReleased_ProseMarksUnreleasedNames(t *testing.T) {
 	}
 }
 
+// flagNames is every flag the CLI accepts, without the dash. Add a flag to run
+// and to this list together: TestFlagNames_AreTheHelp compares it with -help.
+func flagNames() []string {
+	return []string{
+		"c", "connect-timeout", "dry-run", "fake", "fake-delay", "fake-fail-ratio", "fake-jitter",
+		"json-file", "label", "max-in-flight", "metrics-listen", "output", "plain", "version", "yes",
+	}
+}
+
 // flagNames is the CLI's own flag set: every flag -help lists, nothing else.
 func TestFlagNames_AreTheHelp(t *testing.T) {
 	var stderr bytes.Buffer

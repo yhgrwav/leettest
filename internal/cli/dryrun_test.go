@@ -288,7 +288,7 @@ func TestDryRun_ASuccessfulEmptyReplyPrintsBraces(t *testing.T) {
 
 // The method reflection did not know went out as an empty message and its
 // reply cannot be read.
-// Ground: contract — the unchecked method of AttachData (data.go) is shown as such.
+// Ground: contract — the unchecked method of AttachMethods (data.go) is shown as such.
 func TestDryRun_AnUncheckedMethodSaysItWasNotChecked(t *testing.T) {
 	ok := engine.Outcome{
 		Category: engine.CategorySuccess, Code: "OK", CodeFromTarget: true,

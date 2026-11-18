@@ -110,7 +110,7 @@ func TestSearchView_TheHeaderSaysWhereTheSearchIs(t *testing.T) {
 func TestSearchView_ElapsedAgainstTheWorstCase(t *testing.T) {
 	m := testSearchModel(t)
 	send(m, searchRunMsg{eng: stepEngine(t, 100), run: breakpoint.Run{RPS: 100, Kind: breakpoint.RateStep, Step: 1, Steps: 6}})
-	_, worst, _ := strings.Cut(PlanLine(bpPlan, 10*time.Second), "at most ")
+	_, worst, _ := strings.Cut(PlanLineRamp(bpPlan, 10*time.Second, 0), "at most ")
 	for _, elapsed := range []time.Duration{72 * time.Second, 3 * time.Hour} {
 		m.now = func() time.Time { return searchStart.Add(elapsed) }
 		if want := formatDuration(elapsed) + " of at most " + worst; !strings.Contains(m.View(), want) {
@@ -129,7 +129,7 @@ func TestSearchView_ElapsedAgainstTheWorstCaseCountsTheRamp(t *testing.T) {
 	m := testSearchModelRamp(t, bpPlan, ramp)
 	send(m, searchRunMsg{eng: stepEngine(t, 100), run: breakpoint.Run{RPS: 100, Kind: breakpoint.RateStep, Step: 1, Steps: 6}})
 	_, worst, _ := strings.Cut(PlanLineRamp(bpPlan, 10*time.Second, ramp), "at most ")
-	_, noRamp, _ := strings.Cut(PlanLine(bpPlan, 10*time.Second), "at most ")
+	_, noRamp, _ := strings.Cut(PlanLineRamp(bpPlan, 10*time.Second, 0), "at most ")
 	if worst == noRamp {
 		t.Fatalf("the plan line says %q with and without a ramp of %v: the premise of the test is gone", worst, ramp)
 	}
