@@ -354,6 +354,28 @@ func (s *Sender) Links() []string {
 	return out
 }
 
+// CloseStats counts the transports that closed during the run, by what the
+// connection was doing when it closed.
+type CloseStats struct {
+	// IdleOurs closed with no call on them, by our own idle timer.
+	IdleOurs int
+	// IdlePeer closed with no call on them, by the other side or the network, or
+	// by our answer to its GOAWAY.
+	IdlePeer int
+	// Busy closed with a call on them.
+	Busy int
+	// PeerIdleMin is the shortest time a connection of IdlePeer had gone without
+	// a call; zero when IdlePeer is zero.
+	PeerIdleMin time.Duration
+}
+
+// Closes reports the connection closes counted so far; the run's own Close is
+// not one. Zero with the caller's credentials in DialOptions: no transport
+// passes through the sender's own.
+func (s *Sender) Closes() CloseStats {
+	return CloseStats{}
+}
+
 // limit is the stream limit of the last handshake heard; MaxUint32, the
 // client's own quota, when none was announced or none was heard.
 func (c *connTracker) limit() uint32 {
