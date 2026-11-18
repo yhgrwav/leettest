@@ -175,6 +175,19 @@ func thresholdRows(t *testing.T, out map[string]any) []map[string]any {
 	return rows
 }
 
+// skipIfARowWasLeftToTheGenerator skips a run where a late generator made a limit
+// unknown (reason generator) while another row's miss kept the exit at 4: the
+// run could not test that limit, as skipIfTheGeneratorDecided says for exit 2.
+func skipIfARowWasLeftToTheGenerator(t *testing.T, out map[string]any, rows []map[string]any) {
+	t.Helper()
+
+	for _, row := range rows {
+		if row["verdict"] == "unknown" && row["reason"] == "generator" {
+			t.Skipf("the generator was late, the run could not test %v: start-lag p99 %s", row["method"], lagP99(out))
+		}
+	}
+}
+
 // methodRow is the methods[] entry with the key.
 func methodRow(t *testing.T, out map[string]any, key string) map[string]any {
 	t.Helper()
@@ -204,14 +217,17 @@ func TestRun_APassOnAStepJudgesThatStepsRow(t *testing.T) {
 	out := decodeOnly(t, res.stdout)
 
 	skipIfTheGeneratorDecided(t, res, out)
-	wantExit(t, res, 4)
 
 	rows := thresholdRows(t, out)
+	skipIfARowWasLeftToTheGenerator(t, out, rows)
+	wantExit(t, res, 4)
+
 	if len(rows) != 2 {
 		t.Fatalf("%d thresholds, want 2: the head's errors and the step's", len(rows))
 	}
 	if rows[0]["method"] != "/"+checkMethod || rows[0]["verdict"] != "pass" {
-		t.Errorf("thresholds[0] = %v %v, want the head's row, pass", rows[0]["method"], rows[0]["verdict"])
+		t.Errorf("thresholds[0] = %v %v (reason %v, outcome %v, tail %v, lag p99 %s), want the head's row, pass",
+			rows[0]["method"], rows[0]["verdict"], rows[0]["reason"], out["outcome"], out["tail_wait_cause"], lagP99(out))
 	}
 	step := rows[1]
 	if step["method"] != "/"+unaryCallMethod || step["verdict"] != "fail" {
@@ -239,16 +255,20 @@ func TestRun_APassOnARepeatedMethodIsFoundByTheRowKey(t *testing.T) {
 	out := decodeOnly(t, res.stdout)
 
 	skipIfTheGeneratorDecided(t, res, out)
+
+	rows := thresholdRows(t, out)
+	skipIfARowWasLeftToTheGenerator(t, out, rows)
 	wantExit(t, res, 4)
 
 	head, last := "/"+checkMethod+" (s, step 1)", "/"+checkMethod+" (s, step 3)"
-	rows := thresholdRows(t, out)
 	if len(rows) != 2 {
 		t.Fatalf("%d thresholds, want 2", len(rows))
 	}
 	for i, want := range []struct{ method, verdict string }{{head, "pass"}, {last, "fail"}} {
 		if rows[i]["method"] != want.method || rows[i]["verdict"] != want.verdict {
-			t.Errorf("thresholds[%d] = %v %v, want %s %s", i, rows[i]["method"], rows[i]["verdict"], want.method, want.verdict)
+			t.Errorf("thresholds[%d] = %v %v (reason %v, outcome %v, tail %v, lag p99 %s), want %s %s",
+				i, rows[i]["method"], rows[i]["verdict"], rows[i]["reason"], out["outcome"], out["tail_wait_cause"], lagP99(out),
+				want.method, want.verdict)
 		}
 		methodRow(t, out, want.method)
 	}
