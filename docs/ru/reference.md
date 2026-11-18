@@ -917,7 +917,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `connections.per_connection[].p99` | перцентиль? | p99 вызовов соединения; `null` без вызовов с задержкой |
 | `connections.per_connection[].first_limit`, `connections.per_connection[].last_limit` | int? | Лимит стримов соединения на первом и последнем рукопожатии; `null` — не объявлен |
 | `connections.per_connection[].limit_changes` | int | Сколько рукопожатий соединения объявили лимит, отличный от прежнего |
-| `connections.closed_idle_ours` | int? | (не выпущено) Соединения без вызова на них, закрытые нашим `app.idle_timeout`; `null` — отправитель не считает (`-fake`) |
+| `connections.closed_idle_ours` | int? | (не выпущено) Соединения без вызова на них, закрытые нашим `app.idle_timeout`; `null` — отправитель не считает |
 | `connections.closed_idle_peer` | int? | (не выпущено) Соединения без вызова на них, закрытые другой стороной или сетью; `null` — отправитель не считает |
 | `connections.closed_busy` | int? | (не выпущено) Соединения, закрытые с вызовами на них; `null` — отправитель не считает |
 | `connections.peer_idle_min_us` | int? | (не выпущено) Самый короткий простой без вызовов, после которого соединение закрыла другая сторона, в целых микросекундах; `null`, пока такого закрытия не было |
