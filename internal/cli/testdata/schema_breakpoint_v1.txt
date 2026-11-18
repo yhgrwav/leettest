@@ -20,6 +20,11 @@ metadata_refresh.changed int
 metadata_refresh.failures int
 metadata_refresh.failing_at_end bool
 metadata_refresh.last_error string?
+closes object?
+closes.closed_idle_ours int?
+closes.closed_idle_peer int?
+closes.closed_busy int?
+closes.peer_idle_min_us int?
 passport object?
 passport.config_sha256 string
 passport.os string

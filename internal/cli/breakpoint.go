@@ -71,6 +71,9 @@ type BreakpointRun struct {
 	// MetadataRefresh is what the refresh of app.metadata did over the whole
 	// search; nil when there is none.
 	MetadataRefresh *MetadataRefresh
+	// Closes is how the connections were closed over the whole search (one
+	// sender serves every step); nil when the sender does not count.
+	Closes *CloseStats
 	// Passport is the config and the machine of the search; nil prints no
 	// machine line and leaves the passport out of the JSON.
 	Passport *Passport

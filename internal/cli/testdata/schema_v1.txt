@@ -97,6 +97,10 @@ connections.per_connection[].p99.lower_bound bool
 connections.per_connection[].first_limit int?
 connections.per_connection[].last_limit int?
 connections.per_connection[].limit_changes int
+connections.closed_idle_ours int?
+connections.closed_idle_peer int?
+connections.closed_busy int?
+connections.peer_idle_min_us int?
 client_waits object
 client_waits.generator_calls int
 client_waits.stream_calls int

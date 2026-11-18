@@ -60,6 +60,9 @@ type RunReport struct {
 	// MetadataRefresh is what the refresh of app.metadata did; nil when there
 	// is none, which prints no line and writes null.
 	MetadataRefresh *MetadataRefresh
+	// Closes is how the run's connections were closed; nil when the sender
+	// does not count, which prints no line and writes null.
+	Closes *CloseStats
 	// Passport is the config and the machine of the run; nil prints no machine
 	// line and leaves the passport out of the JSON.
 	Passport *Passport
