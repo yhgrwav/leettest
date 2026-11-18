@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package metrics records per-request outcomes and produces run reports:
-// latency distributions, throughput and error breakdowns.
+// Package metrics keeps latency distributions: HDR histograms that hold a
+// measured value apart from an observation cut short by a timeout or the end of
+// the run (censored, known only as a lower bound), and the percentiles read
+// from them. Counts, throughput, error breakdowns and the run report are in
+// pkg/engine.
 package metrics

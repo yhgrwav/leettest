@@ -37,6 +37,8 @@ var (
 	ErrMalformedMethod       = errors.New(`method must look like "package.Service/Method"`)
 )
 
+// Method is one unary method found by a Resolver. Path is its gRPC path,
+// "/package.Service/Method".
 type Method struct {
 	Path   string
 	Input  protoreflect.MessageDescriptor
@@ -46,8 +48,9 @@ type Method struct {
 	Types Types
 }
 
-// Payload is JSON. An unknown field is an error, so a typo in the config is caught here
-// rather than silently dropped.
+// NewRequest builds the method's input message from payload, which is JSON; an
+// empty payload gives an empty message. An unknown field is an error, so a typo
+// in the config is caught here rather than silently dropped.
 func (m *Method) NewRequest(payload []byte) (proto.Message, error) {
 	msg := dynamicpb.NewMessage(m.Input)
 	if len(payload) == 0 {
@@ -72,25 +75,32 @@ func (m *Method) UnmarshalOptions() protojson.UnmarshalOptions {
 	return protojson.UnmarshalOptions{Resolver: m.Types}
 }
 
+// NewResponse returns an empty message of the method's output type, for the
+// reply to be read into.
 func (m *Method) NewResponse() proto.Message {
 	return dynamicpb.NewMessage(m.Output)
 }
 
+// Resolver finds methods by name, "package.Service/Method". ReflectionResolver
+// asks the target; FileResolver reads .proto files or a protoset.
 type Resolver interface {
 	Resolve(ctx context.Context, method string) (*Method, error)
 	ResolveAll(ctx context.Context, methods []string) (map[string]*Method, error)
 }
 
+// ReflectionResolver is a Resolver that asks the target through gRPC server
+// reflection.
 type ReflectionResolver struct {
 	conn grpc.ClientConnInterface
 }
 
+// NewReflectionResolver returns a ReflectionResolver that reflects over cc.
 func NewReflectionResolver(cc grpc.ClientConnInterface) *ReflectionResolver {
 	return &ReflectionResolver{conn: cc}
 }
 
-// Method is "package.Service/Method". Resolve talks to the server, so it belongs in
-// startup, not on the hot path.
+// Resolve finds one method, "package.Service/Method", on the target. It talks
+// to the server, so it belongs in startup, not on the hot path.
 func (r *ReflectionResolver) Resolve(ctx context.Context, method string) (*Method, error) {
 	resolved, err := r.ResolveAll(ctx, []string{method})
 	if err != nil {
@@ -100,8 +110,9 @@ func (r *ReflectionResolver) Resolve(ctx context.Context, method string) (*Metho
 	return resolved[method], nil
 }
 
-// One reflection stream serves every method, so methods of the same service cost a
-// single round trip and a single registry.
+// ResolveAll finds every method asked for, keyed by the name given, or fails on
+// the first that is not there. One reflection stream serves every method, so
+// methods of the same service cost a single round trip and a single registry.
 func (r *ReflectionResolver) ResolveAll(ctx context.Context, methods []string) (map[string]*Method, error) {
 	client := grpcreflect.NewClientAuto(ctx, r.conn)
 	defer client.Reset()

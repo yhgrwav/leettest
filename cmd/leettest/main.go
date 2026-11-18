@@ -49,14 +49,16 @@ import (
 
 const defaultMaxInFlight = 5000
 
+// ErrInvalidRun says the run's numbers say nothing about the target: the
+// generator hit its in-flight cap, every call of some method came back as a
+// request error, the clock was too coarse, the generator started calls late,
+// or a limit in pass: could not be decided. The report prints the verdict; the
+// exit code carries it to a pipeline.
+var ErrInvalidRun = errors.New("the run is invalid: its numbers do not describe the target")
+
 // ErrIncomplete says the run ended before its plan. The report is printed and
 // honest, but it covers less than was asked for, so the exit code is not zero:
 // a pipeline must not pass on a three-minute run of a ten-minute plan.
-// ErrInvalidRun says the run's numbers say nothing about the target: the
-// generator hit its own cap. The report prints the verdict; the code carries
-// it to a pipeline.
-var ErrInvalidRun = errors.New("the run is invalid: its numbers do not describe the target")
-
 var ErrIncomplete = errors.New("the run stopped before its planned end; the report covers only the part that ran")
 
 // ErrThresholdsFailed says the run finished and a limit in pass: was not met.
