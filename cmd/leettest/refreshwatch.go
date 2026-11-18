@@ -16,9 +16,7 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"io"
-	"sync"
 	"time"
 
 	"github.com/yhgrwav/leettest/pkg/grpcsender"
@@ -33,91 +31,33 @@ type refreshSource func() (grpcsender.RefreshStats, bool)
 // hands deliver the stderr line once, at the first failed read. stop returns
 // once the watch has.
 func startRefreshWatch(ctx context.Context, src refreshSource, every time.Duration, deliver func(line string)) (stop func()) {
-	ctx, cancel := context.WithCancel(ctx)
-	done := make(chan struct{})
+	delivered := false
 
-	go func() {
-		defer close(done)
-
-		ticker := time.NewTicker(every)
-		defer ticker.Stop()
-
-		delivered := false
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				st, ok := src()
-				if !ok {
-					return
-				}
-
-				if st.Failures > 0 && !delivered {
-					delivered = true
-
-					deliver("metadata refresh failed: " + st.LastError +
-						"; the last good value stays in use (the report counts every failed read)")
-				}
-			}
+	return startTickWatch(ctx, every, func(time.Time) bool {
+		st, ok := src()
+		if !ok {
+			return false
 		}
-	}()
 
-	return func() {
-		cancel()
-		<-done
-	}
+		if st.Failures > 0 && !delivered {
+			delivered = true
+
+			deliver("metadata refresh failed: " + st.LastError +
+				"; the last good value stays in use (the report counts every failed read)")
+		}
+
+		return true
+	})
 }
 
-// refreshNotice carries the failed-refresh line to stderr: at once without a
-// live view, after the view has gone with one.
-type refreshNotice struct {
-	stderr io.Writer
-	// live is true while a live view owns the screen.
-	live bool
-
-	mu      sync.Mutex
-	line    string
-	printed bool
-	closed  bool
-}
-
-// deliver takes the line; only the first one counts.
-func (n *refreshNotice) deliver(line string) {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-
-	if n.line != "" {
-		return
+// newRefreshNotice carries the failed-refresh line to stderr: at once without a
+// live view, after the view has gone with one (live is true while a live view
+// owns the screen).
+func newRefreshNotice(stderr io.Writer, live bool) *lineNotice {
+	n := &lineNotice{stderr: stderr}
+	if live {
+		n.send = holdForView
 	}
 
-	n.line = line
-
-	if !n.live || n.closed {
-		n.print()
-	}
-}
-
-// afterView is called once the live view is gone.
-func (n *refreshNotice) afterView() {
-	n.mu.Lock()
-	defer n.mu.Unlock()
-
-	n.closed = true
-
-	if n.line != "" {
-		n.print()
-	}
-}
-
-// print writes the line to stderr unless it was written. The caller holds mu.
-func (n *refreshNotice) print() {
-	if n.printed {
-		return
-	}
-
-	n.printed = true
-
-	fmt.Fprintln(n.stderr, n.line)
+	return n
 }

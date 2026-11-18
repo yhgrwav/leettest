@@ -420,7 +420,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 	// The early warning that the generator fell behind its schedule: one line per
 	// run, in the live view while it is up and on stderr after it, or on stderr
 	// at once without a view.
-	notice := &lagNotice{stderr: stderr}
+	notice := &lineNotice{stderr: stderr}
 	if flags.interactive {
 		notice.send = func(line string) {
 			if p := view.Load(); p != nil {
@@ -431,7 +431,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 
 	// A failed read of the metadata files: one line, at the first failure; held
 	// while a live view is up and printed after it.
-	refreshNote := &refreshNotice{stderr: stderr, live: flags.interactive}
+	refreshNote := newRefreshNotice(stderr, flags.interactive)
 
 	var stepAfter atomic.Int64
 	start := func() error {

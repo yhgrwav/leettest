@@ -425,7 +425,7 @@ func TestLagNotice_LiveViewRepeatsTheLineOnceAfterTheViewExits(t *testing.T) {
 		sent   []string
 	)
 
-	n := &lagNotice{stderr: &stderr, send: func(line string) { sent = append(sent, line) }}
+	n := &lineNotice{stderr: &stderr, send: func(line string) { sent = append(sent, line) }}
 
 	n.deliver("warning: first")
 	n.deliver("warning: second")
@@ -452,7 +452,7 @@ func TestLagNotice_LiveViewRepeatsTheLineOnceAfterTheViewExits(t *testing.T) {
 func TestLagNotice_NoWarningNothingAfterTheView(t *testing.T) {
 	var stderr strings.Builder
 
-	n := &lagNotice{stderr: &stderr, send: func(string) { t.Error("sent a line nobody delivered") }}
+	n := &lineNotice{stderr: &stderr, send: func(string) { t.Error("sent a line nobody delivered") }}
 	n.afterView()
 
 	if stderr.Len() != 0 {
@@ -468,7 +468,7 @@ func TestLagNotice_PlainAndLateDelivery(t *testing.T) {
 	t.Run("no view", func(t *testing.T) {
 		var stderr strings.Builder
 
-		n := &lagNotice{stderr: &stderr}
+		n := &lineNotice{stderr: &stderr}
 		n.deliver("warning: a")
 		n.deliver("warning: b")
 		n.afterView()
@@ -481,7 +481,7 @@ func TestLagNotice_PlainAndLateDelivery(t *testing.T) {
 	t.Run("delivered after the view exited", func(t *testing.T) {
 		var stderr strings.Builder
 
-		n := &lagNotice{stderr: &stderr, send: func(string) { t.Error("sent into a view that is gone") }}
+		n := &lineNotice{stderr: &stderr, send: func(string) { t.Error("sent into a view that is gone") }}
 		n.afterView()
 		n.deliver("warning: late")
 		n.afterView()

@@ -970,7 +970,7 @@ func TestRefreshNotice_WhenTheLineIsPrinted(t *testing.T) {
 	t.Run("no live view", func(t *testing.T) {
 		var stderr bytes.Buffer
 
-		n := &refreshNotice{stderr: &stderr}
+		n := newRefreshNotice(&stderr, false)
 		n.deliver(line)
 		n.deliver("a second one")
 
@@ -988,7 +988,7 @@ func TestRefreshNotice_WhenTheLineIsPrinted(t *testing.T) {
 	t.Run("a live view holds it", func(t *testing.T) {
 		var stderr bytes.Buffer
 
-		n := &refreshNotice{stderr: &stderr, live: true}
+		n := newRefreshNotice(&stderr, true)
 		n.deliver(line)
 
 		if got := stderr.String(); got != "" {
@@ -1006,7 +1006,7 @@ func TestRefreshNotice_WhenTheLineIsPrinted(t *testing.T) {
 	t.Run("a live view and no failure", func(t *testing.T) {
 		var stderr bytes.Buffer
 
-		n := &refreshNotice{stderr: &stderr, live: true}
+		n := newRefreshNotice(&stderr, true)
 		n.afterView()
 
 		if got := stderr.String(); got != "" {
@@ -1017,7 +1017,7 @@ func TestRefreshNotice_WhenTheLineIsPrinted(t *testing.T) {
 	t.Run("after the view", func(t *testing.T) {
 		var stderr bytes.Buffer
 
-		n := &refreshNotice{stderr: &stderr, live: true}
+		n := newRefreshNotice(&stderr, true)
 		n.afterView()
 		n.deliver(line)
 
@@ -1032,7 +1032,7 @@ func TestRefreshNotice_WhenTheLineIsPrinted(t *testing.T) {
 		for range 200 {
 			var stderr syncBuf
 
-			n := &refreshNotice{stderr: &stderr, live: true}
+			n := newRefreshNotice(&stderr, true)
 
 			var wg sync.WaitGroup
 

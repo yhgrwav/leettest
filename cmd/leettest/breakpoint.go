@@ -152,7 +152,7 @@ func runSearch(ctx context.Context, abort context.CancelFunc, stopper *atomic.Po
 
 	// A failed read of the metadata files: one line at the first failure, as in a
 	// plain run; held while the search screen is up and printed after it.
-	refreshNote := &refreshNotice{stderr: stderr, live: screen}
+	refreshNote := newRefreshNotice(stderr, screen)
 	stopRefresh := func() {}
 	if s.refresh != nil {
 		stopRefresh = startRefreshWatch(ctx, s.refresh, time.Second, refreshNote.deliver)
