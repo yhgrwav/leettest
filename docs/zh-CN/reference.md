@@ -73,6 +73,7 @@ load:
 | `load.calls[].steps[].dataset_order` | （未发布）`file`（省略时）或 `random`：步骤中记录的顺序。需要步骤的 `dataset` |
 | `load.calls[].steps[].dataset_seed` | （未发布）随机顺序的 seed，0 到 9007199254740991 的整数，同 `load.calls[].dataset_seed`。需要步骤上有 `dataset_order: random` |
 | `load.calls[].steps[].extract` | （未发布）同 `load.calls[].extract`，针对步骤自己的应答：下一个步骤把这些名称读作 `{{extract.<name>}}`，见[下文](#extract较早应答中的值)。一个名称在场景内只取一次：由调用或某一个步骤取 |
+| `load.calls[].steps[].pass` | （未发布）步骤自己那一行的限值，键同 `load.calls[].pass`（见[下文](#pass-限值)）；调用自己的 `pass` 评判第一个步骤，不会传给其他步骤。延迟限值须低于该步骤的超时，`p999` 取调用的 `rps` 和 `duration` |
 | `load.calls[].pass` | 运行要通过必须满足的限值：`p50`、`p90`、`p95`、`p99`、`p999`、`errors`，见[下文](#pass-限值)。省略时没有限值 |
 | `load.breakpoint.from` | 崩溃点搜索第一级的速率，每秒调用数。从 1 起的整数；小数是配置错误（`rps must be a whole number of requests: 100.5`）。必填：缺少或小于 1 时报 `invalid breakpoint: breakpoint.from: breaking-point plan: from 0, want at least 1 rps`，退出码 1。第一级必须测得至少 100 个调用，即 `from` × (`hold` − `settle`)，否则在加压前报 `invalid breakpoint: the first step measures 8 calls, a p99 needs 100: raise from, hold or lower settle`。配合 `app.mode: real`，爬升从 0 到 `from` |
 | `load.breakpoint.to` | 速率高于它就不再有级。整数，不小于 `from`（等于 `from` 即只有一级）。必填：缺少或低于 `from` 时报 `invalid breakpoint: breakpoint.to: breaking-point plan: to 50 is below from 100`，退出码 1。搜索走到最后一级且它撑住了，结果为 `held_all` |

@@ -476,8 +476,9 @@ type Step struct {
 	DatasetSHA256 string          `yaml:"-"`
 	DatasetOrder  *string         `yaml:"dataset_order"`
 	DatasetSeed   *int64          `yaml:"dataset_seed"`
-	// RawPass and Pass are the step's pass, as the call's.
-	RawPass *Pass            `yaml:"-"`
+	// RawPass and Pass are the step's pass, as the call's: the limits of the
+	// step's own row, checked against the step's timeout.
+	RawPass *Pass            `yaml:"pass"`
 	Pass    threshold.Limits `yaml:"-"`
 }
 
@@ -559,9 +560,6 @@ func (c Call) validateScenario(i int) []error {
 		fail("%s.scenario needs %s.steps", at, at)
 	case len(*c.RawSteps) == 0:
 		fail("%s.steps must not be empty", at)
-	}
-	if c.RawPass != nil {
-		errs = append(errs, passErr("%s: pass for a scenario isn't supported yet", at))
 	}
 
 	if c.RawSteps == nil {

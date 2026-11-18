@@ -32,3 +32,8 @@ load:
             from: "wallet-{{seq}}"
             to: "{{uuid}}"
             amount: 100
+          # The limits of the step's own row, as a call's pass: the latency limit is below
+          # the step's timeout. The call's own pass would judge the first step.
+          pass:
+            p99: 400ms
+            errors: 1%
