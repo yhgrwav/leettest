@@ -16,10 +16,14 @@ package main
 
 import (
 	"context"
+	"net"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"google.golang.org/grpc"
 
 	"github.com/yhgrwav/leettest/pkg/config"
 	"github.com/yhgrwav/leettest/pkg/engine"
@@ -171,6 +175,23 @@ func TestIdleTimeout_AnIdleConnectionIsClosedAndTheNextCallReconnects(t *testing
 	if err != nil {
 		t.Fatalf("senderOptions: %v", err)
 	}
+	// The first dial is at once; every later one takes redial, as a target
+	// across a network does. On loopback a reconnect takes well under a
+	// millisecond and ConnWait reads 0 or 0.5 ms from one run to the next
+	// (measured, 3 reconnecting calls: 1 had a wait), so the wait is made
+	// long enough for the assertion to be deterministic.
+	const redial = 200 * time.Millisecond
+
+	var dials atomic.Int32
+
+	opts.DialOptions = append(opts.DialOptions, grpc.WithContextDialer(func(ctx context.Context, addr string) (net.Conn, error) {
+		if dials.Add(1) > 1 {
+			time.Sleep(redial)
+		}
+
+		return new(net.Dialer).DialContext(ctx, "tcp", addr)
+	}))
+
 	sender := grpcsender.New(opts)
 	t.Cleanup(func() { _ = sender.Close() })
 
@@ -204,7 +225,10 @@ func TestIdleTimeout_AnIdleConnectionIsClosedAndTheNextCallReconnects(t *testing
 	if got, _ := sender.Connections(); got.Reconnects < 1 {
 		t.Errorf("reconnects %d after a 1.5s pause with idle_timeout 1s, want at least 1", got.Reconnects)
 	}
-	if second.ConnWait <= 0 {
-		t.Errorf("the call after the pause has ConnWait %v, want it to have waited for the reconnect", second.ConnWait)
+	if second.ConnWait < redial*3/4 {
+		t.Errorf("the call after the pause has ConnWait %v, want about the redial of %v", second.ConnWait, redial)
+	}
+	if first.ConnWait != 0 {
+		t.Errorf("the first call has ConnWait %v on a connection made by Connect, want 0", first.ConnWait)
 	}
 }

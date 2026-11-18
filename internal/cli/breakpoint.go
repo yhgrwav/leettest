@@ -347,6 +347,16 @@ func compressionSuffix(name string) string {
 	return ", compression " + name
 }
 
+// idleSuffix ends the settings line after the compression: ", idle_timeout
+// 50s", nothing when app.idle_timeout was left out.
+func idleSuffix(d time.Duration) string {
+	if d <= 0 {
+		return ""
+	}
+
+	return ", idle_timeout " + d.String()
+}
+
 // searchCap is the cap the search was told: the flag's, else each step's own.
 func searchCap(p breakpoint.Plan) string {
 	if p.MaxInFlight > 0 {

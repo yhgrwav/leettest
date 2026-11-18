@@ -385,7 +385,7 @@ func stepStages(rps int, hold, ramp time.Duration) []engine.Stage {
 func searchSettings(s searchSetup, maxInFlight int, settle, ramp time.Duration) *cli.RunSettings {
 	return &cli.RunSettings{
 		MaxInFlight: maxInFlight, Connections: s.cfg.App.Connections, Warmup: settle, Ramp: ramp,
-		Compression: s.cfg.App.Compression, Mode: s.cfg.App.Mode,
+		Compression: s.cfg.App.Compression, Mode: s.cfg.App.Mode, IdleTimeout: s.cfg.App.IdleTimeout,
 	}
 }
 

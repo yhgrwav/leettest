@@ -31,6 +31,10 @@ import (
 // read oftener than that, and a token lives for minutes.
 const minMetadataRefresh = time.Second
 
+// minIdleTimeout is the shortest app.idle_timeout: a shorter one would close
+// the connection between two calls of an ordinary run.
+const minIdleTimeout = time.Second
+
 // ErrInvalidIdleTimeout is an app.idle_timeout below 1s, 0 and a negative one
 // included.
 var ErrInvalidIdleTimeout = errors.New("invalid app.idle_timeout")
@@ -212,8 +216,19 @@ func (a *App) resolveMetadataRefresh() error {
 	return nil
 }
 
-// resolveIdleTimeout reads app.idle_timeout.
+// resolveIdleTimeout reads app.idle_timeout. Left out it stays 0, grpc-go's own
+// 30 minutes; there is no 0 that means off, so 0s is refused like a negative.
 func (a *App) resolveIdleTimeout() error {
+	if a.RawIdleTimeout == nil {
+		return nil
+	}
+
+	if d := *a.RawIdleTimeout; d < minIdleTimeout {
+		return fmt.Errorf("%w: %s is below the minimum of %s", ErrInvalidIdleTimeout, d, minIdleTimeout)
+	}
+
+	a.IdleTimeout = *a.RawIdleTimeout
+
 	return nil
 }
 

@@ -147,6 +147,9 @@ type jsonSettings struct {
 	// StopOnErrors is load.stop_on_errors as written in the config ("5%",
 	// "100%"), null when left out.
 	StopOnErrors *string `json:"stop_on_errors"`
+	// IdleTimeoutUS is app.idle_timeout in whole microseconds, null when left
+	// out: 0 would read as a timeout of 0.
+	IdleTimeoutUS *int64 `json:"idle_timeout_us"`
 }
 
 // settingsOf is the echo as JSON has it; nil, which nobody told, gives zeros
@@ -156,7 +159,13 @@ func settingsOf(s *RunSettings) jsonSettings {
 		return jsonSettings{}
 	}
 
-	return jsonSettings{Mode: s.Mode, MaxInFlight: s.MaxInFlight, Connections: s.Connections, WarmupUS: micros(s.Warmup), RampUS: micros(s.Ramp), Compression: compressionOf(s.Compression), StopOnErrors: writtenLimit(s.StopOnErrors)}
+	out := jsonSettings{Mode: s.Mode, MaxInFlight: s.MaxInFlight, Connections: s.Connections, WarmupUS: micros(s.Warmup), RampUS: micros(s.Ramp), Compression: compressionOf(s.Compression), StopOnErrors: writtenLimit(s.StopOnErrors)}
+	if s.IdleTimeout > 0 {
+		us := micros(s.IdleTimeout)
+		out.IdleTimeoutUS = &us
+	}
+
+	return out
 }
 
 // compressionOf is the configured compression, null for none.

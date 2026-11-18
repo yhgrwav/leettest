@@ -615,6 +615,13 @@ func buildSender(cfg *config.MasterConfig, flags runFlags,
 		target = cli.FakeTarget
 		sender = engine.FakeSender{Delay: flags.fakeDelay, Jitter: flags.fakeJitter, FailRatio: flags.fakeFail}
 	} else {
+		// A config error, as the key's own minimum is: no connection is made.
+		if idle := cfg.App.IdleTimeout; idle > 0 && idle < flags.connectTimeout {
+			return nil, nil, "", nil, fmt.Errorf("app.idle_timeout %s is shorter than -connect-timeout %s: "+
+				"the idle timer would cut the first connection; raise app.idle_timeout or lower -connect-timeout",
+				idle, flags.connectTimeout)
+		}
+
 		var senderOpts grpcsender.Options
 		if senderOpts, files, err = senderOptions(&cfg.App, flags.dryRun); err != nil {
 			return nil, nil, "", nil, err
@@ -841,7 +848,7 @@ func buildReport(p reportParts) cli.RunReport {
 		Settings: &cli.RunSettings{
 			MaxInFlight: p.maxInFlight, Connections: p.cfg.App.Connections, Warmup: p.cfg.Load.Warmup,
 			Ramp: p.cfg.Load.Ramp, Compression: p.cfg.App.Compression, Mode: p.cfg.App.Mode,
-			StopOnErrors: p.cfg.Load.StopOnErrors.Text,
+			StopOnErrors: p.cfg.Load.StopOnErrors.Text, IdleTimeout: p.cfg.App.IdleTimeout,
 		},
 		MetadataRefresh: metadataRefreshOf(p.refresh, p.cfg.App.MetadataRefresh),
 	}
@@ -998,6 +1005,7 @@ func senderOptions(app *config.App, dryRun bool) (grpcsender.Options, []config.F
 		MaxResponseBytes: app.MaxResponseBytes,
 		Connections:      app.Connections,
 		Compression:      app.Compression,
+		IdleTimeout:      app.IdleTimeout,
 	}
 
 	if app.MetadataRefresh > 0 && !dryRun {
