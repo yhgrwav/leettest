@@ -63,7 +63,7 @@ load:
 | `load.calls[].dataset_reuse` | `true`（省略时）或 `false`：为 `false` 时，整个进程中没有任何一条记录会发出两次。需要 `dataset` |
 | `load.calls[].templates` | `true` 或 `false`（省略时为 `false`；写了键却没有值是错误）：在 `data` 中启用占位符 `{{uuid}}` 和 `{{seq}}`，见[下文](#会变化的请求模板)。至少需要一个占位符——在它自己的 `data` 中，或在带 `templates: true` 的步骤的 `data` 中；不能与 `dataset` 同用。 |
 | `load.calls[].scenario` | （未发布）场景名称：调用本身成为第 1 步，后面跟着 `steps`。需要 `steps`，反之亦然。名称不能为空，报告中原样打印；不能与某个方法同名。见[下文](#场景调用之后的步骤) |
-| `load.calls[].steps` | （未发布）调用之后的非空步骤列表。步骤的任何键，除下面八个外，暂不支持——是错误 |
+| `load.calls[].steps` | （未发布）调用之后的非空步骤列表。步骤的任何键，除下面九个外，暂不支持——是错误 |
 | `load.calls[].extract` | （未发布）字典 `名称: 路径`：取自这个调用应答的值，其后的步骤把它们读作 `{{extract.<name>}}`，见[下文](#extract较早应答中的值)。只用于带 `steps` 的调用；名称为 `[A-Za-z_][A-Za-z0-9_]*`，在场景内唯一，并被后面的某个步骤读取。不能是 null，也不能为空 |
 | `load.calls[].steps[].method` | （未发布）步骤的方法，完整名称；必填。在压测前检查，与调用的方法一样 |
 | `load.calls[].steps[].timeout` | （未发布）等待步骤应答的时长，同 `load.calls[].timeout`；省略时为 `2s`，而不是调用的超时 |

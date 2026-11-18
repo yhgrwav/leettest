@@ -64,7 +64,7 @@ The config, a dataset, a report for `compare` and the settings file are UTF-8; a
 | `load.calls[].dataset_reuse` | `true` (left out) or `false`: with `false` no record goes out twice, in the whole process. Needs `dataset` |
 | `load.calls[].templates` | `true` or `false` (left out — `false`; a key with no value is an error): turns on the `{{uuid}}` and `{{seq}}` placeholders in `data`, see [below](#a-request-that-changes-templates). Needs at least one placeholder, in its `data` or in the `data` of a step with `templates: true`; not together with `dataset`. |
 | `load.calls[].scenario` | (not released yet) The scenario's name: the call itself becomes step 1, the `steps` follow it. Needs `steps`, and the other way round. Not empty, printed in the report as written; it must not equal a method. See [below](#scenario-steps-after-a-call) |
-| `load.calls[].steps` | (not released yet) A non-empty list of the steps after the call. Any key of a step other than the eight below is not supported yet and is an error |
+| `load.calls[].steps` | (not released yet) A non-empty list of the steps after the call. Any key of a step other than the nine below is not supported yet and is an error |
 | `load.calls[].extract` | (not released yet) A map `name: path`: values of this call's reply that the steps after it read as `{{extract.<name>}}`, see [below](#extract-a-value-from-an-earlier-reply). Only on a call with `steps`; a name is `[A-Za-z_][A-Za-z0-9_]*`, unique in the scenario and read by some later step. Not null, not empty |
 | `load.calls[].steps[].method` | (not released yet) The step's method, the full name; required. It is checked before the load, like a call's method |
 | `load.calls[].steps[].timeout` | (not released yet) How long to wait for the step's reply, as `load.calls[].timeout`; left out — `2s`, not the call's timeout |
@@ -128,6 +128,9 @@ Every key is in [`examples/pass.yaml`](../../examples/pass.yaml), a search's lim
 
 A config with a wrong `pass` is an error before the start (exit code 1), not a run without the
 check. An empty `pass: {}` is an error too.
+
+In a scenario (not released yet) `pass` also stands under a step, and the call's own judges the
+head: the rules are in [Scenario](#scenario-steps-after-a-call).
 
 **Each limit gets a verdict**: `pass`, `fail` or `unknown`. The report prints a `Thresholds:` block
 with the worst of them and a row per limit; the JSON has the `thresholds` field.
