@@ -700,6 +700,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `settings.ramp_us` | int | 按配置的 `load.ramp`，单位为整微秒；没有爬升时为 0。搜索：第一级之前的爬升；在 `breakpoint.runs[0].report.settings.ramp_us` 中相同，其余运行为 0 |
 | `settings.stop_on_errors` | string? | 按配置书写的 `load.stop_on_errors`：`"5%"`，`"100%"` 保持 `"100%"`；`null` 表示省略。 |
 | `settings.compression` | string? | 按配置的 `app.compression`：`"gzip"`，`null` 表示省略 |
+| `settings.idle_timeout_us` | int? | （未发布）`app.idle_timeout`，以整微秒计；`null` 表示省略，即 grpc-go 的 30 分钟 |
 | `metadata_refresh` | object? | （未发布）重新读取 `${file:PATH}` 文件的情况，从连接起计；没有 `app.metadata_refresh` 时为 `null`。搜索只在顶层有一个，`breakpoint.runs` 中的各次运行为 `null` |
 | `metadata_refresh.interval_us` | int | （未发布）`app.metadata_refresh`，以整微秒计 |
 | `metadata_refresh.reads` | int | （未发布）启动之后的读取次数；加载时的第一次不计 |

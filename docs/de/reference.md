@@ -861,6 +861,7 @@ unten den Typ „percentile?" hat.
 | `settings.ramp_us` | int | `load.ramp` wie konfiguriert, in ganzen Mikrosekunden; 0 ohne Anlauf. Suche: der Anlauf vor der ersten Stufe; in `breakpoint.runs[0].report.settings.ramp_us` derselbe, bei den übrigen Läufen 0 |
 | `settings.stop_on_errors` | string? | `load.stop_on_errors` wie geschrieben: `"5%"`, `"100%"` bleibt `"100%"`; `null` — weggelassen. |
 | `settings.compression` | string? | `app.compression` wie konfiguriert: `"gzip"`, `null` — weggelassen |
+| `settings.idle_timeout_us` | int? | (nicht veröffentlicht) `app.idle_timeout` in ganzen Mikrosekunden; `null` — weggelassen, also die 30 Minuten von grpc-go |
 | `metadata_refresh` | object? | (nicht veröffentlicht) Was das erneute Lesen der `${file:PATH}`-Dateien getan hat, gezählt ab der Verbindung; `null` ohne `app.metadata_refresh`. Eine Suche hat es einmal auf oberster Ebene, ihre Läufe in `breakpoint.runs` `null` |
 | `metadata_refresh.interval_us` | int | (nicht veröffentlicht) `app.metadata_refresh` in ganzen Mikrosekunden |
 | `metadata_refresh.reads` | int | (nicht veröffentlicht) Lesevorgänge nach dem Start; der erste beim Laden zählt nicht |

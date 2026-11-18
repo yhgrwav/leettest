@@ -46,6 +46,7 @@ The config, a dataset, a report for `compare` and the settings file are UTF-8; a
 | `app.max_response_size` | The largest reply a call accepts: `16MiB`, `512KB`. The unit is required (`MB` = 10⁶ bytes, `MiB` = 2²⁰), below 2 GiB. Left out — 4 MiB, as in gRPC. A larger reply is a `bad response`. A call in flight may buffer up to twice the limit: by default up to 8 MiB each |
 | `app.connections` | How many connections to open to the target, a whole number from 1 to 256. Left out — 1. Calls take the connections in turn, and the report prints a `Connections:` block, a row per connection |
 | `app.compression` | Compress request bodies: `gzip`. Left out — none. The report prints `bytes: <raw> -> <wire> per call` under the method |
+| `app.idle_timeout` | (not released yet) How long a connection may have no call on it before the client closes it: `50s`, `1m30s`, at least `1s` and at least `-connect-timeout`. Left out — 30 minutes, grpc-go's default. The next call opens the connection again. Set it below the idle limit of the proxy or balancer in front of the target. The value is printed in the `settings:` line. More under "Connection idle" below |
 | `app.mode` | `local` or `real`, written exactly so (`Real` is an error, so is a key with no value). Left out — `local`. `real` marks a run against a system that serves users and needs `load.ramp` (a ramp from 0 to `rps`) before it sends a call, otherwise exit 1; with `load.breakpoint` it asks for the ramp the same way: it runs from 0 to `breakpoint.from` before the search's first step, and without it the search does not start (exit 1). The report prints the mode under `name`, for `local` too. There is no flag for it, but a `real` run asks before the first call (see `-yes`). It also needs `load.stop_on_errors`, except for a search. |
 | `app.proto.files` | The `.proto` files whose services to load, for a service without reflection. Paths are relative to the config file's directory. Each file must lie under one of `import_paths` |
 | `app.proto.import_paths` | Where to look for the files and their imports, as `protoc -I`. Paths are relative to the config file's directory. Left out — that directory. The well-known types (`google/protobuf/…`) need no path |
@@ -245,6 +246,20 @@ the error: use its IP. The report's block shows each connection's address, calls
 p99, so a dead or slow backend behind a name is not averaged away. Calls are not retried.
 The service's service config is ignored: retries and the balancing policy from it are not
 applied. A production client that applies them will see other categories and p99.
+
+**Connection idle.** (not released yet) `app.idle_timeout` is how long a connection may have no
+call on it before the client closes it; the next call opens the connection again and waits for it.
+Left out — 30 minutes, grpc-go's default. The key is a duration (`50s`, `1m30s`), at least `1s`:
+`0s` and a negative one are errors (there is no off, leave the key out), and a bare number is an
+error too. It cannot be shorter than `-connect-timeout` (10s by default): the idle timer would cut
+the first connection; that is an error before the start, in `-dry-run` too. With `-fake` the key is
+accepted and does nothing. Set it below the idle limit of the proxy or balancer in front of the
+target: ALB, nginx and envoy each have their own, check the setting. Otherwise the proxy closes the
+connection silently and the client learns of it only at the next call. With `connections: N` each
+connection has its own timer and the calls go round, so a connection gets 1/N of the calls and its
+pauses are N times longer. With `connections: 1` and a name from DNS, leaving the idle state
+resolves the name again and may land on another address. The value is printed in the `settings:`
+line (`idle_timeout 50s`) and is in the JSON as `settings.idle_timeout_us`.
 
 **Errors before the start.** Everything that can be known before the run means exit code 1 and not
 a single call to the target: a file not found or not PEM, a certificate that does not match its
@@ -858,6 +873,7 @@ measured calls only. The first column is the field's full path.
 | `settings.ramp_us` | int | `load.ramp` as configured, in whole microseconds; 0 without one. A search: the ramp before the first step; `breakpoint.runs[0].report.settings.ramp_us` is the same, the other runs have 0 |
 | `settings.stop_on_errors` | string? | `load.stop_on_errors` as written: `"5%"`, `"100%"` stays `"100%"`; `null` — left out. |
 | `settings.compression` | string? | `app.compression` as configured: `"gzip"`, `null` — left out |
+| `settings.idle_timeout_us` | int? | (not released yet) `app.idle_timeout` in whole microseconds; `null` — left out, which is grpc-go's 30 minutes |
 | `metadata_refresh` | object? | (not released yet) What the re-reading of the `${file:PATH}` files did, counted from the connection; `null` without `app.metadata_refresh`. A search has it once at the top level, its runs in `breakpoint.runs` carry `null` |
 | `metadata_refresh.interval_us` | int | (not released yet) `app.metadata_refresh` in whole microseconds |
 | `metadata_refresh.reads` | int | (not released yet) Reads after the start; the first one, at the load, is not counted |

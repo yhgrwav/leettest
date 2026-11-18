@@ -17,6 +17,7 @@ app:
     # read from this config's directory; the file's one trailing line break is cut.
     authorization: Bearer ${file:real-token.txt}
   metadata_refresh: 5m              # read the files again every 5m; 1s at least, only with a ${file:...} above
+  idle_timeout: 50s                 # close a connection with no call on it for 50s; 1s at least, not under -connect-timeout; below the proxy's idle limit
 
 load:
   ramp: 30s
