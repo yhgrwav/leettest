@@ -95,6 +95,14 @@ func searchResult(outcome breakpoint.Outcome, limits []threshold.Result) error {
 	return limitsResult(limits)
 }
 
+// searchPlan is the plan of the search over the one call and the name of the
+// call's row in the report.
+func searchPlan(s searchSetup, maxInFlight int) (breakpoint.Plan, string) {
+	call := s.calls[0]
+
+	return s.cfg.Load.Breakpoint.Plan(call.Timeout, maxInFlight), strings.TrimPrefix(call.Method, "/")
+}
+
 // runSearch runs the breaking-point search over the one call, a step at a
 // time on the one connection, and prints its report. The first Ctrl+C ends
 // the current run gently and stops the search; the second cuts the run's

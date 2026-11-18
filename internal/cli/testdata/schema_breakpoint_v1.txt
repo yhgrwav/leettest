@@ -41,6 +41,11 @@ breakpoint.broke_rps int?
 breakpoint.errors_limit string
 breakpoint.why string?
 breakpoint.stop_reason string?
+breakpoint.scenario string?
+breakpoint.rate_unit string
+breakpoint.broke_step object?
+breakpoint.broke_step.step int
+breakpoint.broke_step.method string
 breakpoint.notes []string
 breakpoint.runs []object
 breakpoint.runs[].kind string
@@ -49,6 +54,9 @@ breakpoint.runs[].sent_rps int
 breakpoint.runs[].broken bool
 breakpoint.runs[].recovered bool?
 breakpoint.runs[].why string?
+breakpoint.runs[].broke_step object?
+breakpoint.runs[].broke_step.step int
+breakpoint.runs[].broke_step.method string
 breakpoint.runs[].report object
 thresholds []object?
 thresholds[].method string?

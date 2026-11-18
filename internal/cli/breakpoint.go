@@ -43,9 +43,11 @@ const (
 // BreakpointRun is what the breaking-point report needs: the search's plan
 // and result, and the run's header.
 type BreakpointRun struct {
-	Target    string
-	Version   string
-	Method    string
+	Target  string
+	Version string
+	Method  string
+	// Scenario is the name of the scenario the search steps, empty for a call.
+	Scenario  string
 	Name      string
 	StartedAt time.Time
 	Plan      breakpoint.Plan
