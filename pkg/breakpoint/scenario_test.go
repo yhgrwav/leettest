@@ -636,15 +636,16 @@ func TestScenarioSearch_TheTiersOfAStepGoErrorsUndecidedKnee(t *testing.T) {
 // Ground: contract — a probe has recovered when every row is within 1.5× its
 // own baseline. The head at 2× its 10ms baseline has not, though the highest
 // p99 of the rows, step 2's 100ms, is under 1.5× the highest baseline; at 14ms
-// it has.
+// it has. Nor has a later row: step 3 at 2× its 40ms baseline, the head at its
+// own.
 func TestScenarioSearch_AProbeRecoversRowByRow(t *testing.T) {
-	rows := func(head time.Duration, failed int) engine.Report {
-		return scReport(1000, scRow(1, 1000, 0, head), scRow(2, 1000, 0, 100*scUnit), scRow(3, 1000, failed, 40*scUnit))
+	rows := func(head, third time.Duration, failed int) engine.Report {
+		return scReport(1000, scRow(1, 1000, 0, head), scRow(2, 1000, 0, 100*scUnit), scRow(3, 1000, failed, third))
 	}
 	for _, tc := range []struct {
-		head      time.Duration
-		recovered bool
-	}{{20 * scUnit, false}, {14 * scUnit, true}} {
+		head, third time.Duration
+		recovered   bool
+	}{{20 * scUnit, 40 * scUnit, false}, {10 * scUnit, 80 * scUnit, false}, {14 * scUnit, 40 * scUnit, true}} {
 		p := scPlan
 		p.To = 195
 
@@ -652,11 +653,11 @@ func TestScenarioSearch_AProbeRecoversRowByRow(t *testing.T) {
 		target := func(rps int) engine.Report {
 			switch {
 			case rps == 100 && len(asked) > 4:
-				return rows(tc.head, 0)
+				return rows(tc.head, tc.third, 0)
 			case rps >= 195:
-				return rows(10*scUnit, 100)
+				return rows(10*scUnit, 40*scUnit, 100)
 			default:
-				return rows(10*scUnit, 0)
+				return rows(10*scUnit, 40*scUnit, 0)
 			}
 		}
 		res, err := Search(t.Context(), p, fake(target, &asked))
@@ -669,7 +670,7 @@ func TestScenarioSearch_AProbeRecoversRowByRow(t *testing.T) {
 			want = []int{100, 125, 156, 195, 100, 195}
 		}
 		if !slices.Equal(asked, want) {
-			t.Errorf("head %v in the probe: ran %v, want %v", tc.head, asked, want)
+			t.Errorf("head %v third %v in the probe: ran %v, want %v", tc.head, tc.third, asked, want)
 		}
 		if tc.recovered {
 			scBrokeAt195(t, "recovered", res, CauseErrors, 3)
