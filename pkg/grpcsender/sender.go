@@ -324,7 +324,10 @@ func (s *Sender) setLimit(limit int) {
 // name TLS verifies, placed before the caller's DialOptions so theirs win.
 func (s *Sender) dialOptions(l *link, creds credentials.TransportCredentials, authority string) []grpc.DialOption {
 	dialOpts := []grpc.DialOption{
-		grpc.WithTransportCredentials(trackingCreds{TransportCredentials: creds, tracker: l.tracker, serverName: s.opts.ServerName}),
+		grpc.WithTransportCredentials(trackingCreds{
+			TransportCredentials: creds, tracker: l.tracker, serverName: s.opts.ServerName,
+			watch: l.closes, idle: s.opts.IdleTimeout,
+		}),
 		grpc.WithStatsHandler(handler{streams: l.streams}),
 		// A retry by a service config policy may follow an attempt the target
 		// served, and would count one call for several. Transparent retries
@@ -562,6 +565,11 @@ func (s *Sender) Close() error {
 	}
 
 	var err error
+
+	// Before any transport closes: the run's own end is not a close to count.
+	for _, l := range links {
+		l.closes.ending.Store(true)
+	}
 
 	for _, l := range links {
 		// The first error as it is, so that one connection reports what it

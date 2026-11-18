@@ -20,6 +20,7 @@ import (
 	"math"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"google.golang.org/grpc"
@@ -222,6 +223,8 @@ type link struct {
 	ready   readyWindow
 	// streams tells a wait for a stream from a delay on our side.
 	streams *streamGauge
+	// closes counts the closes of the connection's transports.
+	closes *closeWatch
 	// stopWatch ends the connection watcher; watched closes when it has.
 	stopWatch context.CancelFunc
 	watched   chan struct{}
@@ -229,28 +232,105 @@ type link struct {
 
 func newLink(address string) *link {
 	tracker := &connTracker{}
+	streams := &streamGauge{limit: tracker.limit}
 
-	return &link{address: address, tracker: tracker, streams: &streamGauge{limit: tracker.limit}}
+	return &link{address: address, tracker: tracker, streams: streams, closes: &closeWatch{streams: streams}}
 }
 
 // settingsConn reads the target's first frame as it passes. After it, a
-// read costs one bool check. Only the transport's reader goroutine reads.
+// read costs one bool check and one error check. Only the transport's reader
+// goroutine reads.
 type settingsConn struct {
 	net.Conn
 
 	reader  settingsReader
 	done    bool
 	tracker *connTracker
+	// watch and idle say what a close of this transport is counted as; counted
+	// is set by whichever of the read error and our Close comes first.
+	watch   *closeWatch
+	idle    time.Duration
+	counted atomic.Bool
 }
 
 func (c *settingsConn) Read(p []byte) (int, error) {
 	n, err := c.Conn.Read(p)
+	if err != nil {
+		c.closed(false)
+	}
+
 	if !c.done && n > 0 && c.reader.feed(p[:n]) {
 		c.done = true
 		c.tracker.announced(handshake{limit: c.reader.limit, announced: c.reader.announced})
 	}
 
 	return n, err
+}
+
+// Close counts the close before it happens: a transport's streams end only
+// after it, so the gauge still says what the connection was doing.
+func (c *settingsConn) Close() error {
+	c.closed(true)
+
+	return c.Conn.Close()
+}
+
+// closed counts the transport's end, once: the first of a read error (the other
+// side or the network ended it) and our own Close. A Close that follows a read
+// error, or a read error that follows a Close, is the same connection.
+func (c *settingsConn) closed(byClose bool) {
+	if c.counted.CompareAndSwap(false, true) {
+		c.watch.record(byClose, c.idle)
+	}
+}
+
+// closeWatch counts the closes of the transports of one connection, by what the
+// connection was doing when each ended. It is per connection, not per
+// transport: when a GOAWAY drains one transport under load a newer one of the
+// same connection may already carry calls, and the close is counted as with a
+// call on it. Under load there is no idleness to explain, so that is allowed.
+type closeWatch struct {
+	streams *streamGauge
+	// ending is set before the run's own Close, which is no connection closing.
+	ending atomic.Bool
+
+	mu    sync.Mutex
+	stats CloseStats
+}
+
+// record counts one close: ours when we closed it with no call on it and it had
+// been idle for the idle timeout, which is the only reason our own timer closes
+// an idle connection; the other side's, with how long it had been idle, for any
+// other close with no call on it.
+func (w *closeWatch) record(byClose bool, idle time.Duration) {
+	if w.ending.Load() {
+		return
+	}
+
+	open, since := w.streams.idleState()
+	idleFor := max(time.Since(since), 0)
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	switch {
+	case open > 0:
+		w.stats.Busy++
+	case byClose && idle > 0 && idleFor >= idle:
+		w.stats.IdleOurs++
+	default:
+		w.stats.IdlePeer++
+		if w.stats.IdlePeer == 1 || idleFor < w.stats.PeerIdleMin {
+			w.stats.PeerIdleMin = idleFor
+		}
+	}
+}
+
+func (w *closeWatch) read() CloseStats {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	return w.stats
 }
 
 // trackingCreds wraps the transport credentials so every connection passes
@@ -265,6 +345,10 @@ type trackingCreds struct {
 	// (v1.84.0 credentials/tls.go:121), while :authority is set apart from
 	// the handshake, so it stays the target's address.
 	serverName string
+	// watch counts the closes of the transports; idle is Options.IdleTimeout,
+	// what tells our own timer's close from a reply to the target's GOAWAY.
+	watch *closeWatch
+	idle  time.Duration
 }
 
 func (c trackingCreds) ClientHandshake(ctx context.Context, authority string, raw net.Conn) (
@@ -280,12 +364,16 @@ func (c trackingCreds) ClientHandshake(ctx context.Context, authority string, ra
 	}
 
 	c.tracker.connected()
+	c.watch.streams.idleFrom(time.Now())
 
-	return &settingsConn{Conn: conn, tracker: c.tracker}, info, nil
+	return &settingsConn{Conn: conn, tracker: c.tracker, watch: c.watch, idle: c.idle}, info, nil
 }
 
 func (c trackingCreds) Clone() credentials.TransportCredentials {
-	return trackingCreds{TransportCredentials: c.TransportCredentials.Clone(), tracker: c.tracker, serverName: c.serverName}
+	return trackingCreds{
+		TransportCredentials: c.TransportCredentials.Clone(), tracker: c.tracker, serverName: c.serverName,
+		watch: c.watch, idle: c.idle,
+	}
 }
 
 // readyWindow remembers when the connection last became ready and last
@@ -373,7 +461,26 @@ type CloseStats struct {
 // not one. Zero with the caller's credentials in DialOptions: no transport
 // passes through the sender's own.
 func (s *Sender) Closes() CloseStats {
-	return CloseStats{}
+	s.mu.RLock()
+	links := s.links
+	s.mu.RUnlock()
+
+	if len(links) < 2 {
+		links = []*link{s.link}
+	}
+
+	var total CloseStats
+	for _, l := range links {
+		got := l.closes.read()
+		total.IdleOurs += got.IdleOurs
+		total.Busy += got.Busy
+		if got.IdlePeer > 0 && (total.IdlePeer == 0 || got.PeerIdleMin < total.PeerIdleMin) {
+			total.PeerIdleMin = got.PeerIdleMin
+		}
+		total.IdlePeer += got.IdlePeer
+	}
+
+	return total
 }
 
 // limit is the stream limit of the last handshake heard; MaxUint32, the
@@ -400,6 +507,9 @@ type streamGauge struct {
 	open     int64
 	full     bool
 	leftFull time.Time
+	// idleSince is when the last stream ended, or when the latest transport
+	// began if none has been open since; meaningful while open is 0.
+	idleSince time.Time
 }
 
 func (g *streamGauge) opened(at time.Time) { g.change(1, at) }
@@ -416,6 +526,28 @@ func (g *streamGauge) change(by int64, at time.Time) {
 		g.leftFull = at
 	}
 	g.full = full
+	if g.open == 0 {
+		g.idleSince = at
+	}
+}
+
+// idleFrom starts the idle time at a new transport, if no call is open.
+func (g *streamGauge) idleFrom(at time.Time) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if g.open == 0 {
+		g.idleSince = at
+	}
+}
+
+// idleState is how many streams are open and since when the connection has had
+// none.
+func (g *streamGauge) idleState() (open int64, idleSince time.Time) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	return g.open, g.idleSince
 }
 
 // fullSince reports whether the connection was full at some moment from
