@@ -45,12 +45,14 @@ const (
 )
 
 // mrTarget is a plaintext health service that accepts any token and keeps the
-// authorization of every call, in the order the calls came.
+// authorization of every call, in the order the calls came, with the time each
+// came at.
 type mrTarget struct {
 	addr string
 
 	mu   sync.Mutex
 	seen []string
+	at   []time.Time
 }
 
 func startMRTarget(t *testing.T) *mrTarget {
@@ -69,6 +71,7 @@ func startMRTarget(t *testing.T) *mrTarget {
 
 			target.mu.Lock()
 			target.seen = append(target.seen, strings.Join(md.Get("authorization"), ","))
+			target.at = append(target.at, time.Now())
 			target.mu.Unlock()
 
 			return h(ctx, req)
@@ -86,6 +89,14 @@ func (m *mrTarget) tokens() []string {
 	defer m.mu.Unlock()
 
 	return append([]string(nil), m.seen...)
+}
+
+// arrivals are the times the calls of tokens() came at, in the same order.
+func (m *mrTarget) arrivals() []time.Time {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	return append([]time.Time(nil), m.at...)
 }
 
 // mrDir is a directory holding token.txt with value, for a config written next
@@ -143,6 +154,11 @@ func mrConfigWith(t *testing.T, dir, addr, appLines, duration, topLines string) 
 
 	return path
 }
+
+// mrInFlightSlack is how long after the first call with a new value a call with
+// the old one may still reach the target: the time a call to a local target stays
+// in flight, with ample room for a loaded machine (p99 there is 25 ms).
+const mrInFlightSlack = 500 * time.Millisecond
 
 const mrFileApp = "  metadata:\n    authorization: '${file:token.txt}'\n"
 
@@ -210,8 +226,15 @@ func TestMetadataFile_ARunSendsTheValueOfTheFile(t *testing.T) {
 }
 
 // Ground: contract (spec §6, C1) — a value changed in the file after the start
-// reaches the target within the interval, in order: once the new value has
-// come, the old one does not. The report counts the change.
+// reaches the target within the interval and stays: once the new value has come,
+// the old one does not come back (calls already in flight at the swap aside).
+// The report counts the change.
+//
+// The test is about what the target receives, not about how well the generator
+// keeps its schedule: on a machine loaded by other tests (a full `make check`)
+// the run ends as invalid (generator_late, exit 2) with the report printed, and
+// that is the product being right. Only an invalid run is let through, as in the
+// failed-read tests below; any other error still fails the test.
 func TestMetadataRefresh_ANewValueReachesTheTargetDuringTheRun(t *testing.T) {
 	dir := mrDir(t, "tok-one\n")
 	target := startMRTarget(t)
@@ -222,7 +245,7 @@ func TestMetadataRefresh_ANewValueReachesTheTargetDuringTheRun(t *testing.T) {
 	res := runCLI(t.Context(), t, 20*time.Second, "-c", cfg)
 	<-done
 
-	if res.err != nil {
+	if res.err != nil && !errors.Is(res.err, ErrInvalidRun) {
 		t.Fatalf("run: %v\nstderr:\n%s", res.err, res.stderr)
 	}
 
@@ -239,15 +262,20 @@ func TestMetadataRefresh_ANewValueReachesTheTargetDuringTheRun(t *testing.T) {
 		t.Errorf("the last call carried %q, want tok-two: the new value did not arrive within the run", last)
 	}
 
-	seenNew := false
+	// Calls overlap, so a call that took the old value just before the swap can
+	// reach the target after one that took the new: on a loaded machine that
+	// happens, a few calls within the call's latency. A stale value that sticks
+	// or comes back is a call with the old value long after the new one came.
+	arrivals := target.arrivals()
+	firstNew := slices.Index(got, "tok-two")
 
 	for i, tok := range got {
 		switch tok {
 		case "tok-two":
-			seenNew = true
 		case "tok-one":
-			if seenNew {
-				t.Fatalf("call %d carried tok-one after tok-two had come", i)
+			if firstNew >= 0 && i > firstNew && arrivals[i].Sub(arrivals[firstNew]) > mrInFlightSlack {
+				t.Fatalf("call %d carried tok-one %v after tok-two had come, longer than any call stays in flight (%v)",
+					i, arrivals[i].Sub(arrivals[firstNew]), mrInFlightSlack)
 			}
 		default:
 			t.Fatalf("call %d carried %q", i, tok)
