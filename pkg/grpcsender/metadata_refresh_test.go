@@ -17,6 +17,7 @@ package grpcsender
 import (
 	"context"
 	"errors"
+	"fmt"
 	"maps"
 	"reflect"
 	"runtime"
@@ -264,15 +265,19 @@ func runSenders(t *testing.T, sender *Sender, n int, d time.Duration) {
 	wg.Wait()
 }
 
-// ownGoroutines counts the goroutines this package started: the ones whose
-// stack says "created by .../pkg/grpcsender.". gRPC's own goroutines come and
-// go on their own schedule and are left out; the package's are started and
-// ended by Connect and Close alone. It counts a goroutine started by a plain
-// go statement in the package: one started through wg.Go, errgroup or
-// context.AfterFunc has "created by" naming sync or another package and would
-// count as none. Comparisons "none left" use <=, not ==: a goroutine of an
-// earlier test may still be dying.
-func ownGoroutines() int {
+// ownGoroutines is the goroutines this package started that are alive now,
+// goroutine id -> the function that started it: the ones whose stack says
+// "created by .../pkg/grpcsender.". gRPC's own goroutines come and go on their
+// own schedule and are left out; the package's are started and ended by Connect
+// and Close alone. It sees a goroutine started by a plain go statement in the
+// package: one started through wg.Go, errgroup or context.AfterFunc has
+// "created by" naming sync or another package and would count as none.
+//
+// A test takes the set before the step and asks bornSince after it. A count
+// before and after would be moved by a goroutine of an earlier test that is
+// still dying (its watcher, its listen goroutine) in the middle of the step;
+// an id is never reused, so a goroutine that ends changes nothing in bornSince.
+func ownGoroutines() map[int]string {
 	buf := make([]byte, 1<<20)
 
 	for {
@@ -286,15 +291,67 @@ func ownGoroutines() int {
 		buf = make([]byte, 2*len(buf))
 	}
 
-	count := 0
+	alive := map[int]string{}
 
-	for line := range strings.SplitSeq(string(buf), "\n") {
-		if strings.HasPrefix(line, "created by ") && strings.Contains(line, "/pkg/grpcsender.") {
-			count++
+	for block := range strings.SplitSeq(string(buf), "\n\n") {
+		header, _, _ := strings.Cut(block, "\n")
+
+		var id int
+
+		if _, err := fmt.Sscanf(header, "goroutine %d", &id); err != nil {
+			continue
+		}
+
+		for line := range strings.SplitSeq(block, "\n") {
+			if !strings.HasPrefix(line, "created by ") || !strings.Contains(line, "/pkg/grpcsender.") {
+				continue
+			}
+
+			creator, _, _ := strings.Cut(strings.TrimPrefix(line, "created by "), " in goroutine ")
+			alive[id] = creator
 		}
 	}
 
-	return count
+	return alive
+}
+
+// bornSince is the goroutines of the package alive now that were not alive in
+// before, as ownGoroutines gives them.
+func bornSince(before map[int]string) map[int]string {
+	born := map[int]string{}
+
+	for id, creator := range ownGoroutines() {
+		if _, old := before[id]; !old {
+			born[id] = creator
+		}
+	}
+
+	return born
+}
+
+// anyAlive reports whether one of the goroutines in ids is still running.
+func anyAlive(ids map[int]string) bool {
+	for id := range ownGoroutines() {
+		if _, ours := ids[id]; ours {
+			return true
+		}
+	}
+
+	return false
+}
+
+// creatorCount is how many goroutines in set were started by a function whose
+// name contains creator.
+func creatorCount(set map[int]string, creator string) int {
+	n := 0
+
+	for _, c := range set {
+		if strings.Contains(c, creator) {
+			n++
+		}
+	}
+
+	return n
 }
 
 // --- S1: a replaced value is seen by later calls ---------------------------
@@ -348,10 +405,14 @@ func TestMetadataRefresh_OffAddsNothingToTheProcess(t *testing.T) {
 	refreshing.Metadata = map[string]string{"authorization": bearer(1)}
 	refreshing.MetadataRefresh = src.every(time.Hour)
 
-	start := ownGoroutines()
+	before := ownGoroutines()
 
 	a := connected(t, plain)
-	base := ownGoroutines() - start
+	plainBorn := bornSince(before)
+
+	if n := creatorCount(plainBorn, "(*refresher)"); n != 0 {
+		t.Errorf("a sender without MetadataRefresh started %d refresh goroutines", n)
+	}
 
 	if _, ok := a.MetadataRefresh(); ok {
 		t.Error("a sender without MetadataRefresh reports one")
@@ -361,11 +422,13 @@ func TestMetadataRefresh_OffAddsNothingToTheProcess(t *testing.T) {
 		t.Error("a sender without MetadataRefresh has dynamic metadata: the call path is not the static one")
 	}
 
-	mid := ownGoroutines()
+	before = ownGoroutines()
 	b := connected(t, refreshing)
+	refreshingBorn := bornSince(before)
 
-	if extra := ownGoroutines() - mid - base; extra != 1 {
-		t.Errorf("a refreshing sender started %d goroutines of its own beyond a plain one's, want 1", extra)
+	if extra := len(refreshingBorn) - len(plainBorn); extra != 1 || creatorCount(refreshingBorn, "(*refresher)") != 1 {
+		t.Errorf("a refreshing sender started %d goroutines of its own beyond a plain one's (%d refresh goroutines), want 1 (1)",
+			extra, creatorCount(refreshingBorn, "(*refresher)"))
 	}
 
 	if b.meta == nil || b.meta.p == nil {
@@ -379,7 +442,9 @@ func TestMetadataRefresh_OffAddsNothingToTheProcess(t *testing.T) {
 	_ = a.Close()
 	_ = b.Close()
 
-	eventually(t, "the package's goroutines gone after Close", func() bool { return ownGoroutines() <= start })
+	eventually(t, "the package's goroutines gone after Close", func() bool {
+		return !anyAlive(plainBorn) && !anyAlive(refreshingBorn)
+	})
 }
 
 // --- S3: a failed read keeps the last good value ---------------------------
@@ -912,7 +977,7 @@ func TestMetadataRefresh_CloseBeforeConnectAndTwiceIsSafe(t *testing.T) {
 // the connections are published.
 func TestMetadataRefresh_AFailedConnectLeavesNoGoroutine(t *testing.T) {
 	src := &tokenSource{script: same(bearer(1))}
-	start := ownGoroutines()
+	before := ownGoroutines()
 	sender := New(Options{
 		Target:          closedPort(t),
 		Metadata:        map[string]string{"authorization": bearer(1)},
@@ -930,7 +995,7 @@ func TestMetadataRefresh_AFailedConnectLeavesNoGoroutine(t *testing.T) {
 		t.Errorf("Read was called %d times after a failed Connect", n)
 	}
 
-	eventually(t, "no goroutine of the package left", func() bool { return ownGoroutines() <= start })
+	eventually(t, "no goroutine of the package left", func() bool { return len(bornSince(before)) == 0 })
 }
 
 // Ground: contract — a second Connect on a connected sender is a no-op: one goroutine reads, at
