@@ -699,6 +699,13 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `settings.ramp_us` | int | 按配置的 `load.ramp`，单位为整微秒；没有爬升时为 0。搜索：第一级之前的爬升；在 `breakpoint.runs[0].report.settings.ramp_us` 中相同，其余运行为 0 |
 | `settings.stop_on_errors` | string? | 按配置书写的 `load.stop_on_errors`：`"5%"`，`"100%"` 保持 `"100%"`；`null` 表示省略。 |
 | `settings.compression` | string? | 按配置的 `app.compression`：`"gzip"`，`null` 表示省略 |
+| `metadata_refresh` | object? | （未发布）重新读取 `${file:PATH}` 文件的情况，从连接起计；没有 `app.metadata_refresh` 时为 `null`。搜索只在顶层有一个，`breakpoint.runs` 中的各次运行为 `null` |
+| `metadata_refresh.interval_us` | int | （未发布）`app.metadata_refresh`，以整微秒计 |
+| `metadata_refresh.reads` | int | （未发布）启动之后的读取次数；加载时的第一次不计 |
+| `metadata_refresh.changed` | int | （未发布）得到不同值的成功读取次数 |
+| `metadata_refresh.failures` | int | （未发布）失败的读取次数；最后一个有效值继续使用 |
+| `metadata_refresh.failing_at_end` | bool | （未发布）最后一次读取失败时为 `true` |
+| `metadata_refresh.last_error` | string? | （未发布）最后一次失败读取的文本：请求头、文件和原因，绝不含值。在出现失败前为 `null`，恢复后保留 |
 | `passport` | object? | 这次运行所用的机器和配置，用于区分不同的运行。搜索只在顶层有一个，`breakpoint.runs` 中的各次运行没有 |
 | `passport.config_sha256` | string | 配置文件读入时字节的 SHA-256，64 位十六进制 |
 | `passport.os`、`passport.arch` | string | 生成器的 `GOOS` 和 `GOARCH`，如 `linux` 和 `amd64` |

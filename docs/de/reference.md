@@ -860,6 +860,13 @@ unten den Typ „percentile?" hat.
 | `settings.ramp_us` | int | `load.ramp` wie konfiguriert, in ganzen Mikrosekunden; 0 ohne Anlauf. Suche: der Anlauf vor der ersten Stufe; in `breakpoint.runs[0].report.settings.ramp_us` derselbe, bei den übrigen Läufen 0 |
 | `settings.stop_on_errors` | string? | `load.stop_on_errors` wie geschrieben: `"5%"`, `"100%"` bleibt `"100%"`; `null` — weggelassen. |
 | `settings.compression` | string? | `app.compression` wie konfiguriert: `"gzip"`, `null` — weggelassen |
+| `metadata_refresh` | object? | (nicht veröffentlicht) Was das erneute Lesen der `${file:PATH}`-Dateien getan hat, gezählt ab der Verbindung; `null` ohne `app.metadata_refresh`. Eine Suche hat es einmal auf oberster Ebene, ihre Läufe in `breakpoint.runs` `null` |
+| `metadata_refresh.interval_us` | int | (nicht veröffentlicht) `app.metadata_refresh` in ganzen Mikrosekunden |
+| `metadata_refresh.reads` | int | (nicht veröffentlicht) Lesevorgänge nach dem Start; der erste beim Laden zählt nicht |
+| `metadata_refresh.changed` | int | (nicht veröffentlicht) Erfolgreiche Lesevorgänge mit einem anderen Wert |
+| `metadata_refresh.failures` | int | (nicht veröffentlicht) Fehlgeschlagene Lesevorgänge; der letzte gute Wert blieb in Gebrauch |
+| `metadata_refresh.failing_at_end` | bool | (nicht veröffentlicht) `true`, wenn der letzte Lesevorgang fehlschlug |
+| `metadata_refresh.last_error` | string? | (nicht veröffentlicht) Der Text des letzten fehlgeschlagenen Lesevorgangs: Header, Datei und Grund, nie der Wert. `null`, bis einer fehlschlug; bleibt nach der Erholung |
 | `passport` | object? | Die Maschine und die Konfiguration, mit denen der Lauf gemacht wurde, um Läufe zu unterscheiden. Eine Suche hat ihn einmal auf oberster Ebene, ihre Läufe in `breakpoint.runs` nicht |
 | `passport.config_sha256` | string | SHA-256 der Bytes der Konfigurationsdatei, wie gelesen, 64 Hexziffern |
 | `passport.os`, `passport.arch` | string | `GOOS` und `GOARCH` des Generators, etwa `linux` und `amd64` |

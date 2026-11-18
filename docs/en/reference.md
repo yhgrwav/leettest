@@ -41,7 +41,8 @@ The config, a dataset, a report for `compare` and the settings file are UTF-8; a
 | `app.ca` | A PEM file of certificates to verify the service with instead of the system ones. Needs TLS |
 | `app.cert`, `app.key` | A client certificate and its key in PEM, for a service with mTLS. Only together, needs TLS |
 | `app.server_name` | The name to check the service's certificate against when it does not name the address in `target`. Needs TLS |
-| `app.metadata` | Headers of every call: `authorization`, `x-api-key` and so on. `${NAME}` is taken from an environment variable |
+| `app.metadata` | Headers of every call: `authorization`, `x-api-key` and so on. `${NAME}` is taken from an environment variable, `${file:PATH}` from a file |
+| `app.metadata_refresh` | (not released yet) How often to read the files named by `${file:PATH}` again during the run: `5m`, `30s`, at least `1s`. Left out — every file is read once, at the start. Needs a header that reads a file. The report prints a `metadata refresh:` line under `settings:` |
 | `app.max_response_size` | The largest reply a call accepts: `16MiB`, `512KB`. The unit is required (`MB` = 10⁶ bytes, `MiB` = 2²⁰), below 2 GiB. Left out — 4 MiB, as in gRPC. A larger reply is a `bad response`. A call in flight may buffer up to twice the limit: by default up to 8 MiB each |
 | `app.connections` | How many connections to open to the target, a whole number from 1 to 256. Left out — 1. Calls take the connections in turn, and the report prints a `Connections:` block, a row per connection |
 | `app.compression` | Compress request bodies: `gzip`. Left out — none. The report prints `bytes: <raw> -> <wire> per call` under the method |
@@ -190,6 +191,27 @@ Substitution works only in `app.metadata`: in `data`, `target` and every other f
 goes out as written. There is no flag for headers, so the token never lands in `ps` or in the
 shell history. The tool prints header values nowhere: not in the report, not during the run, not
 in errors.
+
+**A token from a file.** `${file:PATH}` is replaced by the content of a file, inside a value too:
+`Bearer ${file:token.txt}`. PATH is everything up to the first `}`, as written, with no `${NAME}`
+and no `~`; a relative path is taken from the config file's directory. Exactly one line break at
+the end of the file is cut, spaces are kept. An empty file, a line break inside, a byte outside
+printable ASCII, a file over 64 KiB, a directory and a file that cannot be read are errors; the
+message names the header and the file, never the value. `user-agent` cannot come from a file. The
+file's permissions are not checked. `-fake` reads no files, and a dry run prints
+`${file:PATH}` where the value was.
+
+With `app.metadata_refresh` the files are read again at that interval during the run, and a
+new value goes out with the calls made after the read; a call in flight and a stream opened before it keep the
+old one. A read that fails is not applied: the last good
+value stays in use, the run goes on, and the exit code does not change. The stderr gets one
+line at the first failed read; the report counts them all: `metadata refresh: every 5m0s, 12
+reads, 3 changed, 0 failed`, and with failures `…; the last good value stayed in use; last error:
+…`. The counters run from the connection, reflection included. A token that went stale shows
+itself as `Unauthenticated` from the target: for a long run set `load.stop_on_errors`. Write the
+token atomically (rename), as Kubernetes and gcloud do: a file rewritten in place can be read half
+written, half a token is still printable ASCII, and the target answers `Unauthenticated`, which the
+report shows.
 
 **Headers.** Names are lowercased, as HTTP/2 carries them anyway. A config error before the
 start: a key starting with `grpc-` (reserved by gRPC), pseudo-headers such as `:path`, a key
@@ -832,6 +854,13 @@ measured calls only. The first column is the field's full path.
 | `settings.ramp_us` | int | `load.ramp` as configured, in whole microseconds; 0 without one. A search: the ramp before the first step; `breakpoint.runs[0].report.settings.ramp_us` is the same, the other runs have 0 |
 | `settings.stop_on_errors` | string? | `load.stop_on_errors` as written: `"5%"`, `"100%"` stays `"100%"`; `null` — left out. |
 | `settings.compression` | string? | `app.compression` as configured: `"gzip"`, `null` — left out |
+| `metadata_refresh` | object? | (not released yet) What the re-reading of the `${file:PATH}` files did, counted from the connection; `null` without `app.metadata_refresh`. A search has it once at the top level, its runs in `breakpoint.runs` carry `null` |
+| `metadata_refresh.interval_us` | int | (not released yet) `app.metadata_refresh` in whole microseconds |
+| `metadata_refresh.reads` | int | (not released yet) Reads after the start; the first one, at the load, is not counted |
+| `metadata_refresh.changed` | int | (not released yet) Successful reads that gave a different value |
+| `metadata_refresh.failures` | int | (not released yet) Reads that failed; the last good value stayed in use |
+| `metadata_refresh.failing_at_end` | bool | (not released yet) `true` when the last read failed |
+| `metadata_refresh.last_error` | string? | (not released yet) The text of the last failed read: the header, the file and the reason, never the value. `null` until a read failed; stays after a recovery |
 | `passport` | object? | The machine and the config the run was made with, for telling runs apart. A search has it once at the top level, its runs in `breakpoint.runs` do not |
 | `passport.config_sha256` | string | SHA-256 of the config file's bytes as read, 64 hex digits |
 | `passport.os`, `passport.arch` | string | `GOOS` and `GOARCH` of the generator, such as `linux` and `amd64` |
