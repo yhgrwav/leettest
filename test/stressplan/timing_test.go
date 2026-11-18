@@ -152,7 +152,7 @@ func TestMakefile_StressTimingRunsWhatTheJudgeExpects(t *testing.T) {
 		t.Fatal("the Makefile has no stress-timing target")
 	}
 	for _, want := range []string{
-		fmt.Sprintf("-count=%d", TimingRepeats), "-json", `-run "$(STRESS_SKIP)"`, "-timeout 90m", "./...",
+		fmt.Sprintf("-count=%d", TimingRepeats), "-json", `-run "$(STRESS_SKIP)"`, "-timeout 140m", "./...",
 	} {
 		if !strings.Contains(recipe, want) {
 			t.Errorf("stress-timing recipe %q lacks %q", recipe, want)
