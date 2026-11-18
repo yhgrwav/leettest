@@ -88,7 +88,7 @@ func TestExamples_RunAgainstStand(t *testing.T) {
 			if err != nil {
 				t.Fatalf("calls: %v", err)
 			}
-			unchecked, err := cli.AttachData(ctx, descriptor.NewReflectionResolver(sender.Conn()), cfg, calls)
+			unchecked, _, err := cli.AttachMethods(ctx, descriptor.NewReflectionResolver(sender.Conn()), cfg, calls)
 			if err != nil {
 				t.Fatalf("request bodies: %v", err)
 			}

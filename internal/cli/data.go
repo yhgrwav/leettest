@@ -137,26 +137,16 @@ type Unchecked struct {
 // Unauthenticated while the config sent metadata.
 var ErrCredentialsRejected = errors.New("target rejected credentials")
 
-// AttachData resolves every method the run will call and fills in the payload
-// of the calls that have data. It runs once, before the load: a method the
-// target does not serve, or a body that does not fit its message, is a config
-// error, and finding it out from a whole run of failures costs the run.
+// AttachMethods resolves every method the run will call and fills in the
+// payload of the calls that have data. It runs once, before the load: a method
+// the target does not serve, or a body that does not fit its message, is a
+// config error, and finding it out from a whole run of failures costs the run.
 // Without reflection a method that has no data is only reported to warn, since
 // it needs no schema to run.
 //
-// calls are the engine calls built from cfg, in the same order.
-func AttachData(
-	ctx context.Context, resolver descriptor.Resolver, cfg *config.MasterConfig,
-	calls []engine.Call,
-) (unchecked []Unchecked, err error) {
-	unchecked, _, err = AttachMethods(ctx, resolver, cfg, calls)
-
-	return unchecked, err
-}
-
-// AttachMethods is AttachData that also hands out what it resolved: the method
-// of each call, in the order of calls, nil for one that could not be resolved
-// (the ones in unchecked).
+// calls are the engine calls built from cfg, in the same order. It hands out
+// what it resolved: the method of each call, in the order of calls, nil for one
+// that could not be resolved (the ones in unchecked).
 func AttachMethods(
 	ctx context.Context, resolver descriptor.Resolver, cfg *config.MasterConfig,
 	calls []engine.Call,

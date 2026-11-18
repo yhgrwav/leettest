@@ -30,7 +30,7 @@ import (
 // CallsFromConfig turns the calls of a config into engine calls. A call with a
 // dataset gets one empty payload per record and a counter of its own, made
 // here once for the process: every run of a search goes on with it. The
-// records go in later, in AttachData. A config that names a dataset whose
+// records go in later, in AttachMethods. A config that names a dataset whose
 // records were never read (one from config.Parse) is an error here, never a
 // call that sends empty messages under the file's name.
 func CallsFromConfig(cfg *config.MasterConfig) ([]engine.Call, error) {

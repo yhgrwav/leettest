@@ -26,20 +26,14 @@ import (
 // may part from the plan of that second before the note names the plan too.
 const silencePlanTolerancePercent = 10
 
-// reportNotes is everything the report says in words: what the target did,
-// what the generator did, and the verdicts. One source for both the text
+// reportNotesAfter is everything the report says in words: what the target
+// did, what the generator did, and the verdicts. One source for both the text
 // report and the final screen of the live view, so what the screen shows and
-// what the log keeps cannot drift apart. It knows nothing of the ramp in the
-// engine's excluded window: reportNotesAfter does. It knows nothing of the
-// machine either: a late generator's verdict says its CPU was not measured.
-func reportNotes(report engine.Report, maxResponse string) []string {
-	return reportNotesAfter(report, maxResponse, 0, false, cpuNotMeasuredLine)
-}
-
-// reportNotesAfter is reportNotes for a run whose config had load.ramp: ramp
-// is the part of the engine's excluded window that was the ramp. searchStep
-// says the report is a step of a breaking-point search. limitLine is the last
-// line of a late generator's verdict (generatorLimitLine).
+// what the log keeps cannot drift apart. ramp is the part of the engine's
+// excluded window that was the ramp (load.ramp), 0 for a run without one.
+// searchStep says the report is a step of a breaking-point search. limitLine is
+// the last line of a late generator's verdict (generatorLimitLine; with
+// cpuNotMeasuredLine it says the generator's CPU was not measured).
 func reportNotesAfter(report engine.Report, maxResponse string, ramp time.Duration, searchStep bool, limitLine string) []string {
 	notes := make([]string, 0, 8)
 	notes = append(notes, warmUpNote(report, ramp)...)
@@ -409,7 +403,7 @@ func invalidMeasurementNote(totals noteTotals) []string {
 		"This is a bug in LeetTest, not in the target. Please report it.", totals.invalid)}
 }
 
-// runNotes are reportNotes and what the CLI measured beside the engine: the
+// runNotes are reportNotesAfter and what the CLI measured beside the engine: the
 // CPU the process used and the host clock.
 func runNotes(run RunReport) []string {
 	_, limitLine, _ := generatorLimitLine(run)

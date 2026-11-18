@@ -141,7 +141,7 @@ func TestNotes_EveryHelperSpeaksForTheFrame(t *testing.T) {
 	check("rowNotes", rowNotes(report, totals, "4MB"))
 	check("capHitNote", capHitNote(report))
 	check("incompleteNote", incompleteNote(report))
-	check("streamVerdict", []string{streamVerdict(report)})
+	check("verdictText", []string{verdictText(report, false, cpuNotMeasuredLine)})
 	check("cutOffNote", cutOffNote(totals))
 	check("unansweredNote", unansweredNote(totals))
 	check("outsideNote", outsideNote(totals))

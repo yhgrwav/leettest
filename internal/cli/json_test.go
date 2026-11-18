@@ -477,7 +477,7 @@ func TestJSON_TailWaitCause(t *testing.T) {
 		{"causes in the run but none in the tail", engine.Report{GeneratorCauseCalls: 500, StreamCauseCalls: 40, Methods: moved}, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if verdict := streamVerdict(tc.report) != ""; verdict != (tc.want != nil) {
+			if verdict := verdictText(tc.report, false, cpuNotMeasuredLine) != ""; verdict != (tc.want != nil) {
 				t.Fatalf("screen verdict = %v, want %v: the fixture does not test what it names", verdict, tc.want != nil)
 			}
 

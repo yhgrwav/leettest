@@ -86,17 +86,11 @@ type BreakpointRun struct {
 	Thresholds []threshold.Result
 }
 
-// PlanLine is the line printed before the first step: how many steps and the
-// longest the search can take, connecting within connect included, rounded
-// up to a second.
-func PlanLine(p breakpoint.Plan, connect time.Duration) string {
-	return PlanLineRamp(p, connect, 0)
-}
-
-// PlanLineRamp is PlanLine for a search whose first step is preceded by a ramp
-// from 0: the ramp is added once, before the rounding up to a second (a repeat
-// of the first step starts at its rate and ramps no more). A ramp of 0 is
-// PlanLine's line.
+// PlanLineRamp is the line printed before the first step: how many steps and
+// the longest the search can take, connecting within connect included, rounded
+// up to a second. A first step preceded by a ramp from 0 adds the ramp once,
+// before the rounding (a repeat of the first step starts at its rate and ramps
+// no more); a ramp of 0 adds nothing.
 func PlanLineRamp(p breakpoint.Plan, connect, ramp time.Duration) string {
 	rates, err := p.Rates()
 	if err != nil {
@@ -291,13 +285,9 @@ func stepVerdict(s *breakpoint.Step) string {
 	return "held"
 }
 
-// runsTable is the runs as rows under a heading, each line led by indent:
+// runsTableOf is the runs as rows under a heading, each line led by indent:
 // the text report and the search's screen print the same rows. For a scenario
 // the p99 is the iteration's, under its own heading.
-func runsTable(plan breakpoint.Plan, steps []breakpoint.Step, verdicts []string, indent string) string {
-	return runsTableOf(plan, steps, verdicts, indent, false)
-}
-
 func runsTableOf(plan breakpoint.Plan, steps []breakpoint.Step, verdicts []string, indent string, scenario bool) string {
 	heading := "p99"
 	if scenario {

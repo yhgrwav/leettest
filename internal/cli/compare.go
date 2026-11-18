@@ -105,7 +105,7 @@ type SearchFile struct {
 	Report BreakpointReport
 }
 
-// Comparison is what CompareSearches and CompareRuns decided.
+// Comparison is what CompareSearchesReport and CompareRunsReport decided.
 type Comparison struct {
 	// Comparable: no difference between the reports that would make them
 	// incomparable (for runs, also at least one method on both sides).
@@ -128,25 +128,35 @@ func finish(rep CompareReport, c Comparison) (Comparison, CompareReport) {
 	return c, rep
 }
 
-// CompareSearches prints the comparison of two search reports: both headers,
-// the differences, the capacity of each and, with a limit, the verdict on its
-// fall.
-func CompareSearches(w io.Writer, base, nw SearchFile, limit *shr.Percent) Comparison {
-	c, _ := CompareSearchesReport(w, base, nw, limit)
-
-	return c
+// sideInput is what the header of one side of a comparison is made of: the
+// five fields every report type carries, taken out of the type so one function
+// can open both comparisons.
+type sideInput struct {
+	path, name, startedAt, version string
+	passport                       *jsonPassport
 }
 
-// CompareSearchesReport is CompareSearches with the report it printed, for
-// NewCompareReport.
-func CompareSearchesReport(w io.Writer, base, nw SearchFile, limit *shr.Percent) (Comparison, CompareReport) {
+// openComparison starts a comparison of mode: the report with both sides
+// filled in, and both header lines printed to w.
+func openComparison(w io.Writer, mode string, base, nw sideInput) CompareReport {
 	rep := CompareReport{
-		ComparedMode: ModeBreakpoint,
-		Base:         compareSide(base.Path, base.Report.Name, base.Report.StartedAt, base.Report.LeetTestVersion, base.Report.Passport),
-		New:          compareSide(nw.Path, nw.Report.Name, nw.Report.StartedAt, nw.Report.LeetTestVersion, nw.Report.Passport),
+		ComparedMode: mode,
+		Base:         compareSide(base.path, base.name, base.startedAt, base.version, base.passport),
+		New:          compareSide(nw.path, nw.name, nw.startedAt, nw.version, nw.passport),
 	}
 	printHeader(w, "base:", rep.Base)
 	printHeader(w, "new: ", rep.New)
+
+	return rep
+}
+
+// CompareSearchesReport prints the comparison of two search reports: both
+// headers, the differences, the capacity of each and, with a limit, the verdict
+// on its fall. The report it returns is what it printed, for NewCompareReport.
+func CompareSearchesReport(w io.Writer, base, nw SearchFile, limit *shr.Percent) (Comparison, CompareReport) {
+	rep := openComparison(w, ModeBreakpoint,
+		sideInput{base.Path, base.Report.Name, base.Report.StartedAt, base.Report.LeetTestVersion, base.Report.Passport},
+		sideInput{nw.Path, nw.Report.Name, nw.Report.StartedAt, nw.Report.LeetTestVersion, nw.Report.Passport})
 
 	rep.Differences = differences(base, nw)
 	printDifferences(w, rep.Differences)

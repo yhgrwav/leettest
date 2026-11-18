@@ -219,7 +219,7 @@ func TestBreakpoint_AProbeRowSaysWhetherItRecovered(t *testing.T) {
 func TestBreakpoint_ThePlanLine(t *testing.T) {
 	p := breakpoint.Plan{From: 100, To: 156, Settle: 100 * time.Millisecond, Hold: time.Second, Timeout: 500 * time.Millisecond}
 	// Plan.Worst 67.1s + connect 5s, rounded up.
-	if got, want := PlanLine(p, 5*time.Second), "breakpoint: up to 3 steps, at most 1m13s"; got != want {
+	if got, want := PlanLineRamp(p, 5*time.Second, 0), "breakpoint: up to 3 steps, at most 1m13s"; got != want {
 		t.Errorf("plan line %q, want %q", got, want)
 	}
 }
@@ -236,7 +236,7 @@ func TestBreakpoint_ThePlanLineCountsTheRamp(t *testing.T) {
 		ramp time.Duration
 		want string
 	}{
-		{0, PlanLine(p, 5*time.Second)},
+		{0, "breakpoint: up to 3 steps, at most 1m13s"},
 		{10 * time.Second, "breakpoint: up to 3 steps, at most 1m23s"},
 		{1500 * time.Millisecond, "breakpoint: up to 3 steps, at most 1m14s"},
 		{2900 * time.Millisecond, "breakpoint: up to 3 steps, at most 1m15s"},
@@ -245,7 +245,7 @@ func TestBreakpoint_ThePlanLineCountsTheRamp(t *testing.T) {
 			t.Errorf("ramp %v: plan line %q, want %q", tc.ramp, got, tc.want)
 		}
 	}
-	if got, want := PlanLine(p, 5*time.Second), "breakpoint: up to 3 steps, at most 1m13s"; got != want {
+	if got, want := PlanLineRamp(p, 5*time.Second, 0), "breakpoint: up to 3 steps, at most 1m13s"; got != want {
 		t.Errorf("plan line without a ramp %q, want the release's %q", got, want)
 	}
 }
@@ -408,7 +408,7 @@ func TestBreakpoint_TheFirstStepShowsItsRampBySecond(t *testing.T) {
 		verdicts[i] = verdict(&run.Result, i)
 	}
 
-	table := runsTable(run.Plan, run.Result.Steps, verdicts, "  ")
+	table := runsTableOf(run.Plan, run.Result.Steps, verdicts, "  ", false)
 	at := strings.Index(got, table)
 	if at < 0 {
 		t.Fatalf("no runs table in the search's text:\n%s", got)
