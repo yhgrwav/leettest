@@ -124,9 +124,13 @@ func TestJSON_MethodRowsCarryScenarioStepAndGRPCMethod(t *testing.T) {
 
 // Without a repeat the rows keep their bare names: the key is the method and
 // grpc_method says the same; a scenario step still tells where it is.
+// The engine always fills GRPCMethod; the report copies it, no fallback.
 // Ground: contract — spec 6, the key equals the method when nothing repeats.
 func TestJSON_WithoutARepeatTheKeyIsTheGRPCMethod(t *testing.T) {
 	run := scenarioRun()
+	for i := range run.Methods {
+		run.Methods[i].GRPCMethod = run.Methods[i].Method
+	}
 
 	rows := rkMethodRows(t, run)
 
