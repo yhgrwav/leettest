@@ -283,14 +283,16 @@ func dryRunJSON(m *descriptor.Method, desc protoreflect.MessageDescriptor, body 
 // occurrence of the value of each ${NAME} the metadata substituted with
 // ${NAME}, in the raw form of the value and in the form it has inside a JSON
 // string. raw is the metadata as the config wrote it; lookup is the
-// environment.
+// environment. The value a ${file:PATH} read is replaced the same way by
+// ${file:PATH}: files is what the config read, the value only, so the text
+// around it in a header (Bearer ) stays.
 //
 // The text is read once. Where occurrences overlap — one value inside another,
 // or two that share a few characters — the stretch they cover is one piece and
 // takes the placeholder of the longest value in it, so that neither the order
 // of the variables nor a short value can leave part of a secret. Nothing that
 // was put in is searched again.
-func DryRunRedactor(raw map[string]string, lookup func(string) (string, bool), _ []config.FileValue) func(string) string {
+func DryRunRedactor(raw map[string]string, lookup func(string) (string, bool), files []config.FileValue) func(string) string {
 	seen := map[string]bool{}
 
 	var names []string
@@ -309,18 +311,26 @@ func DryRunRedactor(raw map[string]string, lookup func(string) (string, bool), _
 
 	var forms []secretForm
 
-	for _, name := range names {
-		value, ok := lookup(name)
-		if !ok || value == "" {
-			continue
+	add := func(value, placeholder string) {
+		if value == "" {
+			return
 		}
 
-		placeholder := "${" + name + "}"
 		forms = append(forms, secretForm{value, placeholder})
 
 		if escaped := jsonEscaped(value); escaped != value {
 			forms = append(forms, secretForm{escaped, placeholder})
 		}
+	}
+
+	for _, name := range names {
+		if value, ok := lookup(name); ok {
+			add(value, "${"+name+"}")
+		}
+	}
+
+	for _, f := range files {
+		add(f.Value, "${file:"+f.Path+"}")
 	}
 
 	if len(forms) == 0 {

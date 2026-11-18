@@ -313,8 +313,10 @@ func PrintBreakpoint(w io.Writer, run BreakpointRun) {
 	if run.Ramp > 0 {
 		ramp = fmt.Sprintf("first step after a %s ramp, ", run.Ramp)
 	}
-	fmt.Fprintf(w, "settings: settle %s, hold %s, %smax in flight %s, connections %d%s\n\n",
+	fmt.Fprintf(w, "settings: settle %s, hold %s, %smax in flight %s, connections %d%s\n",
 		run.Plan.Settle, run.Plan.Hold, ramp, searchCap(run.Plan), run.Connections, compressionSuffix(run.Compression))
+	printMetadataRefresh(w, run.MetadataRefresh)
+	fmt.Fprintln(w)
 
 	verdicts := make([]string, len(res.Steps))
 	for i := range res.Steps {
@@ -410,6 +412,9 @@ type BreakpointReport struct {
 	Method          string     `json:"method"`
 	StartedAt       string     `json:"started_at"`
 	Settings        jsonSearch `json:"settings"`
+	// MetadataRefresh is what the refresh of app.metadata did over the search;
+	// null without one.
+	MetadataRefresh *jsonMetadataRefresh `json:"metadata_refresh"`
 	// Passport is the config and the machine of the search; the steps in
 	// breakpoint.runs carry none.
 	Passport   *jsonPassport  `json:"passport,omitempty"`
@@ -529,9 +534,10 @@ func NewBreakpointReport(run BreakpointRun) BreakpointReport {
 	}
 
 	return BreakpointReport{
-		Settings:      settings,
-		Passport:      passportJSON(run.Passport),
-		SchemaVersion: JSONSchemaVersion, Mode: ModeBreakpoint,
+		Settings:        settings,
+		MetadataRefresh: metadataRefreshJSON(run.MetadataRefresh),
+		Passport:        passportJSON(run.Passport),
+		SchemaVersion:   JSONSchemaVersion, Mode: ModeBreakpoint,
 		LeetTestVersion: run.Version, Target: run.Target, Name: run.Name, Method: run.Method,
 		MethodsSource: run.MethodsSource.kind(),
 		StartedAt:     run.StartedAt.UTC().Format(time.RFC3339Nano),

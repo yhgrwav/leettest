@@ -279,7 +279,7 @@ func AttachMethods(
 		// code is named; the target's message may echo what was sent.
 		// PermissionDenied is not this: the credentials were accepted and may
 		// serve the calls while not reaching reflection.
-		case len(cfg.App.Metadata) > 0 && status.Code(resolveErr) == codes.Unauthenticated:
+		case cfg.App.HasMetadata() && status.Code(resolveErr) == codes.Unauthenticated:
 			errs = append(errs, fmt.Errorf("%s: %w (%s)", call.Method, ErrCredentialsRejected, codes.Unauthenticated))
 
 			continue
@@ -411,7 +411,7 @@ func checkStepMethod(
 	at := fmt.Sprintf("load.calls[%d].steps[%d] (%s)", i, k, step.Method)
 
 	switch {
-	case len(cfg.App.Metadata) > 0 && status.Code(err) == codes.Unauthenticated:
+	case cfg.App.HasMetadata() && status.Code(err) == codes.Unauthenticated:
 		return nil, nil, fmt.Errorf("%s: %w (%s)", at, ErrCredentialsRejected, codes.Unauthenticated)
 	case errors.Is(err, descriptor.ErrMethodNotFound):
 		return nil, nil, fmt.Errorf("%s: %w", at, err)

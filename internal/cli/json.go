@@ -97,6 +97,9 @@ type JSONReport struct {
 	WarmupUS    int64  `json:"warmup_us"`
 	// Settings echo what the run was started with, as configured.
 	Settings jsonSettings `json:"settings"`
+	// MetadataRefresh is what the refresh of app.metadata did; null without one.
+	// A step inside a search carries null: the search has the object.
+	MetadataRefresh *jsonMetadataRefresh `json:"metadata_refresh"`
 	// Passport is the config and the machine of the run, at the top of a run's
 	// report; a step inside a search has none and the key is left out.
 	Passport          *jsonPassport   `json:"passport,omitempty"`
@@ -587,6 +590,7 @@ func jsonRunFacts(run JSONRun) JSONReport {
 		PlannedUS:         micros(r.Planned),
 		WarmupUS:          micros(r.Warmup),
 		Settings:          settingsOf(run.Run.Settings),
+		MetadataRefresh:   metadataRefreshJSON(run.Run.MetadataRefresh),
 		Passport:          passportJSON(run.Run.Passport),
 		Sent:              r.Sent,
 		Failed:            r.Failed,

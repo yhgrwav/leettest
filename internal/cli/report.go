@@ -156,6 +156,7 @@ func printRunHeader(w io.Writer, target string, run RunReport) {
 			ramp = fmt.Sprintf(", ramp %s", s.Ramp)
 		}
 		fmt.Fprintf(w, "settings: warm-up %s%s, max in flight %d, connections %d%s\n", s.Warmup, ramp, s.MaxInFlight, s.Connections, compressionSuffix(s.Compression))
+		printMetadataRefresh(w, run.MetadataRefresh)
 		if line := stopLimitLine(s.StopOnErrors); line != "" {
 			fmt.Fprintln(w, line)
 		}

@@ -327,12 +327,17 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		return fitErr
 	}
 
+	var refresh refreshSource
+	if grpcSender != nil {
+		refresh = grpcSender.MetadataRefresh
+	}
+
 	if search {
 		return runBreakpointSearch(ctx, abort, &stopper, flags.flagSet, flags.fake, flags.connectTimeout, searchSetup{
 			cfg: cfg, configPath: flags.configPath, target: target, sender: sender, calls: calls,
 			unchecked: unchecked, maxInFlight: flags.maxInFlight, json: flags.output == "json",
 			jsonFile: flags.jsonFile, interactive: flags.interactive, stepBefore: stepBefore,
-			source: source, passport: passport,
+			source: source, passport: passport, refresh: refresh,
 		}, stdout, stderr)
 	}
 
@@ -417,15 +422,25 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		}
 	}
 
+	// A failed read of the metadata files: one line, at the first failure; held
+	// while a live view is up and printed after it.
+	refreshNote := &refreshNotice{stderr: stderr, live: flags.interactive}
+
 	var stepAfter atomic.Int64
 	start := func() error {
 		stopMeter := meter.Start()
 		stopWatch := startWatch(ctx, watch)
 		stopLag := startLagWatch(ctx, lagSource(eng), lagTickEvery, notice.deliver)
+		stopRefresh := func() {}
+		if refresh != nil {
+			stopRefresh = startRefreshWatch(ctx, refresh, time.Second, refreshNote.deliver)
+		}
 		err := eng.Run(ctx)
 		if exp != nil {
 			exp.finish()
 		}
+		// Stopped before start returns: nothing may write to stderr after it.
+		stopRefresh()
 		stopLag()
 		stopWatch()
 		stopMeter()
@@ -438,7 +453,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		return buildReport(reportParts{
 			eng: eng, stepBefore: stepBefore, stepAfter: &stepAfter, meter: meter, cores: cores,
 			cfg: cfg, configPath: flags.configPath, passport: passport, maxInFlight: flags.maxInFlight,
-			unchecked: unchecked, source: source, tripped: &tripped, calls: calls,
+			unchecked: unchecked, source: source, tripped: &tripped, calls: calls, refresh: refresh,
 		})
 	}
 
@@ -450,6 +465,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		view.Store(program)
 		runErr = cli.RunLive(program, s, start, abort)
 		notice.afterView()
+		refreshNote.afterView()
 	} else if runErr = cli.RunPlain(stderr, target, eng, start); runErr != nil && !endsWithReport(runErr) {
 		return runErr
 	}
@@ -763,6 +779,27 @@ type reportParts struct {
 	// calls are the run's methods with their stages: a stop names the rate
 	// the plan of its method offered at the moment of the stop.
 	calls []engine.Call
+	// refresh is the sender's counters of the metadata refresh; nil without a
+	// sender (-fake).
+	refresh refreshSource
+}
+
+// metadataRefreshOf is the report's part about the refresh of app.metadata:
+// nil when the sender does not refresh.
+func metadataRefreshOf(src refreshSource, every time.Duration) *cli.MetadataRefresh {
+	if src == nil {
+		return nil
+	}
+
+	st, ok := src()
+	if !ok {
+		return nil
+	}
+
+	return &cli.MetadataRefresh{
+		Every: every, Reads: st.Reads, Changed: st.Changed, Failures: st.Failures,
+		FailingAtEnd: st.FailingAtEnd, LastError: st.LastError,
+	}
 }
 
 // startWatch runs the watch beside the engine, none when there is none, and
@@ -806,6 +843,7 @@ func buildReport(p reportParts) cli.RunReport {
 			Ramp: p.cfg.Load.Ramp, Compression: p.cfg.App.Compression, Mode: p.cfg.App.Mode,
 			StopOnErrors: p.cfg.Load.StopOnErrors.Text,
 		},
+		MetadataRefresh: metadataRefreshOf(p.refresh, p.cfg.App.MetadataRefresh),
 	}
 	if p.tripped != nil {
 		run.Stop = p.tripped.Of(report)
@@ -944,15 +982,38 @@ func withBudgetAdvice(err error, opts engine.Options) error {
 // connection: a wrong path is a config error, not a failed handshake. files
 // are the values the ${file:PATH} of app.metadata held; dryRun turns the
 // refresh of the metadata off.
-func senderOptions(app *config.App, _ bool) (grpcsender.Options, []config.FileValue, error) {
+func senderOptions(app *config.App, dryRun bool) (grpcsender.Options, []config.FileValue, error) {
+	// The error of this first read keeps config.ErrInvalidMetadata: exit 1,
+	// before any connection.
+	metadata, files, err := app.ReadMetadata()
+	if err != nil {
+		return grpcsender.Options{}, nil, err
+	}
+
 	opts := grpcsender.Options{
 		Target:           string(app.Address),
 		TLS:              app.UseTLS,
-		Metadata:         app.Metadata,
+		Metadata:         metadata,
 		ServerName:       app.ServerName,
 		MaxResponseBytes: app.MaxResponseBytes,
 		Connections:      app.Connections,
 		Compression:      app.Compression,
+	}
+
+	if app.MetadataRefresh > 0 && !dryRun {
+		opts.MetadataRefresh = &grpcsender.MetadataRefresh{
+			Every: app.MetadataRefresh,
+			Read: func() (map[string]string, error) {
+				got, _, err := app.ReadMetadata()
+				if err != nil {
+					// The error text is the key, the file and the reason; the
+					// sender and the report show it as it is.
+					return nil, errors.New(strings.TrimPrefix(err.Error(), config.ErrInvalidMetadata.Error()+": "))
+				}
+
+				return got, nil
+			},
+		}
 	}
 
 	if app.CA != "" {
@@ -979,7 +1040,7 @@ func senderOptions(app *config.App, _ bool) (grpcsender.Options, []config.FileVa
 		opts.Certificates = []tls.Certificate{cert}
 	}
 
-	return opts, nil, nil
+	return opts, files, nil
 }
 
 // refuseEncryptedKey names a password-protected key for what it is; the

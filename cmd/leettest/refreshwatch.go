@@ -16,7 +16,9 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"sync"
 	"time"
 
 	"github.com/yhgrwav/leettest/pkg/grpcsender"
@@ -30,8 +32,42 @@ type refreshSource func() (grpcsender.RefreshStats, bool)
 // startRefreshWatch polls src every tick until ctx ends or stop is called, and
 // hands deliver the stderr line once, at the first failed read. stop returns
 // once the watch has.
-func startRefreshWatch(_ context.Context, _ refreshSource, _ time.Duration, _ func(line string)) (stop func()) {
-	return func() {}
+func startRefreshWatch(ctx context.Context, src refreshSource, every time.Duration, deliver func(line string)) (stop func()) {
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		ticker := time.NewTicker(every)
+		defer ticker.Stop()
+
+		delivered := false
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				st, ok := src()
+				if !ok {
+					return
+				}
+
+				if st.Failures > 0 && !delivered {
+					delivered = true
+
+					deliver("metadata refresh failed: " + st.LastError +
+						"; the last good value stays in use (the report counts every failed read)")
+				}
+			}
+		}
+	}()
+
+	return func() {
+		cancel()
+		<-done
+	}
 }
 
 // refreshNotice carries the failed-refresh line to stderr: at once without a
@@ -40,10 +76,48 @@ type refreshNotice struct {
 	stderr io.Writer
 	// live is true while a live view owns the screen.
 	live bool
+
+	mu      sync.Mutex
+	line    string
+	printed bool
+	closed  bool
 }
 
 // deliver takes the line; only the first one counts.
-func (n *refreshNotice) deliver(_ string) {}
+func (n *refreshNotice) deliver(line string) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	if n.line != "" {
+		return
+	}
+
+	n.line = line
+
+	if !n.live || n.closed {
+		n.print()
+	}
+}
 
 // afterView is called once the live view is gone.
-func (n *refreshNotice) afterView() {}
+func (n *refreshNotice) afterView() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	n.closed = true
+
+	if n.line != "" {
+		n.print()
+	}
+}
+
+// print writes the line to stderr unless it was written. The caller holds mu.
+func (n *refreshNotice) print() {
+	if n.printed {
+		return
+	}
+
+	n.printed = true
+
+	fmt.Fprintln(n.stderr, n.line)
+}
