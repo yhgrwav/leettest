@@ -330,7 +330,7 @@ func PrintBreakpoint(w io.Writer, run BreakpointRun) {
 		printRampBlocks(w, run.Runs[i])
 	}
 
-	if notes := searchNotes(res); len(notes) > 0 {
+	if notes := searchNotes(res, run.Closes); len(notes) > 0 {
 		fmt.Fprintln(w, "\nnotes:")
 		for _, n := range notes {
 			fmt.Fprintf(w, "  - %s\n", n)
@@ -401,7 +401,7 @@ func overflowLine(run BreakpointRun) string {
 // one backend's behind an L4 balancer. A search that found no break or did not
 // finish is about something else; a sender that said nothing of its
 // connections gives no ground for it.
-func searchNotes(res breakpoint.Result) []string {
+func searchNotes(res breakpoint.Result, closes *CloseStats) []string {
 	notes := append([]string{}, res.Notes...)
 
 	if (res.Outcome == breakpoint.BrokeBetween || res.Outcome == breakpoint.BrokeAtFirst) && len(res.Steps) > 0 {
@@ -410,7 +410,7 @@ func searchNotes(res breakpoint.Result) []string {
 		}
 	}
 
-	return notes
+	return append(notes, closesNotes(closes)...)
 }
 
 // BreakpointReport is the search as --output json writes it: mode
@@ -428,6 +428,9 @@ type BreakpointReport struct {
 	// MetadataRefresh is what the refresh of app.metadata did over the search;
 	// null without one.
 	MetadataRefresh *jsonMetadataRefresh `json:"metadata_refresh"`
+	// Closes is how the connections of the whole search were closed: one sender
+	// serves every step. Null when the sender does not count.
+	Closes *jsonCloses `json:"closes"`
 	// Passport is the config and the machine of the search; the steps in
 	// breakpoint.runs carry none.
 	Passport   *jsonPassport  `json:"passport,omitempty"`
@@ -497,7 +500,7 @@ func NewBreakpointReport(run BreakpointRun) BreakpointReport {
 		Outcome:     outcomeNames[res.Outcome],
 		ErrorsLimit: run.Plan.EffectiveErrorsLimit().Text,
 		Why:         causeName(res.Cause),
-		Notes:       searchNotes(res),
+		Notes:       searchNotes(res, run.Closes),
 		Runs:        make([]jsonRunBP, 0, len(res.Steps)),
 	}
 	if run.StopReason != "" && res.Outcome == breakpoint.Stopped {
@@ -549,6 +552,7 @@ func NewBreakpointReport(run BreakpointRun) BreakpointReport {
 	return BreakpointReport{
 		Settings:        settings,
 		MetadataRefresh: metadataRefreshJSON(run.MetadataRefresh),
+		Closes:          closesJSONOf(run.Closes),
 		Passport:        passportJSON(run.Passport),
 		SchemaVersion:   JSONSchemaVersion, Mode: ModeBreakpoint,
 		LeetTestVersion: run.Version, Target: run.Target, Name: run.Name, Method: run.Method,

@@ -33,6 +33,11 @@ or cannot. Here is which.
   fast service is declared invalid (`clock_step`, exit code 2): the clock is coarser than a quarter
   of the p50, or the step grew to 1 µs or more during the run. Measure from Linux next to the
   target.
+- **A connection reset without an RST.** A NAT or a firewall can silently forget an idle
+  connection: the client learns of it only at the next call, and that call looks like `timed_out`,
+  not like a close. The cure is `app.idle_timeout` (not released yet) below the idle limit on
+  their path; the report counts the closes the client saw (the `closed with no call on it:`
+  line), and a silently forgotten connection is not among them.
 - **The network between the generator and the target.** Everything between them goes into the
   latency and looks like the target's time. The tool does not know the network delay separately and
   gives no verdict on it. On our stand at 1000 RPS, through Docker Desktop port forwarding p99 was
@@ -76,6 +81,9 @@ or cannot. Here is which.
   inside a scenario, one iteration at a time (not released yet): see [call chaining](chaining.md).
   A pool of values shared by calls at different rates is not there.
 - **Token refresh** during a long run — planned, see the [roadmap](roadmap.md).
+- **Keepalive** (pings on the connection) — not yet. The cure for idle is `app.idle_timeout` (not released yet):
+  the client closes an idle connection itself, before the proxy does, and opens a new one at the
+  next call.
 - **Every call of a method goes out with the same body** unless a `dataset` is set. With a
   `dataset` the requests differ, but that does not mean the target saw as many distinct requests:
   the `data:` line of the report shows how many requests of the file were used.

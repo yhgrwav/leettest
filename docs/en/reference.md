@@ -261,6 +261,17 @@ pauses are N times longer. With `connections: 1` and a name from DNS, leaving th
 resolves the name again and may land on another address. The value is printed in the `settings:`
 line (`idle_timeout 50s`) and is in the JSON as `settings.idle_timeout_us`.
 
+The report says how the connections were closed in two lines of `notes`: `closed with no call on
+it:` for those closed with no call on them, split into those closed by our `app.idle_timeout` and
+those closed by the other side or the network, and `closed while calls were on it:` for those
+closed with calls on them. A part with a zero is not printed, and when nothing was closed there is
+no line. For the closes by the other side the line names the shortest idle time after which it
+happened and, if that is not under `1s` and our own `app.idle_timeout` is not already below it,
+advises a value below it: `set app.idle_timeout below 59s`. The number is rounded down, so the
+advice never overstates the limit. The same counters are in the JSON: `connections.closed_*` for a
+run, the top-level `closes` for a search (one count for the whole search, none in its
+`breakpoint.runs`).
+
 **Errors before the start.** Everything that can be known before the run means exit code 1 and not
 a single call to the target: a file not found or not PEM, a certificate that does not match its
 key, the target's certificate expired or not naming the address (hint: `server_name`), the target
@@ -881,6 +892,11 @@ measured calls only. The first column is the field's full path.
 | `metadata_refresh.failures` | int | (not released yet) Reads that failed; the last good value stayed in use |
 | `metadata_refresh.failing_at_end` | bool | (not released yet) `true` when the last read failed |
 | `metadata_refresh.last_error` | string? | (not released yet) The text of the last failed read: the header, the file and the reason, never the value. `null` until a read failed; stays after a recovery |
+| `closes` | object? | (not released yet) How the connections of a search were closed: one count for the whole search. `null` without a sender (`-fake`). A run has the same numbers in `connections`; the runs in `breakpoint.runs` carry none |
+| `closes.closed_idle_ours` | int? | (not released yet) Connections with no call on them closed by our `app.idle_timeout`; `null` — the sender does not count |
+| `closes.closed_idle_peer` | int? | (not released yet) Connections with no call on them closed by the other side or the network; `null` — the sender does not count |
+| `closes.closed_busy` | int? | (not released yet) Connections closed with calls on them; `null` — the sender does not count |
+| `closes.peer_idle_min_us` | int? | (not released yet) The shortest idle time without calls after which the other side closed a connection, in whole microseconds; `null` until there was such a close |
 | `passport` | object? | The machine and the config the run was made with, for telling runs apart. A search has it once at the top level, its runs in `breakpoint.runs` do not |
 | `passport.config_sha256` | string | SHA-256 of the config file's bytes as read, 64 hex digits |
 | `passport.os`, `passport.arch` | string | `GOOS` and `GOARCH` of the generator, such as `linux` and `amd64` |
@@ -920,6 +936,10 @@ measured calls only. The first column is the field's full path.
 | `connections.per_connection[].p99` | percentile? | p99 of the connection's calls; `null` without a call that has a latency |
 | `connections.per_connection[].first_limit`, `connections.per_connection[].last_limit` | int? | The connection's stream limit at its first and last handshake; `null` — not announced |
 | `connections.per_connection[].limit_changes` | int | Handshakes of the connection that announced a limit different from the one before |
+| `connections.closed_idle_ours` | int? | (not released yet) Connections with no call on them closed by our `app.idle_timeout`; `null` — the sender does not count |
+| `connections.closed_idle_peer` | int? | (not released yet) Connections with no call on them closed by the other side or the network; `null` — the sender does not count |
+| `connections.closed_busy` | int? | (not released yet) Connections closed with calls on them; `null` — the sender does not count |
+| `connections.peer_idle_min_us` | int? | (not released yet) The shortest idle time without calls after which the other side closed a connection, in whole microseconds; `null` until there was such a close |
 | `client_waits` | object | Calls that waited on the client side over the floor, by cause ([reading the report](report.md#reading-the-report)) |
 | `client_waits.generator_calls`, `client_waits.stream_calls`, `client_waits.connection_calls` | int | All such calls, sent or not. A sent call can count for several causes |
 | `client_waits.generator_tail_calls`, `client_waits.stream_tail_calls`, `client_waits.connection_tail_calls` | int | Only among the p99 tail and the unsent: these pick `tail_wait_cause` |

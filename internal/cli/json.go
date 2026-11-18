@@ -272,6 +272,14 @@ type jsonConns struct {
 	InFlightLimit *int `json:"in_flight_limit"`
 	// PerConnection is one object per connection; null with one.
 	PerConnection *[]jsonLink `json:"per_connection"`
+	// ClosedIdleOurs, ClosedIdlePeer and ClosedBusy count how the connections
+	// were closed (see CloseStats); PeerIdleMinUS is the shortest idle time of
+	// the other side's closes, null while there was none. All null when the
+	// sender does not count.
+	ClosedIdleOurs *int   `json:"closed_idle_ours"`
+	ClosedIdlePeer *int   `json:"closed_idle_peer"`
+	ClosedBusy     *int   `json:"closed_busy"`
+	PeerIdleMinUS  *int64 `json:"peer_idle_min_us"`
 }
 
 // jsonLink is one connection of several. Failed counts the calls that failed
@@ -573,7 +581,7 @@ func NewJSONReport(run JSONRun) JSONReport {
 	out.StartLag = startLagJSON(r)
 	out.Schedule = scheduleJSON(r.ScheduleNotExact)
 	out.CapHit = capHitJSON(r.CapHit)
-	out.Connections = connectionsOf(r.Connections)
+	out.Connections = connectionsOf(r.Connections, run.Run.Closes)
 	out.Methods = methodsJSON(r.Methods, r.Warmup, out.Settings.Compression)
 	out.Scenarios = scenariosJSON(r.Scenarios)
 	out.Notes = notesJSON(run.Run)
@@ -661,12 +669,13 @@ func capHitJSON(c *engine.CapHit) *jsonCapHit {
 	return &jsonCapHit{AtUS: micros(c.At), Unsent: c.Unsent, OverDeadline: c.OverDeadline}
 }
 
-func connectionsOf(c *engine.Connections) *jsonConns {
+func connectionsOf(c *engine.Connections, closes *CloseStats) *jsonConns {
 	if c == nil {
 		return nil
 	}
 
 	conns := &jsonConns{Open: c.Open, Reconnects: c.Reconnects, LimitChanges: c.LimitChanges}
+	conns.ClosedIdleOurs, conns.ClosedIdlePeer, conns.ClosedBusy, conns.PeerIdleMinUS = closesFields(closes)
 
 	if severalConnections(c) {
 		resolved := append([]string{}, c.Resolved...)

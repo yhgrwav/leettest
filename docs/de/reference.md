@@ -869,6 +869,11 @@ unten den Typ „percentile?" hat.
 | `metadata_refresh.failures` | int | (nicht veröffentlicht) Fehlgeschlagene Lesevorgänge; der letzte gute Wert blieb in Gebrauch |
 | `metadata_refresh.failing_at_end` | bool | (nicht veröffentlicht) `true`, wenn der letzte Lesevorgang fehlschlug |
 | `metadata_refresh.last_error` | string? | (nicht veröffentlicht) Der Text des letzten fehlgeschlagenen Lesevorgangs: Header, Datei und Grund, nie der Wert. `null`, bis einer fehlschlug; bleibt nach der Erholung |
+| `closes` | object? | (nicht veröffentlicht) Wie die Verbindungen einer Suche geschlossen wurden: eine Zählung für die ganze Suche. `null` ohne Sender (`-fake`). Ein Lauf hat dieselben Zahlen in `connections`; die Läufe in `breakpoint.runs` tragen keine |
+| `closes.closed_idle_ours` | int? | (nicht veröffentlicht) Verbindungen ohne Aufruf darauf, von unserem `app.idle_timeout` geschlossen; `null` — der Sender zählt nicht |
+| `closes.closed_idle_peer` | int? | (nicht veröffentlicht) Verbindungen ohne Aufruf darauf, von der Gegenseite oder dem Netz geschlossen; `null` — der Sender zählt nicht |
+| `closes.closed_busy` | int? | (nicht veröffentlicht) Verbindungen, die mit Aufrufen darauf geschlossen wurden; `null` — der Sender zählt nicht |
+| `closes.peer_idle_min_us` | int? | (nicht veröffentlicht) Die kürzeste Leerlaufzeit ohne Aufrufe, nach der die Gegenseite eine Verbindung schloss, in ganzen Mikrosekunden; `null`, bis es so ein Schließen gab |
 | `passport` | object? | Die Maschine und die Konfiguration, mit denen der Lauf gemacht wurde, um Läufe zu unterscheiden. Eine Suche hat ihn einmal auf oberster Ebene, ihre Läufe in `breakpoint.runs` nicht |
 | `passport.config_sha256` | string | SHA-256 der Bytes der Konfigurationsdatei, wie gelesen, 64 Hexziffern |
 | `passport.os`, `passport.arch` | string | `GOOS` und `GOARCH` des Generators, etwa `linux` und `amd64` |
@@ -908,6 +913,10 @@ unten den Typ „percentile?" hat.
 | `connections.per_connection[].p99` | percentile? | p99 der Aufrufe der Verbindung; `null` ohne einen Aufruf mit Latenz |
 | `connections.per_connection[].first_limit`, `connections.per_connection[].last_limit` | int? | Das Stream-Limit der Verbindung beim ersten und letzten Handshake; `null` — nicht angekündigt |
 | `connections.per_connection[].limit_changes` | int | Handshakes der Verbindung, die ein anderes Limit als das vorige ankündigten |
+| `connections.closed_idle_ours` | int? | (nicht veröffentlicht) Verbindungen ohne Aufruf darauf, von unserem `app.idle_timeout` geschlossen; `null` — der Sender zählt nicht |
+| `connections.closed_idle_peer` | int? | (nicht veröffentlicht) Verbindungen ohne Aufruf darauf, von der Gegenseite oder dem Netz geschlossen; `null` — der Sender zählt nicht |
+| `connections.closed_busy` | int? | (nicht veröffentlicht) Verbindungen, die mit Aufrufen darauf geschlossen wurden; `null` — der Sender zählt nicht |
+| `connections.peer_idle_min_us` | int? | (nicht veröffentlicht) Die kürzeste Leerlaufzeit ohne Aufrufe, nach der die Gegenseite eine Verbindung schloss, in ganzen Mikrosekunden; `null`, bis es so ein Schließen gab |
 | `client_waits` | object | Aufrufe, die auf Client-Seite über der Schwelle warteten, nach Ursache ([den Bericht lesen](../en/report.md#reading-the-report)) |
 | `client_waits.generator_calls`, `client_waits.stream_calls`, `client_waits.connection_calls` | int | Alle solchen Aufrufe, gesendet oder nicht. Ein gesendeter Aufruf kann für mehrere Ursachen zählen |
 | `client_waits.generator_tail_calls`, `client_waits.stream_tail_calls`, `client_waits.connection_tail_calls` | int | Nur im p99-Ende und unter den ungesendeten: Diese bestimmen `tail_wait_cause` |

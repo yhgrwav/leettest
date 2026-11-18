@@ -332,12 +332,17 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 		refresh = grpcSender.MetadataRefresh
 	}
 
+	var closes closesSource
+	if grpcSender != nil {
+		closes = grpcSender.Closes
+	}
+
 	if search {
 		return runBreakpointSearch(ctx, abort, &stopper, flags.flagSet, flags.fake, flags.connectTimeout, searchSetup{
 			cfg: cfg, configPath: flags.configPath, target: target, sender: sender, calls: calls,
 			unchecked: unchecked, maxInFlight: flags.maxInFlight, json: flags.output == "json",
 			jsonFile: flags.jsonFile, interactive: flags.interactive, stepBefore: stepBefore,
-			source: source, passport: passport, refresh: refresh,
+			source: source, passport: passport, refresh: refresh, closes: closes,
 		}, stdout, stderr)
 	}
 
@@ -454,6 +459,7 @@ func run(ctx context.Context, stops, aborts <-chan struct{}, args []string, stdo
 			eng: eng, stepBefore: stepBefore, stepAfter: &stepAfter, meter: meter, cores: cores,
 			cfg: cfg, configPath: flags.configPath, passport: passport, maxInFlight: flags.maxInFlight,
 			unchecked: unchecked, source: source, tripped: &tripped, calls: calls, refresh: refresh,
+			closes: closes,
 		})
 	}
 
@@ -789,6 +795,9 @@ type reportParts struct {
 	// refresh is the sender's counters of the metadata refresh; nil without a
 	// sender (-fake).
 	refresh refreshSource
+	// closes is the sender's count of how its connections were closed; nil
+	// without a sender (-fake).
+	closes closesSource
 }
 
 // metadataRefreshOf is the report's part about the refresh of app.metadata:
@@ -815,7 +824,16 @@ type closesSource func() grpcsender.CloseStats
 // closesOf is the report's part about how the connections were closed: nil
 // when the sender does not count. idle is app.idle_timeout as configured.
 func closesOf(src closesSource, idle time.Duration) *cli.CloseStats {
-	return nil
+	if src == nil {
+		return nil
+	}
+
+	st := src()
+
+	return &cli.CloseStats{
+		IdleOurs: st.IdleOurs, IdlePeer: st.IdlePeer, Busy: st.Busy,
+		PeerIdleMin: st.PeerIdleMin, IdleTimeout: idle,
+	}
 }
 
 // startWatch runs the watch beside the engine, none when there is none, and
@@ -860,6 +878,7 @@ func buildReport(p reportParts) cli.RunReport {
 			StopOnErrors: p.cfg.Load.StopOnErrors.Text, IdleTimeout: p.cfg.App.IdleTimeout,
 		},
 		MetadataRefresh: metadataRefreshOf(p.refresh, p.cfg.App.MetadataRefresh),
+		Closes:          closesOf(p.closes, p.cfg.App.IdleTimeout),
 	}
 	if p.tripped != nil {
 		run.Stop = p.tripped.Of(report)

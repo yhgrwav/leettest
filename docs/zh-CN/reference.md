@@ -708,6 +708,11 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `metadata_refresh.failures` | int | （未发布）失败的读取次数；最后一个有效值继续使用 |
 | `metadata_refresh.failing_at_end` | bool | （未发布）最后一次读取失败时为 `true` |
 | `metadata_refresh.last_error` | string? | （未发布）最后一次失败读取的文本：请求头、文件和原因，绝不含值。在出现失败前为 `null`，恢复后保留 |
+| `closes` | object? | （未发布）搜索中的连接是如何关闭的：整个搜索只有一份计数。没有发送器（`-fake`）时为 `null`。运行的同样数字在 `connections` 中；`breakpoint.runs` 中的各次运行不带 |
+| `closes.closed_idle_ours` | int? | （未发布）上面没有调用、被我们的 `app.idle_timeout` 关闭的连接；`null` 表示发送器不计数 |
+| `closes.closed_idle_peer` | int? | （未发布）上面没有调用、被对端或网络关闭的连接；`null` 表示发送器不计数 |
+| `closes.closed_busy` | int? | （未发布）上面还有调用时被关闭的连接；`null` 表示发送器不计数 |
+| `closes.peer_idle_min_us` | int? | （未发布）对端关闭连接前，连接上没有调用的最短空闲时间，以整微秒计；在出现这样的关闭前为 `null` |
 | `passport` | object? | 这次运行所用的机器和配置，用于区分不同的运行。搜索只在顶层有一个，`breakpoint.runs` 中的各次运行没有 |
 | `passport.config_sha256` | string | 配置文件读入时字节的 SHA-256，64 位十六进制 |
 | `passport.os`、`passport.arch` | string | 生成器的 `GOOS` 和 `GOARCH`，如 `linux` 和 `amd64` |
@@ -747,6 +752,10 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `connections.per_connection[].p99` | percentile? | 该连接调用的 p99；没有带延迟的调用时为 `null` |
 | `connections.per_connection[].first_limit`、`connections.per_connection[].last_limit` | int? | 该连接第一次和最后一次握手时的流上限；`null`——未声明 |
 | `connections.per_connection[].limit_changes` | int | 该连接声明的上限与上一次不同的握手次数 |
+| `connections.closed_idle_ours` | int? | （未发布）上面没有调用、被我们的 `app.idle_timeout` 关闭的连接；`null` 表示发送器不计数 |
+| `connections.closed_idle_peer` | int? | （未发布）上面没有调用、被对端或网络关闭的连接；`null` 表示发送器不计数 |
+| `connections.closed_busy` | int? | （未发布）上面还有调用时被关闭的连接；`null` 表示发送器不计数 |
+| `connections.peer_idle_min_us` | int? | （未发布）对端关闭连接前，连接上没有调用的最短空闲时间，以整微秒计；在出现这样的关闭前为 `null` |
 | `client_waits` | object | 在客户端侧等待超过阈值的调用，按原因（[阅读报告](../en/report.md#reading-the-report)） |
 | `client_waits.generator_calls`、`client_waits.stream_calls`、`client_waits.connection_calls` | int | 所有此类调用，无论是否发出。一个已发出的调用可能同时计入多个原因 |
 | `client_waits.generator_tail_calls`、`client_waits.stream_tail_calls`、`client_waits.connection_tail_calls` | int | 只统计 p99 尾部和未发出的调用：由它们决定 `tail_wait_cause` |

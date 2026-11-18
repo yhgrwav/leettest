@@ -58,6 +58,9 @@ type searchSetup struct {
 	passport *cli.Passport
 	// refresh is the sender's counters of the metadata refresh; nil under -fake.
 	refresh refreshSource
+	// closes is the sender's count of how its connections were closed; nil
+	// under -fake.
+	closes closesSource
 }
 
 // searchScreen says whether a search draws its full screen: only in a
@@ -341,6 +344,7 @@ func newBreakpointRun(s searchSetup, method string, started time.Time, plan brea
 		MethodsSource: s.source, Connections: s.cfg.App.Connections, Mode: s.cfg.App.Mode, Ramp: s.cfg.Load.Ramp,
 		Compression: s.cfg.App.Compression, Passport: s.passport,
 		MetadataRefresh: metadataRefreshOf(s.refresh, s.cfg.App.MetadataRefresh),
+		Closes:          closesOf(s.closes, s.cfg.App.IdleTimeout),
 	}
 	if b := s.cfg.Load.Breakpoint; b != nil && b.RawPass != nil {
 		report.Thresholds = []threshold.Result{threshold.EvaluateSearch(res, b.Pass)}
