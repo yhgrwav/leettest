@@ -256,7 +256,7 @@ func TestScenario_Refusals(t *testing.T) {
 		{"scenario with a breakpoint search",
 			scenarioHead + "  calls:\n    - method: " + getBalance + "\n      scenario: s\n      steps:\n" + oneStep +
 				"  breakpoint:\n    from: 100\n    to: 2000\n    settle: 5s\n    hold: 30s\n    p99_limit: 200ms\n", nil,
-			[]string{"a scenario can't be searched yet"}},
+			[]string{"load.breakpoint.p99_limit with a scenario"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := config.Parse([]byte(tc.cfg))

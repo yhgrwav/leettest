@@ -91,8 +91,8 @@ func TestRun_DryRunAcceptsAScenarioAndSendsItsStepsOnce(t *testing.T) {
 	}
 }
 
-// Ground: contract — spec 4, a search cannot take a scenario; refused at load,
-// before any connection. Mutation 3 (allow it) dies here.
+// Ground: contract — a search takes a scenario (reviews/scenario-breakpoint.md),
+// but not yet a p99_limit with it; refused at load, before any connection.
 func TestRun_ScenarioWithABreakpointSearchIsRefusedAtLoad(t *testing.T) {
 	cfg := dryConfig(t, closedPort(t), "", "    - method: "+checkMethod+"\n      scenario: s\n      steps:\n"+stepUnary+
 		"  breakpoint:\n    from: 100\n    to: 800\n    settle: 1s\n    hold: 5s\n    p99_limit: 200ms\n")
@@ -100,9 +100,9 @@ func TestRun_ScenarioWithABreakpointSearchIsRefusedAtLoad(t *testing.T) {
 	res := runCLI(t.Context(), t, 3*time.Second, "-c", cfg)
 
 	if res.err == nil {
-		t.Fatal("run succeeded, want a scenario with a search refused")
+		t.Fatal("run succeeded, want p99_limit with a scenario refused")
 	}
-	if want := "a scenario can't be searched yet"; !strings.Contains(res.err.Error(), want) {
+	if want := "load.breakpoint.p99_limit with a scenario";!strings.Contains(res.err.Error(), want) {
 		t.Errorf("error %q lacks %q", res.err, want)
 	}
 }
