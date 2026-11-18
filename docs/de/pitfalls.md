@@ -118,7 +118,7 @@ Schafft die Maschine die angeforderte RPS nicht, gehen Anfragen verspätet raus,
 Generators messen wir bereits getrennt von der Antwortzeit des Dienstes und heben sie zu einem
 Urteil: Ein Lauf, in dem die Verspätung des Generators das p99-Ende bestimmt hat, wird für ungültig
 erklärt (`generator_late`, Exit-Code 2), und der Bericht nennt die Methoden und was zu ändern ist.
-Noch nicht veröffentlicht: Der Bericht nennt die Grenze, an die der Generator stieß (GOMAXPROCS,
+Der Bericht nennt die Grenze, an die der Generator stieß (GOMAXPROCS,
 CPU-Quote, die CPU selbst oder der Zeitplan), oder sagt, dass er sie nicht nennen kann; der Lauf ist
 auch dann ungültig, wenn der Generator 1 % oder mehr der Aufrufe einer Methode nicht gesendet hat,
 selbst wenn die Ursache des Endes die Verbindung ist. Solange der Lauf geht, warnt eine Zeile auf

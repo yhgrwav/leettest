@@ -24,7 +24,7 @@ or cannot. Here is which.
   100 observations; with fewer, p99 is the maximum and the run stays valid, with a note. A p99
   shift under 10% is not a verdict but a note with the number. A breaking-point search does not get
   this verdict: its steps have their own `generator` cause. The run passport shows the CPU count,
-  `GOMAXPROCS` and the quota. Not released yet: the report names the limit the generator hit
+  `GOMAXPROCS` and the quota. The report names the limit the generator hit
   (`GOMAXPROCS`, the CPU quota, the CPU itself or the schedule) or says it cannot name one, and the
   run is also invalid when the generator never sent 1% or more of a method's calls.
 - **The schedule on Linux and on Windows.** The exact call schedule is Linux-only. In a container
@@ -73,7 +73,7 @@ or cannot. Here is which.
 
 - **Unary calls only.** Streaming methods are rejected at load.
 - ~~**Call chaining.** A field from one method's reply cannot go into another's request.~~ It can,
-  inside a scenario, one iteration at a time (not released yet): see [call chaining](chaining.md).
+  inside a scenario, one iteration at a time: see [call chaining](chaining.md).
   A pool of values shared by calls at different rates is not there.
 - **Token refresh** during a long run — planned, see the [roadmap](roadmap.md).
 - **Every call of a method goes out with the same body** unless a `dataset` is set. With a

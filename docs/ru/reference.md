@@ -59,17 +59,17 @@ load:
 | `load.calls[].dataset_seed` | Целое от 0 до 9007199254740991, фиксирует случайный порядок. Нужен `dataset_order: random`. Не указан — выбирается сам и печатается в отчёте |
 | `load.calls[].dataset_reuse` | `true` (не указан) или `false`: при `false` ни одна запись не уходит дважды за весь процесс. Нужен `dataset` |
 | `load.calls[].templates` | `true` или `false` (не указан — `false`; ключ без значения — ошибка): включает в `data` подстановки `{{uuid}}` и `{{seq}}`, см. [ниже](#запрос-который-меняется-шаблоны). Нужен хотя бы один плейсхолдер — в её `data` или в `data` шага с `templates: true`; не вместе с `dataset`. |
-| `load.calls[].scenario` | (не выпущено) Имя сценария: сам вызов становится шагом 1, за ним идут `steps`. Нужен `steps`, и наоборот. Имя не пустое, в отчёте печатается как есть; оно не должно совпадать с методом. См. [ниже](#сценарий-шаги-за-вызовом) |
-| `load.calls[].steps` | (не выпущено) Непустой список шагов после вызова. Любой ключ шага, кроме восьми ниже, пока не поддерживается — ошибка |
-| `load.calls[].extract` | (не выпущено) Словарь `имя: путь`: значения из ответа этого вызова, которые шаги за ним читают как `{{extract.<имя>}}`, см. [ниже](#extract-значение-из-раннего-ответа). Только у вызова со `steps`; имя — `[A-Za-z_][A-Za-z0-9_]*`, уникальное в сценарии и прочитанное каким-нибудь следующим шагом. Не null и не пустой |
-| `load.calls[].steps[].method` | (не выпущено) Метод шага, полное имя; обязателен. Проверяется до нагрузки, как метод вызова |
-| `load.calls[].steps[].timeout` | (не выпущено) Сколько ждать ответа шага, как `load.calls[].timeout`; не указан — `2s`, а не таймаут вызова |
-| `load.calls[].steps[].data` | (не выпущено) Тело запроса шага, пишется как `load.calls[].data` (см. [ниже](#тело-запроса)) и проверяется до нагрузки по собственному методу шага; неверное поле — ошибка конфига, как у вызова. Не указан — пустое сообщение. `{{…}}` в нём — текст только при `templates: false` или у вызова без `templates: true`; см. следующую строку. Нужна reflection, либо `app.proto` / `app.protoset`, как для `data` вызова |
-| `load.calls[].steps[].templates` | (не выпущено) `true` или `false` (ключ без значения и всё, кроме `true`/`false` — ошибка): `true` включает `{{uuid}}` и `{{seq}}` в `data` шага, см. [ниже](#шаблоны-в-шаге). Нужен `templates: true` у вызова и свой плейсхолдер в `data` шага. Не указан: тело обычное, а скобки в `data` у вызова с `templates: true` — ошибка: напишите `templates: true` у шага или `templates: false`, чтобы скобки ушли текстом |
-| `load.calls[].steps[].dataset` | (не выпущено) Файл с телами запросов для шага вместо его `data`, см. [ниже](#dataset-в-шаге). Читается и проверяется как у вызова, по собственному методу шага. Вместе с `data` шага и с `templates: true` нельзя |
-| `load.calls[].steps[].dataset_order` | (не выпущено) `file` (не указан) или `random`: порядок записей шага. Нужен `dataset` шага |
-| `load.calls[].steps[].dataset_seed` | (не выпущено) Seed случайного порядка, целое число от 0 до 9007199254740991, как `load.calls[].dataset_seed`. Нужен `dataset_order: random` у шага |
-| `load.calls[].steps[].extract` | (не выпущено) Как `load.calls[].extract`, для ответа самого шага: следующий шаг читает имена как `{{extract.<имя>}}`, см. [ниже](#extract-значение-из-раннего-ответа). Имя берётся в сценарии один раз: вызовом или одним шагом |
+| `load.calls[].scenario` | Имя сценария: сам вызов становится шагом 1, за ним идут `steps`. Нужен `steps`, и наоборот. Имя не пустое, в отчёте печатается как есть; оно не должно совпадать с методом. См. [ниже](#сценарий-шаги-за-вызовом) |
+| `load.calls[].steps` | Непустой список шагов после вызова. Любой ключ шага, кроме восьми ниже, пока не поддерживается — ошибка |
+| `load.calls[].extract` | Словарь `имя: путь`: значения из ответа этого вызова, которые шаги за ним читают как `{{extract.<имя>}}`, см. [ниже](#extract-значение-из-раннего-ответа). Только у вызова со `steps`; имя — `[A-Za-z_][A-Za-z0-9_]*`, уникальное в сценарии и прочитанное каким-нибудь следующим шагом. Не null и не пустой |
+| `load.calls[].steps[].method` | Метод шага, полное имя; обязателен. Проверяется до нагрузки, как метод вызова |
+| `load.calls[].steps[].timeout` | Сколько ждать ответа шага, как `load.calls[].timeout`; не указан — `2s`, а не таймаут вызова |
+| `load.calls[].steps[].data` | Тело запроса шага, пишется как `load.calls[].data` (см. [ниже](#тело-запроса)) и проверяется до нагрузки по собственному методу шага; неверное поле — ошибка конфига, как у вызова. Не указан — пустое сообщение. `{{…}}` в нём — текст только при `templates: false` или у вызова без `templates: true`; см. следующую строку. Нужна reflection, либо `app.proto` / `app.protoset`, как для `data` вызова |
+| `load.calls[].steps[].templates` | `true` или `false` (ключ без значения и всё, кроме `true`/`false` — ошибка): `true` включает `{{uuid}}` и `{{seq}}` в `data` шага, см. [ниже](#шаблоны-в-шаге). Нужен `templates: true` у вызова и свой плейсхолдер в `data` шага. Не указан: тело обычное, а скобки в `data` у вызова с `templates: true` — ошибка: напишите `templates: true` у шага или `templates: false`, чтобы скобки ушли текстом |
+| `load.calls[].steps[].dataset` | Файл с телами запросов для шага вместо его `data`, см. [ниже](#dataset-в-шаге). Читается и проверяется как у вызова, по собственному методу шага. Вместе с `data` шага и с `templates: true` нельзя |
+| `load.calls[].steps[].dataset_order` | `file` (не указан) или `random`: порядок записей шага. Нужен `dataset` шага |
+| `load.calls[].steps[].dataset_seed` | Seed случайного порядка, целое число от 0 до 9007199254740991, как `load.calls[].dataset_seed`. Нужен `dataset_order: random` у шага |
+| `load.calls[].steps[].extract` | Как `load.calls[].extract`, для ответа самого шага: следующий шаг читает имена как `{{extract.<имя>}}`, см. [ниже](#extract-значение-из-раннего-ответа). Имя берётся в сценарии один раз: вызовом или одним шагом |
 | `load.calls[].pass` | Пределы, по которым прогон проходит или нет: `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, см. [ниже](#пределы-pass). Не указано — пределов нет |
 | `load.breakpoint.from` | Темп первой ступени поиска точки отказа, вызовов в секунду. Целое от 1; дробное — ошибка конфига (`rps must be a whole number of requests: 100.5`). Обязателен: без него или меньше 1 — `invalid breakpoint: breakpoint.from: breaking-point plan: from 0, want at least 1 rps`, выход 1. Первая ступень должна измерить не меньше 100 вызовов, `from` × (`hold` − `settle`), иначе до нагрузки отказ `invalid breakpoint: the first step measures 8 calls, a p99 needs 100: raise from, hold or lower settle`. С `app.mode: real` разгон идёт с 0 до `from` |
 | `load.breakpoint.to` | Выше этого темпа ступеней нет. Целое, не меньше `from` (равное `from` — одна ступень). Обязателен: без него или ниже `from` — `invalid breakpoint: breakpoint.to: breaking-point plan: to 50 is below from 100`, выход 1. Если поиск дошёл до последней ступени и она выдержала, итог `held_all` |
@@ -306,7 +306,7 @@ reflection; `.proto` не нужен. Тело собирается один р�
 
 ### Шаблоны в шаге
 
-*(Не выпущено.)* Шаг сценария включает плейсхолдеры своим `templates: true`; у вызова тоже нужен
+Шаг сценария включает плейсхолдеры своим `templates: true`; у вызова тоже нужен
 `templates: true`, потому что счётчик живёт на вызове.
 
 ```yaml
@@ -344,7 +344,7 @@ reflection; `.proto` не нужен. Тело собирается один р�
 
 ### Extract: значение из раннего ответа
 
-*(Не выпущено.)* Шаг может отправить то, что держал более ранний ответ его же итерации: «создать
+Шаг может отправить то, что держал более ранний ответ его же итерации: «создать
 кошелёк, потом перевести с него». Вызов или шаг называет поля своего ответа ключом `extract`, а
 следующий шаг пишет их в `data` как `{{extract.<имя>}}`.
 
@@ -406,7 +406,7 @@ reflection; `.proto` не нужен. Тело собирается один р�
 
 ### Dataset в шаге
 
-*(Не выпущено.)* Шаг берёт тело из файла, как вызов.
+Шаг берёт тело из файла, как вызов.
 
 ```yaml
     - method: wallet.v1.WalletService/GetBalance
@@ -842,7 +842,7 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `traffic` | object? | Тела сообщений на секунду окна отправки; `null` без окна |
 | `traffic.sent_bits_per_second`, `traffic.received_bits_per_second` | float | Бит в секунду без масштаба: тела запросов измеренных вызовов, ушедших к цели, по размеру на проводе; тела ответов успешных вызовов по размеру до распаковки. Без кадров HTTP/2, заголовков и TLS |
 | `methods` | []object | Методы, см. ниже |
-| `scenarios` | []object | (не выпущено) Сценарии прогона, см. ниже; у прогона без сценариев — пустой массив `[]`, не `null` |
+| `scenarios` | []object | Сценарии прогона, см. ниже; у прогона без сценариев — пустой массив `[]`, не `null` |
 | `unchecked` | []object | Методы, которые не удалось проверить через reflection |
 | `unchecked[].method` | string | Метод |
 | `unchecked[].reason` | string | `reflection_off` или `reflection_failed` |
@@ -964,21 +964,21 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 
 | Поле | Тип | Что значит |
 |---|---|---|
-| `scenarios[].name` | string | (не выпущено) Имя из `load.calls[].scenario`, как записано |
-| `scenarios[].iterations` | int | (не выпущено) Сколько итераций закончилось; не число вызовов |
-| `scenarios[].categories` | object | (не выпущено) Исход каждой итерации по одной из 11 категорий ([категории](report.md#как-читать-отчёт)); все ключи есть всегда, сумма равна `iterations` |
-| `scenarios[].categories.success`, `scenarios[].categories.request_error`, `scenarios[].categories.overload`, `scenarios[].categories.failure`, `scenarios[].categories.timed_out`, `scenarios[].categories.cut_off`, `scenarios[].categories.unreachable`, `scenarios[].categories.client_error`, `scenarios[].categories.bad_response`, `scenarios[].categories.aborted`, `scenarios[].categories.unclassified` | int | (не выпущено) Сколько итераций кончилось этим исходом |
-| `scenarios[].latency` | object | (не выпущено) Задержка итерации: от тика расписания до конца последнего шага |
-| `scenarios[].latency.p50`, `scenarios[].latency.p99` | перцентиль? | (не выпущено) Перцентили по `observations`; `lower_bound` — как у `methods[].latency`: итерация, которую оборвал таймаут или остановка, длилась не меньше. `p99` — `null` при менее 100 наблюдений |
-| `scenarios[].observations` | int | (не выпущено) Итерации, у которых есть задержка |
-| `scenarios[].censored` | int | (не выпущено) Из них известных только снизу |
-| `scenarios[].steps` | []object | (не выпущено) Шаги по порядку, первый — сам вызов |
-| `scenarios[].steps[].method` | string | (не выпущено) Метод шага, написан как `methods[].method` |
-| `scenarios[].steps[].reached` | int | (не выпущено) Итерации, дошедшие до шага |
-| `scenarios[].steps[].failed_here` | int | (не выпущено) Из них упавшие на этом шаге |
-| `scenarios[].steps[].aborted_here` | int | (не выпущено) Из них прерванные на этом шаге |
-| `scenarios[].steps[].not_sent_here` | int | (не выпущено) Из них не ушедшие на этом шаге |
-| `scenarios[].steps[].not_reached` | int | (не выпущено) Итерации, не дошедшие до шага: `reached` + `not_reached` = `iterations`, а `reached` следующего шага = `reached` минус три предыдущих счётчика |
+| `scenarios[].name` | string | Имя из `load.calls[].scenario`, как записано |
+| `scenarios[].iterations` | int | Сколько итераций закончилось; не число вызовов |
+| `scenarios[].categories` | object | Исход каждой итерации по одной из 11 категорий ([категории](report.md#как-читать-отчёт)); все ключи есть всегда, сумма равна `iterations` |
+| `scenarios[].categories.success`, `scenarios[].categories.request_error`, `scenarios[].categories.overload`, `scenarios[].categories.failure`, `scenarios[].categories.timed_out`, `scenarios[].categories.cut_off`, `scenarios[].categories.unreachable`, `scenarios[].categories.client_error`, `scenarios[].categories.bad_response`, `scenarios[].categories.aborted`, `scenarios[].categories.unclassified` | int | Сколько итераций кончилось этим исходом |
+| `scenarios[].latency` | object | Задержка итерации: от тика расписания до конца последнего шага |
+| `scenarios[].latency.p50`, `scenarios[].latency.p99` | перцентиль? | Перцентили по `observations`; `lower_bound` — как у `methods[].latency`: итерация, которую оборвал таймаут или остановка, длилась не меньше. `p99` — `null` при менее 100 наблюдений |
+| `scenarios[].observations` | int | Итерации, у которых есть задержка |
+| `scenarios[].censored` | int | Из них известных только снизу |
+| `scenarios[].steps` | []object | Шаги по порядку, первый — сам вызов |
+| `scenarios[].steps[].method` | string | Метод шага, написан как `methods[].method` |
+| `scenarios[].steps[].reached` | int | Итерации, дошедшие до шага |
+| `scenarios[].steps[].failed_here` | int | Из них упавшие на этом шаге |
+| `scenarios[].steps[].aborted_here` | int | Из них прерванные на этом шаге |
+| `scenarios[].steps[].not_sent_here` | int | Из них не ушедшие на этом шаге |
+| `scenarios[].steps[].not_reached` | int | Итерации, не дошедшие до шага: `reached` + `not_reached` = `iterations`, а `reached` следующего шага = `reached` минус три предыдущих счётчика |
 
 ### Поиск точки отказа: `mode: "breakpoint"`
 

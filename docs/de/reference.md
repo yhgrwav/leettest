@@ -64,17 +64,17 @@ Die Konfiguration, ein Dataset, ein Bericht für `compare` und die Einstellungsd
 | `load.calls[].dataset_seed` | Eine ganze Zahl von 0 bis 9007199254740991, legt eine zufällige Reihenfolge fest. Braucht `dataset_order: random`. Weggelassen — wird selbst gewählt und im Bericht ausgegeben |
 | `load.calls[].dataset_reuse` | `true` (weggelassen) oder `false`: bei `false` geht kein Datensatz im ganzen Prozess zweimal raus. Braucht `dataset` |
 | `load.calls[].templates` | `true` oder `false` (weggelassen — `false`; ein Schlüssel ohne Wert ist ein Fehler): schaltet die Platzhalter `{{uuid}}` und `{{seq}}` in `data` ein, siehe [unten](#eine-anfrage-die-sich-ändert-templates). Braucht mindestens einen Platzhalter — in ihrem `data` oder im `data` eines Schritts mit `templates: true`; nicht zusammen mit `dataset`. |
-| `load.calls[].scenario` | (nicht veröffentlicht) Der Name eines Szenarios: der Aufruf selbst wird Schritt 1, danach kommen die `steps`. Braucht `steps` und umgekehrt. Der Name ist nicht leer, der Bericht gibt ihn unverändert aus; er darf nicht mit einer Methode übereinstimmen. Siehe [unten](#szenario-schritte-nach-dem-aufruf) |
-| `load.calls[].steps` | (nicht veröffentlicht) Eine nicht leere Liste von Schritten nach dem Aufruf. Jeder Schlüssel eines Schritts außer den acht unten wird noch nicht unterstützt — ein Fehler |
-| `load.calls[].extract` | (nicht veröffentlicht) Ein Wörterbuch `name: pfad`: Werte aus der Antwort dieses Aufrufs, die die Schritte danach als `{{extract.<name>}}` lesen, siehe [unten](#extract-ein-wert-aus-einer-früheren-antwort). Nur bei einem Aufruf mit `steps`; der Name ist `[A-Za-z_][A-Za-z0-9_]*`, im Szenario eindeutig und von irgendeinem folgenden Schritt gelesen. Nicht null und nicht leer |
-| `load.calls[].steps[].method` | (nicht veröffentlicht) Die Methode des Schritts, voller Name; Pflicht. Wird vor der Last geprüft, wie die Methode des Aufrufs |
-| `load.calls[].steps[].timeout` | (nicht veröffentlicht) Wie lange auf die Antwort des Schritts gewartet wird, wie `load.calls[].timeout`; weggelassen — `2s`, nicht der Timeout des Aufrufs |
-| `load.calls[].steps[].data` | (nicht veröffentlicht) Der Anfrage-Body des Schritts, geschrieben wie `load.calls[].data` (siehe [unten](#anfrage-body)) und vor der Last gegen die eigene Methode des Schritts geprüft; ein falsches Feld ist ein Konfigurationsfehler, wie beim Aufruf. Weggelassen — eine leere Nachricht. `{{…}}` darin ist nur Text bei `templates: false` oder bei einem Aufruf ohne `templates: true`; siehe die nächste Zeile. Braucht Reflection oder `app.proto` / `app.protoset`, wie `data` des Aufrufs |
-| `load.calls[].steps[].templates` | (nicht veröffentlicht) `true` oder `false` (ein Schlüssel ohne Wert und alles außer `true`/`false` ist ein Fehler): `true` schaltet `{{uuid}}` und `{{seq}}` im `data` des Schritts ein, siehe [unten](#templates-im-schritt). Braucht `templates: true` am Aufruf und einen eigenen Platzhalter im `data` des Schritts. Weggelassen: der Body ist gewöhnlich, und Klammern im `data` eines Aufrufs mit `templates: true` sind ein Fehler: schreiben Sie `templates: true` am Schritt oder `templates: false`, damit die Klammern als Text rausgehen |
-| `load.calls[].steps[].dataset` | (nicht veröffentlicht) Eine Datei mit Anfrage-Bodies für den Schritt statt seines `data`, siehe [unten](#dataset-im-schritt). Wird gelesen und geprüft wie beim Aufruf, gegen die eigene Methode des Schritts. Zusammen mit `data` des Schritts und mit `templates: true` nicht erlaubt |
-| `load.calls[].steps[].dataset_order` | (nicht veröffentlicht) `file` (weggelassen) oder `random`: die Reihenfolge der Datensätze des Schritts. Braucht `dataset` des Schritts |
-| `load.calls[].steps[].dataset_seed` | (nicht veröffentlicht) Seed der zufälligen Reihenfolge, eine ganze Zahl von 0 bis 9007199254740991, wie `load.calls[].dataset_seed`. Braucht `dataset_order: random` am Schritt |
-| `load.calls[].steps[].extract` | (nicht veröffentlicht) Wie `load.calls[].extract`, für die Antwort des Schritts selbst: Der nächste Schritt liest die Namen als `{{extract.<name>}}`, siehe [unten](#extract-ein-wert-aus-einer-früheren-antwort). Ein Name wird im Szenario einmal vergeben: vom Aufruf oder von einem Schritt |
+| `load.calls[].scenario` | Der Name eines Szenarios: der Aufruf selbst wird Schritt 1, danach kommen die `steps`. Braucht `steps` und umgekehrt. Der Name ist nicht leer, der Bericht gibt ihn unverändert aus; er darf nicht mit einer Methode übereinstimmen. Siehe [unten](#szenario-schritte-nach-dem-aufruf) |
+| `load.calls[].steps` | Eine nicht leere Liste von Schritten nach dem Aufruf. Jeder Schlüssel eines Schritts außer den acht unten wird noch nicht unterstützt — ein Fehler |
+| `load.calls[].extract` | Ein Wörterbuch `name: pfad`: Werte aus der Antwort dieses Aufrufs, die die Schritte danach als `{{extract.<name>}}` lesen, siehe [unten](#extract-ein-wert-aus-einer-früheren-antwort). Nur bei einem Aufruf mit `steps`; der Name ist `[A-Za-z_][A-Za-z0-9_]*`, im Szenario eindeutig und von irgendeinem folgenden Schritt gelesen. Nicht null und nicht leer |
+| `load.calls[].steps[].method` | Die Methode des Schritts, voller Name; Pflicht. Wird vor der Last geprüft, wie die Methode des Aufrufs |
+| `load.calls[].steps[].timeout` | Wie lange auf die Antwort des Schritts gewartet wird, wie `load.calls[].timeout`; weggelassen — `2s`, nicht der Timeout des Aufrufs |
+| `load.calls[].steps[].data` | Der Anfrage-Body des Schritts, geschrieben wie `load.calls[].data` (siehe [unten](#anfrage-body)) und vor der Last gegen die eigene Methode des Schritts geprüft; ein falsches Feld ist ein Konfigurationsfehler, wie beim Aufruf. Weggelassen — eine leere Nachricht. `{{…}}` darin ist nur Text bei `templates: false` oder bei einem Aufruf ohne `templates: true`; siehe die nächste Zeile. Braucht Reflection oder `app.proto` / `app.protoset`, wie `data` des Aufrufs |
+| `load.calls[].steps[].templates` | `true` oder `false` (ein Schlüssel ohne Wert und alles außer `true`/`false` ist ein Fehler): `true` schaltet `{{uuid}}` und `{{seq}}` im `data` des Schritts ein, siehe [unten](#templates-im-schritt). Braucht `templates: true` am Aufruf und einen eigenen Platzhalter im `data` des Schritts. Weggelassen: der Body ist gewöhnlich, und Klammern im `data` eines Aufrufs mit `templates: true` sind ein Fehler: schreiben Sie `templates: true` am Schritt oder `templates: false`, damit die Klammern als Text rausgehen |
+| `load.calls[].steps[].dataset` | Eine Datei mit Anfrage-Bodies für den Schritt statt seines `data`, siehe [unten](#dataset-im-schritt). Wird gelesen und geprüft wie beim Aufruf, gegen die eigene Methode des Schritts. Zusammen mit `data` des Schritts und mit `templates: true` nicht erlaubt |
+| `load.calls[].steps[].dataset_order` | `file` (weggelassen) oder `random`: die Reihenfolge der Datensätze des Schritts. Braucht `dataset` des Schritts |
+| `load.calls[].steps[].dataset_seed` | Seed der zufälligen Reihenfolge, eine ganze Zahl von 0 bis 9007199254740991, wie `load.calls[].dataset_seed`. Braucht `dataset_order: random` am Schritt |
+| `load.calls[].steps[].extract` | Wie `load.calls[].extract`, für die Antwort des Schritts selbst: Der nächste Schritt liest die Namen als `{{extract.<name>}}`, siehe [unten](#extract-ein-wert-aus-einer-früheren-antwort). Ein Name wird im Szenario einmal vergeben: vom Aufruf oder von einem Schritt |
 | `load.calls[].pass` | Die Grenzen, die ein Lauf einhalten muss, um zu bestehen: `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, siehe [unten](#grenzen-pass). Weggelassen — keine Grenzen |
 | `load.breakpoint.from` | Die Rate der ersten Stufe der Bruchpunkt-Suche, Aufrufe pro Sekunde. Eine ganze Zahl ab 1; eine Dezimalzahl ist ein Konfigurationsfehler (`rps must be a whole number of requests: 100.5`). Pflicht: fehlend oder unter 1 — `invalid breakpoint: breakpoint.from: breaking-point plan: from 0, want at least 1 rps`, Exit 1. Die erste Stufe muss mindestens 100 Aufrufe messen, `from` × (`hold` − `settle`), sonst vor der Last der Fehler `invalid breakpoint: the first step measures 8 calls, a p99 needs 100: raise from, hold or lower settle`. Mit `app.mode: real` geht ein Anlauf von 0 auf `from` |
 | `load.breakpoint.to` | Über dieser Rate gibt es keine Stufen. Eine ganze Zahl, nicht unter `from` (gleich `from` — eine Stufe). Pflicht: fehlend oder unter `from` — `invalid breakpoint: breakpoint.to: breaking-point plan: to 50 is below from 100`, Exit 1. Erreicht die Suche die letzte Stufe und hält sie, lautet das Ergebnis `held_all` |
@@ -330,7 +330,7 @@ und keine Liste; `null` — der Aufruf hat keine Templates.
 
 ### Templates im Schritt
 
-*(Nicht veröffentlicht.)* Ein Szenario-Schritt schaltet die Platzhalter mit seinem eigenen
+Ein Szenario-Schritt schaltet die Platzhalter mit seinem eigenen
 `templates: true` ein; auch der Aufruf braucht `templates: true`, weil der Zähler am Aufruf hängt.
 
 ```yaml
@@ -371,7 +371,7 @@ und keine Liste; `null` — der Aufruf hat keine Templates.
 
 ### Extract: ein Wert aus einer früheren Antwort
 
-*(Nicht veröffentlicht.)* Ein Schritt kann senden, was eine frühere Antwort seiner eigenen Iteration
+Ein Schritt kann senden, was eine frühere Antwort seiner eigenen Iteration
 enthielt: „ein Wallet anlegen, dann davon überweisen“. Ein Aufruf oder Schritt benennt Felder seiner
 Antwort mit dem Schlüssel `extract`, und der nächste Schritt schreibt sie in `data` als
 `{{extract.<name>}}`.
@@ -441,7 +441,7 @@ russisch; die englische Fassung ist [`examples/scenario-extract.yaml`](../../exa
 
 ### Dataset im Schritt
 
-*(Nicht veröffentlicht.)* Ein Schritt nimmt seinen Body aus einer Datei, wie der Aufruf.
+Ein Schritt nimmt seinen Body aus einer Datei, wie der Aufruf.
 
 ```yaml
     - method: wallet.v1.WalletService/GetBalance
@@ -911,7 +911,7 @@ unten den Typ „percentile?" hat.
 | `traffic` | object? | Nachrichtenkörper pro Sekunde des Sendefensters; `null` ohne Fenster |
 | `traffic.sent_bits_per_second`, `traffic.received_bits_per_second` | float | Bit pro Sekunde, nicht skaliert: Anfragekörper nach Größe auf der Leitung, Antworten erfolgreicher Aufrufe vor dem Entpacken. Ohne HTTP/2-Frames, Header und TLS |
 | `methods` | []object | Methoden, siehe unten |
-| `scenarios` | []object | (nicht veröffentlicht) Szenarien des Laufs, siehe unten; ohne Szenarien ein leeres Array `[]`, nicht `null` |
+| `scenarios` | []object | Szenarien des Laufs, siehe unten; ohne Szenarien ein leeres Array `[]`, nicht `null` |
 | `unchecked` | []object | Methoden, die über Reflection nicht geprüft werden konnten |
 | `unchecked[].method` | string | Die Methode |
 | `unchecked[].reason` | string | `reflection_off` oder `reflection_failed` |
@@ -1033,21 +1033,21 @@ Ein Objekt je Szenario. Gezählt wird in Iterationen: der Aufruf und die Schritt
 
 | Feld | Typ | Bedeutung |
 |---|---|---|
-| `scenarios[].name` | string | (nicht veröffentlicht) Der Name aus `load.calls[].scenario`, wie geschrieben |
-| `scenarios[].iterations` | int | (nicht veröffentlicht) Wie viele Iterationen beendet wurden; nicht die Zahl der Aufrufe |
-| `scenarios[].categories` | object | (nicht veröffentlicht) Das Ergebnis jeder Iteration in einer der 11 Kategorien ([Kategorien](../en/report.md#reading-the-report), englisch); alle Schlüssel sind immer da, die Summe ist `iterations` |
-| `scenarios[].categories.success`, `scenarios[].categories.request_error`, `scenarios[].categories.overload`, `scenarios[].categories.failure`, `scenarios[].categories.timed_out`, `scenarios[].categories.cut_off`, `scenarios[].categories.unreachable`, `scenarios[].categories.client_error`, `scenarios[].categories.bad_response`, `scenarios[].categories.aborted`, `scenarios[].categories.unclassified` | int | (nicht veröffentlicht) Wie viele Iterationen mit diesem Ergebnis endeten |
-| `scenarios[].latency` | object | (nicht veröffentlicht) Latenz der Iteration: vom Takt des Zeitplans bis zum Ende des letzten Schritts |
-| `scenarios[].latency.p50`, `scenarios[].latency.p99` | percentile? | (nicht veröffentlicht) Perzentile über `observations`; `lower_bound` wie bei `methods[].latency`: eine Iteration, die ein Timeout oder ein Stopp abbrach, dauerte mindestens so lange. `p99` ist `null` unter 100 Beobachtungen |
-| `scenarios[].observations` | int | (nicht veröffentlicht) Iterationen mit einer Latenz |
-| `scenarios[].censored` | int | (nicht veröffentlicht) Davon nur von unten bekannte |
-| `scenarios[].steps` | []object | (nicht veröffentlicht) Die Schritte der Reihe nach, der erste ist der Aufruf selbst |
-| `scenarios[].steps[].method` | string | (nicht veröffentlicht) Die Methode des Schritts, geschrieben wie `methods[].method` |
-| `scenarios[].steps[].reached` | int | (nicht veröffentlicht) Iterationen, die den Schritt erreicht haben |
-| `scenarios[].steps[].failed_here` | int | (nicht veröffentlicht) Davon die an diesem Schritt gescheiterten |
-| `scenarios[].steps[].aborted_here` | int | (nicht veröffentlicht) Davon die an diesem Schritt abgebrochenen |
-| `scenarios[].steps[].not_sent_here` | int | (nicht veröffentlicht) Davon die an diesem Schritt nicht gesendeten |
-| `scenarios[].steps[].not_reached` | int | (nicht veröffentlicht) Iterationen, die den Schritt nicht erreicht haben: `reached` + `not_reached` = `iterations`, und `reached` des nächsten Schritts = `reached` minus die drei vorigen Zähler |
+| `scenarios[].name` | string | Der Name aus `load.calls[].scenario`, wie geschrieben |
+| `scenarios[].iterations` | int | Wie viele Iterationen beendet wurden; nicht die Zahl der Aufrufe |
+| `scenarios[].categories` | object | Das Ergebnis jeder Iteration in einer der 11 Kategorien ([Kategorien](../en/report.md#reading-the-report), englisch); alle Schlüssel sind immer da, die Summe ist `iterations` |
+| `scenarios[].categories.success`, `scenarios[].categories.request_error`, `scenarios[].categories.overload`, `scenarios[].categories.failure`, `scenarios[].categories.timed_out`, `scenarios[].categories.cut_off`, `scenarios[].categories.unreachable`, `scenarios[].categories.client_error`, `scenarios[].categories.bad_response`, `scenarios[].categories.aborted`, `scenarios[].categories.unclassified` | int | Wie viele Iterationen mit diesem Ergebnis endeten |
+| `scenarios[].latency` | object | Latenz der Iteration: vom Takt des Zeitplans bis zum Ende des letzten Schritts |
+| `scenarios[].latency.p50`, `scenarios[].latency.p99` | percentile? | Perzentile über `observations`; `lower_bound` wie bei `methods[].latency`: eine Iteration, die ein Timeout oder ein Stopp abbrach, dauerte mindestens so lange. `p99` ist `null` unter 100 Beobachtungen |
+| `scenarios[].observations` | int | Iterationen mit einer Latenz |
+| `scenarios[].censored` | int | Davon nur von unten bekannte |
+| `scenarios[].steps` | []object | Die Schritte der Reihe nach, der erste ist der Aufruf selbst |
+| `scenarios[].steps[].method` | string | Die Methode des Schritts, geschrieben wie `methods[].method` |
+| `scenarios[].steps[].reached` | int | Iterationen, die den Schritt erreicht haben |
+| `scenarios[].steps[].failed_here` | int | Davon die an diesem Schritt gescheiterten |
+| `scenarios[].steps[].aborted_here` | int | Davon die an diesem Schritt abgebrochenen |
+| `scenarios[].steps[].not_sent_here` | int | Davon die an diesem Schritt nicht gesendeten |
+| `scenarios[].steps[].not_reached` | int | Iterationen, die den Schritt nicht erreicht haben: `reached` + `not_reached` = `iterations`, und `reached` des nächsten Schritts = `reached` minus die drei vorigen Zähler |
 
 ### Suche nach dem Bruchpunkt: `mode: "breakpoint"`
 

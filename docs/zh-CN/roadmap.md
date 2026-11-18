@@ -13,7 +13,7 @@
 
 ## 之后
 
-- ~~**[调用串联](chaining.md)**：把一个方法响应中的字段填进另一个方法的请求。~~ 已完成（未发布）：场景中的 `extract`，见[调用串联](chaining.md)。
+- ~~**[调用串联](chaining.md)**：把一个方法响应中的字段填进另一个方法的请求。~~ 已完成：场景中的 `extract`，见[调用串联](chaining.md)。
 - **长时间运行中刷新 token。**
 - ~~**导出指标**到 Prometheus。~~ 已在 v0.6 完成：[Prometheus 指标](reference.md#prometheus-指标)。
 
