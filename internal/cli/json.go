@@ -352,7 +352,13 @@ type jsonSeqOverflow struct {
 }
 
 type jsonMethod struct {
-	Method string `json:"method"`
+	// Method is the row's key: the gRPC method, with the scenario and step
+	// added when the method is in the run more than once. GRPCMethod is the
+	// method the row called; Scenario and Step are null for a plain call.
+	Method     string  `json:"method"`
+	Scenario   *string `json:"scenario"`
+	Step       *int    `json:"step"`
+	GRPCMethod string  `json:"grpc_method"`
 	// InvalidReason says the method measured nothing about load: request_error,
 	// client_error, bad_response or mixed; null when it did.
 	InvalidReason     *string  `json:"invalid_reason"`
@@ -778,7 +784,7 @@ func uncheckedJSON(unchecked []Unchecked) []jsonUnchecked {
 
 func jsonMethodOf(m *engine.MethodReport, warmup time.Duration) jsonMethod {
 	out := jsonMethod{
-		Method: m.Method, InvalidReason: invalidReason(m), Sent: m.Sent, Failed: m.Failed, Aborted: m.Aborted,
+		Method: m.Method, GRPCMethod: m.GRPCMethod, InvalidReason: invalidReason(m), Sent: m.Sent, Failed: m.Failed, Aborted: m.Aborted,
 		NotSent: m.NotSent, NotSentGenerator: m.NotSentGenerator, NotSentStream: m.NotSentStream,
 		NotSentConnection: m.NotSentConnection,
 		WarmupSent:        m.WarmupSent, WarmupFailed: m.WarmupFailed, WarmupNotSent: m.WarmupNotSent,
@@ -800,6 +806,9 @@ func jsonMethodOf(m *engine.MethodReport, warmup time.Duration) jsonMethod {
 		SilentFromS:  m.SilentFrom,
 		Seconds:      make([]jsonSecond, 0, len(m.Seconds)),
 		Windows:      make([]jsonWindow, 0, len(m.Windows)),
+	}
+	if m.Scenario != "" {
+		out.Scenario, out.Step = &m.Scenario, &m.Step
 	}
 	// The rate belongs to a silence: none without one.
 	if m.SilentFrom != nil {

@@ -936,7 +936,10 @@ Die übrigen sind einfache Zähler.
 
 | Feld | Typ | Bedeutung |
 |---|---|---|
-| `methods[].method` | string | Der volle Methodenname |
+| `methods[].method` | string | Der Schlüssel der Zeile: der volle Methodenname, bei einer wiederholten Methode `<Methode> (<Szenario>, Schritt <n>)` |
+| `methods[].grpc_method` | string | (nicht veröffentlicht) Der volle Name der gRPC-Methode, die die Zeile aufgerufen hat |
+| `methods[].scenario` | string? | (nicht veröffentlicht) Das Szenario der Zeile; `null` bei einem einfachen Aufruf |
+| `methods[].step` | int? | (nicht veröffentlicht) Die Nummer des Schritts im Szenario, ab 1; `null` bei einem einfachen Aufruf |
 | `methods[].invalid_reason` | string? | Die Methode hat nichts über Last gemessen: `request_error`, `client_error`, `bad_response`, `mixed`; `null` — sie hat |
 | `methods[].sent`, `methods[].failed`, `methods[].aborted`, `methods[].not_sent`, `methods[].not_sent_generator`, `methods[].not_sent_stream`, `methods[].not_sent_connection`, `methods[].warmup_sent`, `methods[].warmup_failed`, `methods[].warmup_not_sent` | int | Der Anteil der Methode an den gleichnamigen Feldern des Laufs |
 | `methods[].rps` | float? | `sent/s`: gesendete Aufrufe geteilt durch die Sendezeit dieser Methode; `null` — keine Aufrufe |

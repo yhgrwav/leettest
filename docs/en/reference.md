@@ -526,6 +526,13 @@ Not supported yet, and a run with them is refused: a scenario together with `pas
 a breaking-point search (`load.breakpoint`). The live screen and the Prometheus metrics do not show
 a scenario; it is seen in the report only.
 
+A method that appears more than once in the run (in several steps, or in a step and in a plain
+call) gets rows with the key `<method> (<scenario>, step <n>)`, `n` from 1, the head is step 1; a
+plain call stays the bare method. The key is in the method table, in the scenario block, in
+`methods[].method`, `scenarios[].steps[].method`, `stop.method` and in the `method` label of the
+Prometheus metrics; the gRPC method's path is in `methods[].grpc_method`. Known limit: a long key
+shifts the table's columns; the column width does not change for it.
+
 The text report has a scenario block after the method table: the iterations and their outcomes,
 the iteration's latency (from the schedule's tick to the end of the last step; no p99 while there
 are fewer observations than the minimum) and a row per step: how many iterations reached the step,
@@ -901,7 +908,10 @@ The rest are plain counters.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `methods[].method` | string | The full method name |
+| `methods[].method` | string | The row's key. A method that appears once in the run is the full method name; a method repeated in the run is `<method> (<scenario>, step <n>)`, `n` counted from 1. A plain call is always written as the bare method |
+| `methods[].grpc_method` | string | (not released yet) The full name of the gRPC method the row called. Equals `methods[].method` while the method is not repeated |
+| `methods[].scenario` | string? | (not released yet) The scenario the row belongs to; `null` for a plain call |
+| `methods[].step` | int? | (not released yet) The step's number in the scenario, from 1; `null` for a plain call |
 | `methods[].invalid_reason` | string? | The method measured nothing about load: `request_error`, `client_error`, `bad_response`, `mixed`; `null` — it did |
 | `methods[].sent`, `methods[].failed`, `methods[].aborted`, `methods[].not_sent`, `methods[].not_sent_generator`, `methods[].not_sent_stream`, `methods[].not_sent_connection`, `methods[].warmup_sent`, `methods[].warmup_failed`, `methods[].warmup_not_sent` | int | The method's share of the run's fields of the same name |
 | `methods[].rps` | float? | `sent/s`: calls sent divided by the sending time of this method; `null` — no calls |

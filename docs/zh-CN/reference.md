@@ -774,7 +774,10 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 
 | 字段 | 类型 | 含义 |
 |---|---|---|
-| `methods[].method` | string | 方法全名 |
+| `methods[].method` | string | 行的键：方法全名；重复出现的方法写作 `<方法> (<场景>, 步骤 <n>)` |
+| `methods[].grpc_method` | string | （未发布）该行调用的 gRPC 方法全名 |
+| `methods[].scenario` | string? | （未发布）该行所属的场景；普通调用为 `null` |
+| `methods[].step` | int? | （未发布）场景中的步骤号，从 1 起；普通调用为 `null` |
 | `methods[].invalid_reason` | string? | 该方法没有测到任何与负载相关的内容：`request_error`、`client_error`、`bad_response`、`mixed`；`null`——测到了 |
 | `methods[].sent`、`methods[].failed`、`methods[].aborted`、`methods[].not_sent`、`methods[].not_sent_generator`、`methods[].not_sent_stream`、`methods[].not_sent_connection`、`methods[].warmup_sent`、`methods[].warmup_failed`、`methods[].warmup_not_sent` | int | 该方法在运行同名字段中所占的部分 |
 | `methods[].rps` | float? | `sent/s`：已发送调用数除以该方法的发送时间；`null`——没有调用 |

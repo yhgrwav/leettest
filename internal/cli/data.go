@@ -371,7 +371,26 @@ func AttachMethods(
 		narrowest[i].narrow(calls[i].Template)
 	}
 
-	return unchecked, methods, errors.Join(errs...)
+	return onePerMethod(unchecked), methods, errors.Join(errs...)
+}
+
+// onePerMethod keeps the first entry of each gRPC method: a method called by
+// several calls and steps is one thing the check could not reach, and the
+// warning and the JSON name it once.
+func onePerMethod(list []Unchecked) []Unchecked {
+	seen := make(map[string]bool, len(list))
+	kept := list[:0]
+
+	for _, u := range list {
+		if seen[u.Method] {
+			continue
+		}
+
+		seen[u.Method] = true
+		kept = append(kept, u)
+	}
+
+	return kept
 }
 
 // checkStepMethod asks the target about step k (counting from 0, after the
