@@ -131,7 +131,7 @@ A config with a wrong `pass` is an error before the start (exit code 1), not a r
 check. An empty `pass: {}` is an error too.
 
 In a scenario (not released yet) `pass` also stands under a step, and the call's own judges the
-head: the rules are in [Scenario](#scenario-steps-after-a-call).
+head: the rules are in [Scenario](#scenario-steps-after-a-call) (`pass` in a scenario).
 
 **Each limit gets a verdict**: `pass`, `fail` or `unknown`. The report prints a `Thresholds:` block
 with the worst of them and a row per limit; the JSON has the `thresholds` field.
@@ -501,8 +501,7 @@ the reference stand.
 - **Not together with the step's `data` or with `templates: true`** on it. The records of a file are
   not templated: under a call with `templates: true`, a record with `{{` is an error naming the
   line; write `templates: false` on the step to send the braces as text.
-- **`dataset_reuse: false` is not supported in a step yet**, and neither are `rps`, `duration` and
-  `pass`.
+- **`dataset_reuse: false` is not supported in a step yet**, and neither are `rps` and `duration`.
 - **In the report** the step's method row carries the dataset line and `methods[].dataset`.
   `used` counts the iterations handed out with the step, not the steps that were reached.
 
@@ -574,9 +573,20 @@ against its own method: a typo in a step's method or field is a config error.
 The in-flight need is counted over the sum of the step timeouts (`rps` × Σ step timeouts); when it
 is above `-max-in-flight` the run does not start, and the only advice is `-max-in-flight <N>`.
 
-Not supported yet, and a run with them is refused: a scenario together with `pass` and together with
-a breaking-point search (`load.breakpoint`). The live screen and the Prometheus metrics do not show
-a scenario; it is seen in the report only.
+**`pass` in a scenario** (not released yet) is a limit per row, not per iteration. The call's `pass`
+judges the head, step 1, and the steps do not inherit it; `steps[].pass` judges the row of its
+step. The keys and checks are the call's (see [Pass limits](#pass-limits)), with two substitutions
+for a step: a latency limit is below the step's own `timeout`, and `p999` takes the call's `rps` and
+`duration`. The limits are checked in the config's order: the head, its steps, the next call; the
+`method` of a limit in the report and in JSON is the key of the row it judged (see below). A step's
+`errors` share is counted over the calls that reached the step: iterations that failed earlier are
+in the scenario block, not in the step's share. A step no call reached has nothing to judge:
+`unknown`, `nothing_sent`, exit code `2`. A limit on the whole iteration is not supported yet.
+
+A breaking-point search can take a scenario (`load.breakpoint` with the scenario's call, see
+[the search](report.md#breaking-point-search)); then `breakpoint.p99_limit` and `pass` under the
+call or its steps are refused, the limit of a search is `breakpoint.pass.held_rps`. The live screen
+and the Prometheus metrics do not show a scenario; it is seen in the report only.
 
 A method that appears more than once in the run (in several steps, or in a step and in a plain
 call) gets rows with the key `<method> (<scenario>, step <n>)`, `n` from 1, the head is step 1; a
@@ -958,7 +968,7 @@ measured calls only. The first column is the field's full path.
 | `unchecked[].reason` | string | `reflection_off` or `reflection_failed` |
 | `unchecked[].error` | string | Text for people, changes with grpc-go |
 | `thresholds` | []object? | Verdicts on the `pass` limits, an object per limit, all with the same keys; the ones that do not belong to a limit are `null`. `null` — no limits set (not an empty list, which would read as "all passed"). A search writes it at the top level |
-| `thresholds[].method` | string? | The method with its leading slash, as the report names it; `null` — a search's limit |
+| `thresholds[].method` | string? | The key of the row the limit judged, with its leading slash, the same as `methods[].method` of that row (`/pkg.Svc/Get (checkout, step 2)` for a repeated method of a scenario); `null` — a search's limit |
 | `thresholds[].key` | string | `p50`, `p90`, `p95`, `p99`, `p999`, `errors`, `held_rps` |
 | `thresholds[].verdict` | string | `pass`, `fail`, `unknown` |
 | `thresholds[].reason` | string? | Why `unknown`, from the list: `incomplete`, `invalid`, `few_observations`, `run_limit`, `generator`, `stream`, `client_errors`, `nothing_sent`, `censored`; `null` for `pass` and `fail` |
@@ -1112,7 +1122,7 @@ as in the run above, a plain run's other fields are not at the top level. Every 
 | `breakpoint.stop_reason` | string? | Who ended the search: `dataset_exhausted` (a `dataset_reuse: false` file ran out), `seq_overflow` (a `{{seq}}` did not fit its field; only in builds newer than the last release), `requested` (stopped by the user); `null` — the search ended itself |
 | `breakpoint.scenario` | string? | (not released yet) The name of the searched scenario; `null` — the search is over one call |
 | `breakpoint.rate_unit` | string | (not released yet) What the rates of the search count: `iterations` — iterations of a scenario per second, `calls` — calls per second |
-| `breakpoint.broke_step` | object? | (not released yet) The step that broke first in the run that ended the search; `null` — a call, or no step is named |
+| `breakpoint.broke_step` | object? | (not released yet) The step that broke first in the run that ended the search; `null` — a call, or no step is named. `why` names the cause of the whole search and `broke_step` the step that first hit its own knee or errors, so they can name different steps: with `why: "errors"` and `broke_step.step: 1`, step 1 may have broken at the knee (its p99 3.4× up, no errors) while step 3 is the one with 7% errors |
 | `breakpoint.broke_step.step` | int | (not released yet) The step's place in the scenario, from 1: the head is 1 |
 | `breakpoint.broke_step.method` | string | (not released yet) The method of the step's row, as in `methods[].method` of the run's report |
 | `breakpoint.notes` | []string | The search's notes, text for people in ASCII; do not parse |
