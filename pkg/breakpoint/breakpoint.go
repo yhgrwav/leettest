@@ -29,10 +29,12 @@ import (
 
 var ErrPlan = errors.New("breaking-point plan")
 
-// ErrScenario is the search refusing a run whose report holds a scenario:
-// Sent counts step calls and Scheduled iterations, so the search's judgements
-// would compare unlike things.
-var ErrScenario = errors.New("the breaking-point search does not run scenarios")
+// Row names a row of a scenario: its step from 1, the head being step 1, and
+// the key of its report row.
+type Row struct {
+	Step   int
+	Method string
+}
 
 // Plan is a rising profile: rates from From up to To, each step Factor times
 // the last (or Step more, when Step is set), each held for Hold, of which the
@@ -49,6 +51,9 @@ type Plan struct {
 	// cooldown of max(Timeout, Settle) without load, so the target's queue
 	// left from the first try does not confirm the break.
 	Timeout time.Duration
+	// StepTimeouts are the deadlines of the steps after the head of a scenario,
+	// in order; empty for a plain call.
+	StepTimeouts []time.Duration
 	// MaxInFlight is the in-flight cap. Zero: each step gets the smallest it
 	// can run with (engine.InFlightNeed). Set and too low for a step: the
 	// search stops there with RunLimit, keeping what held below.
@@ -196,6 +201,9 @@ type Step struct {
 	Why    string
 	Cause  Cause
 	Kind   Kind
+	// BrokeStep, for a scenario, is the first row to break, in the order of the
+	// steps; nil for a plain call and for a step that broke on no row.
+	BrokeStep *Row
 	// Recovered, for a Probe, says its p99 came within Recovered times the
 	// baseline: a probe that did not break may still not have recovered.
 	Recovered bool
@@ -248,10 +256,19 @@ type Result struct {
 	Held, Broke int
 	// Cause is the reason of the run that ended the search.
 	Cause Cause
-	Steps []Step
+	// BrokeStep is the first row to break in the run that ended the search, for
+	// a scenario that broke; nil otherwise.
+	BrokeStep *Row
+	Steps     []Step
 	// Notes say what the outcome does not: a step that broke once and held
 	// on its repeat, a knee with no baseline below it.
 	Notes []string
+}
+
+// IterationTimeout is the longest an iteration can live: the call's Timeout,
+// and for a scenario the sum with its steps'.
+func (p Plan) IterationTimeout() time.Duration {
+	return p.Timeout
 }
 
 // Cooldown is the pause without load before a broken step is repeated.
@@ -447,8 +464,6 @@ func (s *search) step(ctx context.Context, rps int, hold time.Duration, kind Kin
 		return step, ctx.Err()
 	case err != nil:
 		return step, err
-	case len(report.Scenarios) > 0:
-		return step, ErrScenario
 	}
 	step.Broken, step.Cause, step.Why = s.waits(rps, report)
 	if step.Why == "" {
