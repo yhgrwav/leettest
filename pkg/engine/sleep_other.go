@@ -25,13 +25,9 @@ import (
 // macOS (kqueue takes a nanosecond timeout) is not measured.
 const preciseSleep = false
 
-// sleepPrecisely spins to until; exactScheduleFor keeps it unused here.
+// sleepPrecisely busy-waits to until. Production never calls it here:
+// preciseSleep is false, so exactScheduleFor is false and waitUntil does not
+// reach it; only a test of the wait does.
 func sleepPrecisely(ctx context.Context, until time.Time) error {
-	for time.Now().Before(until) {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return spinUntil(ctx, until)
 }
