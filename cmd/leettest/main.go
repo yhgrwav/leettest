@@ -1170,14 +1170,25 @@ func limitsResult(results []threshold.Result) error {
 	return nil
 }
 
-// methodLimits are the limits the config set, by the method as the report
-// names it.
-func methodLimits(cfg *config.MasterConfig, _ []engine.Call) []threshold.MethodLimits {
+// methodLimits are the limits the config set, by the key of the row the report
+// names (engine.RowKeys of calls, which are the config's calls built): per
+// call its own, the head's of a scenario, then each step's, in the config's
+// order.
+func methodLimits(cfg *config.MasterConfig, calls []engine.Call) []threshold.MethodLimits {
 	var limits []threshold.MethodLimits
 
+	keys := engine.RowKeys(calls)
+
 	for i := range cfg.Load.Calls {
-		if call := &cfg.Load.Calls[i]; call.RawPass != nil {
-			limits = append(limits, threshold.MethodLimits{Name: "/" + call.Method, Limits: call.Pass})
+		call := &cfg.Load.Calls[i]
+		if call.RawPass != nil {
+			limits = append(limits, threshold.MethodLimits{Name: keys[i][0], Limits: call.Pass})
+		}
+
+		for k := range call.Steps {
+			if call.Steps[k].RawPass != nil {
+				limits = append(limits, threshold.MethodLimits{Name: keys[i][k+1], Limits: call.Steps[k].Pass})
+			}
 		}
 	}
 
