@@ -132,7 +132,7 @@ func TestRefreshWatch_ASourceWithoutRefreshIsNotAskedAgain(t *testing.T) {
 func TestLagNotice_ALateLineIsPrintedWithoutAnotherAfterView(t *testing.T) {
 	var stderr strings.Builder
 
-	n := &lagNotice{stderr: &stderr, send: func(string) { t.Error("sent into a view that is gone") }}
+	n := &lineNotice{stderr: &stderr, send: func(string) { t.Error("sent into a view that is gone") }}
 	n.afterView()
 	n.deliver("warning: late")
 
@@ -149,7 +149,7 @@ func TestLagNotice_ALateLineIsPrintedWithoutAnotherAfterView(t *testing.T) {
 func TestRefreshNotice_ALiveViewKeepsTheFirstLine(t *testing.T) {
 	var stderr strings.Builder
 
-	n := &refreshNotice{stderr: &stderr, live: true}
+	n := newRefreshNotice(&stderr, true)
 	n.deliver("first")
 	n.deliver("second")
 	n.afterView()
