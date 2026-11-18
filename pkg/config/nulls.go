@@ -62,17 +62,61 @@ var emptyKeyErrors = map[string]error{
 	"templates":     ErrTemplatesValue,
 }
 
-// checkTree runs the checks the decoder cannot make. An anchor name defined
-// twice is refused first (see collectAnchors), so every alias has one anchor.
-// Then it rejects `dataset:`, `dataset: ~` and `dataset: null` under a call
-// (and the same for dataset_order and dataset_seed, whose lost value would
-// change the run without a word),
-// also behind an anchor (`&a ~`) or a tag (`!!null`, `&a !!null`), and an alias
-// (`*a`, also behind a tag) of an anchor that marks a null. The decoder reads
-// each as the key left out, so the path is lost without a word and the call
-// runs with an empty message. An alias with no anchor is the decoder's error.
-// The same for `pass:` of a call or of the search and for each limit inside
-// it: a threshold written with no value would never be judged.
+// noValueRule is what is said of a key written with no value: the error it
+// is, and the hint that follows it.
+type noValueRule struct {
+	err  error
+	hint string
+}
+
+// noValueKeys holds the keys at a fixed path that are refused with no value,
+// each read by the decoder as left out. The message does not repeat the path:
+// the sentinel names the key.
+var noValueKeys = map[string]noValueRule{
+	"$.app.mode":             {ErrInvalidMode, "no value"},
+	"$.load.stop_on_errors":  {ErrInvalidStopOnErrors, "has no value: write a percent such as 5%, or leave the key out"},
+	"$.app.metadata_refresh": {ErrInvalidMetadataRefresh, "has no value: write a duration such as 5m, or leave the key out"},
+	"$.app.idle_timeout":     {ErrInvalidIdleTimeout, "has no value: write a duration such as 5m, or leave the key out"},
+}
+
+// noValueRuleOf is the rule for a path refused with no value: a key of
+// noValueKeys, or a pass section and each limit inside it (passPath), which
+// name themselves by path.
+func noValueRuleOf(path string) (noValueRule, bool) {
+	if rule, ok := noValueKeys[path]; ok {
+		return rule, true
+	}
+	if passPath.MatchString(path) {
+		return noValueRule{ErrThreshold, strings.TrimPrefix(path, "$.") + " has no value: write the limit or leave it out"}, true
+	}
+
+	return noValueRule{}, false
+}
+
+// checkTree runs the checks the decoder cannot make, on the parsed tree of the
+// file. It returns the parser's error for a file that does not parse. An
+// anchor name defined twice is refused alone, before the rest (see
+// collectAnchors), so every alias has one anchor. Then, all errors in file
+// order, it refuses:
+//   - a key written with no value, which the decoder reads as left out:
+//     app.mode, app.metadata_refresh, app.idle_timeout and load.stop_on_errors
+//     (noValueKeys); a pass of a call, of a step or of the search and each
+//     limit inside it (a threshold that would never be judged); the search's
+//     breakpoint.errors_limit; a call's dataset, dataset_order, dataset_seed,
+//     dataset_reuse and templates;
+//   - a dataset_seed that is not a whole number, in a call or in a step;
+//   - in a call, scenario and steps with no value; in a step, method,
+//     timeout, dataset, dataset_order and dataset_seed with no value, a
+//     templates that is not true or false, a key a step does not take yet
+//     (dataset_reuse, rps, duration) and any other key a step does not have;
+//   - an extract of a call or of a step with no value, empty, not a mapping,
+//     or with a path that is not a non-empty string (visitExtract).
+//
+// No value is `key:`, `key: ~` and `key: null`, also behind an anchor
+// (`&a ~`) or a tag (`!!null`, `&a !!null`), and an alias (`*a`, also behind
+// a tag) of an anchor that marks a null. An alias with no anchor is the
+// decoder's error. A step's data with no value is an empty message and is not
+// refused.
 func checkTree(raw []byte) error {
 	file, err := parser.ParseBytes(raw, 0)
 	if err != nil {
@@ -84,35 +128,35 @@ func checkTree(raw []byte) error {
 		return err
 	}
 
-	v := nullDatasetVisitor{anchors: anchors}
+	v := treeVisitor{anchors: anchors}
 	walkDocs(file, &v)
 
 	return errors.Join(v.errs...)
 }
 
-type nullDatasetVisitor struct {
+// treeVisitor collects the refusals of checkTree, one visit per mapping pair.
+type treeVisitor struct {
 	anchors map[string]ast.Node
 	errs    []error
 }
 
-func (v *nullDatasetVisitor) Visit(node ast.Node) ast.Visitor {
+func (v *treeVisitor) Visit(node ast.Node) ast.Visitor {
 	pair, ok := node.(*ast.MappingValueNode)
 	if !ok {
 		return v
 	}
 	path := pair.GetPath()
-	if callExtractPath.MatchString(path) {
-		v.visitExtract(pair, path)
+	if rule, ok := noValueRuleOf(path); ok {
+		if value, resolved := v.unwrap(pair.Value); resolved {
+			if _, null := value.(*ast.NullNode); null {
+				v.errs = append(v.errs, fmt.Errorf("line %d: %w: %s", pair.Key.GetToken().Position.Line, rule.err, rule.hint))
+			}
+		}
 
 		return v
 	}
-	if passPath.MatchString(path) {
-		if value, resolved := v.unwrap(pair.Value); resolved {
-			if _, null := value.(*ast.NullNode); null {
-				v.errs = append(v.errs, fmt.Errorf("line %d: %w", pair.Key.GetToken().Position.Line,
-					passErr("%s has no value: write the limit or leave it out", strings.TrimPrefix(path, "$."))))
-			}
-		}
+	if callExtractPath.MatchString(path) {
+		v.visitExtract(pair, path)
 
 		return v
 	}
@@ -123,45 +167,6 @@ func (v *nullDatasetVisitor) Visit(node ast.Node) ast.Visitor {
 	}
 	match := callDatasetPath.FindStringSubmatch(path)
 	errorsLimit := path == errorsLimitPath
-	if path == "$.app.mode" {
-		if value, resolved := v.unwrap(pair.Value); resolved {
-			if _, null := value.(*ast.NullNode); null {
-				v.errs = append(v.errs, fmt.Errorf("line %d: %w: no value", pair.Key.GetToken().Position.Line, ErrInvalidMode))
-			}
-		}
-
-		return v
-	}
-	if path == "$.load.stop_on_errors" {
-		if value, resolved := v.unwrap(pair.Value); resolved {
-			if _, null := value.(*ast.NullNode); null {
-				v.errs = append(v.errs, fmt.Errorf("line %d: %w: has no value: write a percent such as 5%%, or leave the key out",
-					pair.Key.GetToken().Position.Line, ErrInvalidStopOnErrors))
-			}
-		}
-
-		return v
-	}
-	if path == "$.app.metadata_refresh" {
-		if value, resolved := v.unwrap(pair.Value); resolved {
-			if _, null := value.(*ast.NullNode); null {
-				v.errs = append(v.errs, fmt.Errorf("line %d: %w: has no value: write a duration such as 5m, or leave the key out",
-					pair.Key.GetToken().Position.Line, ErrInvalidMetadataRefresh))
-			}
-		}
-
-		return v
-	}
-	if path == "$.app.idle_timeout" {
-		if value, resolved := v.unwrap(pair.Value); resolved {
-			if _, null := value.(*ast.NullNode); null {
-				v.errs = append(v.errs, fmt.Errorf("line %d: %w: has no value: write a duration such as 5m, or leave the key out",
-					pair.Key.GetToken().Position.Line, ErrInvalidIdleTimeout))
-			}
-		}
-
-		return v
-	}
 	if match == nil && !errorsLimit {
 		return v
 	}
@@ -192,12 +197,12 @@ func (v *nullDatasetVisitor) Visit(node ast.Node) ast.Visitor {
 // visitScenarioKey refuses a scenario, steps, method or timeout written with no
 // value (the decoder reads it as left out), a step key a step does not take
 // yet, and one it does not have. Every message names the key by its path.
-func (v *nullDatasetVisitor) visitScenarioKey(pair *ast.MappingValueNode, path string) {
+func (v *treeVisitor) visitScenarioKey(pair *ast.MappingValueNode, path string) {
 	line := pair.Key.GetToken().Position.Line
 	name := strings.TrimPrefix(path, "$.")
 
 	m := stepKeyPath.FindStringSubmatch(path)
-	// pass is read by checkTree before this runs (passPath).
+	// A step's pass never gets here: Visit takes it by noValueRuleOf first.
 	if len(m) > 3 && m[3] != "method" && m[3] != "timeout" && m[3] != "data" && m[3] != "templates" && m[3] != "extract" &&
 		!stepDatasetKeys[m[3]] {
 		if stepKeysLater[m[3]] {
@@ -263,7 +268,7 @@ func (v *nullDatasetVisitor) visitScenarioKey(pair *ast.MappingValueNode, path s
 // value (read as left out), empty, not a mapping, or with a path that is not a
 // non-empty string (a number, a null and an empty text decode into a string
 // without a word). Each message names the key by its path.
-func (v *nullDatasetVisitor) visitExtract(pair *ast.MappingValueNode, path string) {
+func (v *treeVisitor) visitExtract(pair *ast.MappingValueNode, path string) {
 	line := pair.Key.GetToken().Position.Line
 	name := strings.TrimPrefix(path, "$.")
 
@@ -317,7 +322,7 @@ func (v *nullDatasetVisitor) visitExtract(pair *ast.MappingValueNode, path strin
 
 // unwrap strips anchors and tags and follows aliases to the node a value is.
 // It is false for an alias with no anchor or one that loops.
-func (v *nullDatasetVisitor) unwrap(value ast.Node) (ast.Node, bool) {
+func (v *treeVisitor) unwrap(value ast.Node) (ast.Node, bool) {
 	followed := map[string]bool{}
 	for {
 		switch wrapped := value.(type) {
