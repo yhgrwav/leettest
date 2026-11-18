@@ -319,6 +319,12 @@ against. A step that still ends with no p99 (too few of its calls got a measured
 set that baseline; a probe run with no baseline counts as recovered, and the report says so in a note
 (`no baseline: the first step measured too few calls for a p99, the knee was not checked`).
 
+A search can also take a scenario (not released yet): the call with `scenario` and `steps` is the
+head, and `from`, `to` and `step` count iterations per second, not requests. Every step of the
+scenario is judged on its own; the report names the step that broke first (`broke_step` in JSON).
+`p99_limit` is not allowed with a scenario, and `pass` on a step is refused as on the call: the limit
+of a search is `breakpoint.pass.held_rps`, in iterations per second.
+
 The result (`outcome` in JSON) is a closed list: `broke` (held X, broke at Y), `broke_at_first`
 (broke at the first step — start lower), `held_all` (held every step up to `to`), `run_limit` (the
 generator, a connection's limit or `-max-in-flight` ran out: nothing is known about the target

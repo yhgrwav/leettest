@@ -39,6 +39,13 @@ func passErr(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrThreshold, fmt.Sprintf(format, args...))
 }
 
+const searchPassText = "pass with load.breakpoint: a search has no single p99, use breakpoint.pass.held_rps"
+
+// searchPassErr is the refusal of a pass section on the searched call itself.
+func searchPassErr() error {
+	return passErr("%s", searchPassText)
+}
+
 // resolvePass reads the pass sections into the limits the run is judged by.
 // It runs after Validate, so the rates, durations and timeouts it compares
 // with are valid.
@@ -52,8 +59,12 @@ func (m *MasterConfig) resolvePass() error {
 		switch {
 		case search:
 			if call.RawPass != nil {
-				errs = append(errs, fmt.Errorf("%s: %w", call.where(i),
-					passErr("pass with load.breakpoint: a search has no single p99, use breakpoint.pass.held_rps")))
+				errs = append(errs, fmt.Errorf("%s: %w", call.where(i), searchPassErr()))
+			}
+			for k := range call.Steps {
+				if call.Steps[k].RawPass != nil {
+					errs = append(errs, fmt.Errorf("%w: load.calls[%d].steps[%d]: %s", ErrThreshold, i, k, searchPassText))
+				}
 			}
 		case call.RawPass != nil:
 			limits, err := call.resolvePass(m.Load.Warmup)
@@ -69,7 +80,12 @@ func (m *MasterConfig) resolvePass() error {
 	}
 
 	if b := m.Load.Breakpoint; b != nil && b.RawPass != nil {
-		limit, err := b.resolvePass(m.Load.Calls[0].Timeout)
+		unit := "requests"
+		if m.Load.Calls[0].isScenario() {
+			unit = "iterations"
+		}
+
+		limit, err := b.resolvePass(m.Load.Calls[0].Timeout, unit)
 		if err != nil {
 			errs = append(errs, err)
 		} else {
@@ -235,7 +251,9 @@ func percentLimit(v any, key string) (share.Percent, error) {
 	return share.Parse(written, key)
 }
 
-func (b *Breakpoint) resolvePass(timeout time.Duration) (threshold.SearchLimit, error) {
+// resolvePass reads breakpoint.pass; unit is what a step of the plan counts,
+// "requests" for a call and "iterations" for a scenario, for the refusals' text.
+func (b *Breakpoint) resolvePass(timeout time.Duration, unit string) (threshold.SearchLimit, error) {
 	raw := map[string]any(*b.RawPass)
 
 	var errs []error
@@ -254,7 +272,7 @@ func (b *Breakpoint) resolvePass(timeout time.Duration) (threshold.SearchLimit, 
 		return threshold.SearchLimit{}, passErr("breakpoint.pass has no held_rps: set it or leave pass out")
 	}
 
-	held, err := wholeRate(v)
+	held, err := wholeRate(v, unit)
 	if err != nil {
 		return threshold.SearchLimit{}, err
 	}
@@ -289,7 +307,7 @@ func (b *Breakpoint) resolvePass(timeout time.Duration) (threshold.SearchLimit, 
 
 // wholeRate reads held_rps: a whole number as YAML wrote it, never a float or
 // a string.
-func wholeRate(v any) (int, error) {
+func wholeRate(v any, unit string) (int, error) {
 	var n int64
 
 	switch x := v.(type) {
@@ -304,11 +322,11 @@ func wholeRate(v any) (int, error) {
 
 		n = int64(x)
 	default:
-		return 0, passErr("breakpoint.pass.held_rps is %v, want a whole number of requests per second", v)
+		return 0, passErr("breakpoint.pass.held_rps is %v, want a whole number of %s per second", v, unit)
 	}
 
 	if n < 1 || n > math.MaxInt32 {
-		return 0, passErr("breakpoint.pass.held_rps %d is not a positive whole number of requests per second", n)
+		return 0, passErr("breakpoint.pass.held_rps %d is not a positive whole number of %s per second", n, unit)
 	}
 
 	return int(n), nil

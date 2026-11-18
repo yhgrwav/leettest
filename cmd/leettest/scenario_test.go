@@ -102,7 +102,7 @@ func TestRun_ScenarioWithABreakpointSearchIsRefusedAtLoad(t *testing.T) {
 	if res.err == nil {
 		t.Fatal("run succeeded, want p99_limit with a scenario refused")
 	}
-	if want := "load.breakpoint.p99_limit with a scenario";!strings.Contains(res.err.Error(), want) {
+	if want := "load.breakpoint.p99_limit with a scenario"; !strings.Contains(res.err.Error(), want) {
 		t.Errorf("error %q lacks %q", res.err, want)
 	}
 }

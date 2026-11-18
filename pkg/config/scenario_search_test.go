@@ -91,7 +91,7 @@ func TestScenarioSearch_AStepsPassIsRefusedWithItsPath(t *testing.T) {
 // too (red only behind the lifted refusal).
 func TestScenarioSearch_TheHeadsPassIsStillRefused(t *testing.T) {
 	refuses(t, "the head's pass", scenarioSearch("      pass:\n        errors: 1%\n", "", ""),
-		"load.calls[0]", "pass with load.breakpoint", "breakpoint.pass.held_rps")
+		"call 0", "pass with load.breakpoint", "breakpoint.pass.held_rps")
 }
 
 // Ground: contract (spec 3.3) — breakpoint.p99_limit with a scenario is refused

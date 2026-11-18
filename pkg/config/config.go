@@ -362,9 +362,6 @@ func (l Load) validateSearch() []error {
 	}
 	for i := range l.Calls {
 		call := &l.Calls[i]
-		if call.isScenario() {
-			errs = append(errs, fmt.Errorf("%w: load.calls[%d]: a scenario can't be searched yet: the search measures one call", ErrBreakpoint, i))
-		}
 		if call.RPS != 0 {
 			errs = append(errs, fmt.Errorf("%w: %s: rps with load.breakpoint: the search sets it", ErrBreakpoint, call.where(i)))
 		}
@@ -375,8 +372,22 @@ func (l Load) validateSearch() []error {
 	if err := l.Breakpoint.validate(); err != nil {
 		errs = append(errs, err)
 	}
+	if l.Breakpoint.P99Limit != 0 && l.searchesScenario() {
+		errs = append(errs, fmt.Errorf("%w: load.breakpoint.p99_limit with a scenario: a step's p99 is judged by the knee, "+
+			"a limit for every step or for the iteration is not decided yet; leave p99_limit out", ErrBreakpoint))
+	}
 
 	return errs
+}
+
+func (l Load) searchesScenario() bool {
+	for i := range l.Calls {
+		if l.Calls[i].isScenario() {
+			return true
+		}
+	}
+
+	return false
 }
 
 // Rate is a whole number of requests per second. A fractional one is refused
