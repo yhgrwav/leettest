@@ -203,6 +203,70 @@ func TestReport_ADeadlinePastBeforeSendingIsNotATimeoutAfterWait(t *testing.T) {
 	}
 }
 
+// The warm-up distribution follows the measured part's censoring rule, not a copy of it: a
+// timeout the target answered itself well before our deadline is its own latency there too, and
+// the warm-up p50 printed beside it does not read «>= deadline». It is not counted in
+// AnsweredEarly, which like TimedOut is the measured part only.
+//
+// Ground: contract — WarmupReport is public; the third copy of the censoring rule is recordWarmup.
+func TestRecordWarmup_AnEarlyDeadlineAnswerIsExact(t *testing.T) {
+	early := Outcome{Category: CategoryTimeout, Code: "DeadlineExceeded", CodeFromTarget: true}
+	at := []time.Duration{100 * time.Millisecond, 200 * time.Millisecond, 300 * time.Millisecond}
+	calls := []Outcome{early, early, early}
+
+	stats := warmupRunTook(t, calls, at, 50*time.Millisecond)
+	m := stats.Report().Methods[0]
+
+	if m.Warmup == nil || m.Warmup.Calls != 3 {
+		t.Fatalf("warm-up = %+v, want 3 calls", m.Warmup)
+	}
+	if got := m.Warmup.P50; !got.Defined || !got.Exact || !nearly(got.Value, 50*time.Millisecond) {
+		t.Errorf("warm-up p50 = %+v, want exact at 50ms, not a bound at the 1s deadline", got)
+	}
+	if m.AnsweredEarly != 0 || m.TimedOut != 0 {
+		t.Errorf("AnsweredEarly %d, TimedOut %d; want 0 and 0: the warm-up is counted apart", m.AnsweredEarly, m.TimedOut)
+	}
+}
+
+// Ground: boundary — guard. A copy of our deadline in the warm-up stays a bound at the deadline.
+func TestRecordWarmup_ADeadlineCopyStaysCensored(t *testing.T) {
+	copyOfOurs := Outcome{Category: CategoryTimeout, Code: "DeadlineExceeded", CodeFromTarget: true}
+	at := []time.Duration{100 * time.Millisecond, 200 * time.Millisecond, 300 * time.Millisecond}
+
+	stats := warmupRunTook(t, []Outcome{copyOfOurs, copyOfOurs, copyOfOurs}, at, 950*time.Millisecond)
+	m := stats.Report().Methods[0]
+
+	if m.Warmup == nil || m.Warmup.Calls != 3 {
+		t.Fatalf("warm-up = %+v, want 3 calls", m.Warmup)
+	}
+	if got := m.Warmup.P50; !got.Defined || got.Exact || got.Floor() < time.Second {
+		t.Errorf("warm-up p50 = %+v, want a lower bound of at least the 1s deadline", got)
+	}
+}
+
+// warmupRunTook is warmupRun with every call finishing took after its schedule.
+func warmupRunTook(t *testing.T, calls []Outcome, at []time.Duration, took time.Duration) *Stats {
+	t.Helper()
+
+	stats := NewStats()
+	start := time.Now()
+	stats.Start(start, time.Second)
+
+	for i := range calls {
+		o := calls[i]
+		sched := start.Add(at[i])
+		o.SentAt = sched
+		o.DoneAt = sched.Add(took)
+		stats.Record(Result{Method: "a", ScheduledAt: sched, BegunAt: sched, Deadline: sched.Add(time.Second), Outcome: o})
+	}
+
+	end := start.Add(3 * time.Second)
+	stats.EndSending(end)
+	stats.Finish(end)
+
+	return stats
+}
+
 // Every cause is counted over one set: measured calls, sent or not, that
 // waited over the floor for it. A generator 200ms behind on calls that all
 // went out still counts.

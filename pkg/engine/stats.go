@@ -249,6 +249,11 @@ type MethodReport struct {
 	// NotSent, in UnsentTimedOut.
 	TimedOutAfterWait int
 	UnsentTimedOut    int
+	// AnsweredEarly counts the TimedOut calls the target answered itself with
+	// DEADLINE_EXCEEDED well before our deadline: recorded at the latency seen,
+	// not as a lower bound. TimedOut minus AnsweredEarly is the calls we
+	// stopped waiting for. Measured part only; a warm-up call is not counted.
+	AnsweredEarly int
 	// SilentFrom is the first second, by when calls went out and counting
 	// warmup, from which on the target was heard on no call sent, and at
 	// least one sent then timed out. Calls never sent, or cut off by the

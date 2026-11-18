@@ -430,6 +430,32 @@ func TestRecord_ADeadlineCopyStaysCensored(t *testing.T) {
 	}
 }
 
+// Ground: contract — MethodReport.AnsweredEarly is the timeouts the target answered itself
+// before 90% of the budget (the report's note leaves them out of «got no answer»); TimedOut keeps
+// counting every timeout, so the category count is unchanged. A copy of our deadline and a
+// timeout with no status are not early answers.
+func TestRecord_AnsweredEarlyCountsOnlyTheEarlyAnswers(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		took       time.Duration
+		fromTarget bool
+		want       int
+	}{
+		{"50 ms from the target", 50 * time.Millisecond, true, 3},
+		{"95% from the target", 950 * time.Millisecond, true, 0},
+		{"50 ms, no status", 50 * time.Millisecond, false, 0},
+	} {
+		m := auditRun(tc.took, tc.fromTarget)
+
+		if m.AnsweredEarly != tc.want {
+			t.Errorf("%s: AnsweredEarly = %d, want %d", tc.name, m.AnsweredEarly, tc.want)
+		}
+		if m.TimedOut != 3 {
+			t.Errorf("%s: TimedOut = %d, want 3: the category count does not move", tc.name, m.TimedOut)
+		}
+	}
+}
+
 // Ground: boundary — guard. With no status from the target the timeout is ours, however early it
 // was noticed.
 func TestRecord_ATimeoutWithNoStatusStaysCensored(t *testing.T) {
