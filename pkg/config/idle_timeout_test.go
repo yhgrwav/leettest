@@ -98,3 +98,36 @@ func TestIdleTimeout_ABareNumberIsRefusedLikeRamp(t *testing.T) {
 		})
 	}
 }
+
+// Ground: contract (R3 F-A, the shape of metadata_refresh) — a key with no value
+// (`idle_timeout:`, `~`, `null`) is refused with the line and the key, because the decoder would read it as left out and the
+// connections would keep grpc-go's 30 minutes without a word. The first inserted
+// line of withApp is line 3 of the file.
+// Mutation (drop the app.idle_timeout entry of checkTree) dies on every row.
+func TestIdleTimeout_NoValueIsRefusedWithTheLine(t *testing.T) {
+	const want = "line 3: invalid app.idle_timeout: has no value: write a duration such as 5m, or leave the key out"
+
+	for _, tc := range []struct{ name, line string }{
+		{"empty", "  idle_timeout:\n"},
+		{"tilde", "  idle_timeout: ~\n"},
+		{"null", "  idle_timeout: null\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := config.Parse(withApp(tc.line))
+			if !errors.Is(err, config.ErrInvalidIdleTimeout) {
+				t.Fatalf("error = %v, want ErrInvalidIdleTimeout", err)
+			}
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("error %q, want it to say %q", err, want)
+			}
+		})
+	}
+}
+
+// Ground: guard (R3 F-A, green before the code) — a value is still read after
+// the refusal of no value; the key left out is TestIdleTimeout_LeftOutIsNone.
+func TestIdleTimeout_AValueSurvivesTheNullCheck(t *testing.T) {
+	if cfg := parseApp(t, "  idle_timeout: 30s\n"); cfg.App.IdleTimeout != 30*time.Second {
+		t.Errorf("idle_timeout: 30s read as %s, want 30s", cfg.App.IdleTimeout)
+	}
+}
