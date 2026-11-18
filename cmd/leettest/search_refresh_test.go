@@ -27,8 +27,9 @@ import (
 )
 
 // mrSearchConfig writes a plaintext config of a breaking-point search over the
-// health call into dir, next to the token file: three steps of 1.5s (400, 500,
-// 625 rps) so the search outlasts several refresh reads of 1s, and
+// health call into dir, next to the token file: two steps of 2s (100 and 125
+// rps; a search of 400 rps can end at its first step in 1.5s on Windows, with one
+// poll of the watch) so the search outlasts several refresh reads of 1s, and
 // metadata_refresh: 1s over the file.
 func mrSearchConfig(t *testing.T, dir, addr string) string {
 	t.Helper()
@@ -40,7 +41,7 @@ func mrSearchConfig(t *testing.T, dir, addr string) string {
 
 	cfg := fmt.Sprintf("app:\n  target:\n    ip: %s\n    port: %s\n  tls: false\n%s  metadata_refresh: 1s\n"+
 		"load:\n  calls:\n    - method: %s\n      timeout: 200ms\n"+
-		"  breakpoint:\n    from: 400\n    to: 640\n    settle: 50ms\n    hold: 1500ms\n",
+		"  breakpoint:\n    from: 100\n    to: 130\n    settle: 50ms\n    hold: 2000ms\n",
 		host, port, mrFileApp, checkMethod)
 
 	path := filepath.Join(dir, "leettest.yaml")
@@ -76,7 +77,8 @@ func TestSearch_AFailedRefreshIsOneLineOnStderr(t *testing.T) {
 	cfg := mrSearchConfig(t, dir, target.addr)
 
 	go func() {
-		time.Sleep(300 * time.Millisecond)
+		// Half way between the start and the first read of the refresh at 1s.
+		time.Sleep(500 * time.Millisecond)
 		_ = os.WriteFile(filepath.Join(dir, "token.txt"), nil, 0o600)
 	}()
 
