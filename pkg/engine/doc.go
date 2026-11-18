@@ -13,6 +13,9 @@
 // limitations under the License.
 
 // Package engine generates load: it schedules requests at the configured
-// rates, issues unary RPCs through a worker pool and reports every outcome to
-// a metrics sink.
+// stages and hands them to a worker pool, which sends each through a Sender;
+// every Result is recorded in Stats. Stats keeps the per-method counts, the latency
+// distributions (built on pkg/metrics), the per-second timeline and the time
+// windows, and gives the run Report and the views a live screen and an export
+// read. The engine knows nothing about gRPC: the Sender does.
 package engine
