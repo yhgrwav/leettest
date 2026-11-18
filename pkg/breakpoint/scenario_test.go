@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/yhgrwav/leettest/pkg/engine"
+	"github.com/yhgrwav/leettest/pkg/metrics"
 )
 
 // scUnit is the millisecond: the p99s of the scenarios below are written as
@@ -148,18 +149,31 @@ func TestScenarioSearch_ALateStepFailingItsReachedCallsBreaksTheStep(t *testing.
 }
 
 // Ground: contract — a call lost to the connection is among the calls that
-// reached the row and counts as bad: 60 of a row's 1000 are 6% against 5%.
+// reached the row and counts as bad: 51 of a row's 1000 are 5.1% against 5%,
+// 50 hold (50 of the 950 that were sent would be 5.3%).
 func TestScenarioSearch_CallsLostToTheConnectionCountAmongTheRowsReached(t *testing.T) {
-	lost := scRow(3, 940, 0, 40*scUnit)
-	lost.NotSent, lost.NotSentConnection = 60, 60
-	broken := scReport(1000, scRow(1, 1000, 0, 20*scUnit), scRow(2, 1000, 0, 30*scUnit), lost)
+	for _, tc := range []struct {
+		lost  int
+		broke bool
+	}{{50, false}, {51, true}, {60, true}} {
+		lost := scRow(3, 1000-tc.lost, 0, 40*scUnit)
+		lost.NotSent, lost.NotSentConnection = tc.lost, tc.lost
+		broken := scReport(1000, scRow(1, 1000, 0, 20*scUnit), scRow(2, 1000, 0, 30*scUnit), lost)
 
-	var asked []int
-	res, err := Search(t.Context(), scPlan, fake(scFrom195(scGood(), broken), &asked))
-	if err != nil {
-		t.Fatalf("search: %v", err)
+		var asked []int
+		res, err := Search(t.Context(), scPlan, fake(scFrom195(scGood(), broken), &asked))
+		if err != nil {
+			t.Fatalf("%d lost: search: %v", tc.lost, err)
+		}
+		if !tc.broke {
+			if res.Outcome != HeldThroughout || res.BrokeStep != nil {
+				t.Errorf("%d of 1000 lost to the connection: %v names %+v, want HeldThroughout and no row", tc.lost, res.Outcome, res.BrokeStep)
+			}
+
+			continue
+		}
+		scBrokeAt195(t, strconv.Itoa(tc.lost)+" of 1000 lost to the connection", res, CauseErrors, 3)
 	}
-	scBrokeAt195(t, "60 of 1000 lost to the connection", res, CauseErrors, 3)
 }
 
 // Ground: contract — the knee is a row's own: step 3 growing from 5ms to 50ms
@@ -191,6 +205,51 @@ func TestScenarioSearch_AFastStepGrowingPastTheKneeBreaksBesideASlowOne(t *testi
 		if why := res.Steps[len(res.Steps)-1].Why; !strings.HasPrefix(why, "first to break: step 3 of 3, b.Step/Two: p99 ") {
 			t.Errorf("%v: why %q, want it to name step 3 first", tc.fast, why)
 		}
+	}
+}
+
+// Ground: boundary — the knee of a row is crossed at its p99 bucket's lower
+// edge, as a plain call's is: against a baseline of 20ms a row at exactly 60ms
+// holds (its bucket starts at 59.998ms, the knee is at 60.015ms) and 61ms
+// breaks. Real histograms: the edges of a bucket cannot be set through a fake
+// Quantile.
+func TestScenarioSearch_TheKneeOfARowIsComparedAtTheBucketsLowerEdge(t *testing.T) {
+	recorded := func(latency time.Duration) metrics.Quantile {
+		l := metrics.NewLatencies()
+		for range 1000 {
+			l.Record(latency)
+		}
+
+		return l.Snapshot().Percentile(0.99)
+	}
+	run := func(third time.Duration) engine.Report {
+		r := scReport(1000, scRow(1, 1000, 0, 20*scUnit), scRow(2, 1000, 0, 30*scUnit), scRow(3, 1000, 0, 20*scUnit))
+		for i := range r.Methods {
+			if r.Methods[i].Step == 3 {
+				r.Methods[i].P99 = recorded(third)
+			}
+		}
+
+		return r
+	}
+
+	for _, tc := range []struct {
+		third time.Duration
+		broke bool
+	}{{60 * scUnit, false}, {61 * scUnit, true}} {
+		var asked []int
+		res, err := Search(t.Context(), scPlan, fake(scFrom195(run(20*scUnit), run(tc.third)), &asked))
+		if err != nil {
+			t.Fatalf("%v: search: %v", tc.third, err)
+		}
+		if !tc.broke {
+			if res.Outcome != HeldThroughout {
+				t.Errorf("%v: %v, want HeldThroughout", tc.third, res.Outcome)
+			}
+
+			continue
+		}
+		scBrokeAt195(t, tc.third.String(), res, CauseP99VsBase, 3)
 	}
 }
 
@@ -233,28 +292,31 @@ func TestScenarioSearch_ARowsBaselineIsItsLowestHeldP99(t *testing.T) {
 }
 
 // Ground: boundary — a held step too short for a row's p99 leaves that row's
-// baseline alone: zero would be the lowest and no knee would ever be checked.
+// baseline alone: zero would be the lowest and no knee would ever be checked,
+// whether the short step is the first or the last that held.
 func TestScenarioSearch_ARowWithNoP99AtAHeldStepLeavesItsBaselineAlone(t *testing.T) {
-	third := func(rps int) time.Duration {
-		switch {
-		case rps == 100:
-			return 0
-		case rps < 195:
-			return 5 * scUnit
-		default:
-			return 20 * scUnit
+	for _, short := range []int{100, 156} {
+		third := func(rps int) time.Duration {
+			switch {
+			case rps == short:
+				return 0
+			case rps < 195:
+				return 5 * scUnit
+			default:
+				return 20 * scUnit
+			}
 		}
-	}
-	target := func(rps int) engine.Report {
-		return scReport(1000, scRow(1, 1000, 0, 20*scUnit), scRow(2, 1000, 0, 30*scUnit), scRow(3, 1000, 0, third(rps)))
-	}
+		target := func(rps int) engine.Report {
+			return scReport(1000, scRow(1, 1000, 0, 20*scUnit), scRow(2, 1000, 0, 30*scUnit), scRow(3, 1000, 0, third(rps)))
+		}
 
-	var asked []int
-	res, err := Search(t.Context(), scPlan, fake(target, &asked))
-	if err != nil {
-		t.Fatalf("search: %v", err)
+		var asked []int
+		res, err := Search(t.Context(), scPlan, fake(target, &asked))
+		if err != nil {
+			t.Fatalf("no p99 at %d: search: %v", short, err)
+		}
+		scBrokeAt195(t, "no p99 at "+strconv.Itoa(short)+", 20ms over a 5ms baseline", res, CauseP99VsBase, 3)
 	}
-	scBrokeAt195(t, "20ms over a 5ms baseline", res, CauseP99VsBase, 3)
 }
 
 // Ground: contract — the head's sent calls are what the generator owes: the
@@ -343,6 +405,42 @@ func TestScenarioSearch_CallsOfAStepLeftUnsentAreTheRunsLimit(t *testing.T) {
 		}
 		if last := res.Steps[len(res.Steps)-1]; last.Broken || !strings.Contains(last.Why, "step 3 of 3, b.Step/Two") {
 			t.Errorf("%s: broken %v why %q, want not broken and the row named", tc.name, last.Broken, last.Why)
+		}
+	}
+}
+
+// Ground: boundary — the allowance of a run's side is a thousandth of the
+// calls, not one call: of 10000 iterations the head may be short by 10 and a
+// step after it may leave 10 of its 10000 reached calls unsent; one more is the
+// run's limit.
+func TestScenarioSearch_TheAllowanceIsAThousandthAtTenThousandIterations(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		headSent, lost int
+		limit          bool
+	}{
+		{"head short by 10", 9990, 0, false},
+		{"head short by 11", 9989, 0, true},
+		{"step 3 left 10", 10000, 10, false},
+		{"step 3 left 11", 10000, 11, true},
+	} {
+		third := scRow(3, 10000-tc.lost, 0, 40*scUnit)
+		third.NotSent, third.NotSentGenerator = tc.lost, tc.lost
+		target := func(rps int) engine.Report {
+			if rps == 125 {
+				return scReport(10000, scRow(1, tc.headSent, 0, 20*scUnit), scRow(2, 10000, 0, 30*scUnit), third)
+			}
+
+			return scReport(10000, scRow(1, 10000, 0, 20*scUnit), scRow(2, 10000, 0, 30*scUnit), scRow(3, 10000, 0, 40*scUnit))
+		}
+
+		var asked []int
+		res, err := Search(t.Context(), scPlan, fake(target, &asked))
+		if err != nil {
+			t.Fatalf("%s: search: %v", tc.name, err)
+		}
+		if got := res.Outcome == RunLimit; got != tc.limit {
+			t.Errorf("%s: %v, want run limit %v", tc.name, res.Outcome, tc.limit)
 		}
 	}
 }
@@ -583,6 +681,39 @@ func TestScenarioSearch_AProbeRecoversRowByRow(t *testing.T) {
 			t.Errorf("head %v in the probe: %v broke %d cause %v notes %q, want BrokeBetween 195, no recovery", tc.head, res.Outcome, res.Broke, res.Cause, res.Notes)
 		}
 	}
+}
+
+// Ground: contract — a probe only has to show the p99s back: a failure share
+// that is over the limit only with the client's own failures, which would end a
+// step as the run's limit, does not keep a probe from recovering.
+func TestScenarioSearch_AProbeWithClientErrorsOnARowStillRecovers(t *testing.T) {
+	undecided := scRow(2, 1000, 100, 30*scUnit)
+	undecided.Rejected.Count = 100
+	probe := scReport(1000, scRow(1, 1000, 0, 20*scUnit), undecided, scRow(3, 1000, 0, 40*scUnit))
+	broken := scReport(1000, scRow(1, 1000, 0, 20*scUnit), scRow(2, 1000, 0, 30*scUnit), scRow(3, 1000, 100, 40*scUnit))
+
+	p := scPlan
+	p.To = 195
+
+	var asked []int
+	target := func(rps int) engine.Report {
+		switch {
+		case rps == 100 && len(asked) > 4:
+			return probe
+		case rps >= 195:
+			return broken
+		default:
+			return scGood()
+		}
+	}
+	res, err := Search(t.Context(), p, fake(target, &asked))
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if want := []int{100, 125, 156, 195, 100, 195}; !slices.Equal(asked, want) {
+		t.Errorf("ran %v, want %v: the probe recovers at its first run", asked, want)
+	}
+	scBrokeAt195(t, "probe with client errors", res, CauseErrors, 3)
 }
 
 // Ground: contract — the texts of a scenario's search count iterations: no
