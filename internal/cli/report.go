@@ -95,6 +95,9 @@ type RunSettings struct {
 	Ramp time.Duration
 	// Compression is app.compression: "gzip", or empty for none.
 	Compression string
+	// IdleTimeout is app.idle_timeout as configured; 0 when it was left out,
+	// which prints nothing and is null in JSON.
+	IdleTimeout time.Duration
 	// Mode is app.mode: "local" or "real". Empty prints nothing.
 	Mode string
 	// StopOnErrors is load.stop_on_errors as written; empty when left out,

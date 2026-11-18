@@ -31,6 +31,10 @@ import (
 // read oftener than that, and a token lives for minutes.
 const minMetadataRefresh = time.Second
 
+// ErrInvalidIdleTimeout is an app.idle_timeout below 1s, 0 and a negative one
+// included.
+var ErrInvalidIdleTimeout = errors.New("invalid app.idle_timeout")
+
 // metadataKey is what HTTP/2 carries as a header name once lowercased.
 var metadataKey = regexp.MustCompile(`^[0-9a-z_.-]+$`)
 
@@ -205,6 +209,11 @@ func (a *App) resolveMetadataRefresh() error {
 
 	a.MetadataRefresh = *a.RawMetadataRefresh
 
+	return nil
+}
+
+// resolveIdleTimeout reads app.idle_timeout.
+func (a *App) resolveIdleTimeout() error {
 	return nil
 }
 

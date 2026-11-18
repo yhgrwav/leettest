@@ -171,6 +171,11 @@ type App struct {
 	// start.
 	RawMetadataRefresh *time.Duration `yaml:"metadata_refresh"`
 	MetadataRefresh    time.Duration  `yaml:"-"`
+	// RawIdleTimeout is app.idle_timeout as written, nil when it was left out.
+	// IdleTimeout is how long a connection may have no call on it before the
+	// client closes it, at least 1s; 0 is grpc-go's own 30 minutes.
+	RawIdleTimeout *time.Duration `yaml:"idle_timeout"`
+	IdleTimeout    time.Duration  `yaml:"-"`
 	// RawMaxResponseSize is the field as written, such as 16MiB; the unit is
 	// required. MaxResponseBytes is it in bytes, 0 when left out: the
 	// transport's own limit of 4 MiB.

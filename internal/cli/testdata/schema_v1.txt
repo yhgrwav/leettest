@@ -33,6 +33,7 @@ settings.warmup_us int
 settings.ramp_us int
 settings.compression string?
 settings.stop_on_errors string?
+settings.idle_timeout_us int?
 metadata_refresh object?
 metadata_refresh.interval_us int
 metadata_refresh.reads int
