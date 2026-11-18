@@ -257,8 +257,6 @@ func TestScenario_Refusals(t *testing.T) {
 			scenarioHead + "  calls:\n    - method: " + getBalance + "\n      scenario: s\n      steps:\n" + oneStep +
 				"  breakpoint:\n    from: 100\n    to: 2000\n    settle: 5s\n    hold: 30s\n    p99_limit: 200ms\n", nil,
 			[]string{"a scenario can't be searched yet"}},
-		{"pass on a scenario call", scenarioCall("      scenario: s\n      steps:\n" + oneStep + "      pass:\n        errors: 1%\n"), nil,
-			[]string{"pass for a scenario isn't supported yet"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := config.Parse([]byte(tc.cfg))
@@ -482,14 +480,13 @@ func TestScenario_StepDataBracesAreTextAsInACallWithTemplatesOff(t *testing.T) {
 // is coming and not a typo: the generic unknown-key error would read as a
 // mistake of the user. `data` left this list when a step took it (unit 3a),
 // `templates` when it took that (unit 3b), `dataset`, `dataset_order` and
-// `dataset_seed` when it took those (unit 3c).
+// `dataset_seed` when it took those (unit 3c), `pass` when it took that (A2).
 // Ground: contract — П13 and П29: no silent partial scenario.
 func TestScenario_StepKeysStillRefused(t *testing.T) {
 	for key, value := range map[string]string{
 		"dataset_reuse": "false",
 		"rps":           "5",
 		"duration":      "1s",
-		"pass":          "{errors: 1%}",
 	} {
 		t.Run(key, func(t *testing.T) {
 			raw := twoStepScenario("        - method: " + transfer + "\n          " + key + ": " + value + "\n")

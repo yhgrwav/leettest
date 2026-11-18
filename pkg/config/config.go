@@ -476,6 +476,9 @@ type Step struct {
 	DatasetSHA256 string          `yaml:"-"`
 	DatasetOrder  *string         `yaml:"dataset_order"`
 	DatasetSeed   *int64          `yaml:"dataset_seed"`
+	// RawPass and Pass are the step's pass, as the call's.
+	RawPass *Pass            `yaml:"-"`
+	Pass    threshold.Limits `yaml:"-"`
 }
 
 // Pass is a call's pass: section as written, key to value, so that a wrong key
