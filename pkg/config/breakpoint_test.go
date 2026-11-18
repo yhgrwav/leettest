@@ -16,6 +16,7 @@ package config_test
 
 import (
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -57,7 +58,7 @@ func TestBreakpoint_TheSectionIsThePlan(t *testing.T) {
 		From: 100, To: 2000, Settle: 5 * time.Second, Hold: 30 * time.Second,
 		Timeout: 500 * time.Millisecond, MaxInFlight: 80, P99Limit: 200 * time.Millisecond,
 	}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("plan %+v, want %+v", got, want)
 	}
 }
