@@ -1110,6 +1110,11 @@ as in the run above, a plain run's other fields are not at the top level. Every 
 | `breakpoint.errors_limit` | string | The error limit the search used, as a percent: `"1%"` by default. A step broke over it; `100%` means errors do not break a step |
 | `breakpoint.why` | string? | The cause of the run that ended the search, from a closed list: `errors`, `p99_limit`, `p99_vs_base`, `connection`, `no_recovery`, `generator`, `in_flight_cap`, `stream_limit`, `stream_wait`, `client_errors`, `clock_step`, `request_errors`; `null` — no cause. `client_errors`: the limit is crossed only with failures on the client's side, the target's own are within it; the outcome is `run_limit` |
 | `breakpoint.stop_reason` | string? | Who ended the search: `dataset_exhausted` (a `dataset_reuse: false` file ran out), `seq_overflow` (a `{{seq}}` did not fit its field; only in builds newer than the last release), `requested` (stopped by the user); `null` — the search ended itself |
+| `breakpoint.scenario` | string? | (not released yet) The name of the searched scenario; `null` — the search is over one call |
+| `breakpoint.rate_unit` | string | (not released yet) What the rates of the search count: `iterations` — iterations of a scenario per second, `calls` — calls per second |
+| `breakpoint.broke_step` | object? | (not released yet) The step that broke first in the run that ended the search; `null` — a call, or no step is named |
+| `breakpoint.broke_step.step` | int | (not released yet) The step's place in the scenario, from 1: the head is 1 |
+| `breakpoint.broke_step.method` | string | (not released yet) The method of the step's row, as in `methods[].method` of the run's report |
 | `breakpoint.notes` | []string | The search's notes, text for people in ASCII; do not parse |
 | `breakpoint.runs` | []object | Every run in order |
 | `breakpoint.runs[].kind` | string | `step`, `repeat` or `probe` |
@@ -1118,6 +1123,9 @@ as in the run above, a plain run's other fields are not at the top level. Every 
 | `breakpoint.runs[].broken` | bool | `true` — the run broke the target |
 | `breakpoint.runs[].recovered` | bool? | For a `probe`: the target is back within 1.5× of the baseline p99; `null` for a `step` and a `repeat` |
 | `breakpoint.runs[].why` | string? | The run's cause, the same closed list as `breakpoint.why`; `null` — no cause |
+| `breakpoint.runs[].broke_step` | object? | (not released yet) The step that broke first in this run; `null` — a call, or no step is named |
+| `breakpoint.runs[].broke_step.step` | int | (not released yet) The step's place in the scenario, from 1: the head is 1 |
+| `breakpoint.runs[].broke_step.method` | string | (not released yet) The method of the step's row |
 | `breakpoint.runs[].report` | object | This run's full report, the same object as a plain run's JSON (fields above) |
 
 ## Comparing reports: `leettest compare`

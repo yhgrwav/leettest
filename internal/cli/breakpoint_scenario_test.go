@@ -51,7 +51,7 @@ func sbpPlanOf() breakpoint.Plan {
 	return p
 }
 
-func sbpMethod(key string, step, sent int, rps int, p99 time.Duration) engine.MethodReport {
+func sbpMethod(key string, step, sent, rps int, p99 time.Duration) engine.MethodReport {
 	return engine.MethodReport{
 		Method: key, Scenario: "pay", Step: step, GRPCMethod: key, Sent: sent, Latencies: sent,
 		P99: scExact(p99), P99WithoutClientWaits: scExact(p99), RPSLow: rps, RPSHigh: rps,

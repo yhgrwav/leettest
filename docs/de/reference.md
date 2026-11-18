@@ -1086,6 +1086,11 @@ obersten Ebene. Jeder Lauf liegt mit seinem vollständigen Bericht in `breakpoin
 | `breakpoint.errors_limit` | string | Die Fehlergrenze der Suche als Prozent: standardmäßig `"1%"`. Eine Stufe brach darüber; `100%` — Fehler brechen keine Stufe |
 | `breakpoint.why` | string? | Ursache des Laufs, der die Suche beendet hat, aus einer geschlossenen Liste: `errors`, `p99_limit`, `p99_vs_base`, `connection`, `no_recovery`, `generator`, `in_flight_cap`, `stream_limit`, `stream_wait`, `client_errors`, `clock_step`, `request_errors`; `null` — keine Ursache. `client_errors`: die Grenze wurde nur durch Fehler auf der Seite des Clients überschritten, die eigenen Fehler des Ziels liegen innerhalb davon; das Ergebnis ist `run_limit` |
 | `breakpoint.stop_reason` | string? | Wer die Suche beendet hat: `dataset_exhausted` (eine Datei mit `dataset_reuse: false` war aufgebraucht), `seq_overflow` (ein `{{seq}}` passte nicht in sein Feld; nur in Builds, die neuer sind als das letzte Release), `requested` (vom Nutzer gestoppt); `null` — die Suche endete von selbst |
+| `breakpoint.scenario` | string? | (nicht veröffentlicht) Name des gesuchten Szenarios; `null` — die Suche läuft über einen Aufruf |
+| `breakpoint.rate_unit` | string | (nicht veröffentlicht) Was die Raten der Suche zählen: `iterations` — Iterationen eines Szenarios pro Sekunde, `calls` — Aufrufe pro Sekunde |
+| `breakpoint.broke_step` | object? | (nicht veröffentlicht) Der Schritt, der im Lauf, der die Suche beendet hat, als erster brach; `null` — ein Aufruf oder kein Schritt benannt |
+| `breakpoint.broke_step.step` | int | (nicht veröffentlicht) Platz des Schritts im Szenario, ab 1: der Kopf ist 1 |
+| `breakpoint.broke_step.method` | string | (nicht veröffentlicht) Methode der Zeile des Schritts, wie in `methods[].method` des Berichts des Laufs |
 | `breakpoint.notes` | []string | Hinweise der Suche, Text für Menschen in ASCII; nicht auswerten |
 | `breakpoint.runs` | []object | Alle Läufe der Reihe nach |
 | `breakpoint.runs[].kind` | string | `step`, `repeat` oder `probe` |
@@ -1094,6 +1099,9 @@ obersten Ebene. Jeder Lauf liegt mit seinem vollständigen Bericht in `breakpoin
 | `breakpoint.runs[].broken` | bool | `true` — der Lauf hat das Ziel gebrochen |
 | `breakpoint.runs[].recovered` | bool? | Bei einem `probe`: das Ziel ist innerhalb des 1,5-Fachen des p99 der Basis zurück; bei `step` und `repeat` `null` |
 | `breakpoint.runs[].why` | string? | Ursache des Laufs, dieselbe geschlossene Liste wie bei `breakpoint.why`; `null` — keine Ursache |
+| `breakpoint.runs[].broke_step` | object? | (nicht veröffentlicht) Der Schritt, der in diesem Lauf als erster brach; `null` — ein Aufruf oder kein Schritt benannt |
+| `breakpoint.runs[].broke_step.step` | int | (nicht veröffentlicht) Platz des Schritts im Szenario, ab 1: der Kopf ist 1 |
+| `breakpoint.runs[].broke_step.method` | string | (nicht veröffentlicht) Methode der Zeile des Schritts |
 | `breakpoint.runs[].report` | object | Vollständiger Bericht dieses Laufs, dasselbe Objekt wie das JSON eines gewöhnlichen Laufs (Felder oben) |
 
 ## Berichte vergleichen: `leettest compare`

@@ -920,6 +920,11 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `breakpoint.errors_limit` | string | 搜索使用的错误上限，百分数：默认 `"1%"`。某一级超过它即崩溃；`100%` — 错误不会使某一级崩溃 |
 | `breakpoint.why` | string? | 结束搜索的那次运行的原因，来自封闭列表：`errors`、`p99_limit`、`p99_vs_base`、`connection`、`no_recovery`、`generator`、`in_flight_cap`、`stream_limit`、`stream_wait`、`client_errors`、`clock_step`、`request_errors`；`null` — 没有原因。`client_errors`：上限只被客户端一侧的错误突破，目标自己的错误在上限之内；结果为 `run_limit` |
 | `breakpoint.stop_reason` | string? | 谁结束了搜索：`dataset_exhausted`（`dataset_reuse: false` 的文件用完了）、`seq_overflow`（`{{seq}}` 放不进字段；仅在比最近一次发布更新的构建中）、`requested`（用户停止）；`null`——搜索自行结束 |
+| `breakpoint.scenario` | string? | （未发布）被搜索的场景名称；`null` — 搜索针对单个调用 |
+| `breakpoint.rate_unit` | string | （未发布）搜索的速率所计的单位：`iterations` — 场景每秒迭代数，`calls` — 每秒调用数 |
+| `breakpoint.broke_step` | object? | （未发布）结束搜索的那次运行中最先崩溃的步骤；`null` — 调用，或未指明步骤 |
+| `breakpoint.broke_step.step` | int | （未发布）步骤在场景中的位置，从 1 起：头部为 1 |
+| `breakpoint.broke_step.method` | string | （未发布）该步骤所在行的方法，与该次运行报告的 `methods[].method` 一致 |
 | `breakpoint.notes` | []string | 搜索的说明，面向人的 ASCII 文本；不要解析 |
 | `breakpoint.runs` | []object | 按顺序列出所有运行 |
 | `breakpoint.runs[].kind` | string | `step`、`repeat` 或 `probe` |
@@ -928,6 +933,9 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `breakpoint.runs[].broken` | bool | `true` — 该次运行使目标崩溃 |
 | `breakpoint.runs[].recovered` | bool? | 对 `probe`：目标回到基线 p99 的 1.5 倍以内；`step` 和 `repeat` 为 `null` |
 | `breakpoint.runs[].why` | string? | 该次运行的原因，与 `breakpoint.why` 相同的封闭列表；`null` — 没有原因 |
+| `breakpoint.runs[].broke_step` | object? | （未发布）该次运行中最先崩溃的步骤；`null` — 调用，或未指明步骤 |
+| `breakpoint.runs[].broke_step.step` | int | （未发布）步骤在场景中的位置，从 1 起：头部为 1 |
+| `breakpoint.runs[].broke_step.method` | string | （未发布）该步骤所在行的方法 |
 | `breakpoint.runs[].report` | object | 这次运行的完整报告，与普通运行的 JSON 是同一种对象（字段见上） |
 
 ## 比较报告：`leettest compare`

@@ -1090,6 +1090,11 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `breakpoint.errors_limit` | string | Предел ошибок, по которому шёл поиск, процентом: по умолчанию `"1%"`. Ступень сломалась выше него; `100%` — ошибки ступень не ломают |
 | `breakpoint.why` | string? | Причина прогона, закончившего поиск, из закрытого списка: `errors`, `p99_limit`, `p99_vs_base`, `connection`, `no_recovery`, `generator`, `in_flight_cap`, `stream_limit`, `stream_wait`, `client_errors`, `clock_step`, `request_errors`; `null` — причины нет. `client_errors`: предел превышен только ошибками клиентской стороны, собственные ошибки цели в его пределах; итог — `run_limit` |
 | `breakpoint.stop_reason` | string? | Кто закончил поиск: `dataset_exhausted` (кончился файл при `dataset_reuse: false`), `seq_overflow` (`{{seq}}` не поместился в поле; только в сборках новее последнего релиза), `requested` (остановил пользователь); `null` — поиск закончился сам |
+| `breakpoint.scenario` | string? | (не выпущено) Имя сценария, который искали; `null` — поиск по одному вызову |
+| `breakpoint.rate_unit` | string | (не выпущено) Что считают скорости поиска: `iterations` — итерации сценария в секунду, `calls` — вызовы в секунду |
+| `breakpoint.broke_step` | object? | (не выпущено) Шаг, сломавшийся первым в прогоне, который закончил поиск; `null` — вызов или шаг не назван |
+| `breakpoint.broke_step.step` | int | (не выпущено) Место шага в сценарии, с 1: голова — 1 |
+| `breakpoint.broke_step.method` | string | (не выпущено) Метод строки шага, как в `methods[].method` отчёта прогона |
 | `breakpoint.notes` | []string | Заметки поиска, текст для человека в ASCII; не разбирать |
 | `breakpoint.runs` | []object | Все прогоны по порядку |
 | `breakpoint.runs[].kind` | string | `step`, `repeat` или `probe` |
@@ -1098,6 +1103,9 @@ schedule: not exact (no microsecond sleep on windows, clock step 1us or coarser,
 | `breakpoint.runs[].broken` | bool | `true` — прогон сломал цель |
 | `breakpoint.runs[].recovered` | bool? | У `probe`: цель вернулась к p99 в пределах 1,5 от исходного; у `step` и `repeat` — `null` |
 | `breakpoint.runs[].why` | string? | Причина прогона, тот же закрытый список, что у `breakpoint.why`; `null` — причины нет |
+| `breakpoint.runs[].broke_step` | object? | (не выпущено) Шаг, сломавшийся первым в этом прогоне; `null` — вызов или шаг не назван |
+| `breakpoint.runs[].broke_step.step` | int | (не выпущено) Место шага в сценарии, с 1: голова — 1 |
+| `breakpoint.runs[].broke_step.method` | string | (не выпущено) Метод строки шага |
 | `breakpoint.runs[].report` | object | Полный отчёт этого прогона, тот же объект, что JSON обычного прогона (поля выше) |
 
 ## Сравнение отчётов: `leettest compare`

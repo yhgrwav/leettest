@@ -40,6 +40,12 @@ type rampRow struct {
 }
 
 func printRampBlocks(w io.Writer, run RunReport) {
+	printRampBlocksIn(w, run, "rps")
+}
+
+// printRampBlocksIn prints the blocks with the rate's unit in the planned
+// column: "iterations/s" for a search of a scenario.
+func printRampBlocksIn(w io.Writer, run RunReport, unit string) {
 	if run.ramp() <= 0 {
 		return
 	}
@@ -50,7 +56,7 @@ func printRampBlocks(w io.Writer, run RunReport) {
 			continue
 		}
 
-		printRampBlock(w, run, &run.Methods[i])
+		printRampBlock(w, run, &run.Methods[i], unit)
 	}
 }
 
@@ -60,7 +66,7 @@ func printRampBlocks(w io.Writer, run RunReport) {
 // whole seconds inside the window and inside what the schedule ran: the part
 // of a second after the window holds measured calls, and a run stopped inside
 // the ramp ends the block where it stopped. One row is no block.
-func printRampBlock(w io.Writer, run RunReport, m *engine.MethodReport) {
+func printRampBlock(w io.Writer, run RunReport, m *engine.MethodReport, unit string) {
 	whole := int(min(run.Warmup, run.SendingEnded) / time.Second)
 
 	secs := m.Seconds[:min(max(whole, 0), len(m.Seconds))]
@@ -75,7 +81,7 @@ func printRampBlock(w io.Writer, run RunReport, m *engine.MethodReport) {
 
 	rows := rampRows(secs)
 	cells := make([][4]string, 0, len(rows)+1)
-	cells = append(cells, [4]string{"at", "planned rps", "sent", "failed"})
+	cells = append(cells, [4]string{"at", "planned " + unit, "sent", "failed"})
 
 	for _, row := range rows {
 		cells = append(cells, [4]string{
