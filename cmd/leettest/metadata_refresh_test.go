@@ -155,10 +155,63 @@ func mrConfigWith(t *testing.T, dir, addr, appLines, duration, topLines string) 
 	return path
 }
 
-// mrInFlightSlack is how long after the first call with a new value a call with
-// the old one may still reach the target: the time a call to a local target stays
-// in flight, with ample room for a loaded machine (p99 there is 25 ms).
-const mrInFlightSlack = 500 * time.Millisecond
+// mrStaleWindow is how long after the first call with a new value a call with
+// the old one may still reach the target, taken from the run itself and not
+// guessed: the new value is published before any call that carries it takes it,
+// so a call that carries the old one took it earlier and was then in flight, at
+// the longest, for the slowest call of the run. maxLatency is the report's
+// latency.max, counted from the call's moment, so it covers the wait before the
+// call took its header as well; margin covers what the report rounds: 1% of the
+// value (the histogram's resolution), the clock step both ways, 1 ms. A quiet
+// machine gives a few milliseconds, a loaded one more, and the window with it.
+func mrStaleWindow(maxLatency, clockStep time.Duration) time.Duration {
+	return maxLatency + maxLatency/100 + 2*clockStep + time.Millisecond
+}
+
+// mrRunFacts are the two numbers of a JSON report the stale window comes from,
+// and the refresh counters.
+type mrRunFacts struct {
+	maxLatency time.Duration
+	// maxIsBound is true when the slowest call did not finish, so that its
+	// latency is not the longest a call stayed in flight.
+	maxIsBound bool
+	clockStep  time.Duration
+	refresh    map[string]any
+}
+
+func mrReadFacts(t *testing.T, stdout string) mrRunFacts {
+	t.Helper()
+
+	var doc struct {
+		ClockStepNS     int64          `json:"clock_step_ns"`
+		MetadataRefresh map[string]any `json:"metadata_refresh"`
+		Methods         []struct {
+			Latency struct {
+				Max *struct {
+					NS         int64 `json:"ns"`
+					LowerBound bool  `json:"lower_bound"`
+				} `json:"max"`
+			} `json:"latency"`
+		} `json:"methods"`
+	}
+
+	if err := json.Unmarshal([]byte(stdout), &doc); err != nil {
+		t.Fatalf("stdout is not one JSON document: %v\n%s", err, stdout)
+	}
+
+	if len(doc.Methods) != 1 || doc.Methods[0].Latency.Max == nil {
+		t.Fatalf("want one method with a latency.max in the report:\n%s", stdout)
+	}
+
+	slowest := doc.Methods[0].Latency.Max
+
+	return mrRunFacts{
+		maxLatency: time.Duration(slowest.NS),
+		maxIsBound: slowest.LowerBound,
+		clockStep:  time.Duration(doc.ClockStepNS),
+		refresh:    doc.MetadataRefresh,
+	}
+}
 
 const mrFileApp = "  metadata:\n    authorization: '${file:token.txt}'\n"
 
@@ -242,12 +295,14 @@ func TestMetadataRefresh_ANewValueReachesTheTargetDuringTheRun(t *testing.T) {
 
 	done := mrReplace(t, filepath.Join(dir, "token.txt"), 1300*time.Millisecond, "tok-two\n")
 
-	res := runCLI(t.Context(), t, 20*time.Second, "-c", cfg)
+	res := runCLI(t.Context(), t, 20*time.Second, "-c", cfg, "-output", "json")
 	<-done
 
 	if res.err != nil && !errors.Is(res.err, ErrInvalidRun) {
 		t.Fatalf("run: %v\nstderr:\n%s", res.err, res.stderr)
 	}
+
+	facts := mrReadFacts(t, res.stdout)
 
 	got := target.tokens()
 	if len(got) == 0 {
@@ -263,32 +318,66 @@ func TestMetadataRefresh_ANewValueReachesTheTargetDuringTheRun(t *testing.T) {
 	}
 
 	// Calls overlap, so a call that took the old value just before the swap can
-	// reach the target after one that took the new: on a loaded machine that
-	// happens, a few calls within the call's latency. A stale value that sticks
-	// or comes back is a call with the old value long after the new one came.
+	// reach the target after one that took the new. That lasts as long as the
+	// slowest call of the run stayed in flight (mrStaleWindow), no longer: an old
+	// value after that is a value that came back.
 	arrivals := target.arrivals()
 	firstNew := slices.Index(got, "tok-two")
+	window := mrStaleWindow(facts.maxLatency, facts.clockStep)
+	t.Logf("latency.max %v, clock step %v: an old value is let through for %v after the first new one", facts.maxLatency, facts.clockStep, window)
 
 	for i, tok := range got {
 		switch tok {
 		case "tok-two":
 		case "tok-one":
-			if firstNew >= 0 && i > firstNew && arrivals[i].Sub(arrivals[firstNew]) > mrInFlightSlack {
-				t.Fatalf("call %d carried tok-one %v after tok-two had come, longer than any call stays in flight (%v)",
-					i, arrivals[i].Sub(arrivals[firstNew]), mrInFlightSlack)
+			if firstNew < 0 || i < firstNew || facts.maxIsBound {
+				continue
+			}
+
+			if late := arrivals[i].Sub(arrivals[firstNew]); late > window {
+				t.Fatalf("call %d carried tok-one %v after tok-two had come, longer than the slowest call of the run "+
+					"stayed in flight (latency.max %v, window %v)", i, late, facts.maxLatency, window)
 			}
 		default:
 			t.Fatalf("call %d carried %q", i, tok)
 		}
 	}
 
-	line := regexp.MustCompile(`(?m)^metadata refresh: every 1s, \d+ reads, 1 changed, 0 failed$`)
-	if !line.MatchString(res.stdout) {
-		t.Errorf("no refresh line with one change in the report:\n%s", res.stdout)
+	if facts.maxIsBound {
+		t.Logf("the slowest call did not finish (latency.max %v is a lower bound): the order of old and new values is not judged", facts.maxLatency)
+	}
+
+	if facts.refresh["changed"] != 1.0 || facts.refresh["failures"] != 0.0 || facts.refresh["interval_us"] != 1_000_000.0 {
+		t.Errorf("metadata_refresh in the report = %v, want every 1 s, 1 changed, 0 failed", facts.refresh)
 	}
 
 	if strings.Contains(res.stdout+res.stderr, "tok-") {
 		t.Errorf("a value is on the screen:\n%s\n%s", res.stdout, res.stderr)
+	}
+}
+
+// Ground: contract (spec §5) — the text report carries the refresh line
+// with the change counted. The test above reads the counters from the JSON
+// report, which also has the latency the stale window comes from; this one keeps
+// the line of the text report that it used to check. An invalid run is let
+// through for the reason given there.
+func TestMetadataRefresh_TheTextReportCountsTheChange(t *testing.T) {
+	dir := mrDir(t, "tok-one\n")
+	target := startMRTarget(t)
+	cfg := mrConfig(t, dir, target.addr, mrFileApp+"  metadata_refresh: 1s\n", "2500ms")
+
+	done := mrReplace(t, filepath.Join(dir, "token.txt"), 800*time.Millisecond, "tok-two\n")
+
+	res := runCLI(t.Context(), t, 20*time.Second, "-c", cfg)
+	<-done
+
+	if res.err != nil && !errors.Is(res.err, ErrInvalidRun) {
+		t.Fatalf("run: %v\nstderr:\n%s", res.err, res.stderr)
+	}
+
+	line := regexp.MustCompile(`(?m)^metadata refresh: every 1s, \d+ reads, 1 changed, 0 failed$`)
+	if !line.MatchString(res.stdout) {
+		t.Errorf("no refresh line with one change in the report:\n%s", res.stdout)
 	}
 }
 
