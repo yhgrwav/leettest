@@ -286,6 +286,10 @@ func (s *Sender) connect(ctx context.Context, creds credentials.TransportCredent
 	}
 	s.setLimit(limit)
 
+	// Before conn.Connect, which starts grpc-go's idle timer: our idle count must
+	// not start later than its timer (order, not tolerance).
+	s.streams.idleFrom(time.Now())
+
 	if err := waitReady(ctx, conn); err != nil {
 		_ = conn.Close()
 
@@ -428,6 +432,9 @@ func (s *Sender) connectMany(ctx context.Context, creds credentials.TransportCre
 
 	for i, conn := range conns {
 		wg.Go(func() {
+			// Before conn.Connect: see connect.
+			links[i].streams.idleFrom(time.Now())
+
 			if err := waitReady(ctx, conn); err != nil {
 				once.Do(func() { failed = s.connectionError(links[i], i, n, err) })
 			}

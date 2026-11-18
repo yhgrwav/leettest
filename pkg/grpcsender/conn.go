@@ -364,7 +364,6 @@ func (c trackingCreds) ClientHandshake(ctx context.Context, authority string, ra
 	}
 
 	c.tracker.connected()
-	c.watch.streams.idleFrom(time.Now())
 
 	return &settingsConn{Conn: conn, tracker: c.tracker, watch: c.watch, idle: c.idle}, info, nil
 }
@@ -507,8 +506,8 @@ type streamGauge struct {
 	open     int64
 	full     bool
 	leftFull time.Time
-	// idleSince is when the last stream ended, or when the latest transport
-	// began if none has been open since; meaningful while open is 0.
+	// idleSince is when the last stream ended, or when Connect began if none
+	// has been open; meaningful while open is 0.
 	idleSince time.Time
 }
 
@@ -531,7 +530,7 @@ func (g *streamGauge) change(by int64, at time.Time) {
 	}
 }
 
-// idleFrom starts the idle time at a new transport, if no call is open.
+// idleFrom starts the idle time at at, if no call is open.
 func (g *streamGauge) idleFrom(at time.Time) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
