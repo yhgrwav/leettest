@@ -30,6 +30,9 @@ type CloseStats struct {
 	PeerIdleMin              time.Duration
 	// IdleTimeout is app.idle_timeout as configured, 0 when it was left out.
 	IdleTimeout time.Duration
+	// IdleDefault is true when the key was left out; IdleTimeout is then the
+	// default the sender used. Compile stub of the red tests: nothing reads it yet.
+	IdleDefault bool
 }
 
 // minIdleTimeout is the shortest app.idle_timeout the config accepts: an

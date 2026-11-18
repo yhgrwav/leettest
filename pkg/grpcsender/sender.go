@@ -44,11 +44,14 @@ import (
 // variadic one escapes to the heap.
 var rawCall = []grpc.CallOption{grpc.ForceCodec(rawCodec{})}
 
-// defaultIdle is the idle timeout the sender will pass to grpc-go when
+// DefaultIdleTimeout is the idle timeout the sender passes to grpc-go when
 // Options.IdleTimeout is 0: grpc-go's own 30 minutes, said out loud so that
-// our own idle close is told from the other side's. A variable only so a test
-// can shorten it; nothing reads it yet.
-var defaultIdle = 30 * time.Minute
+// our own idle close is told from the other side's.
+const DefaultIdleTimeout = 30 * time.Minute
+
+// defaultIdle is DefaultIdleTimeout as the sender reads it; a variable only so
+// a test can shorten it. Nothing reads it yet.
+var defaultIdle = DefaultIdleTimeout
 
 var (
 	ErrNotConnected = errors.New("sender is not connected, call Connect before the run")

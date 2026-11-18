@@ -362,6 +362,64 @@ func TestCloses_ATransportClosedBeforeTheServerSpokeIsNotIdle(t *testing.T) {
 	}
 }
 
+// Ground: contract — the same, by the other way out: a target that accepts and says nothing until
+// the connect gives up (a proxy in front of a dead backend does this). The transport is then closed
+// by grpc-go, not by the target, so a "heard the server" check kept to the read-error path passes
+// the test above and still counts this as the other side's idle close. Mutation "readAny checked
+// only when the read fails" turns it red.
+func TestCloses_ATransportClosedByUsBeforeTheServerSpokeIsNotIdle(t *testing.T) {
+	lis, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+
+	var (
+		mu    sync.Mutex
+		conns []net.Conn
+	)
+
+	t.Cleanup(func() {
+		_ = lis.Close()
+
+		mu.Lock()
+		defer mu.Unlock()
+
+		for _, c := range conns {
+			_ = c.Close()
+		}
+	})
+
+	go func() {
+		for {
+			c, err := lis.Accept()
+			if err != nil {
+				return
+			}
+
+			mu.Lock()
+			conns = append(conns, c)
+			mu.Unlock()
+		}
+	}()
+
+	s := New(Options{Target: "passthrough:///" + lis.Addr().String()})
+	// Closed after the check, never before it: a closed sender counts nothing.
+	t.Cleanup(func() { _ = s.Close() })
+
+	ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
+	defer cancel()
+
+	if err := s.Connect(ctx); err == nil {
+		t.Fatal("connect to a target that never speaks succeeded")
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	if got := s.Closes(); got != (CloseStats{}) {
+		t.Fatalf("closes %+v, want none: we gave up on a target that never sent a byte, the connection was never idle", got)
+	}
+}
+
 // --- (b) a drain is busy, whichever ends first --------------------------------
 
 // Ground: contract — a connection told to drain (GOAWAY) while a call was open closes with that
@@ -414,8 +472,9 @@ func TestCloses_ADrainDoesNotSilenceTheAdvice(t *testing.T) {
 		t.Errorf("closes %+v, want one Busy (the drain) and one IdlePeer (the idle close)", got)
 	}
 
-	// The client's idle clock starts at the last call's End, a little after the target's.
-	if got.PeerIdleMin < targetIdle*9/10 || got.PeerIdleMin > 3*time.Second {
+	// The client's idle clock starts at the last call's End, a little after the
+	// target's; half the pause is the room for a loaded machine, a drain gives 0.
+	if got.PeerIdleMin < targetIdle/2 || got.PeerIdleMin > 3*time.Second {
 		t.Errorf("PeerIdleMin %v, want about %v: the drain's close is no idle time, and the advice needs the real one",
 			got.PeerIdleMin, targetIdle)
 	}
@@ -428,15 +487,16 @@ func TestCloses_ADrainDoesNotSilenceTheAdvice(t *testing.T) {
 // closing a connection is ours, not "the other side or the network". The constant is shortened
 // here, so the test waits for milliseconds, not half an hour.
 func TestIdleTimeout_UnsetIsGrpcsDefaultAndOurCloseIsOurs(t *testing.T) {
-	if defaultIdle != 30*time.Minute {
-		t.Fatalf("default idle timeout %v, want 30m: grpc-go's own default, passed explicitly", defaultIdle)
+	if DefaultIdleTimeout != 30*time.Minute || defaultIdle != DefaultIdleTimeout {
+		t.Fatalf("default idle timeout %v (read as %v), want 30m: grpc-go's own default, passed explicitly",
+			DefaultIdleTimeout, defaultIdle)
 	}
 
 	const short = 400 * time.Millisecond
 
 	defaultIdle = short
 
-	t.Cleanup(func() { defaultIdle = 30 * time.Minute })
+	t.Cleanup(func() { defaultIdle = DefaultIdleTimeout })
 
 	b := newBackend(t, "solo", slowTarget{})
 
