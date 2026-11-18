@@ -110,8 +110,10 @@ STRESS_SKIP := ^TestReport_SlotsHeldWithinTheAllowanceDoNotHitTheCap$$|^TestSear
 # it means the same in sh and cmd.
 stress: export LEETTEST_STRESS = 1
 stress: export LEETTEST_STRESS_SKIPS = $(CURDIR)/stress-skips.txt
+# -timeout 140m on both targets (stress stays under the job's 150 min): run
+# 44263918129: main hit 90m, release took 81m.
 stress:
-	go test -race -count=20 -timeout 90m -skip "$(STRESS_SKIP)" ./...
+	go test -race -count=20 -timeout 140m -skip "$(STRESS_SKIP)" ./...
 
 # The tests STRESS_SKIP leaves out, run the same 20 times without -race (the
 # detector's slowdown is what they must not measure). Its stdout is read by
@@ -119,7 +121,7 @@ stress:
 # Add a test to STRESS_SKIP only when its failed check compares a duration, a
 # rate or a capacity; write the failing line and the run number above.
 stress-timing:
-	go test -json -count=20 -timeout 90m -run "$(STRESS_SKIP)" ./...
+	go test -json -count=20 -timeout 140m -run "$(STRESS_SKIP)" ./...
 
 # What release.yml runs as its test step. The same split as stress: every test
 # but the STRESS_SKIP ones under -race (with LEETTEST_STRESS, so skipIfStarved
